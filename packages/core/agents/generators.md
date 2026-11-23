@@ -15,18 +15,87 @@ invariants, and the traps that apply before editing anything live in
 ### Write bodies set fields only
 
 Every generated or request-facing write path filters the body through its
-writable policy before `collection.create(data)` or `applyUpdateInput(item, data)`:
-runtime REST and MCP (`applyWritablePolicy` in `rest.ts` and `mcp.ts`), both
-emitted MCP servers (`mcp.ts` modular, `mcp-runtime-template.ts`), the emitted
-SvelteKit create and update handlers, and sync apply (`sync/apply.ts` and the
-emitted sync route). Each copy drops `_`-prefixed keys, server-managed fields,
-read-only fields, anything outside an `api.writable` allowlist, and every key
-for which `ObjectRegistry.isServiceOptionInput(model, key)` is true: a service
-option key (`SMRT_SERVICE_OPTION_KEYS`) the model does not declare as a field,
-and `options`. A new write path must apply the same rule; the collection also
-enforces it on construction (see [object-runtime.md](object-runtime.md),
-"Services never come from data"). The policies are still separate copies;
-they share the rule, not the code.
+writable policy before `collection.create(data)` or `applyUpdateInput(item, data)`.
+
+Runtime REST, the emitted SvelteKit create and update handlers, sync apply
+(runtime and the emitted sync route), the MCP servers (in-process and both
+emitted), the generated CLI and the assistant tool loop share one rule, `prepareWriteInput(model,
+data, stored?)` (`src/request-input.ts`, over `resolveWriteBody` in
+`src/write-input.ts`, #5195):
+
+- Server-managed keys (`SERVER_MANAGED_WRITE_KEYS`: `id`, `tenantId`, the
+  creation/update timestamps in both spellings, `_meta_type`, `_meta_data`),
+  every key for which `ObjectRegistry.isServiceOptionInput(model, key)` is
+  true (a service option key the model does not declare as a field, and
+  `options`), and a projected `displayLabel` are skipped and never compared.
+  A concurrent `updatedAt` change never refuses a write.
+- A protected field (read-only, including database-generated fields; outside
+  the model's `api.writable` allowlist; any other `_`-prefixed key) is
+  compared with the stored value:
+  - update (`stored` is the row the route already loaded; no second read):
+    a value that would persist identically is accepted and left out, so a
+    fetched record can be sent back as is; a different value is refused;
+  - create (no stored value): a non-null value is refused, null is left out.
+- A protected field the caller cannot read is never compared (the answer
+  would confirm a guess of a value their responses omit): naming it on an
+  update is refused with the same `VALIDATION_FIELD_NOT_WRITABLE`, whatever
+  its value. Not readable means absent from the stored row's own public
+  projection for the caller (`toPublicJSON({ permissions })`): a `sensitive`
+  field, a `readPermission` field the caller does not hold, a field the row's
+  class withholds. Each path passes the permissions its own responses are
+  projected with as `prepareWriteInput`'s fourth argument (REST and sync: the
+  request principal; emitted routes: `locals`; MCP: the server's
+  permissions; the assistant: the run's); omitted, none is held, so the
+  CLI refuses such a field too. Only a protected field the caller reads in
+  their own GET keeps the unchanged round trip. Tests:
+  `__tests__/fixtures/protected-field-writes.ts` (every transport),
+  `__tests__/protected-field-read-visibility.test.ts`.
+- An accessor named in the model's `api.writable` allowlist is declared
+  writable: it may change the columns it writes through to (commerce
+  `TaxCode.components` over `componentsJson`, `TaxSettings.taxRegistrations`
+  over `taxRegistrationsJson`), hidden columns included since such a write
+  always applies and confirms nothing. A direct write of the backing column
+  stays refused. A model with no allowlist gets the effect guard below.
+- A protected field is judged by the write's effect as well as by the keys the
+  body names: when a settable accessor not named in `api.writable` in the body (`tags` over a read-only
+  `tagsJson`) changes one, `assignUpdateInput` puts every declared field back
+  and refuses with the same 400 naming the backing field. A setter whose
+  effect leaves protected fields alone, or sets the value they hold, applies.
+  A protected field the caller cannot read is not compared at all (the
+  comparison would be the oracle again): `assignUpdateInput` traps any
+  assignment to it while the accessor runs, even an equal value, and refuses
+  with the 400 naming the accessor key, never the hidden field, so the answer
+  is the same for every value. A write-only setter over such a field (a
+  `password` setter hashing into a sensitive column) is therefore refused too
+  unless the model's `api.writable` names the accessor; otherwise set it
+  server-side. Without `read` options for the request none is held, so
+  every `readPermission` field counts as hidden here.
+  Tests: `__tests__/protected-field-alias.test.ts`,
+  `commerce/src/__tests__/tax-accessor-writes.test.ts`.
+- The refusal is `FieldNotWritableError`: code
+  `VALIDATION_FIELD_NOT_WRITABLE`, a typed 400 whose `details.field` names the
+  field (`TypedHttpFailure.details.field` in the HTTP body). Sync apply rejects
+  only that item, `invalid_payload`, with `details: { code, field }`; the rest
+  of the batch proceeds.
+- Equality (`sameStoredValue`) follows the field's declared type: `datetime`
+  by instant (a `Date` or any ISO spelling), `integer`/`decimal` by number
+  (numeric strings, bigints: PostgreSQL `numeric`/`int8`), `boolean` across
+  `true`/`1`/`"1"`/`"true"`, `json` by `jsonValuesEqual` (key order ignored,
+  JSON text decoded), null and undefined alike.
+- The policy of the route's model and of the stored row's own class both hold,
+  so an STI row written through its base keeps both.
+
+Every one of these paths calls `prepareWriteInput`, so a protected field sent
+back unchanged is accepted (when the caller can read it) and a changed one is
+refused: MCP reports it as a
+tool error (code `VALIDATION_FIELD_NOT_WRITABLE`, the field in its message),
+the CLI exits with the same message, and the assistant loop returns a failed
+tool invocation. The emitted MCP servers import it from
+`@happyvertical/smrt-core`; none keeps its own copy of the policy. A new write
+path should call `prepareWriteInput`. `applySyncWritablePolicy` remains only
+for advertising the writable fields in a tool's argument schema. The
+collection also enforces the service-option rule on construction (see [object-runtime.md](object-runtime.md), "Services never come
+from data").
 
 ### An update sets declared fields and settable accessors
 
@@ -51,8 +120,9 @@ that supplies no `mutate` seam.
   before the first is assigned.
 - The model is read from the instance's prototype, so an STI row loaded through
   its base collection may set its own subtype's fields, and obeys its own
-  subtype's write policy too: keys the subtype marks read-only or leaves out
-  of its `api.writable` allowlist are skipped, on top of the route's policy.
+  subtype's write policy too (`updateInputRulesFor().isProtected`): a key the
+  subtype marks read-only or leaves out of its `api.writable` allowlist is
+  compared with the stored value as above, on top of the route's policy.
 - `displayLabel` is skipped without an error on a model that projects one, so a
   body read from the API can be sent back.
 - A class with no registered field at all (an unscanned inline class) is judged
@@ -67,9 +137,12 @@ that supplies no `mutate` seam.
   otherwise install any request key on the instance. A model with no field
   metadata is not checked. The smrt-dev-mcp class generator emits per-field
   constructor assignments, never `Object.assign(this, options)`.
-- Sync apply checks an update payload against the stored row
+- Sync apply builds an item's write body after loading its row
+  (`SyncApplyTarget.prepare(payload, stored)`, `stored` absent on a create)
+  and checks an update payload against that row
   (`SyncApplyTarget.assertUpdate`) before it answers a replay or a stale
-  write, so an unknown key is always `invalid_payload`.
+  write, so an unknown key or a changed protected field is always
+  `invalid_payload`.
 
 Output: every transport finds the serialiser with `publicSerializerOf()` /
 `toPublicJSONValue()` (`src/public-json.ts`), which read `toPublicJSON` from

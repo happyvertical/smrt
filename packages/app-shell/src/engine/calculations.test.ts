@@ -54,17 +54,35 @@ it('adds database-owned values, rejects writes, rewrites renames and undoes exac
       )?.inputSchema,
     ),
   ).not.toContain('"total"');
-  const post = await host.rest(hostOwner(host), {
+  // REST refuses a create that sets the calculated field (#5195).
+  const refused = await host.rest(hostOwner(host), {
     method: 'POST',
     url: '/api/sales',
     body: JSON.stringify({ qty: 1, price: 1, total: 2 }),
   });
+  expect(refused.status).toBe(400);
+  expect(JSON.parse(refused.body).error).toMatchObject({
+    code: 'VALIDATION_FIELD_NOT_WRITABLE',
+    details: { field: 'total' },
+  });
+  const post = await host.rest(hostOwner(host), {
+    method: 'POST',
+    url: '/api/sales',
+    body: JSON.stringify({ qty: 1, price: 1 }),
+  });
   expect(post.status).toBe(201);
   expect(JSON.parse(post.body).total).toBe(1);
-  const mcp = await host.callAppTool(hostOwner(host), 'sale_create', {
+  // The app's MCP tools follow the same rule as REST (#5195).
+  const mcpRefused = await host.callAppTool(hostOwner(host), 'sale_create', {
     qty: 2,
     price: 3,
     total: 999,
+  });
+  expect(mcpRefused.isError).toBe(true);
+  expect(JSON.stringify(mcpRefused)).toContain('VALIDATION_FIELD_NOT_WRITABLE');
+  const mcp = await host.callAppTool(hostOwner(host), 'sale_create', {
+    qty: 2,
+    price: 3,
   });
   expect(mcp.isError).toBe(false);
   await expect(

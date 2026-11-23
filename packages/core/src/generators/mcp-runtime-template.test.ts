@@ -284,6 +284,6 @@ describe('generated MCP custom-action runtime (#2182)', () => {
       'ObjectRegistry.resolveCreateTarget(baseObjectName, args',
     );
     expect(source).not.toContain('const STI_TARGETS');
-    expect(source).toContain('applyWritablePolicy(targetObjectName, data)');
+    expect(source).toContain('prepareWriteInput(targetObjectName, data)');
   });
 });

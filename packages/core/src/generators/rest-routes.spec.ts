@@ -239,12 +239,20 @@ describe('REST generator route map (#1500)', () => {
   describe('full CRUD lifecycle', () => {
     let createdId: string;
 
-    it('POST creates and returns 201 with the public payload', async () => {
+    it('POST refuses a read-only field sent with a value', async () => {
       const res = await post({ name: 'Alpha', price: 10, internalCode: 'X' });
+      expect(res.status).toBe(400);
+      const json = (await res.json()) as any;
+      expect(json.error.code).toBe('VALIDATION_FIELD_NOT_WRITABLE');
+      expect(json.error.details).toEqual({ field: 'internalCode' });
+    });
+
+    it('POST creates and returns 201 with the public payload', async () => {
+      const res = await post({ name: 'Alpha', price: 10, internalCode: null });
       expect(res.status).toBe(201);
       const json = (await res.json()) as any;
       expect(json.name).toBe('Alpha');
-      // readonly field stripped by the writable policy.
+      // A null read-only field is left out; the default stands.
       expect(json.internalCode).toBe('');
       createdId = json.id;
       expect(createdId).toBeTruthy();

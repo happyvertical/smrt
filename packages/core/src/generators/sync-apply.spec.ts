@@ -427,7 +427,30 @@ describe('Sync-apply batch endpoint (#1759)', () => {
   });
 
   describe('envelope id vs payload (mass-assignment guard intact)', () => {
-    it('takes the row id from the envelope and strips payload id/tenantId/readonly fields', async () => {
+    it('refuses a create payload that sets a read-only field', async () => {
+      const { results } = await apply([
+        {
+          itemId: 'guard-0',
+          object: 'syncapplynotes',
+          op: 'create',
+          id: UUID_F,
+          payload: { title: 'guarded-create', internalCode: 'forged' },
+        },
+      ]);
+      expect(results[0]).toEqual({
+        itemId: 'guard-0',
+        id: UUID_F,
+        status: 'rejected',
+        reason: 'invalid_payload',
+        details: {
+          code: 'VALIDATION_FIELD_NOT_WRITABLE',
+          field: 'internalCode',
+        },
+      });
+      expect(await notes.get(UUID_F)).toBeNull();
+    });
+
+    it('takes the row id from the envelope and ignores payload id/tenantId/discriminator', async () => {
       const { results } = await apply([
         {
           itemId: 'guard-1',
@@ -438,7 +461,6 @@ describe('Sync-apply batch endpoint (#1759)', () => {
             title: 'guarded-create',
             id: UUID_GONE,
             tenantId: 'attacker-tenant',
-            internalCode: 'forged',
             _meta_type: 'forged',
           },
         },
