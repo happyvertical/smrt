@@ -31,6 +31,11 @@ export interface Props {
   result: RuntimeReportResult;
   /** `compact` (default) for a preview card, `full` for a report's page. */
   variant?: 'compact' | 'full';
+  /**
+   * A narrow column (the assistant's chat): the table only, cells wrap and the
+   * table never scrolls sideways. The host picks which columns to pass.
+   */
+  fit?: boolean;
   /** The report's spec, so figures know which measures add up. */
   spec?: RuntimeReportSpec;
   /** Chart or table, bindable so the page's actions can follow it. */
@@ -52,6 +57,7 @@ export interface Props {
 let {
   result,
   variant = 'compact',
+  fit = false,
   spec,
   view = $bindable('chart'),
   locale = 'en',
@@ -73,7 +79,7 @@ const xColumn = $derived(
 );
 const axis = $derived(valid ? timeAxis(result) : undefined);
 const tableOnly = $derived(valid && result.chart.type === 'table');
-const showTable = $derived(tableOnly || view === 'table');
+const showTable = $derived(tableOnly || fit || view === 'table');
 
 /** A time bucket reads by its granularity ("Jan 2025"), never as an ISO instant. */
 function bucketLabel(value: unknown, column: Column | undefined) {
@@ -148,7 +154,7 @@ const measureOptions = $derived(
 );
 </script>
 
-<div class="smrt-report-result__root" data-smrt-component="ReportResult" data-variant={variant}>
+<div class="smrt-report-result__root" data-smrt-component="ReportResult" data-variant={variant} data-fit={fit ? '' : undefined}>
   {#if !valid}
     <p role="alert">{t(M['reports.invalid'])}</p>
   {:else if result.rows.length === 0}
@@ -196,7 +202,7 @@ const measureOptions = $derived(
           {/each}
         </dl>
       {/if}
-    {:else if !tableOnly}
+    {:else if !tableOnly && !fit}
       <div class="smrt-report-result__toggle" data-smrt-part="trigger">
         <Button type="button" variant="ghost" size="sm" aria-pressed={view === 'table'} onclick={() => (view = view === 'table' ? 'chart' : 'table')}>{t(M[view === 'table' ? 'reports.chart' : 'reports.table'])}</Button>
       </div>
@@ -316,6 +322,13 @@ const measureOptions = $derived(
   }
   .smrt-report-result__root[data-variant='compact'] th, .smrt-report-result__root[data-variant='compact'] td {
     padding: var(--smrt-spacing-1) var(--smrt-spacing-2);
+  }
+  .smrt-report-result__root[data-fit] .smrt-report-result__table {
+    overflow-x: visible;
+  }
+  .smrt-report-result__root[data-fit] :is(th, td) {
+    white-space: normal;
+    overflow-wrap: anywhere;
   }
 }
 

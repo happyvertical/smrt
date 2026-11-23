@@ -99,16 +99,17 @@ it('refreshes the open composer after engine selection, ChatGPT sign-out and a s
   await click('Use Claude Code');
   await vi.waitFor(() => {
     expect(container.querySelector('textarea')?.disabled).toBe(false);
-    expect(container.querySelector('#assistant-panel')?.textContent).toContain(
-      'Using Claude Code',
-    );
+    // the header no longer names the engine (it lives in Settings)
+    expect(
+      container.querySelector('#assistant-panel')?.textContent,
+    ).not.toContain('Using');
   });
+  const statusCalls = () =>
+    vi.mocked(fetch).mock.calls.filter((c) => String(c[0]).includes('/status'))
+      .length;
+  const before = statusCalls();
   await click('Use ChatGPT');
-  await vi.waitFor(() =>
-    expect(container.querySelector('#assistant-panel')?.textContent).toContain(
-      'Using ChatGPT',
-    ),
-  );
+  await vi.waitFor(() => expect(statusCalls()).toBeGreaterThan(before));
   await click('Sign out');
   await vi.waitFor(() =>
     expect(container.querySelector('textarea')?.disabled).toBe(true),

@@ -5,10 +5,10 @@ description: "Materialized aggregate report models for SMRT"
 status: "stable"
 generated:
   by: "smrt/scripts/generate-knowledge-okf.ts"
-  at: "2026-11-17T00:04:46Z"
+  at: "2026-11-22T18:02:46Z"
 audience: "internal"
 evidence_level: "source-inspected"
-source_revision: "sha256:9d80d49adb1b2e54482e5d3fe28dd6f0e9203e9520b573de3d17546935b4a11e"
+source_revision: "sha256:29b3f4e758ebec1b63528c8c6cff4408d434e095e562007abd46a32ea679c2b1"
 sources:
   - id: "manifest"
     resource: "https://github.com/happyvertical/smrt/blob/main/packages/reports/package.json"
