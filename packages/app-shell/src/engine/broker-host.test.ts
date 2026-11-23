@@ -22,7 +22,8 @@ import { slugFor } from './permissions.ts';
 import type { AppWorker } from './worker-handle.ts';
 import { OP_LANES, WORKER_OPS } from './worker-protocol.ts';
 
-const TENANT = 'tenant-a';
+// A PostgreSQL app's tenant is a UUID (#5189).
+const TENANT = '00000000-0000-4000-8000-0000000000a1';
 const dir = mkdtempSync(join(tmpdir(), 'broker-host-'));
 let host: AppHost;
 let pg: Awaited<ReturnType<typeof harnessDatabase>>;
@@ -151,7 +152,7 @@ describe('acceptance 1: no principal, zero broker statements', () => {
         NoPrincipalError,
       );
       await expect(
-        app.call(op, user('x', [], 'tenant-b')),
+        app.call(op, user('x', [], '00000000-0000-4000-8000-0000000000b2')),
         op,
       ).rejects.toBeInstanceOf(PermissionDeniedError);
     }

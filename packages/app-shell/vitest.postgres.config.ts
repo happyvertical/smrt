@@ -15,6 +15,7 @@ export const POSTGRES_SUITES = [
   'src/engine/broker-roles.postgres.test.ts',
   'src/engine/broker-pool.postgres.test.ts',
   'src/engine/runtime-login.postgres.test.ts',
+  'src/engine/runtime-rls.postgres.test.ts',
   'src/engine/store-in-swap.test.ts',
   'src/lib/server/hosted-inference-postgres.test.ts',
   'src/lib/server/storage-metering-postgres.test.ts',

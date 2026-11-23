@@ -23,7 +23,8 @@ import { WORKER_OPS } from './worker-protocol.ts';
 
 const dir = mkdtempSync(join(tmpdir(), 'engine-principal-'));
 let host: AppHost;
-const TENANT = 'tenant-a';
+// A UUID: a PostgreSQL app's rows carry their tenant in a UUID column (#5189).
+const TENANT = '00000000-0000-4000-8000-0000000000a1';
 const user = (userId: string, permissions: string[], tenantId = TENANT) =>
   enginePrincipal({ kind: 'user', tenantId, userId, permissions });
 

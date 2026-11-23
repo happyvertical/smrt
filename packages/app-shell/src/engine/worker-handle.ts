@@ -18,10 +18,10 @@ import {
   WorkerCrashedError,
 } from './errors.ts';
 import {
-  DESKTOP_TENANT,
   type EnginePrincipal,
   mintSystemPrincipal,
   requirePrincipal,
+  tenantFor,
 } from './principal.ts';
 import {
   BOOT_OP,
@@ -224,7 +224,7 @@ export class AppWorker {
     },
   ) {
     this.version = init.version;
-    this.tenantId = init.tenantId ?? DESKTOP_TENANT;
+    this.tenantId = tenantFor(init.tenantId, init.database?.kind);
     const { limits, database, lockTimeoutMs, reservation, ...data } = init;
     const bootPrincipal = mintSystemPrincipal(this.tenantId);
     // A PGlite instance cannot cross into the thread: the worker gets one end

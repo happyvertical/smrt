@@ -103,10 +103,10 @@ import type { ExtractPreview } from './extract-model.ts';
 import { WORKBOOK_LOOKUP, WORKBOOK_ROW } from './import-bookkeeping.ts';
 import type { MergePreview } from './merge-records.ts';
 import {
-  DESKTOP_TENANT,
   type EnginePrincipal,
   mintSystemPrincipal,
   requirePrincipal,
+  tenantFor,
 } from './principal.ts';
 import {
   archivedTables,
@@ -473,7 +473,7 @@ export class AppHost extends EventEmitter {
   ) {
     super();
     this.dataDir = dataDir;
-    this.tenantId = opts.tenantId ?? DESKTOP_TENANT;
+    this.tenantId = tenantFor(opts.tenantId, database.config.kind);
     this.#system = mintSystemPrincipal(this.tenantId);
     this.database = database.config;
     this.dialect = dialectFor(database.config);

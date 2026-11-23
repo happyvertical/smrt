@@ -143,6 +143,8 @@ export async function applyExtract(
   from: FieldDef,
   version: number,
   seed: string,
+  /** Columns every new record carries (its tenant, on PostgreSQL). */
+  stamp: Record<string, unknown> = {},
 ) {
   // The running definition already has the destination model and reference;
   // preparation reads the original physical source values within this tx.
@@ -161,7 +163,11 @@ export async function applyExtract(
       )
         throw new AppError('extracted record id already exists');
       await archiveRow(db, version, cmd.into, id, null);
-      await collection.create({ id, [label]: group.value } as never);
+      await collection.create({
+        id,
+        [label]: group.value,
+        ...stamp,
+      } as never);
       const created = (
         await db.query(
           `SELECT * FROM ${quote(tableFor(cmd.into, def.models[cmd.into]))} WHERE id = ?`,

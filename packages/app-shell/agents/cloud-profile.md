@@ -258,7 +258,7 @@ app roles only WITH INHERIT FALSE: `provision(schema)` creates and grants the ro
 no app roles), as before, and startup logs one structured warning
 (`app-shell.database.no-role-isolation`: "no database-level role isolation: set
 `SMRT_APP_SHELL_RUNTIME_DATABASE_URL`") because nothing in the database then
-separates one app from another. Guests are still refused until #5189 sets `rlsActive`.
+separates one app from another. User tables carry forced row-level-security policies (#5189, engine.md); guests are still refused.
 
 An app still in an `app.db` is refused until `migrateOwnAppToPostgres()` (host.ts;
 engine.md "SQLite to PostgreSQL in place") has moved it. v1 decisions:

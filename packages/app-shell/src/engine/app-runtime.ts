@@ -38,6 +38,10 @@ import {
   type WorkerDatabaseConfig,
 } from './db/index.ts';
 import {
+  applyRuntimeModelPolicies,
+  backfillTenantColumn,
+} from './db/policies.ts';
+import {
   type AppDefinition,
   builtInFields,
   classNameFor,
@@ -77,6 +81,7 @@ import {
 import { appPermissionSlugs, slugFor, toolTarget } from './permissions.ts';
 import {
   currentOpPrincipal,
+  DESKTOP_TENANT,
   type EnginePrincipal,
   holds,
 } from './principal.ts';
@@ -134,6 +139,7 @@ export class AppRuntime {
   private skipped = 0;
   private methodQueue: Promise<void> = Promise.resolve();
 
+  private readonly tenantId: string;
   private database: WorkerDatabaseConfig;
   private dialect: EngineDialect;
   /** Per-app caps (#5198); undefined when the host injected none. */
@@ -145,7 +151,10 @@ export class AppRuntime {
     version: number,
     database: WorkerDatabaseConfig = { kind: 'sqlite' },
     limits?: AppLimits,
+    /** The app's tenant: PostgreSQL rows carry it (their policies read it). */
+    tenantId: string = DESKTOP_TENANT,
   ) {
+    this.tenantId = tenantId;
     if (limits)
       this.caps = new AppCaps(
         limits,
@@ -189,7 +198,22 @@ export class AppRuntime {
    * resolves); on SQLite directly.
    */
   runOp<T>(opId: number, lane: OpLane, fn: () => Promise<T>): Promise<T> {
-    return this.brokered ? this.brokered.run(opId, lane, fn) : fn();
+    return this.brokered
+      ? this.brokered.run(opId, lane, () => this.tenantScope(fn))
+      : fn();
+  }
+
+  /**
+   * PostgreSQL: run `fn` in the app's tenant, with core's tenancy on, so a
+   * save stamps the row's tenant and a read keeps to it on every surface
+   * (collections, the generated REST and MCP). The database's row-level
+   * security is the enforcement; this keeps the engine's own writes and
+   * filters in step with it.
+   */
+  private async tenantScope<T>(fn: () => Promise<T>): Promise<T> {
+    const tenancy = await import('@happyvertical/smrt-tenancy');
+    if (!tenancy.isTenancyEnabled()) tenancy.enableTenancy();
+    return tenancy.withTenant({ tenantId: this.tenantId }, fn);
   }
 
   /**
@@ -205,7 +229,7 @@ export class AppRuntime {
     if (validateOnly) {
       await this.register();
       for (const report of Object.values(this.def.reports ?? {}))
-        await compileReport(this.def, report.spec);
+        await compileReport(this.def, report.spec, this.reportTenant());
       return { statements: [], snapshot: null };
     }
     mkdirSync(join(this.dataDir, 'snapshots'), { recursive: true });
@@ -217,7 +241,7 @@ export class AppRuntime {
     // the operation the host registered before the thread started.
     this.brokered = await openBrokered(this.database);
     return this.brokered.run(BOOT_OP, 'owner', () =>
-      this.bootOn(migration, readOnly),
+      this.tenantScope(() => this.bootOn(migration, readOnly)),
     );
   }
 
@@ -228,7 +252,7 @@ export class AppRuntime {
   ): Promise<BootResult> {
     await this.register();
     for (const report of Object.values(this.def.reports ?? {}))
-      await compileReport(this.def, report.spec);
+      await compileReport(this.def, report.spec, this.reportTenant());
     if (readOnly) {
       await this.warmCollections();
       return { statements: [], snapshot: null };
@@ -255,6 +279,7 @@ export class AppRuntime {
       );
       await this.tx(async (tx: Handle) =>
         withCallerOwnedDatabaseTransaction(tx, async () => {
+          await this.backfillTenant(tx);
           await tx.query(this.dialect.archiveTableDDL);
           if (
             steps.every(
@@ -286,9 +311,11 @@ export class AppRuntime {
           if (before) await this.caps?.checkGrowth(before, tx);
           await this.checkColumns(tx);
           statements.push(...(await this.plan(tx, true)));
+          await this.applyPolicies(tx, true);
         }),
       );
     }
+    await this.applyPolicies(this.db, false);
     await this.db.query(
       `CREATE TABLE IF NOT EXISTS _app_meta (key TEXT PRIMARY KEY, value TEXT NOT NULL)`,
     );
@@ -304,6 +331,44 @@ export class AppRuntime {
       snapshot,
       ...(this.skipped ? { skipped: this.skipped } : {}),
     };
+  }
+
+  /**
+   * PostgreSQL: row-level security and its policies on every table of the
+   * app's models, in the caller's transaction. `changed`: tables were just
+   * created or altered, so regenerate; otherwise only when the schema's stored
+   * digest differs (a table that predates this, or a copy under a new schema).
+   */
+  /** PostgreSQL: give tables that predate their tenant column the app's tenant. */
+  private async backfillTenant(h: Handle): Promise<void> {
+    if (this.database.kind === 'sqlite') return;
+    await backfillTenantColumn(h, {
+      schema: this.database.schema,
+      tenantId: this.tenantId,
+      tables: Object.entries(this.def.models).map(([m, md]) => tableFor(m, md)),
+    });
+  }
+
+  private async applyPolicies(h: Handle, changed: boolean): Promise<void> {
+    if (this.database.kind === 'sqlite') return;
+    await applyRuntimeModelPolicies(h, {
+      schema: this.database.schema,
+      packageName: USER_PKG,
+      force: changed,
+      models: Object.entries(this.def.models).map(([model, md]) => {
+        const t = tableFor(model, md);
+        return {
+          className: classNameFor(model, md),
+          table: t,
+          slugs: {
+            select: [`${t}.list`, `${t}.get`],
+            insert: [`${t}.create`],
+            update: [`${t}.update`],
+            delete: [`${t}.delete`],
+          },
+        };
+      }),
+    });
   }
 
   /**
@@ -328,6 +393,15 @@ export class AppRuntime {
   // ---------- registry and tables ----------
 
   /** Register the definition's models in this (fresh) registry. */
+  /**
+   * What every new row carries on PostgreSQL: its tenant, which the table's
+   * row-level-security policies compare with the caller's. Nothing on SQLite
+   * (one tenant, no policies).
+   */
+  tenantStamp(): Row {
+    return this.database.kind === 'sqlite' ? {} : { tenantId: this.tenantId };
+  }
+
   private async register() {
     if (this.def.recipes.length) await import('@happyvertical/smrt-profiles');
     for (const [model, md] of Object.entries(this.def.models)) {
@@ -340,9 +414,14 @@ export class AppRuntime {
         methods[name] = function (this: { id?: string }, params?: Row) {
           return rt.runMethod(model, name, this.id ?? null, params ?? {});
         };
-      registerRuntimeModel(toRuntimeModel(model, md), {
-        methods: methods as never,
-      });
+      registerRuntimeModel(
+        toRuntimeModel(model, md, {
+          tenantScoped: this.database.kind !== 'sqlite',
+        }),
+        {
+          methods: methods as never,
+        },
+      );
       // The app uses only its subclass: close the shipped parent's generated
       // surfaces so its tools do not duplicate the subclass's.
       const parent = recipeModelFor(model, md)?.parent;
@@ -464,6 +543,7 @@ export class AppRuntime {
             step.from,
             m.version,
             step.seed,
+            this.tenantStamp(),
           );
         else await undoExtract(this.def, tx, step.command, m.version);
         done.push(`-- ${up ? 'extract' : 'undo extract'} model`);
@@ -480,8 +560,8 @@ export class AppRuntime {
               step.command.model,
               this.def.models[step.command.model],
             )
-              ? { typeId: await this.personType(tx) }
-              : {},
+              ? { typeId: await this.personType(tx), ...this.tenantStamp() }
+              : this.tenantStamp(),
             step.maxUpdates,
           );
         else {
@@ -1170,8 +1250,13 @@ export class AppRuntime {
 
   // ---------- records ----------
 
+  /** The tenant a report scopes its tenant-scoped sources to: PostgreSQL only. */
+  private reportTenant(): string | null {
+    return this.database.kind === 'sqlite' ? null : this.tenantId;
+  }
+
   compileReport(spec: unknown) {
-    return compileReport(this.def, spec);
+    return compileReport(this.def, spec, this.reportTenant());
   }
   runReport(input: string | RuntimeReportSpec, options: ReportOptions) {
     return runAppReport(
@@ -1180,6 +1265,7 @@ export class AppRuntime {
       input,
       options,
       this.dialect.ddlEngine,
+      this.reportTenant(),
     );
   }
 
@@ -1402,6 +1488,7 @@ export class AppRuntime {
     if (recipeModelFor(model, this.def.models[model]))
       base.typeId = await this.personType(db);
     if (opts.id) base.id = opts.id;
+    Object.assign(base, this.tenantStamp());
     const insert = async () => {
       const obj = await (await this.collection(model, db))
         .create(base as never)

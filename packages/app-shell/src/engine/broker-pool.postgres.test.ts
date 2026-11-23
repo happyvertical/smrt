@@ -37,7 +37,8 @@ const serverUrl = process.env.SMRT_TEST_POSTGRES_URL;
 
 describe.skipIf(!serverUrl)('the shared pool on a PostgreSQL server', () => {
   const suffix = Math.random().toString(36).slice(2, 8);
-  const TENANT = `tenant-${suffix}`;
+  // A UUID: an app's rows carry their tenant in a UUID column (#5189).
+  const TENANT = '33333333-3333-4333-8333-333333333333';
   const schemaA = `app_bp_a_${suffix}`;
   const schemaB = `app_bp_b_${suffix}`;
   const login = `bp_login_${suffix}`;

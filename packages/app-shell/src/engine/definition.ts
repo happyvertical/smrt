@@ -619,6 +619,7 @@ export interface DescribedModel {
 export function toRuntimeModel(
   model: string,
   md: ModelDef,
+  options: { tenantScoped?: boolean } = {},
 ): RuntimeModelDefinition {
   const fields: NonNullable<RuntimeModelDefinition['fields']> = {};
   for (const [f, fd] of Object.entries(visible(md.fields))) {
@@ -649,6 +650,9 @@ export function toRuntimeModel(
     packageName: USER_PKG,
     fields,
     methods,
+    ...(options.tenantScoped
+      ? { tenantScoped: { mode: 'required' as const } }
+      : {}),
     ...(md.extends
       ? { extends: md.extends }
       : { tableName: tableFor(model, md) }),

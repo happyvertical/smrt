@@ -99,7 +99,8 @@ scans for it.
   sync are absent. A config with no schema, `public`, a system schema or a
   schema the host did not create refuses to open (`EngineError` `refused`); the
   engine never creates a schema and never falls back to `public`. Core is
-  untouched. The role and policies of a hosted deployment are #5188/#5189.
+  untouched. The role of a hosted deployment is #5188, its policies #5189
+  ("Row-level security of run-time models").
 - **Statement timeout (#5192).** `HostOptions.workerLimits.statementTimeoutMs`
   (shell: `ShellContext.workerLimits`, set in `smrt.ts` from
   `SMRT_APP_SHELL_STATEMENT_TIMEOUT_MS`, unset means none; #5503) makes `scopeDatabase` also run
@@ -666,8 +667,8 @@ the PostgreSQL half is "The broker" below.
   (`readPrincipal`: shape, bounds, the app's tenant, a fresh frozen copy),
   then `authorizeOp` (`authorize.ts`) gates the op, then runs it inside an
   `AsyncLocalStorage` scope (`runAsPrincipal`) that `AppRuntime` reads
-  (`currentOpPrincipal`). Guests are refused (no row-level security yet,
-  #5189). Change-engine ops (previews, value counts, dumps, purges, imports)
+  (`currentOpPrincipal`). Guests are still refused (the policies below
+  gate by slug, not by guest rules; opening them is a later slice). Change-engine ops (previews, value counts, dumps, purges, imports)
   are system only. Reads that core's REST gates only on sign-in
   (`list/get/listByIds/readStoredRows/countRows/columnInfo/tools/callTool`,
   REST `GET`, `runReport`/`compileReport` on the source model and the models
@@ -838,6 +839,49 @@ is that trusted main-thread code alone writes who is asking into the database.
   across two connections, an `AppHost` on split credentials),
   `runtime-login.postgres.test.ts` (real logins refused one by one),
   `broker-roles.postgres.test.ts`.
+
+## Row-level security of run-time models (#5189)
+
+- **Tenant-scoped on PostgreSQL only.** `toRuntimeModel(model, md, { tenantScoped })`
+  registers `tenantScoped: { mode: 'required' }` when the database is not SQLite
+  (`AppRuntime.register`); SQLite and the desktop are unchanged (no column, no
+  policy). The tenant column is `tenant_id UUID NOT NULL`, so a PostgreSQL app's
+  tenant must be a lower-case UUID: `tenantFor(given, kind)` (`principal.ts`) gives
+  the default `LOCAL_TENANT` and refuses anything else, at the host and the handle.
+- **Who stamps it.** The worker enables core's tenancy on PostgreSQL and runs every
+  operation (and boot) in `withTenant({ tenantId })` (`AppRuntime.tenantScope`), so
+  collections, the generated REST and MCP stamp and filter by it. The engine also
+  stamps explicitly where it writes through a collection (`create`, extract, record
+  loads: `tenantStamp()`) and scopes reports to it (`compileReport(..., tenantId)`).
+- **Policies.** `db/policies.ts` `applyRuntimeModelPolicies` calls
+  `@happyvertical/smrt-users/postgres-policies` with a `PostgresPolicyScope`
+  (`schemaName` = the app's schema, never `public`; only `@local/app` classes; the
+  slugs the engine uses: SELECT = `<table>.list|get`, INSERT/UPDATE/DELETE =
+  `create|update|delete`). It enables AND forces row-level security (policies hold
+  for the table owner too: the single-login profile owns its tables) and creates
+  the `smrt_*` helper functions in the app's schema. Policies call them through the
+  transaction's `search_path`, so a copied or swapped schema keeps its own.
+  Run in the boot transaction right after the DDL (`bootOn`), and at any boot whose
+  catalog check finds a table without flags and four policies (restore, import,
+  copy, an app that predates this). A model the generator skipped refuses the boot.
+- **Bypass.** `smrt.system_context` (the system principal: boot, owner lane) passes
+  every policy. Copies, dumps and portable reads/writes (`readAllRows`,
+  `scopeForPortable`) set it themselves instead of `row_security = off` (which
+  errors on forced tables) and refuse first when a table's policies would hide
+  rows from the role (`row_security_active`). A superuser or BYPASSRLS role
+  bypasses row-level security whatever FORCE says: the split-credentials startup
+  check (`assertRuntimeLogin`) refuses such a runtime login; the single-login
+  profile has no database-level isolation (its startup warning says so).
+- **Existing tables.** A table that predates the column gets it before the planner
+  would add it NOT NULL (`backfillTenantColumn`: nullable, every row the app's
+  tenant, NOT NULL). Portable bundles never carry the column on the app's own
+  tables: export leaves it out, import stamps it (`postgresPortable(tx, tenantId)`;
+  `ImportUserAppOptions.tenantId`, `MigrateToPostgresOptions.tenantId`).
+- **Apps sharing a tenant.** Policies decide by tenant and slug, not by schema.
+  Separation between two apps of one tenant is the per-app role (#5188).
+- Tests: `runtime-rls.postgres.test.ts` (PGlite and, with `SMRT_TEST_POSTGRES_URL`,
+  a real server): another tenant reads, changes and adds nothing; removing the
+  policies fails it.
 
 ## Lessons
 

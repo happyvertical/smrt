@@ -471,13 +471,45 @@ const columnList = (cols: Array<{ name: string }>) =>
   cols.map((c) => qi(c.name)).join(', ');
 
 /**
- * A copy must never read through a row-level-security policy: it would drop
- * the rows the policy hides, silently. With `row_security` off the server
- * fails the read instead for a role the policies would filter, and a role
- * that owns or bypasses them reads everything.
+ * A copy must never read through a row-level-security policy that hides rows:
+ * it would drop them, silently. The tables of an app carry policies that are
+ * FORCED (they hold for their owner too, #5189), and `row_security = off`
+ * would make the server fail every such read, so the copy instead acts as the
+ * engine: `smrt.system_context` is what the policies' bypass reads. Trusted
+ * engine code only sets it, on a connection it opened for the copy. When
+ * `source` is given the policies are checked first: a table whose row-level
+ * security applies to this role (`row_security_active`) but has no policy that
+ * passes the bypass would hide its rows, so the copy is refused instead.
  */
-const readAllRows = async (tx: SqlRunner) => {
-  await tx.query(`SELECT set_config('row_security', 'off', true)`);
+export const readAllRows = async (tx: SqlRunner, source?: string) => {
+  await tx.query(`SELECT set_config('smrt.system_context', 'true', true)`);
+  await tx.query(`SELECT set_config('smrt.super_admin_bypass', 'false', true)`);
+  if (source !== undefined) {
+    // A table is covered when a permissive policy for reads AND one for
+    // inserts (a copy writes too) pass the engine's bypass.
+    const hidden = asRows(
+      await tx.query(
+        `SELECT c.relname AS name FROM pg_class c
+          WHERE c.relnamespace = to_regnamespace(${lit(source)}) AND c.relkind IN ('r', 'p') AND c.relrowsecurity AND row_security_active(c.oid)
+            AND (NOT EXISTS (
+                  SELECT 1 FROM pg_policy p
+                   WHERE p.polrelid = c.oid AND p.polpermissive AND p.polcmd IN ('*', 'r')
+                     AND coalesce(pg_get_expr(p.polqual, p.polrelid), '') LIKE '%smrt_rls_bypass()%')
+              OR NOT EXISTS (
+                  SELECT 1 FROM pg_policy p
+                   WHERE p.polrelid = c.oid AND p.polpermissive AND p.polcmd IN ('*', 'a')
+                     AND coalesce(pg_get_expr(p.polwithcheck, p.polrelid), '') LIKE '%smrt_rls_bypass()%'))
+          ORDER BY c.relname`,
+      ),
+    );
+    if (hidden.length)
+      throw new EngineError(
+        `cannot copy ${source}: row-level security on ${hidden
+          .map((r) => r.name)
+          .join(', ')} would hide rows from the copy`,
+        'refused',
+      );
+  }
   // Values travel as text: read and written in one fixed format whatever the
   // session's own settings are.
   await tx.query(`SELECT set_config('datestyle', 'ISO, MDY', true)`);
@@ -712,7 +744,7 @@ export async function forkSchema(
     if (await schemaExists(tx, target))
       throw new EngineError(`schema ${target} already exists`, 'refused');
     await lockForCopy(tx, source, lockTimeoutMs);
-    await readAllRows(tx);
+    await readAllRows(tx, source);
     const plan = await describeSchema(tx, source);
     await run(tx, plan.before, target);
     for (const t of plan.tables) {
@@ -930,7 +962,7 @@ export async function dumpSchema(
   try {
     const version = await db.transaction(async (tx: SqlRunner) => {
       await lockForCopy(tx, source, lockTimeoutMs);
-      await readAllRows(tx);
+      await readAllRows(tx, source);
       const plan = await describeSchema(tx, source);
       const meta = asRows(
         await tx.query(

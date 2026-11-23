@@ -733,6 +733,7 @@ export async function migrateOwnAppToPostgres(): Promise<MigrateToPostgresResult
   const schema = appSchemaName(tenant, app.id as string);
   return migrateUserAppToPostgres({
     dataDir: live,
+    tenantId: tenant,
     database: provider.config(schema),
     versions: await store.list(),
     provision: () => provider.provision(schema),

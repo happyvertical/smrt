@@ -64,6 +64,8 @@ export interface MigrateToPostgresOptions {
   database: DatabaseConfig;
   /** The app's version history from the caller's own store, oldest first. */
   versions: VersionRecord[];
+  /** The app's tenant (PostgreSQL rows carry it); default the engine's local tenant. */
+  tenantId?: string;
   /** Creates the schema if needed; the engine never does. */
   provision?: () => Promise<void>;
   /** Test seam: observe phases (`exported`, `imported`, `verified`). */
@@ -226,6 +228,7 @@ export async function migrateUserAppToPostgres(
       value: JSON.stringify(fact),
     },
     onTransaction: options.onTransaction,
+    tenantId: options.tenantId,
   });
   if (imported.status !== 'imported')
     throw new EngineError(
@@ -233,7 +236,12 @@ export async function migrateUserAppToPostgres(
       'refused',
     );
   await options.onPhase?.('imported');
-  const verified = await verifyUserApp({ dataDir, database, bundle });
+  const verified = await verifyUserApp({
+    dataDir,
+    database,
+    bundle,
+    tenantId: options.tenantId,
+  });
   if (!verified.ok)
     throw new EngineError(
       'the PostgreSQL copy did not match the SQLite app; the app stays closed',
