@@ -23,6 +23,7 @@ import {
   EngineError,
   MemoryVersionStore,
 } from './index.ts';
+import { asEngine } from './pg-test-support.ts';
 
 const serverUrl = process.env.SMRT_TEST_POSTGRES_URL;
 const backends = ['pglite', ...(serverUrl ? ['postgres'] : [])] as const;
@@ -42,6 +43,9 @@ describe.each(backends)('app engine on PostgreSQL (%s)', (backend) => {
 
   const rows = async (sql: string, params: unknown[] = []) =>
     (await admin.query(sql, params)).rows as Array<Record<string, any>>;
+  /** Rows of an app's table: forced policies hide them from a raw owner (#5189). */
+  const engineRows = (sql: string, params: unknown[] = []) =>
+    asEngine(admin as any, sql, params);
   const tablesIn = async (schema: string) =>
     (
       await rows(
@@ -371,13 +375,13 @@ describe.each(backends)('app engine on PostgreSQL (%s)', (backend) => {
       });
       const small = await host.create(hostOwner(host), 'Big', { n: 42 });
       const huge = await host.create(hostOwner(host), 'Big', { n: 1 });
-      await admin.query(
+      await engineRows(
         `UPDATE "${schema}".u_bigs SET n = 9007199254740993 WHERE id = ?`,
         [huge.id],
       );
       expect(
         (
-          await rows(
+          await engineRows(
             `SELECT n::text AS n FROM "${schema}".u_bigs WHERE id = ?`,
             [huge.id],
           )

@@ -20,7 +20,7 @@ import { hostOwner } from '../test/engine-principal.ts';
 import type { DatabaseConfig, PGliteClient } from './db/index.ts';
 import { appRoles, provisionAppRoles } from './db/roles.ts';
 import { AppHost, type Command, MemoryVersionStore } from './index.ts';
-import { sqlstate } from './pg-test-support.ts';
+import { asEngine, sqlstate } from './pg-test-support.ts';
 
 const serverUrl = process.env.SMRT_TEST_POSTGRES_URL;
 const backends = ['pglite', ...(serverUrl ? ['postgres'] : [])] as const;
@@ -44,8 +44,9 @@ describe.each(backends)('run-time model row-level security (%s)', (backend) => {
   const schemas: string[] = [];
   const hosts: AppHost[] = [];
 
+  // Forced policies hide the tables from a raw owner: arrange and read as the engine.
   const rows = async (sql: string, params: unknown[] = []) =>
-    (await admin.query(sql, params)).rows as Array<Record<string, any>>;
+    asEngine(admin as any, sql, params);
   const config = (schema: string): DatabaseConfig =>
     backend === 'postgres'
       ? { kind: 'postgres', schema, connection: { url: serverUrl, max: 2 } }
@@ -306,7 +307,8 @@ describe.each(backends)('run-time model row-level security (%s)', (backend) => {
     await host.create(hostOwner(host), 'Chore', { title: 'Bins' });
     // The admin owns the table and set no principal: forced policies show it nothing.
     expect(
-      (await rows(`SELECT count(*)::int AS n FROM "${schema}".u_chores`))[0].n,
+      (await admin.query(`SELECT count(*)::int AS n FROM "${schema}".u_chores`))
+        .rows[0].n,
     ).toBe(0);
   });
 
@@ -394,7 +396,7 @@ describe.each(backends)('run-time model row-level security (%s)', (backend) => {
     await admin.query(
       `ALTER TABLE "${schema}".u_chores ALTER COLUMN tenant_id DROP NOT NULL`,
     );
-    await admin.query(`UPDATE "${schema}".u_chores SET tenant_id = NULL`);
+    await rows(`UPDATE "${schema}".u_chores SET tenant_id = NULL`);
     await host.close();
     hosts.splice(hosts.indexOf(host), 1);
     const again = await open(schema, TENANT_A, dir);
@@ -406,6 +408,25 @@ describe.each(backends)('run-time model row-level security (%s)', (backend) => {
     expect(await again.host.list(hostOwner(again.host), 'Chore')).toHaveLength(
       1,
     );
+  });
+
+  it("keeps one person type when the shipped profile types predate the tenant (no second type made under the app's)", async () => {
+    const schema = await newSchema('r');
+    const { host, dir } = await open(schema, TENANT_A);
+    await run(host, { type: 'enableRecipe', recipe: 'profiles' });
+    await host.create(hostOwner(host), 'Profile', { name: 'Sam' });
+    await rows(`UPDATE "${schema}".profile_types SET tenant_id = NULL`);
+    await host.close();
+    hosts.splice(hosts.indexOf(host), 1);
+    const again = await open(schema, TENANT_A, dir);
+    await again.host.create(hostOwner(again.host), 'Profile', { name: 'Kim' });
+    expect(
+      (
+        await rows(
+          `SELECT count(*)::int AS n FROM "${schema}".profile_types WHERE slug = 'person'`,
+        )
+      )[0].n,
+    ).toBe(1);
   });
 
   it('an undo puts back a row whose archived image has no tenant', async () => {

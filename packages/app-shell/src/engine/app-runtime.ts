@@ -352,9 +352,18 @@ export class AppRuntime {
 
   private async applyPolicies(h: Handle, changed: boolean): Promise<void> {
     if (this.database.kind === 'sqlite') return;
-    const tables = Object.entries(this.def.models).map(([m, md]) =>
-      tableFor(m, md),
-    );
+    // The app's models and the shipped tables its recipes bring (profile types
+    // among them): core's tenancy is on now, so a row with no tenant would stop
+    // being found and be made again under the app's.
+    const tables = [
+      ...Object.entries(this.def.models).map(([m, md]) => tableFor(m, md)),
+      ...this.def.recipes.flatMap((r) =>
+        (RECIPES[r]?.tables ?? []).flatMap((qn) => {
+          const t = ObjectRegistry.getSchema(qn)?.tableName;
+          return t ? [t] : [];
+        }),
+      ),
+    ];
     await fillNullTenants(h, {
       schema: this.database.schema,
       tenantId: this.tenantId,

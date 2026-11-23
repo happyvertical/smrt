@@ -61,6 +61,7 @@ import {
   type PublishStage,
   StaleFenceError,
 } from './index.ts';
+import { asEngine, ENGINE_CONTEXT } from './pg-test-support.ts';
 import { JOURNAL_FILE, writeJournal } from './publish.ts';
 
 // Record the options of every worker thread the host starts (still real ones).
@@ -104,7 +105,7 @@ describe.each(
   const raws: Sql[] = [];
 
   const rows = async (sql: string, params: unknown[] = []) =>
-    (await admin.query(sql, params)).rows as Array<Record<string, any>>;
+    asEngine(admin as any, sql, params);
   const tablesIn = async (schema: string) =>
     (
       await rows(
@@ -1190,9 +1191,12 @@ describe.each(
       schemas.push(staging, aside);
       await withSchemaAdmin(config(schema), async (db) => {
         await forkSchema(db, schema, staging, schema);
-        await db.transaction((tx: any) =>
-          tx.query(`UPDATE "${staging}".u_chores SET title = 'new data'`),
-        );
+        await db.transaction(async (tx: any) => {
+          await tx.query(ENGINE_CONTEXT);
+          return tx.query(
+            `UPDATE "${staging}".u_chores SET title = 'new data'`,
+          );
+        });
         await swapSchemas(db, {
           live: schema,
           next: staging,
@@ -1534,10 +1538,11 @@ describe.each(
       const count = async (schema: string) =>
         Number(
           (
-            await reader.query(
+            await asEngine(
+              reader as any,
               `SELECT count(*)::int AS n FROM "${schema}".u_chores`,
             )
-          ).rows[0].n,
+          )[0].n,
         );
       expect(await count(a.schema)).toBe(3);
       const { draft } = await fork(a);
@@ -1943,7 +1948,10 @@ describe.each(
     const handle = (schema: string, fence?: number) =>
       scopeDatabase(admin as any, schema, { fence }) as any;
     const setPoints = (h: any, n: number) =>
-      h.transaction((tx: any) => tx.query(`UPDATE u_chores SET points = ${n}`));
+      h.transaction(async (tx: any) => {
+        await tx.query(ENGINE_CONTEXT);
+        return tx.query(`UPDATE u_chores SET points = ${n}`);
+      });
 
     it('a host holds the stored generation, and workers on it can write', async () => {
       const live = await seeded('fence_basic');
