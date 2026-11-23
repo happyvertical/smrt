@@ -1,3 +1,8 @@
+<!--
+  ConnectAi: connect an AI engine (a coding-agent CLI, ChatGPT or an API key)
+  and show whether the app can use it. Onboarding and Settings share it; the
+  `variant` prop picks the wording and which engines are shown first.
+-->
 <script lang="ts">
 import { Select } from '@happyvertical/smrt-ui/forms';
 import { useI18n } from '@happyvertical/smrt-ui/i18n';

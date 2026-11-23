@@ -1,3 +1,9 @@
+<!--
+  OnboardingAssistant: the assistant dock for the first-run and settings
+  surfaces. It wraps AssistantDock with an introduction that says what the
+  assistant can do in this app; when no AI engine is set up it shows a notice
+  in place of the dock.
+-->
 <script lang="ts">
 import {
   AiUnavailableNotice,
@@ -18,12 +24,25 @@ let {
   toolPresentation,
   introduction,
 }: {
+  /** Thread and message backend for the assistant dock. */
   transport: AssistantTransport;
+  /** The host shell's data-surface registry, passed to the dock. */
   registry: DataSurfaceRegistry;
+  /** Whether the dock is currently visible; its polling pauses while false. Default true. */
   visible?: boolean;
+  /** Where the assistant gets its working context; see `AssistantDock`. */
   contextMode?: 'server' | 'data-surfaces';
+  /** How message text renders: plain `text` (default) or `markdown`. */
   messageFormat?: 'text' | 'markdown';
+  /** `generic` shows a plain summary in place of a tool's own name and arguments. */
   toolPresentation?: 'generic';
+  /**
+   * What the assistant can do here, shown until the first message: the lists
+   * it can see (the first three are named), the actions it may take (`read`,
+   * `create`, `update`, `customize`) and whether an AI engine is configured;
+   * `configured: false` shows a connect-AI notice in place of the dock. Omit
+   * for no introduction.
+   */
   introduction?: { lists: string[]; actions: string[]; configured: boolean };
 } = $props();
 const { t } = useI18n();
