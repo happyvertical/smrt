@@ -18,6 +18,7 @@ import {
   getFailedMigrationRecommendation,
   resolveSchemaChangeEngine,
 } from './db-migrate-actions.js';
+import { storedMigrationFailureText } from './db-migrate-failure-output.js';
 import {
   assessFailedMigrations,
   type FailedMigrationAssessment,
@@ -214,16 +215,11 @@ export const dbHistoryCommand: CLICommand = {
       );
 
       const annotatedHistory: AnnotatedHistoryEntry[] = history.map((row) => {
-        // `error_message` holds the tracker's closed failure reason (no
-        // driver text since #5425); rows written before then may still hold
-        // the driver's text, which can echo the connection string. Scrub it
-        // once here so every output form (JSON, verbose, compact) renders the
-        // redacted value.
+        // Persisted diagnostics have no provenance, even when they resemble
+        // a current closed reason. Every output form uses only this value.
         const m = {
           ...row,
-          error_message: row.error_message
-            ? redactDatabaseUrlsInText(row.error_message)
-            : row.error_message,
+          error_message: storedMigrationFailureText(row.error_message),
         };
         if (m.status !== 'failed') {
           return {

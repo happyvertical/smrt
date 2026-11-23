@@ -140,3 +140,14 @@ export function migrateFailureText(
     ? (error as Error).message
     : closedDatabaseFailure(operation, error);
 }
+
+/**
+ * Stored diagnostics have no trusted provenance, including text that resembles
+ * a closed failure. Withhold them at reporting boundaries without rewriting
+ * history; the row's migration identity/status remain available to operators.
+ */
+export function storedMigrationFailureText(
+  message: string | null,
+): string | null {
+  return message ? 'Stored migration failure details withheld' : message;
+}

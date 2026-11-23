@@ -1988,7 +1988,10 @@ guard-bearing repairs with a fingerprint of their SQL (`type_upgrade_…`,
 gets a new migration id and never collides with a completed one. A caller
 that re-applies its own completed migration under the same id with
 regenerated SQL sees the usual checksum refusal. Rows written before this
-change may still hold driver text.
+change may still hold driver text. `db:history` and `db:status` withhold all
+nonempty stored failure details, including text that resembles a current closed
+reason, because stored messages have no trusted provenance. Reporting leaves
+the historical rows intact.
 
 `MigrationTracker.applyAll({ atomic: true })` sets local lock/statement timeouts
 before any DDL. `postgresSafe: true` commits non-index DDL atomically, then runs

@@ -33,6 +33,7 @@ import {
   type SchemaChangeEngineName,
   summarizeFailedMigrations,
 } from './db-migrate-actions.js';
+import { storedMigrationFailureText } from './db-migrate-failure-output.js';
 import { affectedOrphanCounts, formatOrphanCountLine } from './db-orphans.js';
 import {
   collectRegistryConflictTargets,
@@ -553,18 +554,13 @@ export const dbStatusCommand: CLICommand = {
 
       // 5. Get applied migrations
       const applied = await tracker.getAppliedMigrations();
-      // `error_message` is the tracker's closed failure reason (no driver
-      // text since #5425), but rows written before then may still hold the
-      // driver's text, which can echo the connection string; scrub it before
-      // it feeds any JSON or human output.
+      // Persisted diagnostics are untrusted regardless of their text shape.
+      // Close them once before any JSON or human-readable projection.
       const failed = (await tracker.getHistory({ status: 'failed' })).map(
-        (row) =>
-          row.error_message
-            ? {
-                ...row,
-                error_message: redactDatabaseUrlsInText(row.error_message),
-              }
-            : row,
+        (row) => ({
+          ...row,
+          error_message: storedMigrationFailureText(row.error_message),
+        }),
       );
 
       // 6. Auto-discover manifests to get current definitions
