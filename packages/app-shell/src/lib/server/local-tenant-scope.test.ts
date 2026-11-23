@@ -1,9 +1,11 @@
 // The desktop (local profile) with the shell models now tenant-scoped: a
 // database made before that change keeps working, and the shell works with
 // the tenancy interceptor ON (as the local runtime turns it on).
+
 import { disableTenancy, enableTenancy } from '@happyvertical/smrt-tenancy';
 import { TenantCollection } from '@happyvertical/smrt-users';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
+import { hostOwner } from '../../test/engine-principal.ts';
 import { App } from '../objects/App.ts';
 import { applyOwnBatch } from './approvals.ts';
 import { changesState, flushChecks } from './changes.ts';
@@ -87,12 +89,14 @@ describe('desktop with the tenancy interceptor on', () => {
     const waiting = await runAs(h.owner, () => changesState());
     await runAs(h.owner, () => applyOwnBatch(waiting.digest));
     await runAs(h.owner, async () =>
-      (await getHost()).create('Chore', { title: 'kept' }),
+      (await getHost()).create(hostOwner(await getHost()), 'Chore', {
+        title: 'kept',
+      }),
     );
     await closeHost();
     const names = await runAs(h.owner, async () => {
       const host = await getHost();
-      return (await host.list('Chore')).map((r) => r.title);
+      return (await host.list(hostOwner(host), 'Chore')).map((r) => r.title);
     });
     expect(names).toEqual(['kept']);
     // The rows carry the owner's tenant.

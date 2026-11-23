@@ -2,6 +2,7 @@
 // server at each exit. Driver text and a database host are replaced; every
 // other message arrives verbatim. The exits are exercised with fakes at the
 // layer below each one (the app host, the shell MCP server, a resolver).
+
 import {
   afterAll,
   afterEach,
@@ -11,6 +12,7 @@ import {
   it,
   vi,
 } from 'vitest';
+import { hostOwner } from '../../test/engine-principal.ts';
 import { decideApproval, getApprovalView } from './approvals.ts';
 import { call, drive, say, scripted } from './assistant/test-helpers.ts';
 import { runRest } from './builder.ts';
@@ -248,7 +250,9 @@ describe('every exit', () => {
     });
     it('approval stored text', async () => {
       const host = await getHost();
-      const rec = (await host.create('Chore', { title: 'x' })) as {
+      const rec = (await host.create(hostOwner(host), 'Chore', {
+        title: 'x',
+      })) as {
         id: string;
       };
       const pending = await callTool(h.owner, 'chore_delete', { id: rec.id });
@@ -269,7 +273,9 @@ describe('every exit', () => {
     });
     it('approval stored text when a REST approval returns a non-2xx', async () => {
       const host = await getHost();
-      const rec = (await host.create('Chore', { title: 'z' })) as {
+      const rec = (await host.create(hostOwner(host), 'Chore', {
+        title: 'z',
+      })) as {
         id: string;
       };
       const pending = (await runRest(
@@ -294,7 +300,9 @@ describe('every exit', () => {
     });
     it('approval stored text when the host throws', async () => {
       const host = await getHost();
-      const rec = (await host.create('Chore', { title: 'y' })) as {
+      const rec = (await host.create(hostOwner(host), 'Chore', {
+        title: 'y',
+      })) as {
         id: string;
       };
       const pending = await callTool(h.owner, 'chore_delete', { id: rec.id });

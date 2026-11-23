@@ -1,10 +1,12 @@
 // The explicit SQLite-to-PostgreSQL move of a user app (#5193). PGlite stands in
 // for the server (a real one is CI's `test:postgres` lane, not run here).
+
 import { existsSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { importPGlite } from '@happyvertical/sql/pglite';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
+import { hostOwner } from '../test/engine-principal.ts';
 import type { DatabaseConfig, PGliteClient } from './db/index.ts';
 import {
   AppHost,
@@ -63,7 +65,7 @@ async function desktopApp(rows = 3) {
     A,
   );
   for (let i = 0; i < rows; i++)
-    await host.create('Chore', { title: `c${i}`, points: i });
+    await host.create(hostOwner(host), 'Chore', { title: `c${i}`, points: i });
   await host.close();
   return { store, dataDir, file: join(dataDir, 'app.db') };
 }

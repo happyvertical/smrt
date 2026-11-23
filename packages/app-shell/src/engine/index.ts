@@ -84,6 +84,8 @@ export {
   ClaimLostError,
   EngineError,
   type EngineErrorCode,
+  NoPrincipalError,
+  PermissionDeniedError,
   StaleFenceError,
   StaleStoreError,
   WorkerCrashedError,
@@ -120,6 +122,8 @@ export {
   importModelName,
 } from './import-target.ts';
 export type { MergePreview, MergeRecordsCommand } from './merge-records.ts';
+// Only engine code can act as the system: that mint is deliberately not exported.
+export { appPermissionSlugs } from './permissions.ts';
 export {
   checkUserAppBundle,
   digestVersionHistory,
@@ -138,6 +142,13 @@ export {
   type UserAppVerification,
   verifyUserApp,
 } from './portable-export.ts';
+export {
+  DESKTOP_TENANT,
+  type EnginePrincipal,
+  enginePrincipal,
+  isEnginePrincipal,
+  type PrincipalKind,
+} from './principal.ts';
 export type {
   DefinitionDiff,
   DraftChain,

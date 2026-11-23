@@ -8,6 +8,7 @@ import {
   runAs,
   type ShellHarness,
 } from '../lib/server/test-support.ts';
+import { hostOwner } from '../test/engine-principal.ts';
 import { GET, POST } from './api/shell/reports/[name]/+server.ts';
 import { GET as csv } from './api/shell/reports/[name]/csv/+server.ts';
 
@@ -47,8 +48,10 @@ beforeAll(async () => {
   });
   await applyWaiting(h.owner);
   const host = await hostFor('live');
-  const c = await host.create('Customer', { name: 'Acme, "Ltd"' });
-  await host.create('Order', { customer: c.id, amount: 1250 });
+  const c = await host.create(hostOwner(host), 'Customer', {
+    name: 'Acme, "Ltd"',
+  });
+  await host.create(hostOwner(host), 'Order', { customer: c.id, amount: 1250 });
   await runAs(h.owner, () =>
     runCommand(
       {
@@ -143,7 +146,7 @@ it('redacts compiler and timeout failures for both reads and CSV', async () => {
 
 it('names truncated CSV downloads as bounded samples without changing the CSV body', async () => {
   const host = await hostFor('live');
-  const result = await host.runReport('sales');
+  const result = await host.runReport(hostOwner(host), 'sales');
   const run = vi.spyOn(host, 'runReport');
   try {
     run.mockResolvedValueOnce({ ...result, truncated: false });

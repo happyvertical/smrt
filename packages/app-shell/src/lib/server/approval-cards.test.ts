@@ -1,6 +1,7 @@
 import { writeFileSync } from 'node:fs';
 import { afterAll, beforeAll, expect, it } from 'vitest';
 import { ApprovalRequiredError, type Command } from '../../engine/index.ts';
+import { hostOwner } from '../../test/engine-principal.ts';
 import { ApprovalCollection } from '../objects/Approval.ts';
 import { describeApproval } from '../ui/approvals.ts';
 import { publishDataLines } from '../ui/publish.ts';
@@ -69,13 +70,13 @@ it('projects real engine previews through stored approvals into card text', asyn
       fields: { name: { type: 'text' } },
     });
     const host = await getHost();
-    const first = await host.create('Customer', {
+    const first = await host.create(hostOwner(host), 'Customer', {
       name: 'Acme',
       amount: 8,
       qty: 2,
       category: 'Food',
     });
-    const second = await host.create('Customer', {
+    const second = await host.create(hostOwner(host), 'Customer', {
       name: 'Other',
       amount: 3,
       qty: 1,
@@ -108,7 +109,10 @@ it('projects real engine previews through stored approvals into card text', asyn
         customer: { type: 'reference', ref: 'Customer' },
       },
     });
-    await host.create('Order', { name: 'First order', customer: second.id });
+    await host.create(hostOwner(host), 'Order', {
+      name: 'First order',
+      customer: second.id,
+    });
     const merge = await card({
       type: 'mergeRecords',
       model: 'Customer',
@@ -219,11 +223,13 @@ it('hydrates legacy merge reference labels through list, get and reused approval
       },
     });
     const host = await getHost();
-    const kept = await host.create('MergeCustomer', { name: 'Acme' });
-    const removed = await host.create('MergeCustomer', {
+    const kept = await host.create(hostOwner(host), 'MergeCustomer', {
+      name: 'Acme',
+    });
+    const removed = await host.create(hostOwner(host), 'MergeCustomer', {
       name: `<b>Removed</b> ${'very long record label '.repeat(12)}`,
     });
-    await host.create('MergeOrder', {
+    await host.create(hostOwner(host), 'MergeOrder', {
       name: 'First order',
       customer: removed.id,
     });

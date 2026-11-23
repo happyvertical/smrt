@@ -27,6 +27,7 @@ import { createProviderReadinessProbe } from '@happyvertical/smrt-app-runtime';
 import { createSmrtSvelteKitRuntime } from '@happyvertical/smrt-app-runtime/sveltekit';
 import './registry.ts';
 import '../objects/index.ts';
+import { cloudAppDatabase as createCloudAppDatabase } from './app-database.ts';
 import { cloudLimitsFromEnv } from './app-limits-env.ts';
 import { installChangeFeedPolicy } from './change-feed.ts';
 import {
@@ -75,28 +76,19 @@ function cloudDataRoot(): string {
 /**
  * Cloud: every tenant's app data on the deployment's PostgreSQL, one schema per
  * app (`host.ts` names it from the tenant and app ids and asks this to create
- * it). The server is `DATABASE_URL`, the one the shell's own tables use. Absent
- * (no URL), the apps stay SQLite files under the data root.
+ * it). The server is `DATABASE_URL`, the one the shell's own tables use; with
+ * `SMRT_APP_SHELL_RUNTIME_DATABASE_URL` user operations run as that separate,
+ * unprivileged login (`app-database.ts`). Absent (no URL), the apps stay SQLite
+ * files under the data root.
  */
 function cloudAppDatabase(): ShellContext['appDatabase'] {
   const url = process.env.DATABASE_URL;
   if (!url) return undefined;
-  return {
-    config: (schema) => ({
-      kind: 'postgres',
-      schema,
-      connection: { url, max: 2 },
-    }),
-    provision: async (schema) => {
-      // The name is derived from two ids (`appSchemaName`); refuse anything else
-      // before it is put in a statement.
-      if (!/^app_[0-9a-f]{32}$/.test(schema))
-        throw new Error('not an app schema name');
-      await (await runtime.deployedRuntime()).db.query(
-        `CREATE SCHEMA IF NOT EXISTS "${schema}"`,
-      );
-    },
-  };
+  return createCloudAppDatabase({
+    url,
+    runtimeUrl: process.env.SMRT_APP_SHELL_RUNTIME_DATABASE_URL || undefined,
+    admin: async () => (await runtime.deployedRuntime()).db,
+  });
 }
 
 // Cloud only, and read lazily: the desktop never parses these variables.

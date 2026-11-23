@@ -464,3 +464,28 @@ describe('approval gate invariants', () => {
       expect(adapter).toContain(`app_${name}`);
   });
 });
+
+describe('engine principal invariants (#5188)', () => {
+  it('nothing outside the engine mints the system principal', () => {
+    const offenders = files
+      .filter(([, t]) => /mintSystemPrincipal/.test(t))
+      .map(([f]) => f);
+    expect(offenders).toEqual([]);
+    const index = readFileSync(join(root, 'engine', 'index.ts'), 'utf8');
+    expect(index).not.toMatch(/mintSystemPrincipal/);
+  });
+
+  it('no route or shell source builds a principal by hand', () => {
+    // `enginePrincipal` is called only from owner.ts (`principalFor`), which
+    // takes an owner that `requireOwner` verified.
+    const offenders = files
+      .filter(
+        ([f, t]) =>
+          !f.endsWith('lib/server/owner.ts') &&
+          !f.startsWith('test/') &&
+          /enginePrincipal\s*\(/.test(t),
+      )
+      .map(([f]) => f);
+    expect(offenders).toEqual([]);
+  });
+});

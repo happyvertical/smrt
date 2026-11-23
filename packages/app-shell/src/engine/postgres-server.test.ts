@@ -8,12 +8,14 @@
 // and the schema is a real namespace on a shared database. Each app here gets
 // its own schema, created and dropped by this file as a host's provisioning
 // would; the engine never creates one.
+
 import { mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { getDatabase } from '@happyvertical/sql';
 import { importPGlite } from '@happyvertical/sql/pglite';
 import { afterAll, afterEach, beforeAll, describe, expect, it } from 'vitest';
+import { hostOwner } from '../test/engine-principal.ts';
 import type { DatabaseConfig, PGliteClient } from './db/index.ts';
 import {
   AppHost,
@@ -122,19 +124,28 @@ describe.each(backends)('app engine on PostgreSQL (%s)', (backend) => {
         done: { type: 'boolean' },
       },
     });
-    const bins = await host.create('Chore', {
+    const bins = await host.create(hostOwner(host), 'Chore', {
       title: 'Bins',
       points: '3',
       done: false,
     });
-    const dishes = await host.create('Chore', { title: 'Dishes', points: '5' });
-    await host.update('Chore', String(bins.id), { done: true });
-    expect((await host.get('Chore', String(bins.id))).done).toBe(true);
-    expect((await host.list('Chore')).map((r) => r.title).sort()).toEqual([
-      'Bins',
-      'Dishes',
-    ]);
-    const rest = await host.rest({ method: 'GET', url: '/api/chores' });
+    const dishes = await host.create(hostOwner(host), 'Chore', {
+      title: 'Dishes',
+      points: '5',
+    });
+    await host.update(hostOwner(host), 'Chore', String(bins.id), {
+      done: true,
+    });
+    expect(
+      (await host.get(hostOwner(host), 'Chore', String(bins.id))).done,
+    ).toBe(true);
+    expect(
+      (await host.list(hostOwner(host), 'Chore')).map((r) => r.title).sort(),
+    ).toEqual(['Bins', 'Dishes']);
+    const rest = await host.rest(hostOwner(host), {
+      method: 'GET',
+      url: '/api/chores',
+    });
     expect(rest.status).toBe(200);
     expect(JSON.stringify(rest.body)).toContain('Dishes');
 
@@ -158,7 +169,7 @@ describe.each(backends)('app engine on PostgreSQL (%s)', (backend) => {
       from: 'title',
       to: 'name',
     });
-    const after = await host.get('Chore', String(dishes.id));
+    const after = await host.get(hostOwner(host), 'Chore', String(dishes.id));
     expect(after.name).toBe('Dishes');
     expect(after.points).toBe(5);
     expect(typeof after.points).toBe('number');
@@ -179,8 +190,10 @@ describe.each(backends)('app engine on PostgreSQL (%s)', (backend) => {
     // Restart: a fresh host on the same schema finds the same app.
     await closeHost(host);
     host = await open(schema);
-    expect((await host.get('Chore', String(dishes.id))).name).toBe('Dishes');
-    expect((await host.list('Chore')).length).toBe(2);
+    expect(
+      (await host.get(hostOwner(host), 'Chore', String(dishes.id))).name,
+    ).toBe('Dishes');
+    expect((await host.list(hostOwner(host), 'Chore')).length).toBe(2);
   });
 
   it('refuses an app whose schema the host never created', async () => {
@@ -208,7 +221,7 @@ describe.each(backends)('app engine on PostgreSQL (%s)', (backend) => {
         name: 'Chore',
         fields: { title: { type: 'text' } },
       });
-      await first.create('Chore', { title: 'kept' });
+      await first.create(hostOwner(first), 'Chore', { title: 'kept' });
       const dir = dirOf.get(schema) as string;
       const err = await AppHost.open(dir, {
         allowUnfencedStore: true,
@@ -224,10 +237,14 @@ describe.each(backends)('app engine on PostgreSQL (%s)', (backend) => {
       expect(err).toBeInstanceOf(EngineError);
       expect(String(err?.message)).toMatch(/another host already runs/);
       // The refused host touched nothing: the first still serves.
-      expect((await first.list('Chore')).map((r) => r.title)).toEqual(['kept']);
+      expect(
+        (await first.list(hostOwner(first), 'Chore')).map((r) => r.title),
+      ).toEqual(['kept']);
       await closeHost(first);
       const again = await open(schema);
-      expect((await again.list('Chore')).map((r) => r.title)).toEqual(['kept']);
+      expect(
+        (await again.list(hostOwner(again), 'Chore')).map((r) => r.title),
+      ).toEqual(['kept']);
     },
   );
 
@@ -243,25 +260,30 @@ describe.each(backends)('app engine on PostgreSQL (%s)', (backend) => {
         name: 'Note',
         fields: { title: { type: 'text' } },
       });
-      await host.create('Note', { title: `only ${who}` });
+      await host.create(hostOwner(host), 'Note', { title: `only ${who}` });
     }
     await run(a, {
       type: 'defineModel',
       name: 'Secret',
       fields: { code: { type: 'text' } },
     });
-    await a.create('Secret', { code: 'a-secret' });
+    await a.create(hostOwner(a), 'Secret', { code: 'a-secret' });
 
     const titles = async (h: AppHost) =>
-      (await h.list('Note')).map((r) => r.title);
+      (await h.list(hostOwner(h), 'Note')).map((r) => r.title);
     expect(await titles(a)).toEqual(['only a']);
     expect(await titles(b)).toEqual(['only b']);
-    await expect(b.list('Secret')).rejects.toBeInstanceOf(EngineError);
-    expect((await b.rest({ method: 'GET', url: '/api/secrets' })).status).toBe(
-      404,
+    await expect(b.list(hostOwner(b), 'Secret')).rejects.toBeInstanceOf(
+      EngineError,
     );
+    expect(
+      (await b.rest(hostOwner(b), { method: 'GET', url: '/api/secrets' }))
+        .status,
+    ).toBe(404);
     const restNotes = async (h: AppHost) =>
-      JSON.stringify((await h.rest({ method: 'GET', url: '/api/notes' })).body);
+      JSON.stringify(
+        (await h.rest(hostOwner(h), { method: 'GET', url: '/api/notes' })).body,
+      );
     expect(await restNotes(a)).toContain('only a');
     expect(await restNotes(a)).not.toContain('only b');
     expect(await restNotes(b)).toContain('only b');
@@ -291,7 +313,7 @@ describe.each(backends)('app engine on PostgreSQL (%s)', (backend) => {
         name: model,
         fields: { k: def as never, note: { type: 'text' } },
       });
-      await host.create(model, { k: first, note: 'old' });
+      await host.create(hostOwner(host), model, { k: first, note: 'old' });
       const cmd: Command = {
         type: 'loadRecords',
         model,
@@ -307,7 +329,7 @@ describe.each(backends)('app engine on PostgreSQL (%s)', (backend) => {
         update: 1,
       });
       await run(host, cmd);
-      const all = await host.list(model);
+      const all = await host.list(hostOwner(host), model);
       expect(all).toHaveLength(2);
       // Read back as JavaScript values, not the server's digit strings.
       const row = all.find((r) => r.k === first);
@@ -335,7 +357,7 @@ describe.each(backends)('app engine on PostgreSQL (%s)', (backend) => {
         rejected: 0,
       });
       await run(host, load);
-      const held = (await host.list(holder))[0];
+      const held = (await host.list(hostOwner(host), holder))[0];
       expect(held.target).toBe(row?.id);
     });
 
@@ -347,8 +369,8 @@ describe.each(backends)('app engine on PostgreSQL (%s)', (backend) => {
         name: 'Big',
         fields: { n: { type: 'integer' } },
       });
-      const small = await host.create('Big', { n: 42 });
-      const huge = await host.create('Big', { n: 1 });
+      const small = await host.create(hostOwner(host), 'Big', { n: 42 });
+      const huge = await host.create(hostOwner(host), 'Big', { n: 1 });
       await admin.query(
         `UPDATE "${schema}".u_bigs SET n = 9007199254740993 WHERE id = ?`,
         [huge.id],
@@ -361,10 +383,12 @@ describe.each(backends)('app engine on PostgreSQL (%s)', (backend) => {
           )
         )[0].n,
       ).toBe('9007199254740993');
-      expect((await host.get('Big', String(small.id))).n).toBe(42);
+      expect((await host.get(hostOwner(host), 'Big', String(small.id))).n).toBe(
+        42,
+      );
       for (const read of [
-        () => host.get('Big', String(huge.id)),
-        () => host.list('Big'),
+        () => host.get(hostOwner(host), 'Big', String(huge.id)),
+        () => host.list(hostOwner(host), 'Big'),
       ]) {
         const err = await read().then(
           () => null,
@@ -389,7 +413,10 @@ describe.each(backends)('app engine on PostgreSQL (%s)', (backend) => {
           t: { type: 'text' },
         },
       });
-      const row = await host.create('Big', { n: 1, t: 'keep' });
+      const row = await host.create(hostOwner(host), 'Big', {
+        n: 1,
+        t: 'keep',
+      });
       const refused = async (p: Promise<unknown>, what: RegExp) => {
         const err = await p.then(
           () => null,
@@ -399,15 +426,17 @@ describe.each(backends)('app engine on PostgreSQL (%s)', (backend) => {
         expect(String(err.message)).toMatch(what);
       };
       await refused(
-        host.create('Big', { n: '9007199254740993' }),
+        host.create(hostOwner(host), 'Big', { n: '9007199254740993' }),
         /App "My app": Big\.n must be a whole number between/,
       );
       await refused(
-        host.create('Big', { m: 2 ** 60 }),
+        host.create(hostOwner(host), 'Big', { m: 2 ** 60 }),
         /Big\.m must be a whole/,
       );
       await refused(
-        host.update('Big', String(row.id), { n: '9007199254740993' }),
+        host.update(hostOwner(host), 'Big', String(row.id), {
+          n: '9007199254740993',
+        }),
         new RegExp(`Big\\.n must be a whole number.*record ${row.id}`),
       );
       const load: Command = {
@@ -428,7 +457,7 @@ describe.each(backends)('app engine on PostgreSQL (%s)', (backend) => {
         (e) => expect(String(e.message)).toMatch(/whole number|safe integer/),
       );
       // The app still reads: the poisoned values never reached the table.
-      const all = await host.list('Big');
+      const all = await host.list(hostOwner(host), 'Big');
       expect(all).toHaveLength(1);
       expect(all[0].n).toBe(1);
     });
@@ -442,7 +471,7 @@ describe.each(backends)('app engine on PostgreSQL (%s)', (backend) => {
         name: 'Big',
         fields: { n: { type: 'integer' } },
       });
-      const row = await host.create('Big', { n: 1 });
+      const row = await host.create(hostOwner(host), 'Big', { n: 1 });
       await run(host, {
         type: 'addMethod',
         model: 'Big',
@@ -452,14 +481,18 @@ describe.each(backends)('app engine on PostgreSQL (%s)', (backend) => {
           code: `app.update('Big', record.id, { n: 9007199254740993n.toString() }); return 'ok';`,
         },
       });
-      const err = await host.runMethod('Big', 'blow', String(row.id)).then(
-        () => null,
-        (e) => e,
-      );
+      const err = await host
+        .runMethod(hostOwner(host), 'Big', 'blow', String(row.id))
+        .then(
+          () => null,
+          (e) => e,
+        );
       expect(err).not.toBeNull();
       expect(String(err.message)).toMatch(/Big\.n must be a whole number/);
       expect(String(err.message)).toContain(String(row.id));
-      expect((await host.get('Big', String(row.id))).n).toBe(1);
+      expect((await host.get(hostOwner(host), 'Big', String(row.id))).n).toBe(
+        1,
+      );
     });
   });
 
@@ -472,7 +505,7 @@ describe.each(backends)('app engine on PostgreSQL (%s)', (backend) => {
         fields: { title: { type: 'text' } },
       });
       for (const t of ['Bins', 'Dishes'])
-        await host.create('Chore', { title: t });
+        await host.create(hostOwner(host), 'Chore', { title: t });
       await run(host, {
         type: 'addMethod',
         model: 'Chore',
@@ -483,8 +516,10 @@ describe.each(backends)('app engine on PostgreSQL (%s)', (backend) => {
         },
       });
       const titles = async () =>
-        (await host.list('Chore')).map((r) => String(r.title)).sort();
-      const out = await host.runMethod('Chore', 'wipe', null);
+        (await host.list(hostOwner(host), 'Chore'))
+          .map((r) => String(r.title))
+          .sort();
+      const out = await host.runMethod(hostOwner(host), 'Chore', 'wipe', null);
       expect(out.applied).toBe(2);
       expect(String(out.snapshot)).toMatch(/-method-Chore\.wipe\.pgdump$/);
       expect(await titles()).toEqual(['wiped', 'wiped']);
@@ -515,8 +550,11 @@ describe.each(backends)('app engine on PostgreSQL (%s)', (backend) => {
         name: model,
         fields: { keep: { type: 'text' }, v: def as never },
       });
-      const made = await host.create(model, { keep: 'k', v: value });
-      const before = await host.get(model, String(made.id));
+      const made = await host.create(hostOwner(host), model, {
+        keep: 'k',
+        v: value,
+      });
+      const before = await host.get(hostOwner(host), model, String(made.id));
       expect(before.v).not.toBeNull();
 
       const cmd: Command = { type: 'removeField', model, field: 'v' };
@@ -525,7 +563,9 @@ describe.each(backends)('app engine on PostgreSQL (%s)', (backend) => {
           .valuesArchived,
       ).toBe(1);
       await run(host, cmd);
-      expect(await host.get(model, String(made.id))).not.toHaveProperty('v');
+      expect(
+        await host.get(hostOwner(host), model, String(made.id)),
+      ).not.toHaveProperty('v');
       expect(
         (
           await rows(
@@ -535,7 +575,9 @@ describe.each(backends)('app engine on PostgreSQL (%s)', (backend) => {
       ).toBe(1);
 
       await run(host, { type: 'undo' });
-      expect(await host.get(model, String(made.id))).toEqual(before);
+      expect(await host.get(hostOwner(host), model, String(made.id))).toEqual(
+        before,
+      );
       expect(
         (
           await rows(
@@ -561,12 +603,19 @@ describe.each(backends)('app engine on PostgreSQL (%s)', (backend) => {
           owner: { type: 'reference', ref: 'Owner' },
         },
       });
-      const owner = await host.create('Owner', { name: 'Ada' });
-      const pet = await host.create('Pet', { name: 'Rex', owner: owner.id });
-      const before = await host.get('Pet', String(pet.id));
+      const owner = await host.create(hostOwner(host), 'Owner', {
+        name: 'Ada',
+      });
+      const pet = await host.create(hostOwner(host), 'Pet', {
+        name: 'Rex',
+        owner: owner.id,
+      });
+      const before = await host.get(hostOwner(host), 'Pet', String(pet.id));
       await run(host, { type: 'removeField', model: 'Pet', field: 'owner' });
       await run(host, { type: 'undo' });
-      expect(await host.get('Pet', String(pet.id))).toEqual(before);
+      expect(await host.get(hostOwner(host), 'Pet', String(pet.id))).toEqual(
+        before,
+      );
     });
 
     it('removing a model moves its table aside and undo brings every type back', async () => {
@@ -587,7 +636,7 @@ describe.each(backends)('app engine on PostgreSQL (%s)', (backend) => {
         },
       });
       for (const i of [1, 2])
-        await host.create('Everything', {
+        await host.create(hostOwner(host), 'Everything', {
           t: `row ${i}`,
           n: i + 0.5,
           i,
@@ -598,7 +647,7 @@ describe.each(backends)('app engine on PostgreSQL (%s)', (backend) => {
           j: { i },
         });
       const snapshot = async () =>
-        (await host.list('Everything')).sort((x, y) =>
+        (await host.list(hostOwner(host), 'Everything')).sort((x, y) =>
           String(x.t).localeCompare(String(y.t)),
         );
       const before = await snapshot();

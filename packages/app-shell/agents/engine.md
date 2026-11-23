@@ -74,8 +74,9 @@ adds) and swaps it in once it is ready. The engine must not import SvelteKit,
 The host chooses the database; the engine assumes none. `HostOptions.database`
 is a `DatabaseConfig` (`engine/db/types.ts`): `{ kind: 'sqlite' }` (the default:
 `app.db` in the data directory, as the desktop always did), `{ kind: 'postgres',
-schema, connection }` (a server; plain data, each worker opens its own
-connection) or `{ kind: 'pglite', schema, client }` (an in-process PGlite owned
+schema, connection, admin?, roles? }` (a server; plain data that stays on the host
+thread: connections are the broker's, see "The broker" and "The shared pool") or
+`{ kind: 'pglite', schema, client }` (an in-process PGlite owned
 by the host thread). Everything that differs sits behind `EngineDialect`, one
 pure implementation per database (`db/sqlite-dialect.ts`,
 `db/postgres-dialect.ts`): column types (the PostgreSQL ones equal what core's
@@ -117,15 +118,12 @@ scans for it.
   `statementTimeoutMs`); `copyAppDatabase` hands it to `dumpSchema`, so a
   snapshot, undo point or `copyTo` waits at most that long per table lock and
   then fails with a lock-timeout error instead of using the default.
-- **How the config reaches the worker.** `DatabaseConfig` is plain data except a
-  PGlite instance, which cannot cross threads (and two instances on one
-  storage corrupt it, yet a new worker boots while the old one still serves).
-  So the host thread keeps the one PGlite and `AppWorker` transfers one end of
-  a `MessagePort` (`db/pglite-bridge.ts`: `serveBridge` host side, a
-  PGlite-shaped `client` worker side, transactions held open on the host until
-  the worker ends them, rolled back if it dies). A server config is
-  serialised and each worker opens its own connection. The PGlite pass is not a
-  test double of the worker: it is the same worker code path.
+- **How the config reaches the worker.** The worker holds no database
+  connection and no credentials, for either database: `AppWorker` transfers one
+  end of a `MessagePort` and the host thread's broker serves the other
+  (`db/broker.ts`, worker side `db/broker-client.ts`; see "The broker").
+  `WorkerDatabaseConfig` is `{ kind, schema, port, lockTimeoutMs? }`. The PGlite
+  pass is the same worker code path as a server.
 - **Still SQLite only** (a clear `not supported on this database yet`
   `EngineError`, `requireSqlite`): the portable export and import
   (`openAppDatabase(dataDir)` opens SQLite; they refuse a host that reports
@@ -637,6 +635,210 @@ window lives in the host (`AppLimits.methodRunState`, shared memory each host ma
 for itself, a draft's own), so a swap, publish or structural change does not
 renew the period; a process restart does.
 
+## The caller: principals (#5188, slice 1)
+
+Every call into an app worker names who is asking. This is the SQLite half;
+the PostgreSQL half is "The broker" below.
+
+- `engine/principal.ts`: `EnginePrincipal` is frozen plain JSON (`kind`
+  `user|guest|system`, `tenantId`, `userId`, `authenticated`, `permissions`,
+  no cross-tenant flags), with core's bounds. `enginePrincipal()` builds a
+  user or guest from a VERIFIED session; `lib/server/owner.ts` `principalFor(owner,
+  def)` is the one shell call to it (the owner holds every slug of the app,
+  `appPermissionSlugs(def)`: `<table>.<list|get|create|update|delete|method>`,
+  the collection core's `operationPermissionOf` reads for a runtime model).
+  `kind: 'system'` is minted only by `mintSystemPrincipal`, which `index.ts`
+  does not export (`invariants.test.ts` fails if `src/lib` or `src/routes`
+  names it). A copy or look-alike is not a principal: `isEnginePrincipal` is a
+  WeakSet of minted, frozen objects.
+- Host and handle: `HostOptions.tenantId` is the app's tenant (cloud: the
+  holder's; desktop: the installation's one tenant, the store pin, else the
+  opening request's; default `DESKTOP_TENANT` for tests). The record API
+  takes the caller first (`list/get/create/update/remove/runMethod/appTools/
+  callAppTool/rest/listByIds/readStoredRows/countRows/runReport`).
+  `onApp` and `AppWorker.call(op, principal, ...args)` throw `NoPrincipalError`
+  (401) without a valid one and `PermissionDeniedError` (403) for another
+  tenant, before anything is queued or posted. Engine work in the change queue
+  (`callApp`) runs as the host's own system principal. Boot gets the system
+  principal in `workerData.bootPrincipal`; the worker refuses to start
+  without it.
+- Worker: `app-worker.ts` re-reads the principal off the wire
+  (`readPrincipal`: shape, bounds, the app's tenant, a fresh frozen copy),
+  then `authorizeOp` (`authorize.ts`) gates the op, then runs it inside an
+  `AsyncLocalStorage` scope (`runAsPrincipal`) that `AppRuntime` reads
+  (`currentOpPrincipal`). Guests are refused (no row-level security yet,
+  #5189). Change-engine ops (previews, value counts, dumps, purges, imports)
+  are system only. Reads that core's REST gates only on sign-in
+  (`list/get/listByIds/readStoredRows/countRows/columnInfo/tools/callTool`,
+  REST `GET`, `runReport`/`compileReport` on the source model and the models
+  its reference fields name) need the model's `list`/`get` slug; writes need
+  `create/update/delete`/the method's slug.
+- Generated surfaces: `AppRuntime.rest` no longer uses a pass-through
+  `authMiddleware`; it gives the APIGenerator `resolvePrincipal` (core #5588:
+  frozen snapshot, sign-in, `<collection>.<action>` on every write, tenant of
+  body and filters). `mcp()` gets the caller's tenant, user and permissions.
+- Tests: `principal.test.ts` iterates `WORKER_OPS` and shows every op throws
+  with no principal and with a foreign one at the host, the handle and the
+  raw worker thread, then two principals on one SQLite app. Other engine
+  tests get the owner from `src/test/engine-principal.ts` (`hostOwner(host)`).
+
+## The broker: one transaction per operation (#5188, slice 2)
+
+Trust model: the worker and host are trusted engine code; author code runs only
+in QuickJS. The broker is not a SQL sandbox and inspects no statements. Its job
+is that trusted main-thread code alone writes who is asking into the database.
+
+- **Host thread, `db/broker.ts`.** One `Broker` per worker (`forWorker`),
+  over a `BrokerBackend` (`pgliteBackend`: PGlite's own held `transaction()`;
+  `postgresBackend`: the SDK's pinned session connection, destroyed on release).
+  `AppWorker.call` registers `opId -> { principal, lane }` before posting; boot
+  is `BOOT_OP` (0), registered before the thread starts, ended by the `ready`
+  message. `OP_LANES` (worker-protocol.ts; `broker-host.test.ts` checks it covers
+  `WORKER_OPS`): `data` (user ops), `owner` (`snapshot`, `copyTo`,
+  `purgeArchives`, boot), `none` (`pruneSnapshots`).
+- **Transaction per op.** The worker opens the op eagerly (before any in-process
+  lock, so a connection is always taken first). The broker then: refuses a
+  principal of another tenant before `BEGIN`; opens the transaction; writes
+  `search_path`, `statement_timeout` and the six `smrt.*` settings
+  (`postgresPrincipalSettings` from `@happyvertical/smrt-users/postgres-settings`,
+  all `set_config(..., true)`); `SET LOCAL ROLE <schema>_r` (`_o` on the owner
+  lane) when the config carries `roles`; then the ownership fence. Nothing is
+  re-applied per statement (`scopeDatabase({ brokered: true })`). A reply ends the
+  op: `AppWorker.settle` calls `broker.end(opId, ok)`, the call resolves only
+  after COMMIT, a failed commit fails the call. Then `DISCARD ALL` as its own
+  statement; a failed commit/rollback/discard destroys the connection (PGlite:
+  poisons the backend, never closes the host's client).
+- **Handles.** `AppRuntime.db` is a getter: the running op's handle
+  (`BrokeredDatabase`, AsyncLocalStorage), `OperationEndedError` outside an op or
+  after it ended, and a different object per op (collections bound to it are
+  per op too). Statements of a nested `transaction` are savepoints. Ops of one
+  worker run one at a time (`app-worker.ts` queue), which also gives SQLite its
+  one-op-at-a-time. The handle's `url` is a per-worker `postgres:` marker so core
+  treats it as a server (not embedded) and creates system tables once, which boot
+  does as the owner (`warmCollections`).
+- **Death and deadline.** The worker thread exiting or its port closing rolls back
+  every open op; `workerLimits.opDeadlineMs` rolls an op back and revokes it
+  (`broker.end` then rejects).
+- **Roles (`db/roles.ts`).** `provisionAppRoles(db, schema, login, roles?, {
+  ownerLogin? })` creates NOLOGIN `<schema>_o`/`_r`, makes the login a member WITH
+  INHERIT FALSE (16+; `NOINHERIT` before), grants DML to `_r` (default privileges
+  too) and revokes TEMP from PUBLIC. With `ownerLogin` (split credentials, below)
+  the owner role goes to the admin login WITH INHERIT TRUE instead and is revoked
+  from the runtime login. `DatabaseConfig.roles` is set in production only on the
+  hosted split profile (`lib/server/app-database.ts`). Side schemas (draft,
+  rehearsal, restore copies, made by the admin connection) need no extra grant
+  step: a copy carries the source's schema, table, sequence and column ACLs and
+  ownership (`describeSchema`/`aclSql`), which name `<schema>_r`/`_o`.
+- **Restore replay.** `restoreDump` checks each dumped column type
+  (`assertColumnType`) against the `format_type` shape before it is interpolated
+  into `CAST(? AS <type>)`.
+- **Tests (in-process).** `broker.test.ts` (roles and settings in the op, threat 3
+  kept handle and late message, threat 4 no settings/temp/advisory-lock leak,
+  rollback on death and deadline, savepoints, tenant before BEGIN),
+  `broker-host.test.ts` (no principal means zero statements, role/settings
+  through a real worker, two interleaved principals, formula literal),
+  `roles.test.ts`, `broker-invariants.test.ts` (transaction-local only),
+  `restore-type-guard.test.ts`. `broker-roles.postgres.test.ts` is the gated
+  real-server lane (bare login 42501, role A on B's tables).
+- **Caveats.** Ops are serialised per worker on every database (not parallel
+  within one app), so the interleaved-principals test proves identity per op, not
+  concurrency; concurrency across apps (and an app's live, draft and report
+  workers) is what the shared pool bounds. Portable bundles no longer carry
+  core's `_smrt_*` tables (see "System tables in portable bundles" below).
+
+## The shared pool, split credentials, the runtime login (#5188, slice 3)
+
+- **One `BrokerPool` per process (`db/pool.ts`).** Replaces the per-worker pool
+  (`3 * pool` per app). Every `Broker` of a hosted PostgreSQL app takes its
+  connection through `pooledBackend(pool, tenantId)`. Bounds: `max` slots (hard
+  cap on connections in use; the owner lane's admin connections count the same),
+  `perApp` transactions per tenant, a bounded `maxQueued` wait (the next request is
+  refused at once), an `acquireTimeoutMs`, and a `releaseTimeoutMs` after which a
+  slot whose connection will not release is freed anyway. Refusals are
+  `DatabaseBusyError` (a `CapacityError`, code `unavailable`, HTTP 503); the broker
+  keeps it (`OpState.busy`) so `AppWorker.settle` fails the call with it instead of
+  the worker's own error. The pool only counts slots; a `PoolDriver` opens
+  connections (`postgresPoolDriver`: the SDK's `acquireSession`, which destroys the
+  connection on release, so no session state survives; a reusable-connection API in
+  the SDK would save the reconnect per op and is a follow-up).
+- **Budget (`lib/server/host-lifecycle.ts`).** `HostLifecycle.brokerPool(config)`
+  creates the pool on first use per server (`poolKey`) and reserves `slots + 1`
+  (the +1 is the cancel connection, `POOL_CANCEL_RESERVE`) with `takeConnections`
+  once; `ConnectionBudget.pool()` hands it to `AppWorker`, which then reserves
+  nothing per worker (a swap, report or rehearsal worker is free; `take` remains
+  only for a budget with no `pool`, the self-hosted per-worker path).
+  `appAllowance()` is now `HOST_OVERHEAD.live + .draft`; the derived budget is
+  `maxOpenApps * appAllowance() + slots + 1`. Slots: `brokerPoolSize`, else what
+  `maxAppConnections` leaves (at least 2), else 10. Env:
+  `SMRT_APP_SHELL_BROKER_POOL_SIZE`, `_PER_APP_TRANSACTIONS` (4),
+  `_MAX_QUEUED_OPERATIONS` (64), `_POOL_ACQUIRE_TIMEOUT_MS` (5000).
+  `hostMetrics().brokerPool` reports `{ inUse, queued, max }`.
+- **Operation deadline, with cancel.** `WorkerLimits.opDeadlineMs` (shell:
+  `SMRT_APP_SHELL_OP_TIMEOUT_MS`, every lane) now has a caller; hosted PostgreSQL
+  also defaults `dataOpDeadlineMs` to 60 s (`DEFAULT_OP_DEADLINE_MS`, data lane
+  only: boot, migration, snapshots and copies run long; none on the desktop). On expiry the
+  broker first cancels the running statement from outside its connection
+  (`BrokerTx.cancel`: `pg_cancel_backend(pid)` on the cancel connection, the pid
+  read right after `BEGIN`), then rolls back; a rollback that stalls past 2 s
+  destroys the connection instead. The call rejects with the deadline error; a
+  late reply is dropped. PGlite cannot cancel (rollback and revoke only).
+- **Concurrency per worker is unchanged: one op at a time.** The pool would make
+  parallel ops safe from the database's side, but a runtime's caps cache, method
+  queue and op handle are per worker, and the shell's busiest app has few
+  workers; the pool's per-app cap (4) is above what live + draft + report
+  workers can hold. Raising it later is an `app-worker.ts` change, not a pool one.
+- **Split credentials.** `DatabaseConfig.admin` (type `PostgresConnection`) are the
+  deployment's admin credentials, the role that owns the app schemas and the
+  shell's own tables: the ownership claim (`claimApp`), `openAdmin` (copies,
+  swaps, drops, `acquireOwnership`) and the owner lane (boot, migration,
+  `snapshot`, `copyTo`, `purgeArchives`, run under `SET LOCAL ROLE <schema>_o`) use
+  it. `connection` is the lesser runtime login, data lane only (member of
+  `<schema>_r` INHERIT FALSE; no access to `_o`). Absent `admin`, one login does
+  everything and no roles are set (self-hosted single-owner, unchanged).
+  `lib/server/app-database.ts` builds the provider: `DATABASE_URL` is the admin,
+  `SMRT_APP_SHELL_RUNTIME_DATABASE_URL` the runtime login. `provision(schema)`
+  creates the schema, runs `provisionAppRoles` (owner role to the admin login) and
+  `assertRuntimeLogin` as the runtime login before the app serves. Without
+  `SMRT_APP_SHELL_RUNTIME_DATABASE_URL` the provider logs one structured
+  `app-shell.database.no-role-isolation` warning at construction (behaviour
+  unchanged). Call queue: a worker runs calls one at a time (`call-queue.ts`) and
+  refuses the 65th waiting call with `DatabaseBusyError` (the pool's `maxQueued`).
+  Provisioning over an existing schema moves its tables, views and sequences to
+  `<schema>_o` (split credentials only).
+- **`assertRuntimeLogin` (`db/runtime-login.ts`).** Refuses (naming every
+  problem) a login that is superuser, BYPASSRLS, CREATEROLE or CREATEDB, owns an
+  app table, has CREATE on an app schema or on the database, holds TEMP on the
+  database, inherits an app role (`pg_has_role(.., 'USAGE')`) or holds any table
+  privilege as itself; and app roles that are superuser/BYPASSRLS/CREATEROLE/
+  CREATEDB or hold TEMP or database CREATE (the owner role may own tables and
+  create in its schema). `runtimeLoginProblems` is the pure rule over catalog facts.
+- **Caps advisory lock.** `AppCaps.withWriteLock(fn, h)` on PostgreSQL/PGlite takes
+  `pg_advisory_xact_lock(hashtext('smrt-app-caps'), hashtext(<schema>))`
+  (`takeCapsLock`) on the op's own handle, after its connection, and keeps it to
+  COMMIT/ROLLBACK (the old in-process chain released before the commit). It
+  invalidates the count cache after the lock (another connection may have
+  written). SQLite keeps the chain.
+- **System tables in portable bundles.** `_smrt_*` tables are core's framework
+  bookkeeping (migration records, change log, tombstones, AI usage), made by the
+  target's own boot (the owner role on PostgreSQL). They are not app data, so
+  `db.tables()` skips them on both databases and `compare`/`populate` skip a
+  legacy bundle's: carrying a source's rows made an import refuse ("Table
+  _smrt_migrations already holds rows"). Intended; `portable-export.test.ts` covers
+  the export and an older bundle.
+- **Tests.** In-process: `pool.test.ts` (caps, queue, timeout, fairness, release),
+  `broker-pool.test.ts` (the broker on a scripted server: 503, cancel before
+  rollback, stalled rollback, owner lane), `runtime-login.test.ts` (rules, PGlite
+  catalog), `roles.test.ts` (split grants), `app-limits.test.ts` (caps lock),
+  `lib/server/app-database.test.ts`, `connection-budget.test.ts`. Real server
+  (`*.postgres.test.ts`, registered in `vitest.postgres.config.ts`, so
+  `pnpm test:postgres` and CI's "Registered PostgreSQL Suites" lane run them):
+  `broker-pool.postgres.test.ts` (42501 for the bare login and its `SET ROLE`,
+  data vs owner session users, interleaved principals, the server's connection
+  count under load, 503, a real cancel, no leak on a pool of one, the caps lock
+  across two connections, an `AppHost` on split credentials),
+  `runtime-login.postgres.test.ts` (real logins refused one by one),
+  `broker-roles.postgres.test.ts`.
+
 ## Lessons
 
 - A worker must not be terminated while `@happyvertical/sql`'s startup HMAC key
@@ -830,7 +1032,9 @@ preserves the workbook's explicit display field.
 `change-engine.ts`: the interface the shell's batch service talks to, and
 `SqliteChangeEngine` (`createSqliteChangeEngine()`) over `forkDraft` /
 `previewPublish` / `publishDraft` / `undoTo`. Every method takes a `principal`
-(#5188) and an optional `fence` (#5190), unused on SQLite. Hosts are passed in.
+(an `EnginePrincipal`, #5188: refused unless it was built by `enginePrincipal()`
+for the live host's tenant, and never a guest) and an optional `fence` (#5190),
+unused on SQLite. Hosts are passed in.
 
 - `rebuild(principal, live, { draftDir, store, commands: {key, command}[], author, signal? })`:
   fresh fork, commands replayed in order. A command that no longer applies gets

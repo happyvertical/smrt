@@ -3,6 +3,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { DatabaseSync } from 'node:sqlite';
 import { afterAll, beforeAll, expect, it } from 'vitest';
+import { hostOwner } from '../test/engine-principal.ts';
 import { AppHost, type Command, MemoryVersionStore } from './index.ts';
 
 const dir = mkdtempSync(join(tmpdir(), 'calc-4916-'));
@@ -38,19 +39,23 @@ it('adds database-owned values, rejects writes, rewrites renames and undoes exac
   expect((await host.plan(cmd)).summary).toBe(
     ((await run(cmd)) as { summary: string }).summary,
   );
-  const row = await host.create('Sale', { qty: 3, price: 125 });
+  const row = await host.create(hostOwner(host), 'Sale', {
+    qty: 3,
+    price: 125,
+  });
   expect(row.total).toBe(375);
   await expect(
-    host.update('Sale', String(row.id), { total: 1 }),
+    host.update(hostOwner(host), 'Sale', String(row.id), { total: 1 }),
   ).rejects.toThrow(/read-only/);
   expect(
     JSON.stringify(
-      (await host.appTools()).find((t) => t.name === 'sale_create')
-        ?.inputSchema,
+      (await host.appTools(hostOwner(host))).find(
+        (t) => t.name === 'sale_create',
+      )?.inputSchema,
     ),
   ).not.toContain('"total"');
   // REST refuses a create that sets the calculated field (#5195).
-  const refused = await host.rest({
+  const refused = await host.rest(hostOwner(host), {
     method: 'POST',
     url: '/api/sales',
     body: JSON.stringify({ qty: 1, price: 1, total: 2 }),
@@ -60,7 +65,7 @@ it('adds database-owned values, rejects writes, rewrites renames and undoes exac
     code: 'VALIDATION_FIELD_NOT_WRITABLE',
     details: { field: 'total' },
   });
-  const post = await host.rest({
+  const post = await host.rest(hostOwner(host), {
     method: 'POST',
     url: '/api/sales',
     body: JSON.stringify({ qty: 1, price: 1 }),
@@ -68,17 +73,20 @@ it('adds database-owned values, rejects writes, rewrites renames and undoes exac
   expect(post.status).toBe(201);
   expect(JSON.parse(post.body).total).toBe(1);
   // The app's MCP tools follow the same rule as REST (#5195).
-  const mcpRefused = await host.callAppTool('sale_create', {
+  const mcpRefused = await host.callAppTool(hostOwner(host), 'sale_create', {
     qty: 2,
     price: 3,
     total: 999,
   });
   expect(mcpRefused.isError).toBe(true);
   expect(JSON.stringify(mcpRefused)).toContain('VALIDATION_FIELD_NOT_WRITABLE');
-  const mcp = await host.callAppTool('sale_create', { qty: 2, price: 3 });
+  const mcp = await host.callAppTool(hostOwner(host), 'sale_create', {
+    qty: 2,
+    price: 3,
+  });
   expect(mcp.isError).toBe(false);
   await expect(
-    host.create('Sale', { qty: 1, price: 2, total: 9 }),
+    host.create(hostOwner(host), 'Sale', { qty: 1, price: 2, total: 9 }),
   ).rejects.toMatchObject({
     code: 'invalid',
     message: expect.stringContaining('read-only'),
@@ -106,7 +114,9 @@ it('adds database-owned values, rejects writes, rewrites renames and undoes exac
     ...expression,
     left: { col: 'units' },
   });
-  expect((await host.get('Sale', String(row.id))).total).toBe(375);
+  expect((await host.get(hostOwner(host), 'Sale', String(row.id))).total).toBe(
+    375,
+  );
   await run({ type: 'undo' });
   expect(host.def.models.Sale.fields.total.calculated).toEqual(expression);
   await run({
@@ -115,12 +125,18 @@ it('adds database-owned values, rejects writes, rewrites renames and undoes exac
     field: 'total',
     calculated: { col: 'qty' },
   });
-  expect((await host.get('Sale', String(row.id))).total).toBe(3);
+  expect((await host.get(hostOwner(host), 'Sale', String(row.id))).total).toBe(
+    3,
+  );
   await run({ type: 'undo' });
-  expect((await host.get('Sale', String(row.id))).total).toBe(375);
+  expect((await host.get(hostOwner(host), 'Sale', String(row.id))).total).toBe(
+    375,
+  );
   await host.close();
   host = await AppHost.open(dir, { store });
-  expect((await host.get('Sale', String(row.id))).total).toBe(375);
+  expect((await host.get(hostOwner(host), 'Sale', String(row.id))).total).toBe(
+    375,
+  );
 });
 
 it('validates SDK expressions before applying anything', async () => {
@@ -179,16 +195,23 @@ it('clears and restores an expression and replays changes from a draft on curren
       },
       { author: 't' },
     );
-    const live = await host.create('Sale', { qty: 2, price: 10 });
+    const live = await host.create(hostOwner(host), 'Sale', {
+      qty: 2,
+      price: 10,
+    });
     const p = await host.previewPublish(draft);
     await host.publishDraft(draft, {
       author: 't',
       approved: true,
       expect: p.digest,
     });
-    expect((await host.get('Sale', String(live.id))).total).toBe(10);
+    expect(
+      (await host.get(hostOwner(host), 'Sale', String(live.id))).total,
+    ).toBe(10);
     await run({ type: 'undo' });
-    expect((await host.get('Sale', String(live.id))).total).toBe(20);
+    expect(
+      (await host.get(hostOwner(host), 'Sale', String(live.id))).total,
+    ).toBe(20);
   } finally {
     await draft.discard();
   }
@@ -201,8 +224,8 @@ it('preserves writable orphan columns when adding calculations and replaces reta
     field: 'bonus',
     definition: { type: 'integer' },
   });
-  const row = (await host.list('Sale'))[0];
-  await host.update('Sale', String(row.id), { bonus: 123 });
+  const row = (await host.list(hostOwner(host), 'Sale'))[0];
+  await host.update(hostOwner(host), 'Sale', String(row.id), { bonus: 123 });
   await run({ type: 'undo' });
   const command: Command = {
     type: 'addField',
@@ -227,7 +250,7 @@ it('preserves writable orphan columns when adding calculations and replaces reta
     total: { type: 'integer' as const, calculated: { col: 'qty' } },
   };
   await run({ type: 'defineModel', name: 'Line', fields });
-  const line = await host.create('Line', { qty: 3 });
+  const line = await host.create(hostOwner(host), 'Line', { qty: 3 });
   await run({ type: 'undo' });
   await run({
     type: 'defineModel',
@@ -240,7 +263,9 @@ it('preserves writable orphan columns when adding calculations and replaces reta
       },
     },
   });
-  expect((await host.get('Line', String(line.id))).total).toBe(9);
+  expect((await host.get(hostOwner(host), 'Line', String(line.id))).total).toBe(
+    9,
+  );
 });
 
 it('rejects generated writes proposed by sandbox methods', async () => {
@@ -253,19 +278,23 @@ it('rejects generated writes proposed by sandbox methods', async () => {
       code: "app.create('Sale', { qty: 1, price: 2, total: 7 });",
     },
   });
-  await expect(host.runMethod('Sale', 'badWrite')).rejects.toThrow(/read-only/);
+  await expect(
+    host.runMethod(hostOwner(host), 'Sale', 'badWrite'),
+  ).rejects.toThrow(/read-only/);
 });
 
 it('materializes a cleared calculation and refuses undo that would discard later writable edits', async () => {
-  const row = (await host.list('Sale'))[0];
+  const row = (await host.list(hostOwner(host), 'Sale'))[0];
   await run({
     type: 'setCalculation',
     model: 'Sale',
     field: 'total',
     calculated: null,
   });
-  expect((await host.get('Sale', String(row.id))).total).toBe(row.total);
-  await host.update('Sale', String(row.id), { total: 999 });
+  expect((await host.get(hostOwner(host), 'Sale', String(row.id))).total).toBe(
+    row.total,
+  );
+  await host.update(hostOwner(host), 'Sale', String(row.id), { total: 999 });
   const plan = await host.plan({ type: 'undo' });
   expect(plan.risky).toBe(true);
   expect(Number(plan.preview?.replaced)).toBeGreaterThanOrEqual(1);
@@ -277,17 +306,21 @@ it('materializes a cleared calculation and refuses undo that would discard later
     /writable values changed since clearing/,
   );
   expect(host.version).toBe(version);
-  expect((await host.get('Sale', String(row.id))).total).toBe(999);
-  await host.update('Sale', String(row.id), { total: row.total });
+  expect((await host.get(hostOwner(host), 'Sale', String(row.id))).total).toBe(
+    999,
+  );
+  await host.update(hostOwner(host), 'Sale', String(row.id), {
+    total: row.total,
+  });
   await run({ type: 'undo' });
-  expect((await host.get('Sale', String(row.id))).total).toBe(
+  expect((await host.get(hostOwner(host), 'Sale', String(row.id))).total).toBe(
     Number(row.qty) * Number(row.price),
   );
 });
 
 it('changes a calculated field type directly and undoes without a value archive', async () => {
   const before = structuredClone(host.def);
-  const row = (await host.list('Sale'))[0];
+  const row = (await host.list(hostOwner(host), 'Sale'))[0];
   await run({
     type: 'changeFieldType',
     model: 'Sale',
@@ -295,7 +328,9 @@ it('changes a calculated field type directly and undoes without a value archive'
     to: { type: 'number' },
   });
   expect(host.def.models.Sale.fields.total.type).toBe('number');
-  expect((await host.get('Sale', String(row.id))).total).toBe(row.total);
+  expect((await host.get(hostOwner(host), 'Sale', String(row.id))).total).toBe(
+    row.total,
+  );
   expect((await host.plan({ type: 'undo' })).risky).toBe(false);
   await host.execute({ type: 'undo' }, { author: 't' });
   expect(host.def).toEqual(before);
@@ -411,8 +446,14 @@ it('clears and undoes floating calculations without changing any double bits', a
     [0.1, 0.2],
     [1.2345678901234567, 0],
   ])
-    ids.push(String((await host.create('Precise', { input, offset })).id));
-  const before = await Promise.all(ids.map((id) => host.get('Precise', id)));
+    ids.push(
+      String(
+        (await host.create(hostOwner(host), 'Precise', { input, offset })).id,
+      ),
+    );
+  const before = await Promise.all(
+    ids.map((id) => host.get(hostOwner(host), 'Precise', id)),
+  );
   await run({
     type: 'setCalculation',
     model: 'Precise',
@@ -420,8 +461,12 @@ it('clears and undoes floating calculations without changing any double bits', a
     calculated: null,
   });
   for (let i = 0; i < ids.length; i++)
-    expect((await host.get('Precise', ids[i])).output).toBe(before[i].output);
+    expect((await host.get(hostOwner(host), 'Precise', ids[i])).output).toBe(
+      before[i].output,
+    );
   await run({ type: 'undo' });
   for (let i = 0; i < ids.length; i++)
-    expect((await host.get('Precise', ids[i])).output).toBe(before[i].output);
+    expect((await host.get(hostOwner(host), 'Precise', ids[i])).output).toBe(
+      before[i].output,
+    );
 });

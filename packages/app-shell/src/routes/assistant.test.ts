@@ -1,5 +1,6 @@
 // The assistant's HTTP surface, called as functions with a fake SvelteKit
 // event (like routes.test.ts). The model is always a stub.
+
 import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
 import type { TurnEvent } from '../lib/assistant/events.ts';
 import { App } from '../lib/objects/App.ts';
@@ -12,6 +13,7 @@ import {
   openShell,
   type ShellHarness,
 } from '../lib/server/test-support.ts';
+import { hostOwner } from '../test/engine-principal.ts';
 
 let h: ShellHarness;
 beforeAll(async () => {
@@ -200,7 +202,10 @@ describe('a turn over HTTP', () => {
       expect.arrayContaining(['text', 'tool_call', 'tool_result', 'done']),
     );
     expect(events.at(-1)).toMatchObject({ type: 'done', stop: 'complete' });
-    const rows = await (await getHost()).list('Chore');
+    const rows = await (await getHost()).list(
+      hostOwner(await getHost()),
+      'Chore',
+    );
     expect(rows.map((r) => r.title)).toContain('sweep');
 
     const threadId = (events[0] as { threadId: string }).threadId;

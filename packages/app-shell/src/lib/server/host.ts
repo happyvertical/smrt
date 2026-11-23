@@ -49,6 +49,7 @@ import { ApprovalCollection } from '../objects/Approval.ts';
 import { ChangeBatchCollection } from '../objects/ChangeBatch.ts';
 import { ChangeCardCollection } from '../objects/ChangeCard.ts';
 import { versionSummary } from '../ui/command-summary.ts';
+import { DEFAULT_OP_DEADLINE_MS } from './app-limits-env.ts';
 import { publish, setTenantScopedEvents } from './events.ts';
 import {
   HOST_OVERHEAD,
@@ -125,6 +126,12 @@ export interface ShellContext {
    * never creates one. Absent: the app's data is a SQLite file in its
    * directory under the data root (tests, and a deployment with no server
    * for the apps yet). The desktop ignores it: it never leaves SQLite.
+   *
+   * With separate runtime and admin credentials (#5188, `app-database.ts`),
+   * `config(schema)` names the runtime login in `connection`, the admin
+   * credentials in `admin` and the app roles in `roles`, and `provision`
+   * also creates and grants those roles and refuses a runtime login that is
+   * too powerful.
    */
   appDatabase?: {
     config: (schema: string) => DatabaseConfig;
@@ -418,15 +425,28 @@ export function wireHostEvents(
 }
 
 /**
- * The worker limits with the connection budget: every worker that opens a
- * pool reserves it (`AppWorker`, #5464). Only a hosted process with a
- * lifecycle policy counts; nothing else changes.
+ * The worker limits with the connection budget (#5464, #5188): every
+ * PostgreSQL worker's operations go through the process's one shared pool
+ * (`HostLifecycle.brokerPool`), whose connections are reserved once. Only a
+ * hosted process (a lifecycle policy, or PostgreSQL for apps) counts; nothing
+ * else changes.
  */
 function budgetedLimits(): WorkerLimits | undefined {
-  const limits = requireContext().workerLimits;
-  return lifecycleOn()
-    ? { ...limits, connections: lifecycle.workerBudget }
-    : limits;
+  const ctx = requireContext();
+  // A hosted process with PostgreSQL for its apps always shares one bounded
+  // pool (#5188), counted in the budget when there is one; a lifecycle policy
+  // alone also keeps the per-host overhead accounting.
+  return lifecycleOn() || ctx.appDatabase
+    ? {
+        // Hosted PostgreSQL: a user's operation never stays open without end
+        // (boot, migration and snapshots are not bound by the default).
+        ...(ctx.appDatabase
+          ? { dataOpDeadlineMs: DEFAULT_OP_DEADLINE_MS }
+          : {}),
+        ...ctx.workerLimits,
+        connections: lifecycle.workerBudget,
+      }
+    : ctx.workerLimits;
 }
 
 /**
@@ -467,6 +487,17 @@ export async function withConnections(
   return host;
 }
 
+/**
+ * The tenant an app host serves (#5188): every call into it carries a principal
+ * of this tenant. Cloud: the holder's tenant. Desktop: the installation's one
+ * tenant (the store pin), else the tenant of the request that opens the app.
+ * With none the engine's desktop default applies and no owner's call matches.
+ */
+function hostTenant(tenant: string | null): { tenantId?: string } {
+  const id = tenant ?? getCurrentTenant()?.tenantId;
+  return id ? { tenantId: id } : {};
+}
+
 /** drafts.ts: open a draft worker for the current app under the connection budget. */
 export async function withDraftConnections(
   open: () => Promise<AppHost>,
@@ -490,6 +521,7 @@ export function openDraftHost(
   return withConnections(database, 'draft', () =>
     AppHost.open(dir, {
       store: new DraftVersionStore(db, id, pin),
+      ...hostTenant(pin),
       workerUrl: workerUrl(),
       workerLimits: budgetedLimits(),
       autoApprove: true,
@@ -791,6 +823,7 @@ async function openLive(holder: Holder): Promise<AppHost> {
   const host = await withConnections(database, 'live', () =>
     AppHost.open(dirs.live, {
       store,
+      ...hostTenant(holder.tenantId ?? holder.pin),
       workerUrl: workerUrl(),
       workerLimits: budgetedLimits(),
       ...(appLimits ? { appLimits } : {}),

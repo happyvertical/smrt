@@ -1,4 +1,5 @@
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
+import { hostOwner } from '../../test/engine-principal.ts';
 import { App } from '../objects/App.ts';
 import { Approval, ApprovalCollection } from '../objects/Approval.ts';
 import { AppVersionCollection } from '../objects/AppVersion.ts';
@@ -35,7 +36,10 @@ describe('App builder methods (owner)', () => {
     expect((await getHost()).def.models.Chore).toBeUndefined();
     await applyWaiting(h.owner);
     const host = await getHost();
-    const rec = await host.create('Chore', { title: 'dishes', points: '3' });
+    const rec = await host.create(hostOwner(host), 'Chore', {
+      title: 'dishes',
+      points: '3',
+    });
     expect(rec.title).toBe('dishes');
     const described = (await asOwner(() => App.describe())) as {
       models: Record<string, { fields: Record<string, unknown> }>;
@@ -149,7 +153,11 @@ describe('approval gating', () => {
   beforeAll(async () => {
     const host = await getHost();
     chore = (
-      await host.create('Chore', { title: 'gated', points: '1', notes: 'n' })
+      await host.create(hostOwner(host), 'Chore', {
+        title: 'gated',
+        points: '1',
+        notes: 'n',
+      })
     ).id as string;
   });
 
@@ -201,12 +209,15 @@ describe('approval gating', () => {
       'live',
     )) as { status: string };
     expect(out.status).toBe('pending_approval');
-    expect((await host.get('Chore', chore)).id).toBe(chore);
+    expect((await host.get(hostOwner(host), 'Chore', chore)).id).toBe(chore);
     await expect(
-      host.callAppTool('chore_delete', { id: chore }),
+      host.callAppTool(hostOwner(host), 'chore_delete', { id: chore }),
     ).rejects.toThrow(/approval required/);
     await expect(
-      host.rest({ method: 'DELETE', url: `/api/chores/${chore}` }),
+      host.rest(hostOwner(host), {
+        method: 'DELETE',
+        url: `/api/chores/${chore}`,
+      }),
     ).rejects.toThrow(/approval required/);
   });
 
@@ -219,7 +230,7 @@ describe('approval gating', () => {
       'live',
     )) as { status: string; approvalId: string };
     expect(viaRest.status).toBe('pending_approval');
-    expect((await host.get('Chore', chore)).id).toBe(chore);
+    expect((await host.get(hostOwner(host), 'Chore', chore)).id).toBe(chore);
     const viaRecord = (await requestRecordDelete(
       'Chore',
       chore,
@@ -233,7 +244,7 @@ describe('approval gating', () => {
     expect((await runAs(h.owner, () => row.decide(true))).status).toBe(
       'approved',
     );
-    await expect(host.get('Chore', chore)).rejects.toThrow();
+    await expect(host.get(hostOwner(host), 'Chore', chore)).rejects.toThrow();
   });
 });
 
@@ -248,8 +259,8 @@ describe('undo that would overwrite newer data', () => {
       },
       { author: 't', approved: true },
     );
-    const a = await host.create('Dial', { level: '1' });
-    await host.create('Dial', { level: '2' });
+    const a = await host.create(hostOwner(host), 'Dial', { level: '1' });
+    await host.create(hostOwner(host), 'Dial', { level: '2' });
     await host.execute(
       {
         type: 'changeFieldType',
@@ -259,7 +270,7 @@ describe('undo that would overwrite newer data', () => {
       },
       { author: 't', approved: true },
     );
-    await host.update('Dial', a.id as string, { level: 50 });
+    await host.update(hostOwner(host), 'Dial', a.id as string, { level: 50 });
     const version = host.version;
 
     const { runCommand } = await import('./builder.ts');
@@ -294,7 +305,9 @@ describe('undo that would overwrite newer data', () => {
       'approved',
     );
     expect(host.version).toBe(version - 1);
-    expect((await host.get('Dial', a.id as string)).level).toBe('1');
+    expect(
+      (await host.get(hostOwner(host), 'Dial', a.id as string)).level,
+    ).toBe('1');
   });
 
   it('a plain undo is still immediate', async () => {

@@ -26,6 +26,7 @@ import {
   importFieldName,
   importModelName,
 } from '../../engine/import-target.ts';
+import { hostOwner } from '../../test/engine-principal.ts';
 import { AppDraftCollection } from '../objects/AppDraft.ts';
 import { AppImport, AppImportCollection } from '../objects/AppImport.ts';
 import { applyOwnBatch } from './approvals.ts';
@@ -259,7 +260,10 @@ it.each([
   expect((await draftInfo())?.publishable).toBe(true);
   expect(Object.keys((await getHost()).describe().models)).toEqual([]);
   expect(
-    await (await hostFor('draft')).countRows(importModelName('orders')),
+    await (await hostFor('draft')).countRows(
+      hostOwner(await hostFor('draft')),
+      importModelName('orders'),
+    ),
   ).toBe(size === 'realistic' ? 42 : 2);
   expect(current.progress?.map(({ stage }) => stage)).toEqual([
     'reading',
@@ -386,7 +390,10 @@ it.each([
   expect(current.id).not.toBe(first.id);
   expect((await getAiRun(h.db, current.id!))?.retryOfRunId).toBe(first.id);
   expect(
-    await (await hostFor('draft')).countRows(importModelName('orders')),
+    await (await hostFor('draft')).countRows(
+      hostOwner(await hostFor('draft')),
+      importModelName('orders'),
+    ),
   ).toBe(2);
   await service.action(h.owner, 'discard');
   expect(existsSync(file)).toBe(false);
@@ -462,7 +469,10 @@ it.each([
     ).rows,
   ).toHaveLength(1);
   expect(
-    await (await hostFor('draft')).countRows(importModelName('orders')),
+    await (await hostFor('draft')).countRows(
+      hostOwner(await hostFor('draft')),
+      importModelName('orders'),
+    ),
   ).toBe(2);
 });
 it('recovers a saved retry id that names another tenant run without reading that run', async () => {
@@ -591,7 +601,10 @@ it('holds edits and publishing during a partial load; a repeated check discards 
   expect(current.draftId).not.toBe(firstId);
   expect(current.id).toBe(run.id);
   expect(
-    await (await hostFor('draft')).countRows(importModelName('orders')),
+    await (await hostFor('draft')).countRows(
+      hostOwner(await hostFor('draft')),
+      importModelName('orders'),
+    ),
   ).toBe(2);
 });
 it.each([
@@ -641,13 +654,19 @@ it.each([
     );
   }
   expect(
-    await (await hostFor('draft')).countRows(importModelName('orders')),
+    await (await hostFor('draft')).countRows(
+      hostOwner(await hostFor('draft')),
+      importModelName('orders'),
+    ),
   ).toBe(2);
   release?.();
   await until(async () => first.activeJobCount() === 0);
   expect((await service.current(h.owner))?.state).toBe('done');
   expect(
-    await (await hostFor('draft')).countRows(importModelName('orders')),
+    await (await hostFor('draft')).countRows(
+      hostOwner(await hostFor('draft')),
+      importModelName('orders'),
+    ),
   ).toBe(2);
 });
 it.each([
@@ -688,7 +707,10 @@ it('stops and resumes CLI planning without opening a draft from the stopped chil
   expect((await end()).state).toBe('done');
   expect(offeredTools).toEqual([[], []]);
   expect(
-    await (await hostFor('draft')).countRows(importModelName('orders')),
+    await (await hostFor('draft')).countRows(
+      hostOwner(await hostFor('draft')),
+      importModelName('orders'),
+    ),
   ).toBe(2);
 });
 it('refuses nonowners, invalid uploads, occupied draft and simultaneous imports', async () => {
@@ -927,9 +949,18 @@ it('applies imported records only through the owner Apply, then removes the file
   expect(Object.keys((await getHost()).describe().models)).toEqual([]);
   const result = await runAs(h.owner, () => applyOwnBatch(state.digest));
   expect(result.status).toBe('approved');
-  expect(await (await getHost()).countRows(importModelName('orders'))).toBe(2);
   expect(
-    (await (await getHost()).list(importModelName('orders')))
+    await (await getHost()).countRows(
+      hostOwner(await getHost()),
+      importModelName('orders'),
+    ),
+  ).toBe(2);
+  expect(
+    (
+      await (
+        await getHost()
+      ).list(hostOwner(await getHost()), importModelName('orders'))
+    )
       .map((r) => r[importFieldName('total')])
       .sort(),
   ).toEqual([1500, 2500]);
@@ -969,7 +1000,12 @@ it('records the import as cards by table and keeps the review through a Remove a
   await until(
     async () => (await service.current(h.owner))?.status === 'published',
   );
-  expect(await (await getHost()).countRows(importModelName('orders'))).toBe(2);
+  expect(
+    await (await getHost()).countRows(
+      hostOwner(await getHost()),
+      importModelName('orders'),
+    ),
+  ).toBe(2);
 }, 180_000);
 it('repairs a crash between job admission and saving the import run id with idempotent start', async () => {
   const started = await service.start(h.owner, await request());
@@ -1073,7 +1109,10 @@ it('imports unrepresentable formulas as cached values and lists them for review'
     ],
   });
   expect(
-    await (await hostFor('draft')).countRows(importModelName('orders')),
+    await (await hostFor('draft')).countRows(
+      hostOwner(await hostFor('draft')),
+      importModelName('orders'),
+    ),
   ).toBe(2);
 });
 
@@ -1217,7 +1256,12 @@ it.each([
   await service.action(h.owner, 'retry');
   await worker();
   expect((await end()).status).toBe('review');
-  expect(await (await hostFor('draft')).countRows('Orders')).toBe(2);
+  expect(
+    await (await hostFor('draft')).countRows(
+      hostOwner(await hostFor('draft')),
+      'Orders',
+    ),
+  ).toBe(2);
   await service.action(h.owner, 'discard');
 });
 it.each([

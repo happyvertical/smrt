@@ -3,6 +3,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { parseRuntimeReportSpec } from '@happyvertical/smrt-reports';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
+import { hostOwner } from '../test/engine-principal.ts';
 import {
   AppHost,
   ApprovalRequiredError,
@@ -40,7 +41,11 @@ beforeAll(async () => {
     asked,
   );
   choreId = (
-    await host.create('Chore', { title: 'a', points: '1', notes: 'n' })
+    await host.create(hostOwner(host), 'Chore', {
+      title: 'a',
+      points: '1',
+      notes: 'n',
+    })
   ).id as string;
 });
 afterAll(async () => {
@@ -164,35 +169,44 @@ describe('approval gate', () => {
       { type: 'defineModel', name: 'Chore2', fields: { a: { type: 'text' } } },
       asked,
     );
-    await host.create('Chore2', { a: 'x' });
-    await host.create('Chore2', { a: 'y' });
+    await host.create(hostOwner(host), 'Chore2', { a: 'x' });
+    await host.create(hostOwner(host), 'Chore2', { a: 'y' });
     const p = await host.plan({ type: 'removeModel', model: 'Chore2' });
     expect((p.preview as { rows: number }).rows).toBe(2);
-    expect((await host.list('Chore2')).length).toBe(2);
+    expect((await host.list(hostOwner(host), 'Chore2')).length).toBe(2);
   });
 
   it('a generated delete tool needs approval; the record survives a refusal', async () => {
     const err = await host
-      .callAppTool('chore_delete', { id: choreId })
+      .callAppTool(hostOwner(host), 'chore_delete', { id: choreId })
       .catch((e) => e);
     expect(err).toBeInstanceOf(ApprovalRequiredError);
-    expect(await host.get('Chore', choreId)).toBeTruthy();
+    expect(await host.get(hostOwner(host), 'Chore', choreId)).toBeTruthy();
     const r = await host.callAppTool(
+      hostOwner(host),
       'chore_delete',
       { id: choreId },
       { approved: true },
     );
     expect(r.isError).toBe(false);
-    await expect(host.get('Chore', choreId)).rejects.toThrow(/no Chore/);
+    await expect(host.get(hostOwner(host), 'Chore', choreId)).rejects.toThrow(
+      /no Chore/,
+    );
   });
 
   it('a REST DELETE needs approval too', async () => {
-    const c = await host.create('Chore', { title: 'z' });
+    const c = await host.create(hostOwner(host), 'Chore', { title: 'z' });
     await expect(
-      host.rest({ method: 'DELETE', url: `/api/chores/${c.id}` }),
+      host.rest(hostOwner(host), {
+        method: 'DELETE',
+        url: `/api/chores/${c.id}`,
+      }),
     ).rejects.toBeInstanceOf(ApprovalRequiredError);
-    expect(await host.get('Chore', c.id as string)).toBeTruthy();
+    expect(
+      await host.get(hostOwner(host), 'Chore', c.id as string),
+    ).toBeTruthy();
     const r = await host.rest(
+      hostOwner(host),
       { method: 'DELETE', url: `/api/chores/${c.id}` },
       { approved: true },
     );
@@ -329,7 +343,7 @@ it('refuses approved loads whose current updates exceed reviewed bounds', async 
     rows: [{ title: 'stale-load', points: 2 }],
   };
   const reviewed = await host.plan(cmd);
-  const row = await host.create('Chore', {
+  const row = await host.create(hostOwner(host), 'Chore', {
     title: 'stale-load',
     points: 1,
   });
@@ -338,7 +352,9 @@ it('refuses approved loads whose current updates exceed reviewed bounds', async 
     host.execute(cmd, { ...ok, reviewedPreview: reviewed.preview }),
   ).rejects.toBeInstanceOf(ApprovalRequiredError);
   expect(host.version).toBe(before);
-  expect((await host.get('Chore', row.id as string)).points).toBe(1);
+  expect(
+    (await host.get(hostOwner(host), 'Chore', row.id as string)).points,
+  ).toBe(1);
   const fresh = await host.plan(cmd);
   const result = await host.execute(cmd, {
     ...ok,

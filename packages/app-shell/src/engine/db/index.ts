@@ -5,7 +5,13 @@
 import { randomBytes } from 'node:crypto';
 import { MessageChannel, type MessagePort } from 'node:worker_threads';
 import { EngineError } from '../errors.ts';
-import { serveBridge } from './pglite-bridge.ts';
+import {
+  Broker,
+  pgliteBackend,
+  pooledBackend,
+  postgresBackendFor,
+} from './broker.ts';
+import type { BrokerPool } from './pool.ts';
 import { postgresDialect } from './postgres-dialect.ts';
 import { assertAppSchema, assertSchemaName, sideName } from './schema-name.ts';
 import { sqliteDialect } from './sqlite-dialect.ts';
@@ -15,9 +21,36 @@ import type {
   DatabaseConfig,
   DatabaseKind,
   EngineDialect,
+  PostgresConnection,
   WorkerDatabaseConfig,
 } from './types.ts';
 
+export { Broker } from './broker.ts';
+export {
+  BrokerPool,
+  type BrokerPoolOptions,
+  POOL_CANCEL_RESERVE,
+  POOL_DEFAULTS,
+  type PoolDriver,
+  type PoolLane,
+  type PoolLease,
+  type PoolSession,
+  type PoolStats,
+  type PostgresPoolConnections,
+  poolKey,
+  postgresPoolDriver,
+} from './pool.ts';
+export {
+  type AppRoles,
+  appRoles,
+  provisionAppRoles,
+  provisionAppRolesSql,
+} from './roles.ts';
+export {
+  assertRuntimeLogin,
+  type RuntimeLoginFacts,
+  runtimeLoginProblems,
+} from './runtime-login.ts';
 export type {
   AppClaim,
   ClaimOptions,
@@ -54,40 +87,123 @@ export const dialectOf = (h: { engine?: string }): EngineDialect =>
     ? postgresDialect
     : sqliteDialect;
 
-/** Open the database in a worker (or wherever the runtime runs). */
-export async function openDatabase(
-  config: WorkerDatabaseConfig,
-  dataDir: string,
-) {
+/** Open the database in a worker (or wherever the runtime runs): SQLite directly. */
+export async function openDatabase(dataDir: string) {
   // Loaded on use: the host thread never needs the database drivers.
-  if (config.kind === 'sqlite')
-    return (await import('./sqlite.ts')).openSqlite(dataDir);
-  return (await import('./postgres.ts')).openPostgres(config);
+  return (await import('./sqlite.ts')).openSqlite(dataDir);
 }
 
 /**
- * The config as a worker receives it: plain data, with a PGlite instance
- * replaced by one end of a fresh MessagePort whose other end the host serves.
- * `transfer` goes in the worker's `transferList`; `dispose` ends the bridge.
+ * Open the broker-backed database of a worker (PostgreSQL or PGlite): the
+ * handle exists only inside operations, see `BrokeredDatabase`.
  */
-export function forWorker(config: DatabaseConfig): {
+export async function openBrokered(
+  config: Extract<WorkerDatabaseConfig, { kind: 'postgres' | 'pglite' }>,
+) {
+  return (await import('./postgres.ts')).openBrokered(config);
+}
+
+export type { BrokeredDatabase } from './broker-client.ts';
+
+/** What a host's `AppWorker` hands `forWorker`. */
+export interface ForWorkerOptions {
+  /** The app's tenant: every principal the broker is told about must belong to it. */
+  tenantId: string;
+  statementTimeoutMs?: number;
+  lockTimeoutMs?: number;
+  /** Roll an operation back after this long (ms). */
+  opDeadlineMs?: number;
+  /** The same for data-lane operations only, when `opDeadlineMs` is not given. */
+  dataOpDeadlineMs?: number;
+  /**
+   * The process's shared connection pool (hosted PostgreSQL): the broker takes
+   * its connections there instead of opening a pool of its own.
+   */
+  pool?: BrokerPool;
+}
+
+/**
+ * The config as a worker receives it: plain data, with the database replaced
+ * by one end of a fresh MessagePort whose other end this thread's `Broker`
+ * serves. `transfer` goes in the worker's `transferList`; `dispose` rolls back
+ * whatever is still open and ends the bridge. SQLite has no broker.
+ */
+export function forWorker(
+  config: DatabaseConfig,
+  options: ForWorkerOptions = { tenantId: 'desktop' },
+): {
   config: WorkerDatabaseConfig;
   transfer: MessagePort[];
-  dispose: () => void;
+  dispose: () => Promise<void>;
+  broker?: Broker;
 } {
-  if (config.kind !== 'pglite')
-    return { config, transfer: [], dispose: () => {} };
+  if (config.kind === 'sqlite')
+    return { config, transfer: [], dispose: async () => {} };
   const { port1, port2 } = new MessageChannel();
-  const stop = serveBridge(config.client, port1);
+  let closeBackend: (() => Promise<void>) | undefined;
+  // A server PostgreSQL's connection is opened with the first operation.
+  const backend: import('./broker.ts').BrokerBackend =
+    config.kind === 'pglite'
+      ? pgliteBackend(config.client)
+      : options.pool
+        ? pooledBackend(options.pool, options.tenantId)
+        : (() => {
+            // No shared pool: this worker's own SDK pool, one per credential set.
+            const opened = new Map<
+              PostgresConnection,
+              ReturnType<typeof postgresBackendFor>
+            >();
+            const closers: Array<() => Promise<void>> = [];
+            closeBackend = async () => {
+              await Promise.all(closers.map((c) => c()));
+            };
+            return {
+              async open(lane) {
+                const connection =
+                  lane === 'owner' && config.admin
+                    ? config.admin
+                    : config.connection;
+                let p = opened.get(connection);
+                if (!p) {
+                  p = postgresBackendFor(connection);
+                  opened.set(connection, p);
+                  p.then((b) => closers.push(() => b.close()));
+                }
+                return (await p).open(lane);
+              },
+            };
+          })();
+  const broker = new Broker(backend, {
+    tenantId: options.tenantId,
+    schema: config.schema,
+    ...(config.roles ? { roles: config.roles } : {}),
+    ...(config.fence === undefined ? {} : { fence: config.fence }),
+    ...(options.statementTimeoutMs === undefined
+      ? {}
+      : { statementTimeoutMs: options.statementTimeoutMs }),
+    ...(options.opDeadlineMs === undefined
+      ? {}
+      : { opDeadlineMs: options.opDeadlineMs }),
+    ...(options.dataOpDeadlineMs === undefined
+      ? {}
+      : { dataOpDeadlineMs: options.dataOpDeadlineMs }),
+  });
+  const stop = broker.serve(port1);
   return {
     config: {
-      kind: 'pglite',
+      kind: config.kind,
       schema: config.schema,
       port: port2,
-      ...(config.fence === undefined ? {} : { fence: config.fence }),
+      ...(options.lockTimeoutMs === undefined
+        ? {}
+        : { lockTimeoutMs: options.lockTimeoutMs }),
     },
     transfer: [port2],
-    dispose: stop,
+    dispose: async () => {
+      await stop();
+      await closeBackend?.();
+    },
+    broker,
   };
 }
 
@@ -166,6 +282,22 @@ export async function acquireAppOwnership(
 /** A schema name for a copy of `base` (draft, rehearsal, aside, restore), new on each call. */
 export function sideSchemaName(base: string, tag: 'd' | 'r' | 'o' | 'n') {
   return assertSchemaName(sideName(base, tag, randomBytes(4).toString('hex')));
+}
+
+/**
+ * Take the app's caps lock for the rest of the transaction `h` is in (#5188):
+ * a transaction-scoped advisory lock, so it is released by COMMIT or ROLLBACK
+ * and never outlives the operation, whatever happens to the connection. Keyed
+ * by the app's schema, in a namespace of its own (the host's ownership claim
+ * is a session lock in another one). PostgreSQL and PGlite.
+ */
+export async function takeCapsLock(
+  h: { query(sql: string): Promise<unknown> },
+  schema: string,
+): Promise<void> {
+  await h.query(
+    `SELECT pg_advisory_xact_lock(hashtext('smrt-app-caps'), hashtext('${assertSchemaName(schema)}'))`,
+  );
 }
 
 /** A column as `@happyvertical/sql` reports it. */

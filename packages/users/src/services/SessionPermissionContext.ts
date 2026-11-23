@@ -8,6 +8,10 @@ import { getPackageConfig } from '@happyvertical/smrt-config';
 import type { SmrtClassOptions } from '@happyvertical/smrt-core';
 import type { DatabaseInterface } from '@happyvertical/sql';
 import type { Membership } from '../models/Membership.js';
+import {
+  postgresPrincipalSettings,
+  resolvePostgresSessionIdValue,
+} from '../postgres-settings.js';
 import { PermissionResolver } from './PermissionResolver.js';
 import {
   type SessionContext,
@@ -178,46 +182,15 @@ function isProbablyPostgres(
   return (database.constructor?.name || '').toLowerCase().includes('postgres');
 }
 
-/**
- * Value published to the `smrt.session_id` RLS GUC. Only a session that was
- * actually loaded (`context.session` non-null) is published; a principal run's
- * `sessionId` is an unverified server-set label and keeps the GUC empty
- * (fail closed).
- */
-export function resolvePostgresSessionIdValue(
-  context: Pick<SessionPermissionRuntimeContext, 'session' | 'sessionId'>,
-): string {
-  return context.session ? (context.sessionId ?? '') : '';
-}
+export { resolvePostgresSessionIdValue };
 
 async function setPostgresSessionVariables(
   database: QueryableDatabase,
   context: SessionPermissionRuntimeContext,
 ): Promise<void> {
-  await database.query(
-    "SELECT set_config('smrt.tenant_id', $1, true)",
-    context.tenantId ?? '',
-  );
-  await database.query(
-    "SELECT set_config('smrt.user_id', $1, true)",
-    context.userId ?? '',
-  );
-  await database.query(
-    "SELECT set_config('smrt.session_id', $1, true)",
-    resolvePostgresSessionIdValue(context),
-  );
-  await database.query(
-    "SELECT set_config('smrt.permissions', $1, true)",
-    JSON.stringify(context.permissions),
-  );
-  await database.query(
-    "SELECT set_config('smrt.super_admin_bypass', $1, true)",
-    context.superAdminBypass ? 'true' : 'false',
-  );
-  await database.query(
-    "SELECT set_config('smrt.system_context', $1, true)",
-    context.systemContext ? 'true' : 'false',
-  );
+  // `name` is one of the six fixed constants of `postgresPrincipalSettings`.
+  for (const [name, value] of postgresPrincipalSettings(context))
+    await database.query(`SELECT set_config('${name}', $1, true)`, value);
 }
 
 function isModuleNotFoundError(error: unknown): boolean {

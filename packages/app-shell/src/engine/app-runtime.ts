@@ -26,12 +26,15 @@ import {
   undoRows,
 } from './data-migrations.ts';
 import {
+  type BrokeredDatabase,
   copyAppDatabase,
   copySuffix,
   dialectFor,
   type EngineDialect,
+  openBrokered,
   openDatabase,
   tableColumns,
+  takeCapsLock,
   type WorkerDatabaseConfig,
 } from './db/index.ts';
 import {
@@ -71,6 +74,12 @@ import {
   prepareMerge,
   undoMerge,
 } from './merge-records.ts';
+import { appPermissionSlugs, slugFor, toolTarget } from './permissions.ts';
+import {
+  currentOpPrincipal,
+  type EnginePrincipal,
+  holds,
+} from './principal.ts';
 import { compileReport, type ReportOptions, runAppReport } from './reports.ts';
 import {
   type MethodOutput,
@@ -80,6 +89,7 @@ import {
   type Write,
 } from './sandbox.ts';
 import { pruneMethodSnapshots, pruneMigrationSnapshots } from './snapshots.ts';
+import { BOOT_OP, type OpLane } from './worker-protocol.ts';
 
 type Row = Record<string, unknown>;
 type Handle = any;
@@ -88,7 +98,8 @@ const q = (s: string) => `"${s.replace(/"/g, '""')}"`;
 const METHOD_READ_LIMIT = 1000;
 /** Times a method re-runs when the data changed between its read and its write. */
 const METHOD_RETRIES = 3;
-const OWNER = { id: 'owner', roles: ['admin'] };
+/** The id the generated MCP surface sees for the engine's own calls. */
+const SYSTEM_USER = 'system';
 const PROFILE_TYPES = '@happyvertical/smrt-profiles:ProfileType';
 
 /**
@@ -96,11 +107,8 @@ const PROFILE_TYPES = '@happyvertical/smrt-profiles:ProfileType';
  * publish rehearsal, the read-only report worker and the portable export
  * (`portable-export.ts`) all open it through here.
  */
-export async function openAppDatabase(
-  dataDir: string,
-  database: WorkerDatabaseConfig = { kind: 'sqlite' },
-): Promise<Handle> {
-  const db = await openDatabase(database, dataDir);
+export async function openAppDatabase(dataDir: string): Promise<Handle> {
+  const db = await openDatabase(dataDir);
   declareRuntimeManagedDatabase(db, {
     owner: '@happyvertical/smrt-app-shell',
     reason:
@@ -118,7 +126,9 @@ export interface BootResult {
 export class AppRuntime {
   readonly def: AppDefinition;
   readonly version: number;
-  private db: Handle;
+  /** SQLite only: the one handle. PostgreSQL and PGlite go through `brokered`. */
+  private sqliteDb?: Handle;
+  private brokered?: BrokeredDatabase;
   private dataDir: string;
   private snapshots = 0;
   private skipped = 0;
@@ -146,12 +156,40 @@ export class AppRuntime {
             table: tableFor(model, md),
           })),
         (table, h) => this.countRowsIn(h as Handle, table),
+        undefined,
+        // PostgreSQL: the caps lock lives and dies with the operation's transaction.
+        database.kind === 'sqlite'
+          ? undefined
+          : (h) => takeCapsLock(h as Handle, database.schema),
       );
     this.database = database;
     this.dialect = dialectFor(database);
     this.dataDir = dataDir;
     this.def = def;
     this.version = version;
+  }
+
+  /**
+   * The database handle of the operation that is running. On PostgreSQL and
+   * PGlite it belongs to that operation alone: it is revoked when the
+   * operation ends and throws `OperationEndedError` outside one (#5188).
+   */
+  private get db(): Handle {
+    return this.brokered ? this.brokered.current() : (this.sqliteDb as Handle);
+  }
+
+  /** Tests give a runtime a handle without booting it (SQLite only). */
+  private set db(handle: Handle) {
+    this.sqliteDb = handle;
+  }
+
+  /**
+   * Run one operation of the host's call: on PostgreSQL and PGlite inside the
+   * broker's transaction for `opId` (committed by the host after this
+   * resolves); on SQLite directly.
+   */
+  runOp<T>(opId: number, lane: OpLane, fn: () => Promise<T>): Promise<T> {
+    return this.brokered ? this.brokered.run(opId, lane, fn) : fn();
   }
 
   /**
@@ -171,11 +209,30 @@ export class AppRuntime {
       return { statements: [], snapshot: null };
     }
     mkdirSync(join(this.dataDir, 'snapshots'), { recursive: true });
-    this.db = await openAppDatabase(this.dataDir, this.database);
+    if (this.database.kind === 'sqlite') {
+      this.sqliteDb = await openAppDatabase(this.dataDir);
+      return this.bootOn(migration, readOnly);
+    }
+    // PostgreSQL and PGlite: the host's broker holds the connection. Boot is
+    // the operation the host registered before the thread started.
+    this.brokered = await openBrokered(this.database);
+    return this.brokered.run(BOOT_OP, 'owner', () =>
+      this.bootOn(migration, readOnly),
+    );
+  }
+
+  /** Boot on an open database (inside the boot operation when brokered). */
+  private async bootOn(
+    migration: Migration | undefined,
+    readOnly: boolean,
+  ): Promise<BootResult> {
     await this.register();
     for (const report of Object.values(this.def.reports ?? {}))
       await compileReport(this.def, report.spec);
-    if (readOnly) return { statements: [], snapshot: null };
+    if (readOnly) {
+      await this.warmCollections();
+      return { statements: [], snapshot: null };
+    }
     // Undo (a downward migration) restores what the app already held, so it
     // is exempt (engine.md, per-app caps); only forward changes are held.
     if (this.caps && migration?.direction !== 'down')
@@ -241,11 +298,31 @@ export class AppRuntime {
     ])
       await this.db
         .execute`INSERT INTO _app_meta (key, value) VALUES (${k}, ${v}) ON CONFLICT(key) DO UPDATE SET value = excluded.value`;
+    await this.warmCollections();
     return {
       statements,
       snapshot,
       ...(this.skipped ? { skipped: this.skipped } : {}),
     };
+  }
+
+  /**
+   * Brokered databases only: core creates its framework system tables the
+   * first time a collection is used on a handle. Do that here, in the boot
+   * operation (the schema owner's role), so a user operation, which runs as
+   * the runtime role and may not create anything, finds them.
+   */
+  private async warmCollections(): Promise<void> {
+    if (!this.brokered) return;
+    const first = [
+      ...this.def.recipes.flatMap((r) => RECIPES[r]?.tables ?? []),
+      ...Object.keys(this.def.models).map((m) => this.qualified(m)),
+    ][0];
+    if (!first) return;
+    const collection = await ObjectRegistry.getCollection(first, {
+      db: this.db,
+    });
+    await collection.list({ limit: 1 });
   }
 
   // ---------- registry and tables ----------
@@ -905,10 +982,21 @@ export class AppRuntime {
 
   // ---------- SMRT's generated surfaces ----------
 
+  /** The permission slugs the running operation's caller acts with. */
+  private callerSlugs(p: EnginePrincipal): string[] {
+    return p.kind === 'system'
+      ? appPermissionSlugs(this.def)
+      : [...p.permissions];
+  }
+
+  /** The generated MCP surface, acting as the running operation's caller (#5188). */
   private mcp() {
+    const p = currentOpPrincipal();
     return new MCPGenerator({ name: 'app', version: String(this.version) }, {
       db: this.db,
-      user: OWNER,
+      tenantId: p.tenantId,
+      user: { id: p.userId ?? SYSTEM_USER, roles: [] },
+      permissions: this.callerSlugs(p),
     } as any);
   }
 
@@ -921,7 +1009,14 @@ export class AppRuntime {
   /** The app's own generated MCP tools: chore_list, chore_complete, ... */
   async tools() {
     const mine = this.toolNames();
-    return (await this.mcp().generateTools()).filter((t) => mine.has(t.name));
+    const p = currentOpPrincipal();
+    return (await this.mcp().generateTools()).filter((t) => {
+      if (!mine.has(t.name)) return false;
+      const target = toolTarget(this.def, t.name);
+      return (
+        !!target && holds(p, slugFor(this.def, target.model, target.action))
+      );
+    });
   }
 
   async callTool(name: string, args: Row) {
@@ -946,7 +1041,7 @@ export class AppRuntime {
         ? await this.caps.withWriteLock(async () => {
             await this.caps?.checkAdd({ [created[0]]: 1 }, this.db);
             return dispatch();
-          })
+          }, this.db)
         : await dispatch();
     return {
       content: r.content,
@@ -963,14 +1058,22 @@ export class AppRuntime {
         contentType: 'application/json',
         body: JSON.stringify({ error: 'Not found' }),
       };
+    // Core enforces from the caller of this operation, not from the request:
+    // sign-in, `<collection>.<action>` slugs on writes, and the tenant of a
+    // body or filter (#5588). The caller was checked against the app's tenant
+    // before the op reached the runtime.
+    const caller = currentOpPrincipal();
     const api = new APIGenerator(
       {
         basePath: '/api',
-        authMiddleware: () => async (r: Request) => r,
-        // One owner and one local database: a request acts for no tenant. A
-        // tenant-scoped model would then be read as global rows and refused
-        // for writes, never written across tenants.
-        resolveTenant: () => ({ authenticated: true }),
+        resolvePrincipal: () => ({
+          tenantId: caller.tenantId,
+          allowCrossTenant: false,
+          authenticated: caller.authenticated,
+          ...(caller.userId ? { userId: caller.userId } : {}),
+          permissions: this.callerSlugs(caller),
+          callerKind: caller.kind,
+        }),
       } as any,
       { db: this.db },
     );
@@ -1010,7 +1113,7 @@ export class AppRuntime {
       const out = await this.caps.withWriteLock(async () => {
         const refused = await this.capRestCheck(created);
         return refused ?? (await dispatch());
-      });
+      }, this.db);
       if (!(out instanceof Response)) return out;
       r = out;
     } else r = await dispatch();
@@ -1315,7 +1418,7 @@ export class AppRuntime {
         ? await this.caps.withWriteLock(async () => {
             await this.caps?.checkAdd({ [model]: 1 }, db);
             return insert();
-          })
+          }, db)
         : await insert();
     return this.get(model, String(obj.id), db);
   }
@@ -1398,7 +1501,7 @@ export class AppRuntime {
       }
       return { records: n };
     };
-    return this.caps ? this.caps.withWriteLock(body) : body();
+    return this.caps ? this.caps.withWriteLock(body, this.db) : body();
   }
 
   /** Find or create the real `person` ProfileType (the type of every app Profile). */
@@ -1579,7 +1682,7 @@ export class AppRuntime {
 
   /** Run capped writes one at a time (no-op without a row cap). */
   private locked<T>(fn: () => Promise<T>): Promise<T> {
-    return this.caps ? this.caps.withWriteLock(fn) : fn();
+    return this.caps ? this.caps.withWriteLock(fn, this.db) : fn();
   }
 
   /** Reads only: records exist, required fields are present, references resolve. */

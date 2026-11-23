@@ -265,6 +265,7 @@ function bundleDigest(
 ): string {
   return sha256(
     `${vd}\n${tables
+      .filter((t) => !t.name.startsWith('_smrt_'))
       .map((t) => `${t.name}:${t.rows.length}:${t.digest}`)
       .sort()
       .join('\n')}`,
@@ -644,6 +645,16 @@ export function checkUserAppBundle(bundle: PortableUserApp): string[] {
   return problems;
 }
 
+/**
+ * Core's framework tables (`_smrt_*`) in a bundle. A PostgreSQL target's own
+ * boot creates them (the owner role does, before any user operation, #5188) and
+ * its `tables()` never lists them, so a bundle's copies are skipped there
+ * rather than collide with what the boot made. A SQLite target restores them,
+ * but the bundle digest and verification ignore them for both dialects, so a
+ * bundle digests the same whichever database it came from.
+ */
+const isCoreSystemTable = (name: string) => name.startsWith('_smrt_');
+
 /** Compare a database with a bundle inside an open transaction. */
 async function compare(
   db: PortableDb,
@@ -655,6 +666,7 @@ async function compare(
   const missingTables: string[] = [];
   let schemaMatches = true;
   for (const t of bundle.tables) {
+    if (isCoreSystemTable(t.name)) continue;
     if (!present.has(t.name)) {
       missingTables.push(t.name);
       continue;
@@ -674,7 +686,9 @@ async function compare(
     });
   }
   const carried = new Set(bundle.tables.map((t) => t.name));
-  const extraTables = [...present].filter((n) => !carried.has(n));
+  const extraTables = [...present].filter(
+    (n) => !carried.has(n) && !isCoreSystemTable(n),
+  );
   const metaMatches =
     meta !== null &&
     meta.version === bundle.version &&
@@ -741,6 +755,8 @@ async function startEngine(
 async function populate(db: PortableDb, bundle: PortableUserApp) {
   const present = new Set(await db.tables());
   for (const t of bundle.tables) {
+    // A PostgreSQL target's own boot made its `_smrt_*` tables; SQLite restores them.
+    if (db.dialect === 'postgres' && isCoreSystemTable(t.name)) continue;
     if (!present.has(t.name)) {
       if (t.name === ARCHIVE_TABLE) await db.createArchive();
       else await db.create(t.name, t.columns);

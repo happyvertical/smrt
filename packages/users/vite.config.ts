@@ -2,7 +2,7 @@ import type { UserConfig } from 'vite';
 import { createPackageConfig } from '../../vite.config.base.js';
 
 const baseConfig = createPackageConfig('users', {
-  entries: ['app-contract', 'operator', 'sveltekit', 'ui', 'playground', 'permission-registry', 'step-up'],
+  entries: ['app-contract', 'operator', 'sveltekit', 'ui', 'playground', 'permission-registry', 'step-up', 'postgres-settings'],
   svelte: 'svelte',
 });
 

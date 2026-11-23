@@ -2,6 +2,7 @@ import { mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterAll, describe, expect, it } from 'vitest';
+import { hostOwner } from '../test/engine-principal.ts';
 import { AppHost, DEFAULT_WORKER_LIMITS, MemoryVersionStore } from './index.ts';
 import { resourceLimitsFor } from './worker-handle.ts';
 
@@ -60,8 +61,8 @@ describe('worker memory limits (#5212)', () => {
       { type: 'defineModel', name: 'Note', fields: { t: { type: 'text' } } },
       { author: 't' },
     );
-    await host.create('Note', { t: 'ok' });
-    expect((await host.list('Note')).length).toBe(1);
+    await host.create(hostOwner(host), 'Note', { t: 'ok' });
+    expect((await host.list(hostOwner(host), 'Note')).length).toBe(1);
     await host.close();
   });
 
@@ -79,8 +80,8 @@ describe('worker memory limits (#5212)', () => {
         },
         { author: 't' },
       );
-      await host.create('Chore', { title: 'kept' });
-      expect(await host.list('Chore')).toHaveLength(1);
+      await host.create(hostOwner(host), 'Chore', { title: 'kept' });
+      expect(await host.list(hostOwner(host), 'Chore')).toHaveLength(1);
     } finally {
       await host.close();
     }

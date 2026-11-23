@@ -1,12 +1,14 @@
 // A workbook import's commands are cards of the changes waiting, one per table
 // (#5207): grouping, removing one table, the digest-pinned Apply on the batch
 // route, and the template that carries its records. Real workers, in-process SQLite.
+
 import { runImport } from '@happyvertical/smrt-spreadsheets/import';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { businessWorkbook } from '../../../test-support/import-workbook.ts';
 import { createEngineImportTarget } from '../../engine/import-target.ts';
 import * as changesRoute from '../../routes/api/shell/changes/+server.ts';
 import * as applyRoute from '../../routes/api/shell/changes/apply/+server.ts';
+import { hostOwner } from '../../test/engine-principal.ts';
 import { runCommand } from './builder.ts';
 import {
   changesState,
@@ -40,6 +42,7 @@ async function runAnImport() {
   const host = slot.host!;
   const target = createEngineImportTarget(
     host,
+    () => hostOwner(host),
     async () => {},
     async () => {},
     ({ command, run }) =>
@@ -120,7 +123,7 @@ describe('an import becomes cards grouped by table', () => {
     expect(gone.count).toBe(2);
     let copy = (await getDraftSlot())!.host!;
     expect(Object.keys(copy.def.models)).toEqual(['Customers']);
-    expect(await copy.countRows('Customers')).toBe(2);
+    expect(await copy.countRows(hostOwner(copy), 'Customers')).toBe(2);
     expect(copy.def.models.Customers.fields.workbookLookup.hidden).toBe(true);
     // Orders look Customers up by a field the hide makes invisible: the hides
     // replay after the last load, so putting the table back still works.
@@ -128,7 +131,7 @@ describe('an import becomes cards grouped by table', () => {
     expect(back.count).toBe(3);
     expect(back.cards.every((c) => c.checks.length === 0)).toBe(true);
     copy = (await getDraftSlot())!.host!;
-    expect(await copy.countRows('Orders')).toBe(2);
+    expect(await copy.countRows(hostOwner(copy), 'Orders')).toBe(2);
     expect(copy.def.models.Orders.fields.workbookLookup.hidden).toBe(true);
     expect(copy.def.models.Customers.fields.workbookLookup.hidden).toBe(true);
     // Removing the table the others point at flags them instead of failing.
@@ -164,8 +167,8 @@ describe('an import becomes cards grouped by table', () => {
     const ok = await send({ expect: state.digest });
     expect(ok.status).toBe(200);
     const live = await getHost();
-    expect(await live.countRows('Orders')).toBe(2);
-    expect(await live.countRows('Customers')).toBe(2);
+    expect(await live.countRows(hostOwner(live), 'Orders')).toBe(2);
+    expect(await live.countRows(hostOwner(live), 'Customers')).toBe(2);
     expect(live.def.models.Orders.fields.workbookLookup.hidden).toBe(true);
     // The GET still answers; the old draft routes do not exist.
     expect(typeof changesRoute.GET).toBe('function');
@@ -226,11 +229,11 @@ describe('a template with records', () => {
     const { applyOwnBatch } = await import('./approvals.ts');
     await asOwner(() => applyOwnBatch(state.digest));
     const live = await getHost();
-    const teams = await live.list('Team');
+    const teams = await live.list(hostOwner(live), 'Team');
     const root = teams.find((t) => t.name === 'Root')!;
     const child = teams.find((t) => t.name === 'Child')!;
     expect(child.parent).toBe(root.id);
-    const people = await live.list('Person');
+    const people = await live.list(hostOwner(live), 'Person');
     expect(people.find((p) => p.name === 'Ada')?.team).toBe(child.id);
     expect(people.find((p) => p.name === 'Lin')?.team).toBe(root.id);
   });

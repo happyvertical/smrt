@@ -44,6 +44,33 @@ export interface SqlDatabase {
 }
 
 const qi = (s: string) => `"${s.replace(/"/g, '""')}"`;
+/**
+ * A column type as `format_type` prints it: identifiers (letters, digits,
+ * underscore, dot, space), a length or precision list, array brackets and
+ * double-quoted names. Nothing else is ever interpolated into a restore's
+ * `CAST(? AS <type>)`, so a dump that carries anything more is refused.
+ */
+const TYPE_PART = '(?:"[^"]{1,63}"|[A-Za-z_][A-Za-z0-9_ ]{0,62})';
+const COLUMN_TYPE = new RegExp(
+  String.raw`^${TYPE_PART}(?:\.${TYPE_PART})*(?:\(\s*\d{1,5}(?:\s*,\s*\d{1,5})?\s*\))?(?:\s[A-Za-z][A-Za-z0-9_ ]{0,40})?(?:\[\d{0,5}\])*$`,
+  'u',
+);
+
+/** Refuse a dumped column type that is not a plain `format_type` result. */
+export function assertColumnType(type: unknown): string {
+  if (
+    typeof type !== 'string' ||
+    type.length > 128 ||
+    !COLUMN_TYPE.test(type) ||
+    /--|\/\*/.test(type)
+  )
+    throw new EngineError(
+      'the dump is damaged: a column type is not a plain type name',
+      'refused',
+    );
+  return type;
+}
+
 const lit = (s: string) => `'${s.replace(/'/g, "''")}'`;
 const asJson = <T>(v: unknown): T =>
   (typeof v === 'string' ? JSON.parse(v) : v) as T;
@@ -1040,8 +1067,10 @@ export async function restoreDump(
       }
       const l = JSON.parse(line) as DumpLine;
       if (l.k === 'sql') await tx.query(render(l.sql, target));
-      else if (l.k === 'table') table = l;
-      else if (l.k === 'rows') {
+      else if (l.k === 'table') {
+        for (const c of l.columns) assertColumnType(c.type);
+        table = l;
+      } else if (l.k === 'rows') {
         if (!table || table.name !== l.name)
           throw new EngineError(
             `${file} is damaged (rows out of place)`,

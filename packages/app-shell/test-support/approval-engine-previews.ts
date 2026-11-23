@@ -6,12 +6,14 @@ import { createHash } from 'node:crypto';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { AppHost, type Command, MemoryVersionStore, EMPTY_APP } from '../src/engine/index.ts';
+import { hostOwner } from '../src/test/engine-principal.ts';
 
 import { PREVIEW_NESTED_LIMIT_MS } from './run-preview-child.ts';
 import { commandSummary } from '../src/lib/ui/command-summary.ts';
 
 const dir = mkdtempSync(join(tmpdir(), 'approval-engine-'));
 const host = await AppHost.open(dir, { store: new MemoryVersionStore() });
+const owner = () => hostOwner(host);
 const cards: unknown[] = [];
 const execute = (command: Command) =>
   host.execute(command, { author: 'owner', approved: true });
@@ -25,8 +27,8 @@ async function collect(name: string, command: Command) {
   if (JSON.stringify(files()) !== before || host.version !== version) throw new Error(`Preview ${name} wrote files or changed version`);
   const models = host.describe().models;
   const model = 'model' in command ? models[command.model] : undefined;
-  const mergeRows = command.type === 'mergeRecords' ? await Promise.all(command.merge.slice(0, 10).map((id) => host.get(command.model, id))) : [];
-  const keep = command.type === 'mergeRecords' ? await host.get(command.model, command.keep) : undefined;
+  const mergeRows = command.type === 'mergeRecords' ? await Promise.all(command.merge.slice(0, 10).map((id) => host.get(owner(), command.model, id))) : [];
+  const keep = command.type === 'mergeRecords' ? await host.get(owner(), command.model, command.keep) : undefined;
   cards.push({
     name,
     command,
@@ -54,13 +56,13 @@ try {
       category: { type: 'text', label: 'Category name' },
     },
   });
-  const a = await host.create('Customer', {
+  const a = await host.create(owner(), 'Customer', {
     name: 'Acme',
     qty: 2,
     amount: 8,
     category: 'Food',
   });
-  const b = await host.create('Customer', {
+  const b = await host.create(owner(), 'Customer', {
     name: 'Other',
     qty: 1,
     amount: 3,
@@ -80,8 +82,8 @@ try {
     rows: [{ name: 'Acme', amount: 9 }],
   });
   await execute({ type: 'defineModel', name: 'Order', label: 'Orders', fields: { name: {type:'text'}, customer: {type:'reference', ref:'Customer'} } });
-  await host.create('Order', {name:'First order',customer:b.id});
-  await host.update('Customer', String(b.id), {name: '<b>Removed</b> ' + 'very long record label '.repeat(12)});
+  await host.create(owner(), 'Order', {name:'First order',customer:b.id});
+  await host.update(owner(), 'Customer', String(b.id), {name: '<b>Removed</b> ' + 'very long record label '.repeat(12)});
   await collect('merge', {
     type: 'mergeRecords',
     model: 'Customer',
@@ -109,13 +111,13 @@ try {
   await execute({type:'loadRecords',model:'Customer',mode:'upsert',key:['name'],rows:[{name:'Acme',amount:22},{name:'Inserted'}]});
   await collect('undoLoad', {type:'undo'});
   const version = host.version;
-  await host.update('Customer', String(a.id), {amount:23});
+  await host.update(owner(), 'Customer', String(a.id), {amount:23});
   await collect('undoRefused', {type:'undo'});
   let refused = false;
   try { await execute({type:'undo'}); } catch { refused = true; }
-  if (!refused || host.version !== version || (await host.get('Customer',String(a.id)))?.amount !== 23) throw new Error('Refused undo changed data or version');
+  if (!refused || host.version !== version || (await host.get(owner(), 'Customer',String(a.id)))?.amount !== 23) throw new Error('Refused undo changed data or version');
 
-  await host.update('Customer',String(a.id),{amount:22});
+  await host.update(owner(), 'Customer',String(a.id),{amount:22});
   await execute({type:'undo'});
   await execute({type:'mergeRecords',model:'Customer',keep:String(a.id),merge:[String(b.id)]});
   await collect('undoMerge',{type:'undo'});
@@ -133,11 +135,11 @@ try {
     fields: { qty: { type: 'integer' }, amount: { type: 'integer' } },
   });
   await collect('empty', { ...calculation, model: 'Empty' });
-  const blank = await host.create('Customer',{name:''});
-  const many = await Promise.all(Array.from({length:12},(_,i)=>host.create('Customer',{name:`Removed ${i+1}`})));
+  const blank = await host.create(owner(), 'Customer',{name:''});
+  const many = await Promise.all(Array.from({length:12},(_,i)=>host.create(owner(), 'Customer',{name:`Removed ${i+1}`})));
   await collect('mergeCapped',{type:'mergeRecords',model:'Customer',keep:String(blank.id),merge:many.map((row)=>String(row.id))});
   await execute({type:'defineModel',name:'InvoiceEntry',label:'Invoices',fields:{title:{type:'text',label:'Invoice title'},invoiceTotal:{type:'integer',label:'Invoice total'}}});
-  await host.create('InvoiceEntry',{title:'November',invoiceTotal:50});
+  await host.create(owner(), 'InvoiceEntry',{title:'November',invoiceTotal:50});
   await collect('removeField',{type:'removeField',model:'InvoiceEntry',field:'invoiceTotal'});
   await collect('removeModel',{type:'removeModel',model:'InvoiceEntry'});
   await collect('changeType',{type:'changeFieldType',model:'InvoiceEntry',field:'invoiceTotal',to:{type:'text'}});
