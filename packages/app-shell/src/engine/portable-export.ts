@@ -59,6 +59,7 @@ import {
 } from './definition.ts';
 import { EngineError } from './errors.ts';
 import { AppHost } from './host.ts';
+import { tenantFor } from './principal.ts';
 import { MemoryVersionStore, type VersionRecord } from './store.ts';
 
 export type { ColumnFamily, PortableColumn } from './db/portable.ts';
@@ -148,6 +149,8 @@ export interface ImportUserAppOptions {
    * import committed. Refused for SQLite.
    */
   completion?: { key: string; value: string };
+  /** PostgreSQL only: the app's tenant, which the imported rows carry (default: the engine's local tenant). */
+  tenantId?: string;
   /** Test seam: observe phases (`staged`, `verified`, `published`). */
   onPhase?: (phase: string) => void | Promise<void>;
   /** Test seam: runs inside the PostgreSQL transaction, after every row is in; throwing rolls it back. */
@@ -382,6 +385,8 @@ async function inDatabase<T>(
   database: DatabaseConfig,
   mode: 'read' | 'write',
   fn: (db: PortableDb) => Promise<T>,
+  /** PostgreSQL: the tenant new rows are stamped with (default: the engine's local tenant). */
+  tenantId?: string,
 ): Promise<T> {
   if (database.kind === 'sqlite') {
     const h = await openAppDatabase(dataDir);
@@ -398,7 +403,7 @@ async function inDatabase<T>(
     admin.transaction(async (tx) => {
       await scopeForPortable(tx, database.schema);
       if (mode === 'read') await lockSchemaForRead(tx, database.schema);
-      return fn(postgresPortable(tx));
+      return fn(postgresPortable(tx, tenantFor(tenantId, database.kind)));
     }),
   );
 }
@@ -714,12 +719,17 @@ async function compare(
  * Read-only. The digests are the same whichever database the bundle came from.
  */
 export async function verifyUserApp(options: {
+  tenantId?: string;
   dataDir: string;
   bundle: PortableUserApp;
   database?: DatabaseConfig;
 }): Promise<UserAppVerification> {
-  return inDatabase(options.dataDir, options.database ?? SQLITE, 'read', (db) =>
-    compare(db, options.bundle),
+  return inDatabase(
+    options.dataDir,
+    options.database ?? SQLITE,
+    'read',
+    (db) => compare(db, options.bundle),
+    options.tenantId,
   );
 }
 
@@ -734,6 +744,7 @@ async function startEngine(
   dataDir: string,
   database: DatabaseConfig,
   bundle: PortableUserApp,
+  tenantId?: string,
 ): Promise<void> {
   const store = new MemoryVersionStore();
   for (const v of bundle.versions) await store.append(v);
@@ -741,6 +752,7 @@ async function startEngine(
   const host = await AppHost.open(dataDir, {
     store,
     ...(database.kind === 'sqlite' ? {} : { database }),
+    ...(tenantId ? { tenantId } : {}),
     // A throwaway store for one start-up: there is no shell store to fence.
     allowUnfencedStore: true,
   });
@@ -904,21 +916,27 @@ async function importPostgres(
 
   mkdirSync(dataDir, { recursive: true });
   // The engine builds the current (empty) tables from the definition, as on any start.
-  await startEngine(dataDir, database, bundle);
+  await startEngine(dataDir, database, bundle, options.tenantId);
   await options.onPhase?.('staged');
   // One host per app while the rows go in; the engine's own start released its claim.
   const claim = await claimAppDatabase(database);
   try {
-    await inDatabase(dataDir, database, 'write', async (db) => {
-      await populate(db, bundle);
-      const verified = await compare(db, bundle);
-      if (!verified.ok)
-        refuse('The imported user app database did not match the bundle.');
-      if (options.completion)
-        await db.recordMeta(options.completion.key, options.completion.value);
-      await options.onTransaction?.();
-      await options.onPhase?.('verified');
-    });
+    await inDatabase(
+      dataDir,
+      database,
+      'write',
+      async (db) => {
+        await populate(db, bundle);
+        const verified = await compare(db, bundle);
+        if (!verified.ok)
+          refuse('The imported user app database did not match the bundle.');
+        if (options.completion)
+          await db.recordMeta(options.completion.key, options.completion.value);
+        await options.onTransaction?.();
+        await options.onPhase?.('verified');
+      },
+      options.tenantId,
+    );
   } finally {
     await claim?.release();
   }

@@ -17,7 +17,7 @@ import {
   type PortableDb,
   realValue,
 } from './portable.ts';
-import { lockForCopy } from './postgres-copy.ts';
+import { lockForCopy, readAllRows } from './postgres-copy.ts';
 import { postgresDialect } from './postgres-dialect.ts';
 
 type Tx = {
@@ -60,13 +60,14 @@ interface Attribute {
 }
 
 /**
- * Point `tx` at `schema` for a read or a write of every table: row-level
- * security off (a copy that silently dropped hidden rows would be worse than a
- * refusal) and one fixed text format for every value.
+ * Point `tx` at `schema` for a read or a write of every table: acting as the
+ * engine for row-level security (a copy that silently dropped hidden rows
+ * would be worse than a refusal; see `readAllRows`) and one fixed text format
+ * for every value.
  */
 export async function scopeForPortable(tx: Tx, schema: string) {
   await tx.query(`SELECT set_config('search_path', ${lit(q(schema))}, true)`);
-  await tx.query(`SELECT set_config('row_security', 'off', true)`);
+  await readAllRows(tx, schema);
   await tx.query(`SELECT set_config('timezone', 'UTC', true)`);
   await tx.query(`SELECT set_config('datestyle', 'ISO, MDY', true)`);
   await tx.query(`SELECT set_config('intervalstyle', 'postgres', true)`);
@@ -82,7 +83,29 @@ export const lockSchemaForRead = (tx: Tx, schema: string) =>
   lockForCopy(tx as any, schema);
 
 /** The app's schema as `PortableDb`; `tx` is already scoped by {@link scopeForPortable}. */
-export function postgresPortable(tx: Tx): PortableDb {
+export function postgresPortable(tx: Tx, tenantId: string): PortableDb {
+  /** The engine's own column: bundles never carry it, an import stamps it. */
+  const TENANT_COLUMN = 'tenant_id';
+  /**
+   * The tables whose `tenant_id` is the engine's: the app's own, which carry
+   * forced row-level-security policies (#5189) and a NOT NULL tenant column.
+   * A nullable column of that name (the shipped profiles table inherits one)
+   * or one on a core system table is data, which a bundle keeps.
+   */
+  let stamped: Set<string> | undefined;
+  const stampedTables = async (): Promise<Set<string>> => {
+    stamped ??= new Set(
+      (
+        await tx.query(
+          `SELECT c.relname AS name FROM pg_class c
+            WHERE c.relnamespace = (SELECT oid FROM pg_namespace WHERE nspname = current_schema())
+              AND c.relkind = 'r' AND c.relforcerowsecurity
+              AND EXISTS (SELECT 1 FROM pg_attribute a WHERE a.attrelid = c.oid AND a.attname = ${lit(TENANT_COLUMN)} AND a.attnotnull AND NOT a.attisdropped)`,
+        )
+      ).rows.map((r) => String(r.name)),
+    );
+    return stamped;
+  };
   const attributes = new Map<string, Attribute[]>();
   const attributesOf = async (table: string): Promise<Attribute[]> => {
     const cached = attributes.get(table);
@@ -148,10 +171,13 @@ export function postgresPortable(tx: Tx): PortableDb {
         .filter((n) => n !== META_TABLE && !n.startsWith('_smrt_'));
     },
     async columns(table) {
-      return (await attributesOf(table)).map((a) => ({
-        name: a.name,
-        family: familyOf(a.type),
-      }));
+      const engineOwned = (await stampedTables()).has(table);
+      return (await attributesOf(table))
+        .filter((a) => !(engineOwned && a.name === TENANT_COLUMN))
+        .map((a) => ({
+          name: a.name,
+          family: familyOf(a.type),
+        }));
     },
     async rows(table, columns) {
       const attrs = await attributesOf(table);
@@ -243,6 +269,14 @@ export function postgresPortable(tx: Tx): PortableDb {
       assertIdentifier(table, 'table');
       const attrs = await attributesOf(table);
       const by = new Map(attrs.map((a) => [a.name, a]));
+      // The tenant of the app goes on every row of a table that has the column.
+      if (
+        (await stampedTables()).has(table) &&
+        !columns.some((c) => c.name === TENANT_COLUMN)
+      ) {
+        columns = [...columns, { name: TENANT_COLUMN, family: 'text' }];
+        rows = rows.map((r) => ({ ...r, [TENANT_COLUMN]: tenantId }));
+      }
       const types = columns.map((c) => {
         const a = by.get(assertIdentifier(c.name, 'column'));
         if (!a)

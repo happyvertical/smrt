@@ -54,13 +54,18 @@ export function reportSources(def: AppDefinition) {
 }
 // The reports package (about 3 MiB of a worker's heap) loads on first use: a
 // worker that never defines or runs a report never imports it (#5214).
-export async function compileReport(def: AppDefinition, input: unknown) {
+export async function compileReport(
+  def: AppDefinition,
+  input: unknown,
+  /** The app's tenant on PostgreSQL, where its tables are tenant-scoped; null on SQLite. */
+  tenantId: string | null = null,
+) {
   const { compileRuntimeReportSpec, parseRuntimeReportSpec } = await import(
     '@happyvertical/smrt-reports'
   );
   return compileRuntimeReportSpec(parseRuntimeReportSpec(input), {
     sources: reportSources(def),
-    tenantId: null,
+    tenantId,
   });
 }
 
@@ -72,6 +77,7 @@ export async function runAppReport(
   options: ReportOptions = {},
   /** The database's SQL dialect for the report's aggregate (the handle has no file URL to infer it from). */
   adapterType?: 'sqlite' | 'postgres',
+  tenantId: string | null = null,
 ): Promise<AppReportResult> {
   const raw =
     typeof input === 'string'
@@ -80,7 +86,7 @@ export async function runAppReport(
         : undefined
       : input;
   if (!raw) throw new Error('unknown report');
-  const compiled = await compileReport(def, raw);
+  const compiled = await compileReport(def, raw, tenantId);
   const { runRuntimeReport } = await import('@happyvertical/smrt-reports');
   const result: AppReportResult = await runRuntimeReport(compiled, {
     db,

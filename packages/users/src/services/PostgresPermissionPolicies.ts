@@ -23,6 +23,37 @@ interface QueryableDatabase {
 
 type DatabaseConfig = SmrtClassOptions['db'] | SmrtClassOptions['persistence'];
 
+/**
+ * Narrows policy generation to one application schema, for a host that holds
+ * a registry of run-time models (an app's tables are addressed unqualified
+ * through a transaction-local `search_path`).
+ *
+ * With a scope the generator never falls back to `public`: every table is
+ * addressed in `schemaName`, the `smrt_*` helper functions are created there
+ * (policies call them unqualified, through that same `search_path`, so a
+ * schema copied or renamed whole keeps its own helpers), only the registered classes
+ * `includeClass` accepts get policies, and explicit catalog or config bindings
+ * (which name tables of the deployment's own schema) are not applied.
+ */
+export interface PostgresPolicyScope {
+  /** The schema the scoped tables and helper functions live in. */
+  schemaName: string;
+  /** Which registered classes get policies (default: none). */
+  includeClass: (info: {
+    className: string;
+    qualifiedName?: string;
+  }) => boolean;
+  /**
+   * The permission slugs that allow each action on a table, for a host whose
+   * slugs are not the `<collection>.read|create|update|delete` default.
+   */
+  permissionsFor?: (info: {
+    className: string;
+    collection: string;
+    tableName: string;
+  }) => Partial<Record<PostgresPermissionAction, string[]>> | undefined;
+}
+
 interface TablePolicyTarget {
   actions: Map<PostgresPermissionAction, Set<string>>;
   className?: string;
@@ -158,13 +189,34 @@ function parseTableReference(
   };
 }
 
+const SCOPE_SCHEMA = /^[a-z_][a-z0-9_]{0,62}$/;
+
+function assertScopeSchemaName(schemaName: unknown): void {
+  if (typeof schemaName !== 'string' || !SCOPE_SCHEMA.test(schemaName)) {
+    throw new Error(
+      'A Postgres policy scope needs an explicit lower-case schemaName (it never falls back to public).',
+    );
+  }
+}
+
+/**
+ * A policy is named per table, so names in different schemas cannot clash in
+ * PostgreSQL; the schema still goes into the hash (except for `public`, whose
+ * names predate it and must not change) so the same table name in two app
+ * schemas never yields the same policy name.
+ */
 function buildPolicyName(
   tableName: string,
   action: PostgresPermissionAction,
+  schemaName?: string,
 ): string {
   const actionSegment = action.toLowerCase();
   const hash = createHash('sha1')
-    .update(`${tableName}:${action}`)
+    .update(
+      schemaName && schemaName !== 'public'
+        ? `${schemaName}.${tableName}:${action}`
+        : `${tableName}:${action}`,
+    )
     .digest('hex')
     .slice(0, 8);
   const sanitizedTable = tableName
@@ -201,7 +253,11 @@ function buildSelectPolicySql(
   permissions: string[],
 ): string[] {
   const qualifiedTable = `${quoteIdent(target.schemaName)}.${quoteIdent(target.tableName)}`;
-  const policyName = buildPolicyName(target.tableName, 'SELECT');
+  const policyName = buildPolicyName(
+    target.tableName,
+    'SELECT',
+    target.schemaName,
+  );
   const condition = `smrt_rls_bypass() OR ((${buildTenantMatchExpression(target.tenantField)}) AND (${buildPermissionExpression(permissions)}))`;
 
   return [
@@ -215,7 +271,11 @@ function buildInsertPolicySql(
   permissions: string[],
 ): string[] {
   const qualifiedTable = `${quoteIdent(target.schemaName)}.${quoteIdent(target.tableName)}`;
-  const policyName = buildPolicyName(target.tableName, 'INSERT');
+  const policyName = buildPolicyName(
+    target.tableName,
+    'INSERT',
+    target.schemaName,
+  );
   const condition = `smrt_rls_bypass() OR ((${buildTenantMatchExpression(target.tenantField)}) AND (${buildPermissionExpression(permissions)}))`;
 
   return [
@@ -229,7 +289,11 @@ function buildUpdatePolicySql(
   permissions: string[],
 ): string[] {
   const qualifiedTable = `${quoteIdent(target.schemaName)}.${quoteIdent(target.tableName)}`;
-  const policyName = buildPolicyName(target.tableName, 'UPDATE');
+  const policyName = buildPolicyName(
+    target.tableName,
+    'UPDATE',
+    target.schemaName,
+  );
   const condition = `smrt_rls_bypass() OR ((${buildTenantMatchExpression(target.tenantField)}) AND (${buildPermissionExpression(permissions)}))`;
 
   return [
@@ -243,7 +307,11 @@ function buildDeletePolicySql(
   permissions: string[],
 ): string[] {
   const qualifiedTable = `${quoteIdent(target.schemaName)}.${quoteIdent(target.tableName)}`;
-  const policyName = buildPolicyName(target.tableName, 'DELETE');
+  const policyName = buildPolicyName(
+    target.tableName,
+    'DELETE',
+    target.schemaName,
+  );
   const condition = `smrt_rls_bypass() OR ((${buildTenantMatchExpression(target.tenantField)}) AND (${buildPermissionExpression(permissions)}))`;
 
   return [
@@ -252,10 +320,11 @@ function buildDeletePolicySql(
   ];
 }
 
-function buildHelperStatements(): string[] {
+function buildHelperStatements(schemaName?: string): string[] {
+  const prefix = schemaName ? `${quoteIdent(schemaName)}.` : '';
   return [
     [
-      'CREATE OR REPLACE FUNCTION smrt_rls_bypass()',
+      `CREATE OR REPLACE FUNCTION ${prefix}smrt_rls_bypass()`,
       'RETURNS boolean',
       'LANGUAGE sql',
       'STABLE',
@@ -265,7 +334,7 @@ function buildHelperStatements(): string[] {
       '$$',
     ].join('\n'),
     [
-      'CREATE OR REPLACE FUNCTION smrt_current_tenant_id()',
+      `CREATE OR REPLACE FUNCTION ${prefix}smrt_current_tenant_id()`,
       'RETURNS text',
       'LANGUAGE sql',
       'STABLE',
@@ -274,12 +343,16 @@ function buildHelperStatements(): string[] {
       '$$',
     ].join('\n'),
     [
-      'CREATE OR REPLACE FUNCTION smrt_has_permission(required_permission text)',
+      `CREATE OR REPLACE FUNCTION ${prefix}smrt_has_permission(required_permission text)`,
       'RETURNS boolean',
       'LANGUAGE sql',
       'STABLE',
       'AS $$',
-      '  SELECT smrt_rls_bypass()',
+      // The bypass is spelled out, not called: a schema copied whole creates its
+      // functions in name order, and a SQL function's body is checked when it
+      // is created, so it must not depend on a sibling that comes after it.
+      "  SELECT COALESCE(NULLIF(current_setting('smrt.system_context', true), ''), 'false')::boolean",
+      "      OR COALESCE(NULLIF(current_setting('smrt.super_admin_bypass', true), ''), 'false')::boolean",
       "      OR jsonb_exists(COALESCE(NULLIF(current_setting('smrt.permissions', true), ''), '[]')::jsonb, required_permission)",
       '$$',
     ].join('\n'),
@@ -323,7 +396,10 @@ function addBindingToTarget(
 
 export function generatePostgresPermissionSql(
   options: SmrtClassOptions = {},
+  scope?: PostgresPolicyScope,
 ): GeneratePostgresPermissionSqlResult {
+  if (scope) assertScopeSchemaName(scope.schemaName);
+
   const catalogService = PermissionCatalogService.create(options);
   const catalog = catalogService.getCatalog();
   const config = catalogService.getUsersConfig();
@@ -339,6 +415,7 @@ export function generatePostgresPermissionSql(
       schemaName: string;
       tableName: string;
       tenantField: string;
+      permissions?: Partial<Record<PostgresPermissionAction, string[]>>;
     }>
   >();
 
@@ -346,6 +423,15 @@ export function generatePostgresPermissionSql(
     const registered =
       ObjectRegistry.getClassByConstructor(metadata.constructor) ??
       ObjectRegistry.getClass(metadata.name);
+    if (
+      scope &&
+      !scope.includeClass({
+        className: metadata.name,
+        qualifiedName: registered?.qualifiedName,
+      })
+    ) {
+      continue;
+    }
     const tenantScoped = registered?.tenantScopedConfig;
     const manifestEntry = registered?.qualifiedName
       ? findManifestEntryByQualifiedName(registered.qualifiedName)
@@ -381,8 +467,17 @@ export function generatePostgresPermissionSql(
     }
 
     const parsedTable = parseTableReference({
+      schemaName: scope?.schemaName,
       tableName: rawTableName,
     });
+    if (scope && parsedTable.schemaName !== scope.schemaName) {
+      skipped.push({
+        className: metadata.name,
+        qualifiedName: registered?.qualifiedName,
+        reason: `table '${rawTableName}' is qualified with another schema than '${scope.schemaName}'`,
+      });
+      continue;
+    }
     const tableKey = `${parsedTable.schemaName}.${parsedTable.tableName}`;
     const objectConfig = manifestEntry?.decoratorConfig ?? metadata.config;
     const rawCollection = (objectConfig as { collection?: unknown } | undefined)
@@ -404,6 +499,11 @@ export function generatePostgresPermissionSql(
       schemaName: parsedTable.schemaName,
       tableName: parsedTable.tableName,
       tenantField: toSnakeCase(tenantScoped.field),
+      permissions: scope?.permissionsFor?.({
+        className: metadata.name,
+        collection,
+        tableName: parsedTable.tableName,
+      }),
     });
     autoCandidates.set(tableKey, entries);
   }
@@ -424,69 +524,50 @@ export function generatePostgresPermissionSql(
     }
 
     const entry = entries[0];
-    addBindingToTarget(
-      candidateTargets,
-      {
-        action: 'SELECT',
-        permission: `${entry.collection}.read`,
-        schemaName: entry.schemaName,
-        tableName: entry.tableName,
-        tenantField: entry.tenantField,
-      },
-      entry,
-    );
-    addBindingToTarget(
-      candidateTargets,
-      {
-        action: 'INSERT',
-        permission: `${entry.collection}.create`,
-        schemaName: entry.schemaName,
-        tableName: entry.tableName,
-        tenantField: entry.tenantField,
-      },
-      entry,
-    );
-    addBindingToTarget(
-      candidateTargets,
-      {
-        action: 'UPDATE',
-        permission: `${entry.collection}.update`,
-        schemaName: entry.schemaName,
-        tableName: entry.tableName,
-        tenantField: entry.tenantField,
-      },
-      entry,
-    );
-    addBindingToTarget(
-      candidateTargets,
-      {
-        action: 'DELETE',
-        permission: `${entry.collection}.delete`,
-        schemaName: entry.schemaName,
-        tableName: entry.tableName,
-        tenantField: entry.tenantField,
-      },
-      entry,
-    );
-  }
-
-  const explicitBindings: PostgresPermissionBinding[] = [];
-  for (const definition of catalog.permissions) {
-    for (const binding of definition.postgres?.bindings ?? []) {
-      explicitBindings.push(
-        normalizePostgresPermissionBinding(binding, definition.slug),
-      );
+    const permissionSlugs: Record<PostgresPermissionAction, string[]> = {
+      SELECT: entry.permissions?.SELECT ?? [`${entry.collection}.read`],
+      INSERT: entry.permissions?.INSERT ?? [`${entry.collection}.create`],
+      UPDATE: entry.permissions?.UPDATE ?? [`${entry.collection}.update`],
+      DELETE: entry.permissions?.DELETE ?? [`${entry.collection}.delete`],
+    };
+    for (const action of ['SELECT', 'INSERT', 'UPDATE', 'DELETE'] as const) {
+      for (const permission of permissionSlugs[action]) {
+        addBindingToTarget(
+          candidateTargets,
+          {
+            action,
+            permission,
+            schemaName: entry.schemaName,
+            tableName: entry.tableName,
+            tenantField: entry.tenantField,
+          },
+          entry,
+        );
+      }
     }
   }
-  for (const binding of config.permissions?.postgres?.bindings ?? []) {
-    explicitBindings.push(normalizePostgresPermissionBinding(binding));
+
+  // A scope names the one schema it speaks for; the deployment's own explicit
+  // bindings name tables of its default schema and are not applied to it.
+  const explicitBindings: PostgresPermissionBinding[] = [];
+  if (!scope) {
+    for (const definition of catalog.permissions) {
+      for (const binding of definition.postgres?.bindings ?? []) {
+        explicitBindings.push(
+          normalizePostgresPermissionBinding(binding, definition.slug),
+        );
+      }
+    }
+    for (const binding of config.permissions?.postgres?.bindings ?? []) {
+      explicitBindings.push(normalizePostgresPermissionBinding(binding));
+    }
   }
 
   for (const binding of explicitBindings) {
     addBindingToTarget(candidateTargets, binding);
   }
 
-  const statements = [...buildHelperStatements()];
+  const statements = [...buildHelperStatements(scope?.schemaName)];
   const targets = Array.from(candidateTargets.values())
     .sort((left, right) =>
       `${left.schemaName}.${left.tableName}`.localeCompare(
@@ -576,5 +657,30 @@ export async function applyPostgresPermissionPolicies(
     }
   }
 
+  return result;
+}
+
+/**
+ * Apply the policies of one scoped schema through a handle the caller already
+ * holds, so they commit or roll back with the caller's own DDL (an app's
+ * tables are created in the same transaction). The scope is required: nothing
+ * here falls back to `public`. The handle must be a PostgreSQL one.
+ */
+export async function applyScopedPostgresPermissionPolicies(
+  db: { query: (sql: string, ...params: unknown[]) => Promise<unknown> },
+  scope: PostgresPolicyScope,
+  options: SmrtClassOptions = {},
+): Promise<GeneratePostgresPermissionSqlResult> {
+  const result = generatePostgresPermissionSql(options, scope);
+  for (const statement of result.statements) {
+    try {
+      await db.query(statement);
+    } catch (error) {
+      throw new Error(
+        `Failed to apply Postgres permission policy statement:\n${statement}`,
+        { cause: error },
+      );
+    }
+  }
   return result;
 }

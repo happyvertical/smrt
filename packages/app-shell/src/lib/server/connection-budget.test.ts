@@ -512,7 +512,9 @@ async function stubHost(budget = 2) {
     workerLimits: { connections: perWorker(l) },
   });
   // Make the host a server PostgreSQL one (the stub never connects anywhere).
-  const inner = host as unknown as Inner;
+  const inner = host as unknown as Inner & { tenantId: string };
+  // A PostgreSQL app's tenant is a UUID (#5189).
+  inner.tenantId = '00000000-0000-4000-8000-000000000001';
   inner.database = {
     kind: 'postgres',
     schema: 'app_x',

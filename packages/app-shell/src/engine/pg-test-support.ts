@@ -32,3 +32,5 @@ export function urlAs(url: string, user: string, password: string): string {
   u.password = password;
   return u.toString();
 }
+
+export { asEngine, ENGINE_CONTEXT } from './db/test-support.ts';

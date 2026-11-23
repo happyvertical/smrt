@@ -79,7 +79,7 @@ if (!isMainThread && workerData?.appWorker) {
     // Boot is the engine's own work: refuse to start without its principal.
     if (readPrincipal(bootPrincipal, tenantId).kind !== 'system')
       throw new Error('the app can only be started by the engine');
-    rt = new AppRuntime(dataDir, def, version, database, appLimits);
+    rt = new AppRuntime(dataDir, def, version, database, appLimits, tenantId);
     const t0 = performance.now();
     const booted = await rt.boot(migration, readOnly, validateOnly);
     ok = true;

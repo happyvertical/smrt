@@ -24,6 +24,7 @@ import {
   type PortableUserApp,
   verifyUserApp,
 } from './index.ts';
+import { asEngine } from './pg-test-support.ts';
 
 const serverUrl = process.env.SMRT_TEST_POSTGRES_URL;
 const backends = ['pglite', ...(serverUrl ? ['postgres'] : [])] as const;
@@ -58,7 +59,7 @@ describe.each(
       ? { kind: 'postgres', schema, connection: { url: serverUrl, max: 2 } }
       : { kind: 'pglite', schema, client: pglite as PGliteClient };
   const rows = async (sql: string, params: unknown[] = []) =>
-    (await admin.query(sql, params)).rows as Array<Record<string, any>>;
+    asEngine(admin as any, sql, params);
 
   beforeAll(async () => {
     if (backend === 'postgres') {
@@ -405,14 +406,14 @@ describe.each(
     expect(inspected).toMatchObject({ integrity: true, recorded: true });
     expect(inspected.rows).toBeGreaterThan(2);
 
-    await admin.query(
+    await rows(
       `UPDATE "${schema}".u_chores SET _sync_revision = 1152921504606846976 WHERE title = 'Bins'`,
     );
     await expect(
       exportUserApp({ dataDir: target, database, versions: bundle.versions }),
     ).rejects.toThrow(/2\^53/);
     // The digits a server pool returns (and a safe value) are read exactly.
-    await admin.query(
+    await rows(
       `UPDATE "${schema}".u_chores SET _sync_revision = 9007199254740991 WHERE title = 'Bins'`,
     );
     const ok = await exportUserApp({

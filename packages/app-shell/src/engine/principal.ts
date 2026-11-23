@@ -19,6 +19,34 @@ import { NoPrincipalError, PermissionDeniedError } from './errors.ts';
 /** The tenant of a host that was given none (tests, the portable export). */
 export const DESKTOP_TENANT = 'desktop';
 
+/**
+ * The tenant of a PostgreSQL app made without one (tests, a local server). A
+ * PostgreSQL app's rows carry their tenant in a UUID column, so its tenant is
+ * a UUID, never `DESKTOP_TENANT`.
+ */
+export const LOCAL_TENANT = '00000000-0000-4000-8000-000000000001';
+const TENANT_UUID =
+  /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/;
+
+/**
+ * The tenant an app of this database kind runs in: `given`, or the default of
+ * its kind. A PostgreSQL app's tenant must be a lower-case UUID (the column
+ * type its row-level-security policies compare, #5189).
+ */
+export function tenantFor(
+  given: string | undefined,
+  databaseKind: 'sqlite' | 'postgres' | 'pglite' | undefined,
+): string {
+  if (databaseKind === undefined || databaseKind === 'sqlite')
+    return given ?? DESKTOP_TENANT;
+  const tenant = given ?? LOCAL_TENANT;
+  if (!TENANT_UUID.test(tenant))
+    throw new PermissionDeniedError(
+      'a PostgreSQL app needs a tenant id that is a lower-case UUID',
+    );
+  return tenant;
+}
+
 export type PrincipalKind = 'user' | 'guest' | 'system';
 
 export interface EnginePrincipal {

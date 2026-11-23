@@ -5,7 +5,8 @@
 // gates every op on the `<collection>.<action>` slug of the model it touches.
 //
 // - `system` (the engine's own authority) may do everything.
-// - A guest is refused: row-level security is not in this slice (#5189).
+// - A guest is refused: the policies (#5189) gate by slug and tenant, and no
+//   rule yet says what a guest may read.
 // - Ops that exist for the change engine (previews, counts of values, dumps,
 //   archive purges, imports) are system-only.
 
