@@ -382,6 +382,69 @@ describe.each(backends)('run-time model row-level security (%s)', (backend) => {
     expect(await policies(schema, 'u_persons')).toHaveLength(4);
   });
 
+  it("gives rows with no tenant (a nullable tenant column, as the shipped profiles table has) the app's, so the policies do not hide them", async () => {
+    const schema = await newSchema('n');
+    const { host, dir } = await open(schema, TENANT_A);
+    await run(host, {
+      type: 'defineModel',
+      name: 'Chore',
+      fields: { title: { type: 'text' } },
+    });
+    await host.create(hostOwner(host), 'Chore', { title: 'Bins' });
+    await admin.query(
+      `ALTER TABLE "${schema}".u_chores ALTER COLUMN tenant_id DROP NOT NULL`,
+    );
+    await admin.query(`UPDATE "${schema}".u_chores SET tenant_id = NULL`);
+    await host.close();
+    hosts.splice(hosts.indexOf(host), 1);
+    const again = await open(schema, TENANT_A, dir);
+    expect(
+      (await rows(`SELECT tenant_id::text AS t FROM "${schema}".u_chores`)).map(
+        (r) => r.t,
+      ),
+    ).toEqual([TENANT_A]);
+    expect(await again.host.list(hostOwner(again.host), 'Chore')).toHaveLength(
+      1,
+    );
+  });
+
+  it('an undo puts back a row whose archived image has no tenant', async () => {
+    const schema = await newSchema('u');
+    const { host } = await open(schema, TENANT_A);
+    await run(host, {
+      type: 'defineModel',
+      name: 'Customer',
+      fields: { name: { type: 'text' } },
+    });
+    const keep = String(
+      (await host.create(hostOwner(host), 'Customer', { name: 'Bob' })).id,
+    );
+    const other = String(
+      (await host.create(hostOwner(host), 'Customer', { name: 'B' })).id,
+    );
+    await run(host, {
+      type: 'mergeRecords',
+      model: 'Customer',
+      keep,
+      merge: [other],
+      fields: { name: 'keep' },
+    });
+    expect(await host.list(hostOwner(host), 'Customer')).toHaveLength(1);
+    // Images archived before the table carried a tenant, or moved in from SQLite, have none.
+    await admin.query(
+      `UPDATE "${schema}"._archive SET value = (value::jsonb - 'tenant_id')::text WHERE col = '$row'`,
+    );
+    await run(host, { type: 'undo' });
+    expect(await host.list(hostOwner(host), 'Customer')).toHaveLength(2);
+    expect(
+      (
+        await rows(
+          `SELECT DISTINCT tenant_id::text AS t FROM "${schema}".u_customers`,
+        )
+      ).map((r) => r.t),
+    ).toEqual([TENANT_A]);
+  });
+
   it('refuses a PostgreSQL app whose tenant is not a UUID', async () => {
     const schema = await newSchema('t');
     await expect(open(schema, 'not-a-uuid')).rejects.toThrow(/UUID/);

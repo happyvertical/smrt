@@ -40,6 +40,7 @@ import {
 import {
   applyRuntimeModelPolicies,
   backfillTenantColumn,
+  fillNullTenants,
 } from './db/policies.ts';
 import {
   type AppDefinition,
@@ -351,6 +352,14 @@ export class AppRuntime {
 
   private async applyPolicies(h: Handle, changed: boolean): Promise<void> {
     if (this.database.kind === 'sqlite') return;
+    const tables = Object.entries(this.def.models).map(([m, md]) =>
+      tableFor(m, md),
+    );
+    await fillNullTenants(h, {
+      schema: this.database.schema,
+      tenantId: this.tenantId,
+      tables,
+    });
     await applyRuntimeModelPolicies(h, {
       schema: this.database.schema,
       packageName: USER_PKG,

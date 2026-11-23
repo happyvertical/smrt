@@ -592,6 +592,13 @@ export async function archiveAfter(
 }
 
 /** Restore owned columns only. Conflicts refuse the entire migration transaction. */
+/** PostgreSQL: the tenant of the running operation (core's tenancy, set by the worker); null elsewhere. */
+async function currentTenant(db: any): Promise<string | null> {
+  if (dialectOf(db).name !== 'postgres') return null;
+  const { getTenantId } = await import('@happyvertical/smrt-tenancy');
+  return getTenantId() ?? null;
+}
+
 export async function undoRows(
   def: AppDefinition,
   db: any,
@@ -755,6 +762,7 @@ export async function undoRows(
     );
   if (options.previewOnly) return { skipped: skipped.size };
   const removals = new Map<string, unknown[]>();
+  let tenant: string | null | undefined;
   const generatedByTable = new Map<string, Set<string>>();
   for (const entry of entries) {
     if (skipped.has(`${entry.tbl}:${entry.record_id}`)) continue;
@@ -779,6 +787,21 @@ export async function undoRows(
     }
     if (deleted.has(key)) {
       const pairs = Object.entries(before).filter(([f]) => !generated.has(f));
+      // A row image archived before its table carried a tenant (or moved in
+      // from SQLite) has none: it goes back into the app's own.
+      tenant ??= await currentTenant(db);
+      if (tenant && !pairs.some(([f, v]) => f === 'tenant_id' && v != null)) {
+        const known = (await tableColumns(db, table)).some(
+          (c) => c.name === 'tenant_id',
+        );
+        if (known)
+          pairs.splice(
+            0,
+            pairs.length,
+            ...pairs.filter(([f]) => f !== 'tenant_id'),
+            ['tenant_id', tenant],
+          );
+      }
       // Plain INSERT refuses an id reused since the command removed this row.
       await db.query(
         `INSERT INTO ${quote(table)} (${pairs.map(([f]) => quote(f)).join(',')}) VALUES (${pairs.map(() => '?').join(',')})`,

@@ -88,8 +88,9 @@ export function postgresPortable(tx: Tx, tenantId: string): PortableDb {
   const TENANT_COLUMN = 'tenant_id';
   /**
    * The tables whose `tenant_id` is the engine's: the app's own, which carry
-   * forced row-level-security policies (#5189). Another table with a column of
-   * that name (a core system table) holds data a bundle keeps.
+   * forced row-level-security policies (#5189) and a NOT NULL tenant column.
+   * A nullable column of that name (the shipped profiles table inherits one)
+   * or one on a core system table is data, which a bundle keeps.
    */
   let stamped: Set<string> | undefined;
   const stampedTables = async (): Promise<Set<string>> => {
@@ -99,7 +100,7 @@ export function postgresPortable(tx: Tx, tenantId: string): PortableDb {
           `SELECT c.relname AS name FROM pg_class c
             WHERE c.relnamespace = (SELECT oid FROM pg_namespace WHERE nspname = current_schema())
               AND c.relkind = 'r' AND c.relforcerowsecurity
-              AND EXISTS (SELECT 1 FROM pg_attribute a WHERE a.attrelid = c.oid AND a.attname = ${lit(TENANT_COLUMN)} AND NOT a.attisdropped)`,
+              AND EXISTS (SELECT 1 FROM pg_attribute a WHERE a.attrelid = c.oid AND a.attname = ${lit(TENANT_COLUMN)} AND a.attnotnull AND NOT a.attisdropped)`,
         )
       ).rows.map((r) => String(r.name)),
     );

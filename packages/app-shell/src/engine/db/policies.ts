@@ -177,3 +177,39 @@ export async function backfillTenantColumn(
   }
   return done;
 }
+
+/**
+ * Rows of a table whose tenant column is nullable (the shipped profiles table
+ * inherits one) and holds none belong to the app: nobody else's rows live in
+ * its schema. Without a tenant a policy would hide them from everyone, so they
+ * get the app's. Runs at every boot (cheap: a guarded update) because an import
+ * or an older write can leave such rows at any time. Returns the tables touched.
+ */
+export async function fillNullTenants(
+  h: Runner,
+  options: { schema: string; tables: string[]; tenantId: string },
+): Promise<string[]> {
+  const { schema, tables, tenantId } = options;
+  const q = (s: string) => `"${s.replace(/"/g, '""')}"`;
+  const done: string[] = [];
+  for (const table of tables) {
+    const has = (
+      await h.query(
+        `SELECT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_schema = ${lit(schema)} AND table_name = ${lit(table)} AND column_name = 'tenant_id') AS has`,
+      )
+    ).rows[0]?.has;
+    if (!(has === true || has === 't')) continue;
+    const some = (
+      await h.query(
+        `SELECT EXISTS (SELECT 1 FROM ${q(table)} WHERE tenant_id IS NULL) AS some`,
+      )
+    ).rows[0]?.some;
+    if (!(some === true || some === 't')) continue;
+    await h.query(
+      `UPDATE ${q(table)} SET tenant_id = CAST(? AS UUID) WHERE tenant_id IS NULL`,
+      [tenantId],
+    );
+    done.push(table);
+  }
+  return done;
+}
