@@ -71,8 +71,9 @@ describe.skipIf(!pgUrl)('AI usage recorder on PostgreSQL (#3077)', () => {
     expect(rows[0]).toMatchObject({
       tenant_id: TENANT,
       prompt_key: 'recorder.3077',
-      run_id: 'run-3077',
     });
+    // A caller's runId tag does not place an untracked call in a run.
+    expect(rows[0].run_id ?? null).toBeNull();
     expect(Number(rows[0].total_tokens)).toBe(1500);
     expect(Number(rows[0].estimated_cost)).toBeCloseTo(0.00045, 6);
   });

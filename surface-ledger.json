@@ -651,6 +651,16 @@
   },
   {
     "kind": "entry-point",
+    "name": "@happyvertical/smrt-app-shell#./embed",
+    "issue": 5546,
+    "nearest": [
+      "@happyvertical/smrt-app-shell#./start",
+      "@happyvertical/smrt-app-shell#./shutdown"
+    ],
+    "reason": "The shell's request handler without a listener, plus an awaitable drain that never closes a listener or exits, for a host that owns its HTTP listener, signals and exit (readiness 503, drain, then exit). ./start owns the listener and the process exit, and ./shutdown is the engine-free sequence that cannot import the SvelteKit server bundle, so neither could hand an embedder the handler or the bundle's own drain."
+  },
+  {
+    "kind": "entry-point",
     "name": "@happyvertical/smrt-app-shell#./engine",
     "grandfathered": true
   },
@@ -2933,6 +2943,26 @@
     "kind": "entry-point",
     "name": "@happyvertical/smrt-users#./playground",
     "grandfathered": true
+  },
+  {
+    "kind": "entry-point",
+    "name": "@happyvertical/smrt-users#./postgres-settings",
+    "issue": 5188,
+    "nearest": [
+      "@happyvertical/smrt-users#./permission-registry",
+      "@happyvertical/smrt-users#."
+    ],
+    "reason": "A brokering host must write the six transaction-local RLS settings without loading the package root (models, sessions, the Svelte layer) or the permission registry; the module is pure and dependency-free, so a root or registry export would pull in what a broker must not load."
+  },
+  {
+    "kind": "entry-point",
+    "name": "@happyvertical/smrt-users#./postgres-policies",
+    "issue": 5189,
+    "nearest": [
+      "@happyvertical/smrt-users#./postgres-settings",
+      "@happyvertical/smrt-users#."
+    ],
+    "reason": "An app worker thread generates and applies the row-level-security policies of its run-time models and must not load the package root (sessions, the Svelte layer, the UI) to do it; the subpath re-exports only the policy generator."
   },
   {
     "kind": "entry-point",

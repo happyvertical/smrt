@@ -182,31 +182,33 @@ never a timer, never an eviction (`host-lifecycle.test.ts`, "desktop is unchange
   (`refused`, "no room"), never cutting a call. A worker keeps the memory it grew
   to, so the ceiling is a count, not a reading of the process.
 - `maxConcurrentWakes` (default 2) queues a burst of wakes.
-- Connection budget (#5464): `WorkerLimits.connections`, set by `host.ts` on
-  every host it opens. EVERY worker on a server PostgreSQL reserves its pool in
-  `AppWorker`'s constructor and returns it when the thread exits, so a swap's new
-  worker, a report worker and a publish rehearsal are counted while they live;
-  the pool is created at exactly the size reserved (`connection.max`, else
-  `POOL_SIZE` = 2, set explicitly, never the adapter default). A host also reserves
-  `HOST_OVERHEAD` (live 2: the claim connection, one connection that also carries its
-  transactions and heartbeat (#5470), + one admin connection in flight; draft
-  1), returned on `close`, a successful `discardIfEmpty`, and a failed open
-  (`withConnections`). `maxAppConnections` caps the total held by the process;
-  unset, it is `maxOpenApps` x `appAllowance(pool)` (live + draft + one transient
-  worker pool, plus both overheads; `pool` follows the largest pool a config asks
-  for, so a bigger `connection.max` scales it), and with no cap at all there is no budget.
-  A refusal is immediate (`ConnectionBudgetError`, a `CapacityError`: `refused`; a publish check rethrows it instead of storing a "does not fit your data" blocker), never queued, so a
-  swap or report that finds no room fails and can be retried. A swap that
-  stops the old worker first (migration, restore, publish) keeps its pool's
-  share across the gap (`retireApp`), so nothing can take it and the
-  replacement or the rollback is never refused. The handed-over reservation stays the
-  host's until the replacement is ready (a thread that dies first does not
-  release it). A refusal while a wake adopts its draft fails the wake for a retry; it
-  is never stored as a draft problem. Transient admin
-  connections beyond the one in `HOST_OVERHEAD` and the shell's own pool are not
-  counted. SQLite and PGlite are not counted. A budget below the derived one
-  refuses rather than evicts. `hostMetrics()` reports `connections` and
-  `maxConnections`.
+- Connection budget (#5464, reshaped by #5188): `WorkerLimits.connections`, set by
+  `host.ts` on every host it opens when PostgreSQL holds the apps (or a lifecycle
+  policy is set). Every PostgreSQL app worker's operations go through the
+  process's ONE shared `BrokerPool` (engine.md "The shared pool"): its slots and
+  one reserved cancel connection are taken from the budget once, when the first
+  PostgreSQL worker starts, and a swap's new worker, a report worker or a
+  rehearsal costs nothing more. A host also reserves `HOST_OVERHEAD` (live 2: the
+  claim connection, which also carries its transactions and heartbeat (#5470), + one
+  admin connection in flight; draft 1), returned on `close`, a successful
+  `discardIfEmpty`, and a failed open (`withConnections`). `maxAppConnections`
+  caps the total held by the process; unset, it is `maxOpenApps` x
+  `appAllowance()` (live + draft overhead) plus the pool, and with no cap at all
+  there is no budget. The pool's own size is `brokerPoolSize`, else what
+  `maxAppConnections` leaves, else 10 (`SMRT_APP_SHELL_BROKER_POOL_SIZE`,
+  `_PER_APP_TRANSACTIONS`, `_MAX_QUEUED_OPERATIONS`, `_POOL_ACQUIRE_TIMEOUT_MS`;
+  `SMRT_APP_SHELL_OP_TIMEOUT_MS` is the per-operation deadline). A budget refusal
+  is immediate (`ConnectionBudgetError`, a `CapacityError`: `refused`; a publish
+  check rethrows it instead of storing a "does not fit your data" blocker); a
+  saturated pool answers a call with `DatabaseBusyError` (`unavailable`, 503):
+  retry. A worker with no shared pool (a budget without `pool()`: the self-hosted
+  per-worker path) still reserves its own pool with `take`, and a swap that stops
+  the old worker first keeps that share across the gap (`retireApp`). A refusal
+  while a wake adopts its draft fails the wake for a retry; it is never stored as a
+  draft problem. Transient admin connections beyond the one in `HOST_OVERHEAD` and
+  the shell's own pool are not counted. SQLite and PGlite are not counted. A budget
+  below the derived one refuses rather than evicts. `hostMetrics()` reports
+  `connections`, `maxConnections` and `brokerPool` (`inUse`, `queued`, `max`).
 - `drainShell(timeoutMs)`: refuse new apps, wait for calls, close all; for
   recycling a process. `hostMetrics()`: open, queued wakes, wakes, failed wakes,
   evictions by cause, wake times, cap, RSS.
@@ -240,8 +242,23 @@ or snapshot restore with the shell's `App`/`AppVersion` rows in one transaction
 cannot see the shell's own `App` row, so a deployment that put the shell and
 the apps on different databases is refused, not silently unfenced.
 
-Needs a PostgreSQL role that may `CREATE SCHEMA` (the hosted role and policies
-are #5188/#5189). The portable export/import work on a PostgreSQL app (#5419).
+Needs a PostgreSQL role that may `CREATE SCHEMA` (the admin, `DATABASE_URL`). The
+portable export/import work on a PostgreSQL app (#5419).
+
+**Two credentials (#5188).** With `SMRT_APP_SHELL_RUNTIME_DATABASE_URL` set to a
+second login, `appDatabase` (`app-database.ts`) keeps `DATABASE_URL` as the admin
+(shell tables, schema ownership, the claim, copies and swaps, and the owner lane's
+boot and migration under `SET LOCAL ROLE <schema>_o`) and runs every user
+operation as the runtime login after `SET LOCAL ROLE <schema>_r` (the broker). The
+login must be NOSUPERUSER NOBYPASSRLS NOCREATEROLE NOCREATEDB, own no table, hold
+nothing on the app schemas or TEMP/CREATE on the database, and be a member of the
+app roles only WITH INHERIT FALSE: `provision(schema)` creates and grants the roles
+(`provisionAppRoles`; the owner role goes to the admin) and refuses to start the app
+(`assertRuntimeLogin`) otherwise. Unset, the deployment is single-owner (one login,
+no app roles), as before, and startup logs one structured warning
+(`app-shell.database.no-role-isolation`: "no database-level role isolation: set
+`SMRT_APP_SHELL_RUNTIME_DATABASE_URL`") because nothing in the database then
+separates one app from another. User tables carry forced row-level-security policies (#5189, engine.md); guests are still refused.
 
 An app still in an `app.db` is refused until `migrateOwnAppToPostgres()` (host.ts;
 engine.md "SQLite to PostgreSQL in place") has moved it. v1 decisions:

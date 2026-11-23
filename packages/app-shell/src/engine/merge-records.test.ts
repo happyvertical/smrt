@@ -3,6 +3,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { DatabaseSync } from 'node:sqlite';
 import { afterAll, beforeAll, expect, it } from 'vitest';
+import { hostOwner } from '../test/engine-principal.ts';
 import {
   AppHost,
   ApprovalRequiredError,
@@ -35,11 +36,20 @@ beforeAll(async () => {
     fields: { name: { type: 'text' }, email: { type: 'text' } },
   });
   keep = String(
-    (await host.create('Customer', { name: 'Ada', email: null })).id,
+    (
+      await host.create(hostOwner(host), 'Customer', {
+        name: 'Ada',
+        email: null,
+      })
+    ).id,
   );
   other = String(
-    (await host.create('Customer', { name: 'A', email: 'ada@example.test' }))
-      .id,
+    (
+      await host.create(hostOwner(host), 'Customer', {
+        name: 'A',
+        email: 'ada@example.test',
+      })
+    ).id,
   );
   for (const name of ['Note', 'Task']) {
     await run({
@@ -50,7 +60,10 @@ beforeAll(async () => {
         hiddenCustomer: { type: 'reference', ref: 'Customer' },
       },
     });
-    await host.create(name, { customer: other, hiddenCustomer: other });
+    await host.create(hostOwner(host), name, {
+      customer: other,
+      hiddenCustomer: other,
+    });
     await run({ type: 'hideField', model: name, field: 'hiddenCustomer' });
   }
 });
@@ -76,10 +89,12 @@ it('always gates merges; previews every reference, chooses values and undoes raw
     ApprovalRequiredError,
   );
   await run(command());
-  expect(await host.list('Customer')).toHaveLength(1);
-  expect((await host.get('Customer', keep)).email).toBe('ada@example.test');
+  expect(await host.list(hostOwner(host), 'Customer')).toHaveLength(1);
+  expect((await host.get(hostOwner(host), 'Customer', keep)).email).toBe(
+    'ada@example.test',
+  );
   for (const model of ['Note', 'Task'])
-    expect((await host.list(model))[0].customer).toBe(keep);
+    expect((await host.list(hostOwner(host), model))[0].customer).toBe(keep);
   await host.close();
   host = await AppHost.open(dir, { store });
   await run({ type: 'undo' });
@@ -117,7 +132,9 @@ it('publishes a draft merge against current live references and undoes them', as
   });
   try {
     await draft.execute(command(), { author: 't' });
-    const late = await host.create('Note', { customer: other });
+    const late = await host.create(hostOwner(host), 'Note', {
+      customer: other,
+    });
     const before = raw();
     const p = await host.previewPublish(draft);
     await host.publishDraft(draft, {
@@ -125,7 +142,9 @@ it('publishes a draft merge against current live references and undoes them', as
       approved: true,
       expect: p.digest,
     });
-    expect((await host.get('Note', String(late.id))).customer).toBe(keep);
+    expect(
+      (await host.get(hostOwner(host), 'Note', String(late.id))).customer,
+    ).toBe(keep);
     await run({ type: 'undo' });
     expect(raw()).toEqual(before);
   } finally {
@@ -158,29 +177,44 @@ it('keeps later note edits, skips deleted referrers and refuses changed repointe
     field: 'body',
     definition: { type: 'text' },
   });
-  const first = await host.create('Note', {
+  const first = await host.create(hostOwner(host), 'Note', {
     customer: other,
     body: 'original',
   });
-  const second = await host.create('Note', { customer: other, body: 'second' });
+  const second = await host.create(hostOwner(host), 'Note', {
+    customer: other,
+    body: 'second',
+  });
   await run(command());
-  await host.update('Note', String(first.id), { body: 'edited later' });
+  await host.update(hostOwner(host), 'Note', String(first.id), {
+    body: 'edited later',
+  });
   await run({ type: 'undo' });
-  expect(await host.get('Note', String(first.id))).toMatchObject({
+  expect(
+    await host.get(hostOwner(host), 'Note', String(first.id)),
+  ).toMatchObject({
     body: 'edited later',
     customer: other,
   });
   await run(command());
-  await host.update('Note', String(first.id), { customer: null });
+  await host.update(hostOwner(host), 'Note', String(first.id), {
+    customer: null,
+  });
   await expect(run({ type: 'undo' })).rejects.toThrow(/changed since/);
-  expect(await host.list('Customer')).toHaveLength(1);
-  await host.update('Note', String(first.id), { customer: keep });
-  await host.remove('Note', String(second.id));
+  expect(await host.list(hostOwner(host), 'Customer')).toHaveLength(1);
+  await host.update(hostOwner(host), 'Note', String(first.id), {
+    customer: keep,
+  });
+  await host.remove(hostOwner(host), 'Note', String(second.id));
   const undone = await run({ type: 'undo' });
   expect(undone).toMatchObject({ skipped: 1 });
-  expect(await host.list('Customer')).toHaveLength(2);
-  expect((await host.list('Note')).some((r) => r.id === second.id)).toBe(false);
-  expect(await host.get('Note', String(first.id))).toMatchObject({
+  expect(await host.list(hostOwner(host), 'Customer')).toHaveLength(2);
+  expect(
+    (await host.list(hostOwner(host), 'Note')).some((r) => r.id === second.id),
+  ).toBe(false);
+  expect(
+    await host.get(hostOwner(host), 'Note', String(first.id)),
+  ).toMatchObject({
     body: 'edited later',
     customer: other,
   });

@@ -1,5 +1,6 @@
 // Slice 3 of draft/publish: preview and publish (rehearsal on a fresh copy of
 // live, guarded file swap, rollback, crash recovery). In-process, SQLite.
+
 import { createHash } from 'node:crypto';
 import {
   cpSync,
@@ -15,6 +16,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { DatabaseSync } from 'node:sqlite';
 import { afterAll, describe, expect, it } from 'vitest';
+import { hostOwner } from '../test/engine-principal.ts';
 import {
   AppHost,
   ApprovalRequiredError,
@@ -123,10 +125,11 @@ async function world(opts: { undoneBranch?: boolean } = {}) {
     ['Garage', 'big job', 'lots'],
   ])
     ids.push(
-      (await live.create('Chore', { title, notes, points })).id as string,
+      (await live.create(hostOwner(live), 'Chore', { title, notes, points }))
+        .id as string,
     );
-  await live.create('Other', { label: 'o1' });
-  await live.create('Other', { label: 'o2' });
+  await live.create(hostOwner(live), 'Other', { label: 'o1' });
+  await live.create(hostOwner(live), 'Other', { label: 'o2' });
   if (opts.undoneBranch) {
     await live.execute(
       {
@@ -203,8 +206,10 @@ describe('publish: what lands in live', () => {
       expect(cols).toContain('qty');
       expect(cols).not.toContain('size');
       // live rows are intact and the app runs the new definition
-      expect(await w.live.list('Chore')).toHaveLength(3);
-      expect(await w.live.runMethod('Tag', 'hello')).toBeTruthy();
+      expect(await w.live.list(hostOwner(w.live), 'Chore')).toHaveLength(3);
+      expect(
+        await w.live.runMethod(hostOwner(w.live), 'Tag', 'hello'),
+      ).toBeTruthy();
       // history: N ordinary versions, chained, tagged, current
       const vs = await w.live.versions();
       expect(vs.filter((v) => v.version > base).map((v) => v.summary)).toEqual([
@@ -224,7 +229,7 @@ describe('publish: what lands in live', () => {
       expect(r.snapshot).toBe(join(w.liveDir, 'snapshots', snaps[0]));
       // and it still serves records, and thawing allows new structure
       w.live.setFrozen(false);
-      await w.live.create('Chore', { title: 'new', qty: 2 });
+      await w.live.create(hostOwner(w.live), 'Chore', { title: 'new', qty: 2 });
       await w.live.execute(
         {
           type: 'addField',
@@ -259,7 +264,7 @@ describe('publish: what lands in live', () => {
       await d.execute({ type: 'removeModel', model: 'Other' }, AUTHOR);
       // a live row written AFTER the fork, with data in both changed fields
       const late = (
-        await w.live.create('Chore', {
+        await w.live.create(hostOwner(w.live), 'Chore', {
           title: 'Late',
           notes: 'n!',
           points: '7',
@@ -274,7 +279,7 @@ describe('publish: what lands in live', () => {
       expect(r.archives).toEqual(preview.archives);
       expect(w.live.version).toBe(base + 3);
       expect(columns(w.liveDir, 'u_chores')).not.toContain('notes');
-      const rows = await w.live.list('Chore');
+      const rows = await w.live.list(hostOwner(w.live), 'Chore');
       expect(rows.find((x) => x.id === late)?.points).toBe(7);
       expect(rows.find((x) => x.title === 'Garage')?.points ?? null).toBeNull();
       expect(
@@ -291,11 +296,11 @@ describe('publish: what lands in live', () => {
       await w.live.execute({ type: 'undo' }, OK);
       await w.live.execute({ type: 'undo' }, OK);
       expect(w.live.version).toBe(base);
-      const back = await w.live.list('Chore');
+      const back = await w.live.list(hostOwner(w.live), 'Chore');
       expect(back.find((x) => x.title === 'Garage')?.points).toBe('lots');
       expect(back.find((x) => x.title === 'Bins')?.notes).toBe('blue bin');
       expect(back.find((x) => x.id === late)?.notes).toBe('n!');
-      expect(await w.live.list('Other')).toHaveLength(2);
+      expect(await w.live.list(hostOwner(w.live), 'Other')).toHaveLength(2);
     } finally {
       await close(w);
     }
@@ -304,7 +309,9 @@ describe('publish: what lands in live', () => {
   it('keeps live records added after the fork, drops the draft ones, and holds records made during the publish', async () => {
     const w = await world();
     try {
-      await w.draft.create('Chore', { title: 'draft-only' });
+      await w.draft.create(hostOwner(w.draft), 'Chore', {
+        title: 'draft-only',
+      });
       await w.draft.execute(
         {
           type: 'addField',
@@ -314,13 +321,20 @@ describe('publish: what lands in live', () => {
         },
         AUTHOR,
       );
-      await w.live.create('Chore', { title: 'live-after-fork', notes: 'x' });
+      await w.live.create(hostOwner(w.live), 'Chore', {
+        title: 'live-after-fork',
+        notes: 'x',
+      });
       const { digest } = await w.live.previewPublish(w.draft);
       // a record written while the publish runs waits for it and lands in the new data
       const pub = w.live.publishDraft(w.draft, { ...OK, expect: digest });
-      const during = w.live.create('Chore', { title: 'during-publish' });
+      const during = w.live.create(hostOwner(w.live), 'Chore', {
+        title: 'during-publish',
+      });
       await Promise.all([pub, during]);
-      const titles = (await w.live.list('Chore', 1000)).map((r) => r.title);
+      const titles = (await w.live.list(hostOwner(w.live), 'Chore', 1000)).map(
+        (r) => r.title,
+      );
       expect(titles).toContain('live-after-fork');
       expect(titles).toContain('during-publish');
       expect(titles).not.toContain('draft-only');
@@ -346,7 +360,9 @@ describe('publish: what lands in live', () => {
       w.live.setFrozen(false);
       // the archive is keyed by the number live gave it, so undo finds it
       await w.live.execute({ type: 'undo' }, AUTHOR);
-      expect((await w.live.list('Chore'))[0].notes).toBeTruthy();
+      expect(
+        (await w.live.list(hostOwner(w.live), 'Chore'))[0].notes,
+      ).toBeTruthy();
     } finally {
       await close(w);
     }
@@ -551,7 +567,7 @@ describe('publish: refusals', () => {
       );
       expect(sha(join(w.liveDir, 'app.db'))).toBe(before);
       expect(w.live.appAlive).toBe(true);
-      expect(await w.live.list('Chore')).toHaveLength(3);
+      expect(await w.live.list(hostOwner(w.live), 'Chore')).toHaveLength(3);
     } finally {
       await close(w);
     }
@@ -601,7 +617,7 @@ describe('publish: a failure anywhere leaves live exactly as it was', () => {
         ).rejects.toThrow(`boom at ${failAt}`);
         await intact(w, hash, base);
         // live still works and the retry goes through
-        expect(await w.live.list('Chore')).toHaveLength(3);
+        expect(await w.live.list(hostOwner(w.live), 'Chore')).toHaveLength(3);
         await w.live.publishDraft(w.draft, { ...OK, expect: digest });
         expect(w.live.version).toBe(base + 1);
         expect(columns(w.liveDir, 'u_chores')).not.toContain('notes');
@@ -759,7 +775,7 @@ describe('boot reconcile after a crash', () => {
           expect(host.version).toBe(base);
           expect(sha(join(crashed, 'app.db'))).toBe(hash);
           expect(leftovers(crashed)).toEqual([]);
-          expect(await host.list('Chore')).toHaveLength(3);
+          expect(await host.list(hostOwner(host), 'Chore')).toHaveLength(3);
           expect(columns(crashed, 'u_chores')).toContain('notes');
         } finally {
           await host.close();
@@ -781,7 +797,7 @@ describe('boot reconcile after a crash', () => {
         expect(host.version).toBe(base + 1);
         expect(leftovers(crashed)).toEqual([]);
         expect(columns(crashed, 'u_chores')).not.toContain('notes');
-        expect(await host.list('Chore')).toHaveLength(3);
+        expect(await host.list(hostOwner(host), 'Chore')).toHaveLength(3);
       } finally {
         await host.close();
       }
@@ -862,7 +878,7 @@ describe('boot reconcile after a crash', () => {
         expect(again.version).toBe(version);
         expect(columns(w.liveDir, 'u_chores')).not.toContain('notes');
         expect(leftovers(w.liveDir)).toEqual([]);
-        expect(await again.list('Chore')).toHaveLength(3);
+        expect(await again.list(hostOwner(again), 'Chore')).toHaveLength(3);
       } finally {
         await again.close();
       }
@@ -1000,12 +1016,12 @@ describe('undoTo after a publish', () => {
       );
       await w.live.execute(cmd, OK);
       expect(w.live.version).toBe(base);
-      const rows = await w.live.list('Chore');
+      const rows = await w.live.list(hostOwner(w.live), 'Chore');
       expect(rows.find((x) => x.title === 'Garage')).toMatchObject({
         notes: 'big job',
         points: 'lots',
       });
-      expect(await w.live.list('Other')).toHaveLength(2);
+      expect(await w.live.list(hostOwner(w.live), 'Other')).toHaveLength(2);
     } finally {
       await close(w);
     }
@@ -1035,12 +1051,17 @@ describe('reviewed replay data impacts', () => {
           counts: expect.objectContaining({ insert: 1, update: 0 }),
         },
       ]);
-      await w.live.create('Chore', { title: 'New', notes: 'live' });
+      await w.live.create(hostOwner(w.live), 'Chore', {
+        title: 'New',
+        notes: 'live',
+      });
       await expect(
         w.live.publishDraft(w.draft, { ...OK, expect: first.digest }),
       ).rejects.toThrow(/review.*again/);
       expect(
-        (await w.live.list('Chore')).find((r) => r.title === 'New')?.notes,
+        (await w.live.list(hostOwner(w.live), 'Chore')).find(
+          (r) => r.title === 'New',
+        )?.notes,
       ).toBe('live');
       const fresh = await w.live.previewPublish(w.draft);
       expect(fresh.versions.at(-1)?.dataSteps?.[0].counts).toMatchObject({
@@ -1049,7 +1070,9 @@ describe('reviewed replay data impacts', () => {
       });
       await w.live.publishDraft(w.draft, { ...OK, expect: fresh.digest });
       expect(
-        (await w.live.list('Chore')).find((r) => r.title === 'New')?.notes,
+        (await w.live.list(hostOwner(w.live), 'Chore')).find(
+          (r) => r.title === 'New',
+        )?.notes,
       ).toBe('loaded');
     } finally {
       await close(w);
@@ -1060,7 +1083,7 @@ describe('reviewed replay data impacts', () => {
 it('counts extract and merge steps sequentially against current live records', async () => {
   const w = await world();
   try {
-    const others = await w.live.list('Other');
+    const others = await w.live.list(hostOwner(w.live), 'Other');
     await w.draft.execute(
       { type: 'extractModel', model: 'Chore', field: 'notes', into: 'Note' },
       AUTHOR,
@@ -1074,7 +1097,7 @@ it('counts extract and merge steps sequentially against current live records', a
       },
       AUTHOR,
     );
-    await w.live.create('Chore', {
+    await w.live.create(hostOwner(w.live), 'Chore', {
       title: 'Live extra',
       notes: 'new distinct',
     });
@@ -1092,11 +1115,14 @@ it('counts extract and merge steps sequentially against current live records', a
         counts: { removed: 1, references: {} },
       },
     ]);
-    await w.live.create('Chore', { title: 'Later', notes: 'another distinct' });
+    await w.live.create(hostOwner(w.live), 'Chore', {
+      title: 'Later',
+      notes: 'another distinct',
+    });
     await expect(
       w.live.publishDraft(w.draft, { ...OK, expect: preview.digest }),
     ).rejects.toThrow(/review.*again/);
-    expect(await w.live.list('Other')).toHaveLength(2);
+    expect(await w.live.list(hostOwner(w.live), 'Other')).toHaveLength(2);
     expect(w.live.def.models.Note).toBeUndefined();
   } finally {
     await close(w);

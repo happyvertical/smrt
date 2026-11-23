@@ -42,7 +42,13 @@ See [audit contract](../../../docs/content/audit-trail.md).
   a junction ineligible for batching, preserving its virtual per-row save path.
   Junction batches write new rows in one statement. Known collisions take
   the per-row path. A late untracked collision updates the existing row in
-  place, while a tracked collision rolls back all additions. Callers still
+  place: the instance adopts the stored id before completion, so hooks,
+  interceptors and the change feed see that row and an `update`, never a
+  phantom id. The stored row is matched by conflict key exactly as the database
+  stores it (case-sensitive text, integers; only a native UUID's letter case is
+  folded), and only when every input matches one returned row; a group whose
+  conflict key holds another type (a date, a boolean, a decimal) takes the
+  per-row path before anything is written. A tracked collision rolls back all additions. Callers still
   own the transaction for an atomic remove-and-add replacement.
 - `SmrtCollection.createMany(inputs)` is the bulk create: all-or-nothing, in
   input order, joined to the caller's transaction. An eligible batch (the
@@ -72,8 +78,21 @@ See [audit contract](../../../docs/content/audit-trail.md).
   keeps its original ID and creation time. An unloaded write to a tracked
   match fails without committing.
 - `save()` error contract (#2366): unique/PK violation → `ValidationError` `VALIDATION_UNIQUE_CONSTRAINT`, NOT NULL → `VALIDATION_REQUIRED_FIELD`, both on the first attempt on every adapter; any other database failure → `DatabaseError` with the driver error on `cause`
-- `getSlug()`: auto-generates from name → title → label → id
-- `loadRelated(fieldName)`: lazy-loads relationships (cached in `_loadedRelationships` Map)
+- `getSlug()`: auto-generates from name → title → label → id; a candidate that
+  slugifies to nothing (no ASCII letters or digits) is skipped, so the next
+  candidate or finally the id supplies the slug
+- A registered field named `options` collides with the instance's service
+  options (`src/reserved-field-names.ts`): it is skipped on save, never applied
+  onto `this.options` by the constructor or row hydration, has no value in
+  `getFields()`, and is never assigned by `collection.update()` or
+  `getOrUpsert()`. `collection.update()` validates the submitted keys first, so
+  an `options` key on a model that does not declare it as an assignable field
+  (undeclared or `readonly`) is refused with `VALIDATION_UNKNOWN_FIELD` before
+  any write, like any other such key; only a declared assignable one is
+  dropped. Each model class that declares it is warned once (keyed by
+  constructor, naming the qualified model); an undeclared `options` key never
+  warns. Registration still accepts the name; rename such a field.
+- `loadRelated(fieldName)`: lazy-loads relationships (cached in `_loadedRelationships` Map). A cached single-target entry is tied to the key field's value it was loaded for: once the field names another row (or is cleared) the entry is dropped and the next `loadRelated`/`getRelated` resolves the current target, and a load whose key changes while it is in flight is discarded and the current key loaded instead (the key is rechecked after the single-table subtype read too, so a stale row never decides a `validateSubtype` refusal, and the reload goes through the same subtype and tenant checks); `isRelatedLoaded` agrees. Collection (one-to-many / many-to-many) entries carry no key.
 
 Relationship I/O resolves canonical source and target identities, not the public
 display names. `relationship-loader.ts` owns target manifest hydration and inverse
@@ -311,6 +330,21 @@ instances and never use this path to overwrite a loaded revision.
 - Multi-level STI collections read their own discriminator and every registered descendant, never sibling branches. Decorate every intermediate with `@smrt()`; registration rejects an undecorated intermediate beneath an STI root.
 - `@smrt({ abstract: true })` makes a registered STI type readable but prevents saving an instance with its own discriminator. A base collection can still create a concrete descendant by passing that descendant's `_meta_type`. Generated surfaces expose only `list` and `get` for abstract models, including when custom actions were explicitly included.
 - Set `validateSubtype: true` on a foreign key or cross-package reference targeting an STI child when it must reject sibling rows. Save checks through the child's collection, and `loadRelated()` rejects a stored sibling row. The physical FK targets the shared root table, so the collection's discriminator and tenant read scope provide the subtype check. Saves fail when the subtype target cannot be loaded, even if ordinary cross-package validation is disabled.
+
+## Late parents
+
+An inheritance chain read while a parent is unregistered (or whose `extends`
+resolved to the class itself) is partial. `registry/partial-chain.ts` marks it
+on the registration under a registered symbol, so every loaded copy of core
+sees the mark and none caches it as complete. A partial chain holds for one
+registry generation. Every `register()` / `registerFromManifest()` ends by
+re-deriving partial chains, and re-merging `inheritedFields` already derived
+from them, so synchronous readers (`restFieldReadPermissions()`, query access,
+request input, generators) see a parent as soon as it registers. A table name
+an object or collection derived from a partial chain is derived again after the
+registry changes. A parent that never registers costs one chain walk per
+partial class per registration. Complete chains rely on the targeted
+invalidation in `class-registration.ts`.
 
 ## Same-named subclass replaces its parent (#4921)
 

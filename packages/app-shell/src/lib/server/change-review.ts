@@ -44,7 +44,7 @@ import {
 } from './changes.ts';
 import { dataRoot, getHost, getShellDb } from './host.ts';
 import { createToollessCliDriver } from './import-assistant.ts';
-import { type Principal, runAs } from './owner.ts';
+import { callerFor, type Principal, runAs } from './owner.ts';
 
 /** Returns the model's raw text, or null when no assistant can review (skip). */
 export type ReviewRunner = (input: {
@@ -117,10 +117,11 @@ async function sampleRecords(
       if (typeof model !== 'string' || out[model] || !host.def.models[model])
         continue;
       try {
-        const rows = (await host.list(model, SAMPLE_ROWS)) as Record<
-          string,
-          unknown
-        >[];
+        const rows = (await host.list(
+          await callerFor(host),
+          model,
+          SAMPLE_ROWS,
+        )) as Record<string, unknown>[];
         out[model] = rows.map((row) =>
           Object.fromEntries(
             Object.entries(row)

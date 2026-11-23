@@ -22,8 +22,10 @@ export const REQUEST_HELPER_NAMES = [
   'assertCreateTargetSurface',
   'assertQueryAccess',
   'identifierArgument',
+  'prepareWriteInput',
   'publicSerializerOf',
   'requireIdentifierArgument',
+  'runToolInRequestTenancy',
   'toPublicJSONValue',
 ] as const;
 

@@ -26,6 +26,7 @@ import {
   collectSyncApplyTargets,
   generateSyncApplyRoute as generateSyncApplyRouteInto,
   generateSyncApplyRouteTemplate,
+  syncModelScope,
 } from './sync-apply-route';
 
 /** Plan, check and commit the route as the generator does; true if written. */
@@ -95,19 +96,21 @@ describe('collectSyncApplyTargets', () => {
     expect(product).toMatchObject({
       registryKey: 'Product',
       ops: ['create', 'update', 'delete'],
-      readonlyFields: ['sku'],
-      writableAllowlist: null,
       publicAccess: false,
-      tenantScoped: false,
     });
+    // The write policy is read at run time by `prepareWriteInput`.
+    expect(product).not.toHaveProperty('readonlyFields');
+    expect(product).not.toHaveProperty('writableAllowlist');
     const report = targets.find((t) => t.segment === 'reports');
     expect(report).toMatchObject({
       registryKey: 'Report',
       ops: ['create'],
-      writableAllowlist: ['title'],
       publicAccess: true,
-      tenantScoped: true,
     });
+    // Tenancy is resolved per item at request time (#5375), never from the
+    // manifest.
+    expect(product).not.toHaveProperty('tenantScoped');
+    expect(report).not.toHaveProperty('tenantScoped');
   });
 
   it('skips api-disabled objects, collection classes, and read-only APIs', () => {
@@ -194,7 +197,14 @@ describe('generateSyncApplyRouteTemplate', () => {
 
   it('delegates to the shared core engine and policy helper', () => {
     expect(content).toContain('processSyncApplyBatch');
-    expect(content).toContain('applySyncWritablePolicy');
+    expect(content).toContain(
+      'prepareWriteInput(target.registryKey, payload, stored, getPublicJsonOptions(locals))',
+    );
+    expect(content).not.toContain('applySyncWritablePolicy');
+    // One import: a second declaration fails to parse in the emitted route.
+    expect(
+      content.match(/\bprepareWriteInput,|\bprepareWriteInput \}/g),
+    ).toHaveLength(1);
     expect(content).toContain("from '@happyvertical/smrt-core'");
     // #3416: collections resolve through the generated access prelude.
     expect(content).toContain(
@@ -209,7 +219,7 @@ describe('generateSyncApplyRouteTemplate', () => {
     expect(content).toContain('"products": {');
     expect(content).toContain('registryKey: "Product"');
     expect(content).toContain('ops: ["create","update","delete"]');
-    expect(content).toContain('readonlyFields: ["sku"]');
+    expect(content).not.toContain('readonlyFields');
     expect(content).toContain('"reports": {');
     expect(content).toContain('ops: ["create"]');
     expect(content).toContain('publicAccess: true');
@@ -224,25 +234,93 @@ describe('generateSyncApplyRouteTemplate', () => {
     expect(content).toContain("'auth_required'");
   });
 
-  it('establishes tenant context for a target tenant-scoped in its manifest or at runtime', () => {
-    // Per item, with that target's own principal requirement.
+  it('runs every item inside the request tenancy its target has at request time', () => {
+    // Per item, with that target's own principal requirement (#5375).
+    expect(content).toContain('runInRequestTenancy(');
     expect(content).toContain(
-      'establishTenantContext(locals, target.principalContext);',
+      'operation: op, locals, requirePrincipal: target.principalContext',
     );
-    expect(content).toContain(
-      'hasTenantWriteContext(locals, target.allowSuperAdminBypass)',
-    );
-    expect(content).toContain("from '@happyvertical/smrt-tenancy'");
-
-    // Without a tenant-scoped model in the manifest, the core request
-    // context is entered for a model whose tenancy is registered at runtime.
+    // The manifest's tenancy flag selects nothing: the same route source is
+    // emitted with or without tenant-scoped models.
+    expect(content).not.toContain('@happyvertical/smrt-tenancy');
+    expect(content).not.toContain('tenantScoped:');
     const withoutTenants = generateSyncApplyRouteTemplate(
       collectSyncApplyTargets(manifestWith({ Product: productDef })),
       ACCESS_IMPORTS,
     );
-    expect(withoutTenants).toContain('isTenantScopedModel(target.registryKey)');
-    expect(withoutTenants).not.toContain('hasTenantWriteContext');
-    expect(withoutTenants).not.toContain('@happyvertical/smrt-tenancy');
+    expect(withoutTenants).toContain('runInRequestTenancy(');
+  });
+
+  it('scopes a singleton STI base, so a later subtype is not synced through it', () => {
+    const base = {
+      qualifiedName: '@fixture/app:Revision',
+      className: 'Revision',
+      packageName: '@fixture/app',
+      collection: 'revisions',
+      fields: {},
+      methods: {},
+      decoratorConfig: { tableStrategy: 'sti', api: { include: ['update'] } },
+    };
+    const single = manifestWith({
+      '@fixture/app:Revision': base,
+      Product: productDef,
+    });
+    const scope = syncModelScope(single);
+    expect(scope).toEqual(['@fixture/app:Revision', 'Product']);
+    const route = generateSyncApplyRouteTemplate(
+      collectSyncApplyTargets(single),
+      ACCESS_IMPORTS,
+      scope,
+    );
+    expect(route).toContain('modelScope: SYNC_MODEL_SCOPE');
+  });
+
+  it('limits family members served through a base to the models the manifest generates', () => {
+    const base = {
+      qualifiedName: '@fixture/app:Revision',
+      className: 'Revision',
+      packageName: '@fixture/app',
+      collection: 'revisions',
+      fields: {},
+      methods: {},
+      decoratorConfig: { tableStrategy: 'sti', api: { include: ['update'] } },
+    };
+    const child = {
+      qualifiedName: '@fixture/app:DraftRevision',
+      className: 'DraftRevision',
+      packageName: '@fixture/app',
+      collection: 'revisions',
+      extends: 'Revision',
+      extendsQualified: '@fixture/app:Revision',
+      fields: {},
+      methods: {},
+      decoratorConfig: { api: { include: ['update'] } },
+    };
+    const family = manifestWith({
+      '@fixture/app:Revision': base,
+      '@fixture/app:DraftRevision': child,
+      Product: productDef,
+    });
+    const scope = syncModelScope(family);
+    expect(scope).toEqual([
+      '@fixture/app:DraftRevision',
+      '@fixture/app:Revision',
+      'Product',
+    ]);
+    const scoped = generateSyncApplyRouteTemplate(
+      collectSyncApplyTargets(family),
+      ACCESS_IMPORTS,
+      scope,
+    );
+    expect(scoped).toContain(
+      `const SYNC_MODEL_SCOPE: ReadonlySet<string> = new Set(${JSON.stringify(scope)});`,
+    );
+    expect(scoped).toContain('modelScope: SYNC_MODEL_SCOPE');
+    // A manifest without a family carries no model list (unchanged source).
+    expect(syncModelScope(manifestWith({ Product: productDef }))).toBe(
+      undefined,
+    );
+    expect(content).not.toContain('SYNC_MODEL_SCOPE');
   });
 });
 
@@ -338,9 +416,11 @@ describe('generated sync-apply route runtime: operation permissions (#3011)', ()
     rmSync(projectRoot, { force: true, recursive: true });
     delete (globalThis as Record<string, unknown>).__smrtSyncCreateCalls;
     delete (globalThis as Record<string, unknown>).__smrtSyncDeclaredFields;
+    delete (globalThis as Record<string, unknown>).__smrtSyncWritePolicy;
     delete (globalThis as Record<string, unknown>).__smrtSyncStoredRow;
     delete (globalThis as Record<string, unknown>).__smrtSyncTenantContext;
     delete (globalThis as Record<string, unknown>).__smrtSyncSystemContext;
+    delete (globalThis as Record<string, unknown>).__smrtSyncTenantPolicies;
   });
 
   async function importRoute(
@@ -349,6 +429,20 @@ describe('generated sync-apply route runtime: operation permissions (#3011)', ()
     POST: (event: { locals: unknown; request: Request }) => Promise<Response>;
   }> {
     const targets = collectSyncApplyTargets(manifestWith(objects));
+    // Each model's tenancy at request time (#5375), from its manifest entry.
+    (globalThis as Record<string, unknown>).__smrtSyncTenantPolicies =
+      Object.fromEntries(
+        Object.entries(objects)
+          .filter(
+            ([, object]) =>
+              !!(object.decoratorConfig as { tenantScoped?: unknown })
+                ?.tenantScoped,
+          )
+          .map(([key, object]) => [
+            key,
+            (object.decoratorConfig as { tenantScoped?: unknown }).tenantScoped,
+          ]),
+      );
     const routePath = join(projectRoot, 'route.ts');
     writeFileSync(
       routePath,
@@ -406,20 +500,55 @@ describe('generated sync-apply route runtime: operation permissions (#3011)', ()
         // The real rule runs here over the field names a test declares
         // (none by default), standing in for the registry's field lookup.
         `import { isServiceOptionInput } from ${JSON.stringify(fileURLToPath(new URL('../service-options.ts', import.meta.url)))};`,
-        'export const ObjectRegistry = { isServiceOptionInput: (_name: string, key: string) => isServiceOptionInput(key, (field: string) => ((globalThis as any).__smrtSyncDeclaredFields ?? []).includes(field)) };',
+        // The fixture models are plain tables (no STI type selection).
+        'export const ObjectRegistry = { getTableStrategy: () => undefined, isServiceOptionInput: (_name: string, key: string) => isServiceOptionInput(key, (field: string) => ((globalThis as any).__smrtSyncDeclaredFields ?? []).includes(field)) };',
         // The route assigns an update payload through `applyUpdateInput`. The
         // fixture rows are structural, so the real rule runs with nothing
         // registered about them.
-        `import { assignUpdateInput, resolveUpdateInput, STRUCTURAL_UPDATE_RULES } from ${JSON.stringify(fileURLToPath(new URL('../write-input.ts', import.meta.url)))};`,
+        `import { assignUpdateInput, resolveUpdateInput, resolveWriteBody, STRUCTURAL_UPDATE_RULES } from ${JSON.stringify(fileURLToPath(new URL('../write-input.ts', import.meta.url)))};`,
+        // The route builds a write body through `prepareWriteInput`. The real
+        // rule runs over the read-only fields and allowlist a test declares
+        // (none by default), standing in for the registry's field policy.
+        "export const prepareWriteInput = (name: string, data: unknown, stored?: object) => { const policy = ((globalThis as any).__smrtSyncWritePolicy ?? {})[name] ?? {}; return resolveWriteBody(data, { isProtected: (key: string) => key.startsWith('_') || (policy.readonly ?? []).includes(key) || (Array.isArray(policy.writable) && !policy.writable.includes(key)), isSkipped: (key: string) => ObjectRegistry.isServiceOptionInput(name, key) || (policy.skipped ?? []).includes(key) }, stored); };",
         'export const applyUpdateInput = (row: object, data: Record<string, unknown>) => assignUpdateInput(row, data, STRUCTURAL_UPDATE_RULES);',
         'export const assertUpdateInput = (row: object, data: Record<string, unknown>) => { resolveUpdateInput(row, data, STRUCTURAL_UPDATE_RULES); };',
         // The fixture models are structural; nothing is registered to check create input against.
         'export const assertCreateInput = () => {};',
-        // Request-time tenancy: a model is tenant-scoped at runtime only when
-        // a test says so; the request tenant context is the tenancy shim's.
-        'export const isTenantScopedModel = (name: string) => ((globalThis as any).__smrtSyncRuntimeTenantModels ?? []).includes(name);',
+        // Request tenancy (#5375): core's actor rule and write gate over the
+        // tenancy shim's context, for the tenancy each model has at request
+        // time (from its manifest entry, or a run-time registration a test
+        // declares). The real rule runs in smrt-tenancy's effective-tenancy
+        // suites.
         'export const getRequestTenantContext = () => (globalThis as any).__smrtSyncTenantContext;',
         'export const enterRequestTenantContext = (context: unknown) => { (globalThis as any).__smrtSyncTenantContext = context; };',
+        'export async function runInRequestTenancy(input: any, fn: (t: unknown) => Promise<unknown>) {',
+        '  const state = globalThis as any;',
+        '  const refuse = (status: number) => { throw Object.assign(new Error(status === 401 ? "auth" : "forbidden"), { status, code: "TENANT_CONTEXT_REQUIRED" }); };',
+        "  const record = (value: unknown) => (value && typeof value === 'object' ? value : undefined) as any;",
+        "  const text = (value: unknown) => (typeof value === 'string' && value ? value : undefined);",
+        '  const l = record(input.locals) ?? {};',
+        '  const user = record(l.user); const session = record(l.session); const context = record(l.tenantContext);',
+        '  const tenantId = text(l.tenantId ?? user?.tenantId ?? session?.tenantId ?? context?.tenantId);',
+        '  const userId = text(l.userId ?? user?.id ?? user?.userId ?? session?.userId ?? context?.userId);',
+        '  const raw = l.permissions ?? l.permissionSet ?? l.smrtPermissions ?? context?.permissions;',
+        "  const permissions = raw instanceof Set ? raw : Array.isArray(raw) && raw.every((v: unknown) => typeof v === 'string') ? new Set(raw) : undefined;",
+        '  const authenticated = !!user || !!session || l.smrtAuth === true;',
+        '  if (input.requirePrincipal && (!tenantId || !userId || !permissions)) refuse(403);',
+        '  const active = state.__smrtSyncTenantContext;',
+        '  let actorTenant = tenantId;',
+        '  if (active) {',
+        '    const userMismatch = input.requirePrincipal ? active.userId !== userId : !!userId && !!active.userId && active.userId !== userId;',
+        '    if ((tenantId && active.tenantId !== tenantId) || userMismatch) refuse(403);',
+        '    actorTenant = active.tenantId;',
+        '    if (input.requirePrincipal) state.__smrtSyncTenantContext = { ...active, tenantId, userId, permissions };',
+        '  }',
+        '  const policy = state.__smrtSyncTenantPolicies?.[input.model] ?? ((state.__smrtSyncRuntimeTenantModels ?? []).includes(input.model) ? { mode: "optional" } : undefined);',
+        '  const system = state.__smrtSyncSystemContext === true;',
+        '  const bypass = context?.superAdminBypass === true && policy?.allowSuperAdminBypass === true;',
+        '  if (policy && !system && !actorTenant && !bypass) refuse(authenticated ? 403 : 401);',
+        '  if (!active && actorTenant && (policy || input.requirePrincipal)) state.__smrtSyncTenantContext = input.requirePrincipal ? { tenantId, userId, permissions } : { tenantId };',
+        '  return fn({ model: input.model });',
+        '}',
       ].join('\n'),
     );
     const outFile = join(projectRoot, 'route.mjs');
@@ -561,14 +690,38 @@ describe('generated sync-apply route runtime: operation permissions (#3011)', ()
       );
     };
 
-    it('strips the same read-only fields as the CRUD route', async () => {
-      const [target] = collectSyncApplyTargets(
-        manifestWith({ TenantWidget: tenantDef }),
-      );
-      // Read-only, calculated and projected-label fields, from the one
-      // function both generators call.
-      expect(target.readonlyFields).toEqual(['code', 'total', 'displayLabel']);
+    const tenantWidgetPolicy = () => {
+      // The registry's write policy for the fixture: read-only and calculated
+      // fields, and the projected label the model only writes into output.
+      (globalThis as Record<string, unknown>).__smrtSyncWritePolicy = {
+        TenantWidget: {
+          readonly: ['code', 'total'],
+          skipped: ['displayLabel'],
+        },
+      };
+    };
 
+    it('refuses a create payload that sets a read-only field', async () => {
+      tenantWidgetPolicy();
+      const result = await apply(
+        'tenantwidgets',
+        {
+          tenantId: 'tenant-a',
+          permissions: ['tenantwidgets.create'],
+          user: { id: 'user-1' },
+        },
+        { name: 'Widget', code: 'forged' },
+      );
+      expect(result).toMatchObject({
+        status: 'rejected',
+        reason: 'invalid_payload',
+        details: { code: 'VALIDATION_FIELD_NOT_WRITABLE', field: 'code' },
+      });
+      expect(createCalls).toEqual([]);
+    });
+
+    it('ignores the tenant and projected label, and leaves out null read-only fields', async () => {
+      tenantWidgetPolicy();
       const result = await apply(
         'tenantwidgets',
         {
@@ -578,9 +731,9 @@ describe('generated sync-apply route runtime: operation permissions (#3011)', ()
         },
         {
           name: 'Widget',
-          code: 'forged',
-          total: 999,
-          displayLabel: 'forged',
+          code: null,
+          total: null,
+          displayLabel: 'projected',
           tenantId: 'tenant-b',
         },
       );
@@ -822,8 +975,11 @@ describe('generated sync-apply route runtime: operation permissions (#3011)', ()
       name: 'Widget',
       ...Object.fromEntries(SERVICE_KEYS.map((key) => [key, { from: key }])),
       options: { db: 'file:/elsewhere.db' },
-      _skipLoad: false,
-      _className: 'Other',
+      ...(withControls ? { _skipLoad: false, _className: 'Other' } : {}),
+    });
+    let withControls = false;
+    afterEach(() => {
+      withControls = false;
     });
     const batch = (op: 'create' | 'update') =>
       new Request('http://localhost/api/sync/apply', {
@@ -897,6 +1053,31 @@ describe('generated sync-apply route runtime: operation permissions (#3011)', ()
       expect(Object.keys(stored).sort()).toEqual(
         ['id', 'name', 'options', 'save', 'updated_at'].sort(),
       );
+    });
+
+    it('refuses underscore control keys in a create or update payload', async () => {
+      withControls = true;
+      const route = await importRoute({ Widget: writableDef });
+      expect(
+        await firstResult(
+          await route.POST({ locals: writer, request: batch('create') }),
+        ),
+      ).toMatchObject({ status: 'rejected', reason: 'invalid_payload' });
+      expect(createCalls).toEqual([]);
+
+      const stored: Record<string, unknown> = {
+        id: ITEM_ID,
+        name: 'Before',
+        updated_at: '2026-01-01T00:00:00.000Z',
+        save: async () => {},
+      };
+      (globalThis as Record<string, unknown>).__smrtSyncStoredRow = stored;
+      expect(
+        await firstResult(
+          await route.POST({ locals: writer, request: batch('update') }),
+        ),
+      ).toMatchObject({ status: 'rejected', reason: 'invalid_payload' });
+      expect(stored.name).toBe('Before');
     });
   });
 
@@ -972,7 +1153,6 @@ describe('one sync target per shared segment (#2807)', () => {
       segment: 'records',
       registryKey: '@fixture/app:ArchivedRecord',
       ops: ['create'],
-      readonlyFields: ['sku'],
       publicAccess: true,
     });
     const route = generatedRoute(sharedRecordModels());

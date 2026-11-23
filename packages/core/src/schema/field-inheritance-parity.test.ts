@@ -690,15 +690,54 @@ async function registerCoreHierarchical(): Promise<void> {
   ObjectRegistry.registerFromManifest(`${CORE}:SmrtHierarchical`, entry, CORE);
 }
 
-async function observeRegistry(shape: Shape): Promise<Observation> {
-  const leaf = shape.names[shape.names.length - 1];
-  const fields = await ObjectRegistry.getAllFields(leaf);
-  const table = shape.tables[shape.tables.length - 1];
-  const schemas = ObjectRegistry.getAllSchemasAsDefinitions();
-  return {
-    fields: fieldViews(fields as Iterable<[string, Bag]>),
-    columns: columnViews(schemas[table] as never),
-  };
+/**
+ * Observe every shape on one registry route: each leaf's effective fields,
+ * then every table definition from ONE `getAllSchemasAsDefinitions()` build.
+ *
+ * Observing changes no registration, so one build after the field reads is
+ * the build every per-shape call would return. (Building it once per shape
+ * rebuilt all ~600 classes' tables 236 times per route, about 90% of this
+ * file's setup time, #5542.) If the class set does change while observing,
+ * that is recorded as an error on every shape instead of being trusted.
+ */
+async function observeRoute(
+  shapes: Shape[],
+  route: Route,
+  into: Map<string, Observation>,
+  errors: Map<string, string>,
+): Promise<void> {
+  const classes = ObjectRegistry.getClassNames().sort().join('\n');
+  const fields = new Map<string, Map<string, unknown>>();
+  for (const shape of shapes) {
+    try {
+      const leaf = shape.names[shape.names.length - 1];
+      fields.set(shape.id, await ObjectRegistry.getAllFields(leaf));
+    } catch (error) {
+      errors.set(`${shape.id}|${route}`, String(error));
+    }
+  }
+  let schemas: ReturnType<typeof ObjectRegistry.getAllSchemasAsDefinitions>;
+  try {
+    if (ObjectRegistry.getClassNames().sort().join('\n') !== classes) {
+      throw new Error('the registered classes changed while observing');
+    }
+    schemas = ObjectRegistry.getAllSchemasAsDefinitions();
+  } catch (error) {
+    for (const shape of shapes) {
+      if (fields.has(shape.id))
+        errors.set(`${shape.id}|${route}`, String(error));
+    }
+    return;
+  }
+  for (const shape of shapes) {
+    const shapeFields = fields.get(shape.id);
+    if (!shapeFields) continue;
+    const table = shape.tables[shape.tables.length - 1];
+    into.set(shape.id, {
+      fields: fieldViews(shapeFields as Iterable<[string, Bag]>),
+      columns: columnViews(schemas[table] as never),
+    });
+  }
 }
 
 async function runAll(shapes: Shape[]): Promise<Observed> {
@@ -741,25 +780,23 @@ async function runAll(shapes: Shape[]): Promise<Observed> {
     await registerCoreHierarchical();
     const target = declareTarget();
     for (const shape of shapes) declareDecorated(shape, target);
-    for (const shape of shapes) {
-      try {
-        observed.registryDecorated.set(shape.id, await observeRegistry(shape));
-      } catch (error) {
-        observed.errors.set(`${shape.id}|decorated`, String(error));
-      }
-    }
+    await observeRoute(
+      shapes,
+      'decorated',
+      observed.registryDecorated,
+      observed.errors,
+    );
 
     // Registry path, unmerged manifest.
     ObjectRegistry.clear();
     await registerCoreHierarchical();
     registerManifest(unmerged);
-    for (const shape of shapes) {
-      try {
-        observed.registryUnmerged.set(shape.id, await observeRegistry(shape));
-      } catch (error) {
-        observed.errors.set(`${shape.id}|unmerged`, String(error));
-      }
-    }
+    await observeRoute(
+      shapes,
+      'unmerged',
+      observed.registryUnmerged,
+      observed.errors,
+    );
   } finally {
     restore();
   }

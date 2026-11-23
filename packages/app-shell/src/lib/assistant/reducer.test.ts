@@ -5,8 +5,13 @@ import {
   announcement,
   collapseFailures,
   type DockState,
+  foldsReply,
+  groupTurns,
+  type Item,
   initialState,
+  newestReplyId,
   reduce,
+  stepLabel,
   stopNote,
   toolLabel,
   workingStep,
@@ -376,5 +381,314 @@ describe('the changes block', () => {
       },
     ]);
     expect(s.items.map((i) => i.kind)).toEqual(['user', 'changes']);
+  });
+});
+
+describe('folding long replies (#5395)', () => {
+  const long = Array.from({ length: 9 }, (_, i) => `Line ${i}`).join('\n');
+  it('folds only a reply taller than about seven lines', () => {
+    expect(foldsReply('Short answer.')).toBe(false);
+    expect(foldsReply(long)).toBe(true);
+    expect(foldsReply('word '.repeat(120))).toBe(true);
+  });
+  it('names the newest assistant reply, which never folds', () => {
+    const items: Item[] = [
+      { kind: 'assistant', id: 'a', text: long, streaming: false },
+      { kind: 'user', id: 'u', text: 'and?' },
+      { kind: 'assistant', id: 'b', text: long, streaming: false },
+      { kind: 'note', id: 'n', tone: 'info', text: 'Stopped.' },
+    ];
+    expect(newestReplyId(items)).toBe('b');
+    expect(newestReplyId([])).toBeUndefined();
+  });
+});
+
+describe('quiet steps per turn (#5395)', () => {
+  const tool = (
+    id: string,
+    name: string,
+    ok: boolean,
+    summary: string,
+  ): Action[] => [
+    ev({ type: 'tool_call', id, name, args: '{}' }),
+    ev({ type: 'tool_result', id, name, ok, summary }),
+  ];
+  it("folds a turn's tools into one steps view before the reply, with at most two phrases", () => {
+    const s = run([
+      { type: 'send', text: 'hi' },
+      ...tool('1', 'app_describe', true, 'Checked the app structure'),
+      ...tool('2', 'app_a', true, 'Looked up 40 orders'),
+      ...tool('3', 'app_b', true, 'Made a report'),
+      ev({ type: 'text', delta: 'Done.' }),
+      ev({ type: 'done', stop: 'complete' }),
+    ]);
+    const view = groupTurns(s);
+    expect(view.map((i) => i.kind)).toEqual(['user', 'steps', 'assistant']);
+    expect(view[1]).toMatchObject({
+      line: 'Checked the app structure · looked up 40 orders and 1 more',
+      failed: false,
+      live: false,
+      retry: 'hi',
+    });
+  });
+  it('a turn whose last step failed is red; while running the line is the step in progress', () => {
+    const failed = run([
+      { type: 'send', text: 'hi' },
+      ...tool(
+        '1',
+        'app_runreport',
+        false,
+        'That took too long and was stopped.',
+      ),
+      ev({ type: 'done', stop: 'complete' }),
+    ]);
+    expect(groupTurns(failed)[1]).toMatchObject({
+      failed: true,
+      line: "Something didn't work",
+    });
+    const live = run([
+      { type: 'send', text: 'hi' },
+      ev({ type: 'tool_call', id: '1', name: 'app_describe', args: '{}' }),
+    ]);
+    expect(groupTurns(live)[1]).toMatchObject({
+      live: true,
+      failed: false,
+      line: 'Looking at your app…',
+    });
+  });
+  it('unknown tools show no internal name', () => {
+    const s = run([
+      { type: 'send', text: 'hi' },
+      ev({ type: 'tool_call', id: '1', name: 'dog_list', args: '{}' }),
+      ev({
+        type: 'tool_result',
+        id: '1',
+        name: 'dog_list',
+        ok: true,
+        summary: '',
+      }),
+      ev({ type: 'text', delta: 'Here.' }),
+    ]);
+    expect(stepLabel('dog_list')).toBe('Working on it');
+    const steps = groupTurns(s)[1];
+    expect(JSON.stringify(steps)).not.toMatch(/dog_list|Dog list/);
+  });
+});
+
+describe('one reply per turn (#5395)', () => {
+  const tool = (
+    id: string,
+    name: string,
+    summary = 'Completed this action',
+  ): Action[] => [
+    ev({ type: 'tool_call', id, name, args: '{}' }),
+    ev({ type: 'tool_result', id, name, ok: true, summary }),
+  ];
+  const chunks = run([
+    { type: 'send', text: 'add people' },
+    ev({ type: 'text', delta: "I'll look at the app first." }),
+    ...tool('1', 'app_describe', 'Checked the app structure'),
+    ev({ type: 'text', delta: 'Enabling the people model.' }),
+    ...tool('2', 'app_a', 'enable profiles'),
+    ev({ type: 'text', delta: 'Profiles already have names.' }),
+    ...tool('3', 'app_b', 'Made a report'),
+    ev({ type: 'text', delta: 'All set: your people are in.' }),
+    ev({ type: 'done', stop: 'complete' }),
+  ]);
+
+  it('renders one reply, the final text; earlier chunks join the steps list in order', () => {
+    const view = groupTurns(chunks);
+    expect(view.map((i) => i.kind)).toEqual(['user', 'steps', 'assistant']);
+    expect(view[2]).toMatchObject({ text: 'All set: your people are in.' });
+    const steps = view[1] as Extract<(typeof view)[number], { kind: 'steps' }>;
+    expect(steps.rows.map((r) => [r.narration ?? false, r.label])).toEqual([
+      [true, "I'll look at the app first."],
+      [false, 'Checked the app structure'],
+      [true, 'Enabling the people model.'],
+      [false, 'Set up profiles'],
+      [true, 'Profiles already have names.'],
+      [false, 'Made a report'],
+    ]);
+    // Narration is not a step: the line counts tool phrases only, in sentence case.
+    expect(steps.line).toBe(
+      'Checked the app structure · set up profiles and 1 more',
+    );
+  });
+
+  it('a stored thread of separate assistant messages folds the same way', () => {
+    const reopened = reduce(initialState, {
+      type: 'loaded',
+      threadId: 't',
+      messages: [
+        { id: '1', seq: 1, role: 'user', content: 'go' },
+        { id: '2', seq: 2, role: 'assistant', content: 'Looking.' },
+        {
+          id: '3',
+          seq: 3,
+          role: 'tool',
+          content: '',
+          tool: {
+            id: '3',
+            name: 'app_describe',
+            ok: true,
+            summary: 'Checked the app structure',
+          },
+        },
+        { id: '4', seq: 4, role: 'assistant', content: 'Done.' },
+      ],
+    });
+    expect(groupTurns(reopened).map((i) => i.kind)).toEqual([
+      'user',
+      'steps',
+      'assistant',
+    ]);
+  });
+
+  it('a turn without tools keeps every reply, and an earlier turn is untouched', () => {
+    const s = run([
+      { type: 'send', text: 'hi' },
+      ev({ type: 'text', delta: 'One.' }),
+      ev({ type: 'changes_block' }),
+      ev({ type: 'text', delta: 'Two.' }),
+    ]);
+    expect(groupTurns(s).filter((i) => i.kind === 'assistant')).toHaveLength(2);
+    const two = reduce(chunks, { type: 'send', text: 'again' });
+    expect(groupTurns(two).filter((i) => i.kind === 'assistant')).toHaveLength(
+      1,
+    );
+  });
+
+  it('the fold applies to the one long final reply of an older turn', () => {
+    expect(foldsReply('line\n'.repeat(9))).toBe(true);
+  });
+});
+
+describe('plain-words record steps (#5395)', () => {
+  const write = (id: string, name: string): Action[] => [
+    ev({ type: 'tool_call', id, name, args: '{}' }),
+    ev({
+      type: 'tool_result',
+      id,
+      name,
+      ok: true,
+      summary: 'Completed this action',
+    }),
+  ];
+  const s = run([
+    { type: 'send', text: 'add data' },
+    ...[1, 2, 3, 4].flatMap((n) => write(`c${n}`, 'customer_create')),
+    ...Array.from({ length: 10 }, (_, n) =>
+      write(`o${n}`, 'order_create'),
+    ).flat(),
+    ev({ type: 'text', delta: 'Done.' }),
+    ev({ type: 'done', stop: 'complete' }),
+  ]);
+
+  it('groups repeats under the model label, with no per-row done', () => {
+    const steps = groupTurns(s)[1] as Extract<
+      ReturnType<typeof groupTurns>[number],
+      { kind: 'steps' }
+    >;
+    expect(steps.rows.map((r) => r.label)).toEqual([
+      'Added 4 customers',
+      'Added 10 orders',
+    ]);
+    expect(steps.line).toBe('Added 4 customers · added 10 orders');
+  });
+
+  it('uses the app model label (Profile) and singular for one', () => {
+    const one = run([
+      { type: 'send', text: 'x' },
+      ...write('p1', 'customer_create'),
+      ...write('p2', 'customer_create'),
+      ...write('p3', 'order_update'),
+      ev({ type: 'text', delta: 'ok' }),
+      ev({ type: 'done', stop: 'complete' }),
+    ]);
+    const steps = groupTurns(one, {
+      models: {
+        customer: { label: 'Profile', fields: {} },
+        order: { label: 'Categories', fields: {} },
+      },
+    })[1] as Extract<ReturnType<typeof groupTurns>[number], { kind: 'steps' }>;
+    expect(steps.line).toBe('Added 2 profiles · updated 1 category');
+  });
+
+  it('keeps failed record steps and sentence-cases other lines', () => {
+    const bad = run([
+      { type: 'send', text: 'x' },
+      ev({ type: 'tool_call', id: 'f', name: 'customer_create', args: '{}' }),
+      ev({
+        type: 'tool_result',
+        id: 'f',
+        name: 'customer_create',
+        ok: false,
+        summary: 'A required value was missing.',
+      }),
+      ev({ type: 'done', stop: 'complete' }),
+    ]);
+    const steps = groupTurns(bad)[1] as Extract<
+      ReturnType<typeof groupTurns>[number],
+      { kind: 'steps' }
+    >;
+    expect(steps.failed).toBe(true);
+    expect(steps.rows[0].label).toBe('A required value was missing.');
+  });
+});
+
+describe('structural steps and plural labels (#5395)', () => {
+  const def = {
+    models: {
+      order: {
+        label: 'Orders',
+        fields: { priority: { type: 'text' as const, label: 'Priority' } },
+      },
+    },
+  };
+  const step = (name: string, summary: string, id = '1'): Action[] => [
+    ev({ type: 'tool_call', id, name, args: '{}' }),
+    ev({ type: 'tool_result', id, name, ok: true, summary }),
+  ];
+  const lineOf = (actions: Action[], d = def) => {
+    const s = run([
+      { type: 'send', text: 'x' },
+      ...actions,
+      ev({ type: 'text', delta: 'ok' }),
+      ev({ type: 'done', stop: 'complete' }),
+    ]);
+    return (groupTurns(s, d)[1] as { line: string; rows: { label: string }[] })
+      .line;
+  };
+
+  it('a plural model label is never pluralised again', () => {
+    const writes = Array.from({ length: 10 }, (_, n) =>
+      step('order_create', 'Completed this action', `o${n}`),
+    ).flat();
+    expect(lineOf(writes)).toBe('Added 10 orders');
+    expect(lineOf(step('order_create', 'Completed this action'))).toBe(
+      'Added 1 order',
+    );
+  });
+
+  it('a field add reads like the changes card, in plain words', () => {
+    expect(lineOf(step('app_addfield', 'add order.priority'))).toBe(
+      'Added a Priority field to orders',
+    );
+    expect(lineOf(step('app_addfield', 'add Order.priority'))).not.toMatch(
+      /Order\.priority/,
+    );
+  });
+
+  it('a recipe enable says what was set up, with no tool verb', () => {
+    expect(
+      lineOf([
+        ...step('app_describe', 'Checked the app structure', 'a'),
+        ...step('app_enable', 'enable profiles', 'b'),
+        ...step('app_addfield', 'add order.priority', 'c'),
+      ]),
+    ).toBe('Checked the app structure · set up profiles and 1 more');
+    expect(lineOf(step('app_enable', 'enable profiles'))).toBe(
+      'Set up profiles',
+    );
   });
 });

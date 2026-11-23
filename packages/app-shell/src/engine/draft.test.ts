@@ -1,4 +1,5 @@
 // Slice 2 of draft/publish: the copy op, forking a draft host, discarding it.
+
 import { createHash } from 'node:crypto';
 import {
   existsSync,
@@ -11,6 +12,7 @@ import {
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
+import { hostOwner } from '../test/engine-principal.ts';
 import {
   DRAFT_MARKER_FILE,
   removeDraftDirectory,
@@ -48,7 +50,10 @@ describe('forkDraft', () => {
       { author: 't' },
     );
     for (const t of ['one', 'two', 'three'])
-      await live.create('Chore', { title: t, notes: `${t} notes` });
+      await live.create(hostOwner(live), 'Chore', {
+        title: t,
+        notes: `${t} notes`,
+      });
   });
   afterAll(async () => {
     await live.close();
@@ -62,11 +67,9 @@ describe('forkDraft', () => {
     expect(draft.draft?.baseVersion).toBe(live.version);
     expect(draft.version).toBe(live.version);
     expect(draft.def).toEqual(live.def);
-    expect((await draft.list('Chore')).map((r) => r.title).sort()).toEqual([
-      'one',
-      'three',
-      'two',
-    ]);
+    expect(
+      (await draft.list(hostOwner(draft), 'Chore')).map((r) => r.title).sort(),
+    ).toEqual(['one', 'three', 'two']);
     // the base record is seeded into the draft's store, current points at it
     expect(await draftStore.current()).toBe(live.version);
     expect((await draftStore.get(live.version))?.summary).toBe(
@@ -80,16 +83,23 @@ describe('forkDraft', () => {
       { type: 'removeField', model: 'Chore', field: 'notes' },
       { author: 't' },
     );
-    await draft.create('Chore', { title: 'draft-only' });
+    await draft.create(hostOwner(draft), 'Chore', { title: 'draft-only' });
     expect(draft.def.models.Chore.fields.notes).toBeUndefined();
     expect(live.def.models.Chore.fields.notes).toBeTruthy();
     expect(live.version).toBe(draft.draft?.baseVersion);
     expect(await liveStore.maxVersion()).toBe(live.version);
     // live: record changes while the draft is open
     live.setFrozen(true);
-    await live.create('Chore', { title: 'live-only', notes: 'n' });
-    const liveTitles = (await live.list('Chore')).map((r) => r.title);
-    const draftTitles = (await draft.list('Chore')).map((r) => r.title);
+    await live.create(hostOwner(live), 'Chore', {
+      title: 'live-only',
+      notes: 'n',
+    });
+    const liveTitles = (await live.list(hostOwner(live), 'Chore')).map(
+      (r) => r.title,
+    );
+    const draftTitles = (await draft.list(hostOwner(draft), 'Chore')).map(
+      (r) => r.title,
+    );
     expect(liveTitles).toContain('live-only');
     expect(liveTitles).not.toContain('draft-only');
     expect(draftTitles).toContain('draft-only');
@@ -127,7 +137,9 @@ describe('forkDraft', () => {
     try {
       expect(again.draft?.baseVersion).toBe(live.version);
       expect(again.def.models.Chore.fields.size).toBeTruthy();
-      expect((await again.list('Chore')).length).toBeGreaterThan(0);
+      expect(
+        (await again.list(hostOwner(again), 'Chore')).length,
+      ).toBeGreaterThan(0);
     } finally {
       await again.close();
     }
@@ -182,7 +194,10 @@ describe('forkDraft', () => {
     );
     expect(existsSync(dir)).toBe(false);
     // live still works
-    await live.create('Chore', { title: 'after-failed-fork', notes: 'x' });
+    await live.create(hostOwner(live), 'Chore', {
+      title: 'after-failed-fork',
+      notes: 'x',
+    });
   });
 
   it('keeps a directory it did not create when the path was taken', async () => {
@@ -198,13 +213,17 @@ describe('forkDraft', () => {
   it('copes with writes in flight while forking', async () => {
     const dir = join(root, 'busy-draft');
     const writes = Array.from({ length: 12 }, (_, i) =>
-      live.create('Chore', { title: `busy-${i}`, notes: 'n' }),
+      live.create(hostOwner(live), 'Chore', { title: `busy-${i}`, notes: 'n' }),
     );
     const busy = await live.forkDraft(dir, { store: new MemoryVersionStore() });
     await Promise.all(writes);
     try {
-      const inDraft = (await busy.list('Chore', 1000)).map((r) => r.title);
-      const inLive = (await live.list('Chore', 1000)).map((r) => r.title);
+      const inDraft = (await busy.list(hostOwner(busy), 'Chore', 1000)).map(
+        (r) => r.title,
+      );
+      const inLive = (await live.list(hostOwner(live), 'Chore', 1000)).map(
+        (r) => r.title,
+      );
       expect(inLive.filter((t) => String(t).startsWith('busy-'))).toHaveLength(
         12,
       );
@@ -227,7 +246,7 @@ describe('forkDraft', () => {
     expect(readFileSync(sibling, 'utf8')).toBe('keep');
     expect(sha(join(liveDir, 'app.db'))).toBe(liveHash);
     // the host is closed
-    await expect(d.list('Chore')).rejects.toThrow(/closed/);
+    await expect(d.list(hostOwner(d), 'Chore')).rejects.toThrow(/closed/);
   });
 
   it('discardIfEmpty keeps a changed draft and refuses an edit queued behind the discard (#5122)', async () => {
@@ -257,7 +276,7 @@ describe('forkDraft', () => {
       { author: 'owner' },
     );
     expect(await kept.discardIfEmpty()).toBe(false);
-    expect(await kept.list('Chore')).toBeDefined();
+    expect(await kept.list(hostOwner(kept), 'Chore')).toBeDefined();
     await kept.discard();
   });
 

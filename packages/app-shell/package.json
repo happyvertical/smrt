@@ -1,6 +1,6 @@
 {
   "name": "@happyvertical/smrt-app-shell",
-  "version": "0.68.0",
+  "version": "0.70.0",
   "description": "A smrt app that builds and runs a person's own smrt app from definitions",
   "type": "module",
   "engines": {
@@ -24,6 +24,10 @@
     "./shutdown": {
       "types": "./dist/lib/server/shutdown.d.ts",
       "import": "./dist/lib/server/shutdown.js"
+    },
+    "./embed": {
+      "types": "./dist/lib/server/embed.d.ts",
+      "import": "./build/embed.js"
     },
     "./start": {
       "import": "./build/index.js"

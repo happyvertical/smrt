@@ -3,6 +3,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { DatabaseSync } from 'node:sqlite';
 import { expect, it } from 'vitest';
+import { hostOwner } from '../test/engine-principal.ts';
 import {
   AppHost,
   ApprovalRequiredError,
@@ -90,6 +91,7 @@ it.each([
           };
     const reviewed = await f.host.plan(cmd);
     await f.host.create(
+      hostOwner(f.host),
       'Sale',
       generated ? { input: 3 } : { input: 3, value: 2 },
     );
@@ -160,23 +162,31 @@ it.each([
 ])('preserves the exact SQLite double %s when clearing and undoing', async (value) => {
   const f = await fixture();
   try {
-    const row = await f.host.create('Sale', { input: value });
+    const row = await f.host.create(hostOwner(f.host), 'Sale', {
+      input: value,
+    });
     await f.run({
       type: 'setCalculation',
       model: 'Sale',
       field: 'value',
       calculated: { col: 'input' },
     });
-    expect((await f.host.get('Sale', String(row.id))).value).toBe(value);
+    expect(
+      (await f.host.get(hostOwner(f.host), 'Sale', String(row.id))).value,
+    ).toBe(value);
     await f.run({
       type: 'setCalculation',
       model: 'Sale',
       field: 'value',
       calculated: null,
     });
-    expect((await f.host.get('Sale', String(row.id))).value).toBe(value);
+    expect(
+      (await f.host.get(hostOwner(f.host), 'Sale', String(row.id))).value,
+    ).toBe(value);
     await f.run({ type: 'undo' });
-    expect((await f.host.get('Sale', String(row.id))).value).toBe(value);
+    expect(
+      (await f.host.get(hostOwner(f.host), 'Sale', String(row.id))).value,
+    ).toBe(value);
   } finally {
     await f.close();
   }
@@ -196,16 +206,21 @@ it('refuses merge undo that would restore a reference to a subsequently deleted 
       field: 'team',
       definition: { type: 'reference', ref: 'Team' },
     });
-    const team = await f.host.create('Team', { name: 'Deleted team' });
-    const keep = await f.host.create('Sale', { input: 1 });
-    const merged = await f.host.create('Sale', { input: 2, team: team.id });
+    const team = await f.host.create(hostOwner(f.host), 'Team', {
+      name: 'Deleted team',
+    });
+    const keep = await f.host.create(hostOwner(f.host), 'Sale', { input: 1 });
+    const merged = await f.host.create(hostOwner(f.host), 'Sale', {
+      input: 2,
+      team: team.id,
+    });
     await f.run({
       type: 'mergeRecords',
       model: 'Sale',
       keep: String(keep.id),
       merge: [String(merged.id)],
     });
-    await f.host.remove('Team', String(team.id));
+    await f.host.remove(hostOwner(f.host), 'Team', String(team.id));
     const before = f.raw();
     const version = f.host.version;
     await expect(f.run({ type: 'undo' })).rejects.toThrow(/reference|target/i);

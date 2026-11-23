@@ -45,6 +45,16 @@ export const DEFAULT_LIST_LIMIT = 50;
 export const MAX_LIST_LIMIT = 1000;
 
 /**
+ * The `LIMIT` clause a read emits before an `OFFSET` when the caller gave no
+ * limit: SQLite rejects a bare `OFFSET`. The largest signed 64-bit value means
+ * "no limit" on SQLite, DuckDB and PostgreSQL alike, so it needs no engine
+ * detection (an in-process PostgreSQL handle can report no engine, and
+ * PostgreSQL rejects SQLite's `LIMIT -1`). Internal: not re-exported from the
+ * package entry points.
+ */
+export const UNBOUNDED_LIMIT_SQL = ' LIMIT 9223372036854775807';
+
+/**
  * A `limit`/`offset` value that cannot be honored.
  *
  * Extends `ValidationError` so the retry classifier never retries it, and
@@ -232,32 +242,4 @@ export const DEFAULT_LIST_ORDER_BY: readonly string[] = [
  */
 export function buildDefaultListOrderBy(primaryKeyField = 'id'): string[] {
   return ['created_at DESC', `${primaryKeyField} ASC`];
-}
-
-/** REST bracket operators shared by runtime and generated list routes. */
-export function parseRestListWhere(
-  params: URLSearchParams,
-): Record<string, string | string[]> {
-  const where: Record<string, string | string[]> = {};
-  const operators: Record<string, string> = {
-    gt: '>',
-    gte: '>=',
-    lt: '<',
-    lte: '<=',
-    ne: '!=',
-    in: 'in',
-    like: 'like',
-  };
-  for (const [key, value] of params.entries()) {
-    if (['limit', 'offset', 'orderBy'].includes(key)) continue;
-    const match = key.match(/^(.+)\[(.+)\]$/);
-    if (match) {
-      const [, field, operator] = match;
-      where[`${field} ${operators[operator] || operator}`] =
-        operator === 'in' ? value.split(',') : value;
-    } else {
-      where[key] = value;
-    }
-  }
-  return where;
 }

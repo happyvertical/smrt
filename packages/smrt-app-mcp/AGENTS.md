@@ -46,6 +46,12 @@ tool policy; `./sveltekit` owns the stateless Streamable HTTP transport.
   validates JWT access tokens and requires an application-owned principal mapper.
 - Mount `mountMcpRoute` as one modern `POST` endpoint. It creates a fresh
   protocol server per request, emits no session id, and refuses subscriptions.
+  `legacy: 'reject' | 'stateless'` (both mounts, SDK vocabulary, default
+  `'reject'` = `-32022`, mount-time only, #5109) opts 2025-era JSON-RPC clients
+  in; the SDK serves them from the SAME per-request factory and bound
+  principal, so every gate (auth, grant liveness, binder, scopes, policy,
+  confirm/approvals, audit) applies. Never add a parallel legacy dispatch path;
+  legacy gets stateless semantics (no sessions, `list_changed`, subscriptions).
 - `mountMcpAppRoute` (`src/defaults.ts` + `./sveltekit`) is the one-call app
   route: explicit `models` allow-list, required `requiredScopes`, principal from
   session locals (`principalFromSessionLocals`; absent `principalKind` denies
@@ -89,6 +95,13 @@ tool policy; `./sveltekit` owns the stateless Streamable HTTP transport.
   needs authentication, which the OAuth challenge requires. Agent principals
   (`kind: 'agent'`, #5086) pass the default policy only when `principalKinds`
   lists them.
+- Scope narrowing (#5110): consent may grant fewer scopes than the resource
+  advertises, so `createMcpResourceAuth` needs only one advertised scope (none:
+  403 `insufficient_scope`, `scope=` challenge; metadata unchanged). Per-tool
+  needs come from `toolScopes`/workflow `requiredScopes`; an unmapped tool
+  requires every advertised scope (fail closed, via the principal's
+  `unmappedToolScopes` stamped by the adapter), so map every tool for narrowed
+  tokens and keep `requiredScopes` `[]`. Tests: `narrowed-token.test.ts`.
 - `mountMcpToolsRoute`/`mountMcpCallRoute` share the modern route's
   `auth`/`bindPrincipal` sequence (`authenticateAndDispatch`): a bearer agent
   lists and calls with the same live-capped scopes on every route. `mountMcpRoute`

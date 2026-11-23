@@ -89,6 +89,10 @@ import {
 } from './native-duckdb';
 import { getBoxedPrimitiveKind, isRawJSON } from './plain-json';
 import { ObjectRegistry } from './registry';
+import {
+  rememberTableNameDerivation,
+  tableNameDerivationIsStale,
+} from './registry/partial-chain';
 import { assertRuntimeTableBindings } from './registry/table-mappings.js';
 import type { RegisteredField, SmrtObjectConstructor } from './registry/types';
 import { isBatchSafeValidator } from './registry/validator';
@@ -96,6 +100,11 @@ import {
   resolveOneToManyInverse,
   resolveRelationshipTargetName,
 } from './relationship-loader';
+import { assertAdoptableStoredRow } from './request-tenancy';
+import {
+  isReservedInstanceField,
+  warnReservedInstanceField,
+} from './reserved-field-names';
 import { postgresRevisionCondition } from './revision-guard';
 import { detectEngine } from './schema/ddl/index';
 import { verifyPersistenceTable } from './schema/table-verifier';
@@ -647,6 +656,19 @@ export interface AiOperationOptions extends AITextCompletionOptions {
 
 /** See {@link AiOperationOptions.toolUse}. */
 export type AiToolUse = 'required' | 'optional';
+
+/** Text-cast result columns a grouped junction upsert returns for correlation. */
+const STORED_ID_ALIAS = '_smrt_stored_id';
+const STORED_KEY_ALIAS = '_smrt_stored_key_';
+/** A UUID in any letter case (a native UUID column returns it lower-case). */
+const UUID_TEXT =
+  /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
+/**
+ * The key field's value when each relationship was cached, per instance. Kept
+ * outside the instance so it adds no own member to every model.
+ */
+const relationshipCacheKeys = new WeakMap<SmrtObject, Map<string, unknown>>();
 
 /** Tag value recorded when `is()` / `evaluate()` ask for a text verdict. */
 const JSON_TEXT_FALLBACK = 'json→text';
@@ -1525,6 +1547,9 @@ export class SmrtObject extends SmrtClass {
 
     // Apply option values to all fields
     for (const [key, field] of Object.entries(fields)) {
+      // `options` holds the instance's service options; a field of that name
+      // is never applied onto it.
+      if (isReservedInstanceField(key)) continue;
       const optionValue =
         rowValues && isServiceOptionKey(key) ? rowValues[key] : options[key];
       if (optionValue !== undefined) {
@@ -1808,6 +1833,12 @@ export class SmrtObject extends SmrtClass {
 
     for (const field in fields) {
       if (Object.hasOwn(fields, field)) {
+        // `options` is the instance's service options, never row data: a
+        // stored column of that name must not replace them.
+        if (isReservedInstanceField(field)) {
+          skippedCount++;
+          continue;
+        }
         // Check if property is writable before setting (Issue #63)
         // Get descriptor from instance or entire prototype chain
         let descriptor = Object.getOwnPropertyDescriptor(this, field);
@@ -2032,6 +2063,11 @@ export class SmrtObject extends SmrtClass {
    * Gets the database table name for this object
    */
   get tableName() {
+    // A name derived from a chain whose parent was not yet registered is
+    // derived again once the registry has changed.
+    if (this._tableName && tableNameDerivationIsStale(this)) {
+      this._tableName = undefined as unknown as string;
+    }
     assertRuntimeTableBindings({
       qualifiedName: this.getResolvedQualifiedName(),
       tableName: this._tableName,
@@ -2071,6 +2107,7 @@ export class SmrtObject extends SmrtClass {
         this._tableName =
           ownSchema?.tableName || tableNameFromClass(this.constructor);
       }
+      rememberTableNameDerivation(this, ObjectRegistry.getClass(qualifiedName));
     }
     return this._tableName;
   }
@@ -2113,8 +2150,16 @@ export class SmrtObject extends SmrtClass {
     }
 
     // Add current instance values to the fields
-    // Use getPropertyValue to unwrap Field instances
+    // Use getPropertyValue to unwrap Field instances. A field named `options`
+    // has no value here: that property is the instance's service options.
     for (const key in fields) {
+      if (isReservedInstanceField(key)) {
+        warnReservedInstanceField(
+          this.constructor,
+          this.getResolvedQualifiedName(),
+        );
+        continue;
+      }
       fields[key].value = this.getPropertyValue(key);
     }
 
@@ -2260,6 +2305,11 @@ export class SmrtObject extends SmrtClass {
     // All schema fields are in the manifest from AST scanning
     // Dynamic properties added at runtime are intentionally excluded (not part of schema)
     for (const key of registeredFields.keys()) {
+      if (isReservedInstanceField(key))
+        warnReservedInstanceField(
+          this.constructor,
+          this.getResolvedQualifiedName(),
+        );
       // Skip private properties, methods, and already-handled core fields
       if (
         key.startsWith('_') ||
@@ -2693,29 +2743,41 @@ export class SmrtObject extends SmrtClass {
       // These are subclass-declared fields, not members of the base type, so
       // read them through an indexable view of `this`.
       const self = this as unknown as Record<string, unknown>;
-      let sourceField: string | null = null;
-
-      if (self.name) {
-        sourceField = String(self.name);
-      } else if (self.title) {
-        sourceField = String(self.title);
-      } else if (self.label) {
-        sourceField = String(self.label);
-      } else if (this.id) {
-        // Final fallback: use ID
-        sourceField = String(this.id);
-      }
-
-      if (sourceField) {
-        // Generate slug from source field
-        this.slug = sourceField
+      const slugify = (value: string) =>
+        value
           .toLowerCase()
           .replace(/[^a-z0-9]+/g, '-')
           .replace(/(^-|-$)/g, '');
+
+      // A candidate whose slug is empty (no ASCII letters or digits) is
+      // skipped so the next candidate, and finally the id, supplies the slug.
+      // Each property is read only when every earlier candidate failed, so a
+      // lower-priority getter is never evaluated while a higher one succeeds.
+      let derived: string | null = null;
+      let source: string | null = null;
+      for (const key of ['name', 'title', 'label'] as const) {
+        const candidate = self[key];
+        if (!candidate) continue;
+        const slug = slugify(String(candidate));
+        if (slug) {
+          derived = slug;
+          source = String(candidate);
+          break;
+        }
+      }
+
+      if (derived) {
+        this.slug = derived;
         // Only a human value can collide with a different record; an
-        // id-derived slug is as unique as the id.
-        this._derivedSlug = sourceField === String(this.id) ? null : this.slug;
+        // id-derived slug is as unique as the id (a source equal to the id
+        // counts as id-derived, as it always has).
+        this._derivedSlug = source === String(this.id) ? null : derived;
         this._derivedSlugBase = this._derivedSlug;
+      } else if (this.id) {
+        // Final fallback: use ID
+        this.slug = slugify(String(this.id)) || String(this.id);
+        this._derivedSlug = null;
+        this._derivedSlugBase = null;
       }
     }
 
@@ -3087,6 +3149,15 @@ export class SmrtObject extends SmrtClass {
     const ownershipUncovered = [...ownershipColumns].some(
       (column) => columns.includes(column) && !conflict.includes(column),
     );
+    // After the upsert each stored row is matched to its input by conflict
+    // key, compared as the database's own text form of the value. That is
+    // exact only for text and integer keys; any other key type (a date, a
+    // boolean, a decimal, JSON) takes the per-item path before anything is
+    // written, instead of risking a wrong or missed match.
+    const textCorrelatable = (value: unknown) =>
+      typeof value === 'string' ||
+      typeof value === 'bigint' ||
+      (typeof value === 'number' && Number.isSafeInteger(value));
     if (
       ownershipUncovered ||
       columns.length * added.length > 900 ||
@@ -3095,7 +3166,8 @@ export class SmrtObject extends SmrtClass {
           entry.writePlan.type !== 'upsert' ||
           JSON.stringify(Object.keys(entry.data)) !== JSON.stringify(columns) ||
           JSON.stringify(entry.conflictColumns) !== JSON.stringify(conflict) ||
-          conflict.some((key) => entry.data[key] == null)
+          conflict.some((key) => entry.data[key] == null) ||
+          conflict.some((key) => !textCorrelatable(entry.data[key]))
         )
           return true;
         const identity = JSON.stringify(conflict.map((key) => entry.data[key]));
@@ -3277,7 +3349,14 @@ export class SmrtObject extends SmrtClass {
         )
         .map((column) => `${quote(column)} = excluded.${quote(column)}`)
         .join(', ');
-      const sql = `INSERT INTO ${quote(first.tableName)} (${columns.map(quote).join(', ')}) VALUES ${tuples.join(', ')} ON CONFLICT (${conflict.map(quote).join(', ')}) DO UPDATE SET ${updates} RETURNING *`;
+      const sql = `INSERT INTO ${quote(first.tableName)} (${columns.map(quote).join(', ')}) VALUES ${tuples.join(', ')} ON CONFLICT (${conflict.map(quote).join(', ')}) DO UPDATE SET ${updates} RETURNING *, ${[
+        `CAST(${quote('id')} AS VARCHAR) AS ${quote(STORED_ID_ALIAS)}`,
+        ...conflict.map(
+          (column, index) =>
+            `CAST(${quote(column)} AS VARCHAR) AS ${quote(`${STORED_KEY_ALIAS}${index}`)}`,
+        ),
+      ].join(', ')}`;
+      let storedRows: Array<Record<string, unknown>> = [];
       await ErrorUtils.withRetry(
         async () => {
           try {
@@ -3286,6 +3365,7 @@ export class SmrtObject extends SmrtClass {
               isEmbeddedDatabase(first.db),
               async (db) => {
                 const { rows } = await db.query(sql, ...values);
+                storedRows = rows;
                 const tracked = rows.find(
                   (row) => row._sync_origin_device_id != null,
                 );
@@ -3296,8 +3376,9 @@ export class SmrtObject extends SmrtClass {
                     'smrt: tracked junction conflict aborted the caller transaction',
                   );
                 }
+                const trackedId = tracked[STORED_ID_ALIAS];
                 throw first.trackedIdentityWriteError(
-                  typeof tracked.id === 'string' ? tracked.id : undefined,
+                  typeof trackedId === 'string' ? trackedId : undefined,
                 );
               },
               duck,
@@ -3312,6 +3393,62 @@ export class SmrtObject extends SmrtClass {
         3,
         500,
       );
+      // A concurrent writer can commit an item's natural key between the probe
+      // and the upsert; the upsert then updated that stored row and the
+      // proposed id never existed. Correlate each returned row with its input
+      // by conflict key and adopt the stored id before completion, so hooks,
+      // interceptors and the change feed name the row that is in the table
+      // (and record an update, not a create, for a row that already existed).
+      // Keys compare exactly as the database stores them (case-sensitive text,
+      // integers in their text form); the only folding is a UUID's letter case
+      // on engines with a native UUID type, which returns it canonical. Ids
+      // and keys are read from text casts in the statement, so a native
+      // DuckDB UUID is a string here too. Nothing is adopted unless every
+      // input matches exactly one returned row and no two inputs share one.
+      const foldsUuidCase = engine === 'postgres' || engine === 'duckdb';
+      const keyText = (value: unknown) => {
+        const text = String(value);
+        return foldsUuidCase && UUID_TEXT.test(text)
+          ? text.toLowerCase()
+          : text;
+      };
+      const storedByKey = new Map<string, Record<string, unknown> | null>();
+      for (const row of storedRows) {
+        const key = JSON.stringify(
+          conflict.map((_, index) =>
+            keyText(row[`${STORED_KEY_ALIAS}${index}`]),
+          ),
+        );
+        // A key returned twice cannot name one row: mark it unusable.
+        storedByKey.set(key, storedByKey.has(key) ? null : row);
+      }
+      const matches = prepared.map(({ data }) =>
+        storedByKey.get(
+          JSON.stringify(conflict.map((column) => keyText(data[column]))),
+        ),
+      );
+      const oneToOne =
+        storedRows.length === added.length &&
+        matches.every(
+          (row) => row != null && typeof row[STORED_ID_ALIAS] === 'string',
+        ) &&
+        new Set(matches).size === matches.length;
+      for (let i = 0; oneToOne && i < added.length; i++) {
+        const storedId = matches[i]?.[STORED_ID_ALIAS] as string;
+        if (
+          first.normalizeSyncRowId(storedId) !==
+          first.normalizeSyncRowId(String(added[i].id))
+        ) {
+          added[i].id = storedId;
+          const context = prepared[i].interceptorContext;
+          // The upsert wrote the stored row, not the id prepareSave bound.
+          rebindChangeFeedWriteRowId(context, storedId);
+          context.metadata = {
+            ...context.metadata,
+            [CHANGE_FEED_WAS_PERSISTED_KEY]: true,
+          };
+        }
+      }
       const completions: BulkMutationEntry[] = [];
       for (let i = 0; i < added.length; i++) {
         await added[i].completeSave(prepared[i].interceptorContext, false);
@@ -5183,6 +5320,9 @@ export class SmrtObject extends SmrtClass {
     conflictFilter: Record<string, unknown>,
     adopted: AdoptedNaturalKeyRow,
   ): void {
+    // A key shared across an STI family's types can match a stored row of a
+    // type the bound request does not admit: never adopt it (#5375).
+    assertAdoptableStoredRow(this.getResolvedQualifiedName(), existing);
     this.assertSameNaturalKeyOwner(
       data,
       existing,
@@ -6915,7 +7055,52 @@ export class SmrtObject extends SmrtClass {
    * ```
    */
   public isRelatedLoaded(fieldName: string): boolean {
-    return this._loadedRelationships.has(fieldName);
+    return this.hasCurrentRelationship(fieldName);
+  }
+
+  /**
+   * Whether a cached relationship still matches this object. A cached target
+   * belongs to the key value the field held when it was cached: once the field
+   * names a different row, the entry is dropped so the next load resolves the
+   * current one.
+   */
+  private hasCurrentRelationship(fieldName: string): boolean {
+    if (!this._loadedRelationships.has(fieldName)) return false;
+    const keys = relationshipCacheKeys.get(this);
+    if (
+      keys?.has(fieldName) &&
+      keys.get(fieldName) !== this[fieldName as keyof this]
+    ) {
+      this._loadedRelationships.delete(fieldName);
+      keys.delete(fieldName);
+      return false;
+    }
+    return true;
+  }
+
+  /**
+   * Cache a relationship value. A single-target value is tied to `key`, the
+   * key field's value it was loaded for (the caller passes the value it read
+   * before any await). A collection value (one-to-many / many-to-many) is not
+   * derived from a key field on this object, so it carries no key, exactly as
+   * the lazy many-side loads cache it.
+   */
+  private cacheRelationship(
+    fieldName: string,
+    value: unknown,
+    key: unknown = this[fieldName as keyof this],
+  ): void {
+    this._loadedRelationships.set(fieldName, value);
+    let keys = relationshipCacheKeys.get(this);
+    if (Array.isArray(value)) {
+      keys?.delete(fieldName);
+      return;
+    }
+    if (!keys) {
+      keys = new Map();
+      relationshipCacheKeys.set(this, keys);
+    }
+    keys.set(fieldName, key);
   }
 
   /**
@@ -6936,7 +7121,7 @@ export class SmrtObject extends SmrtClass {
    *   `null`), stored verbatim
    */
   public _setLoadedRelationship(fieldName: string, value: unknown): void {
-    this._loadedRelationships.set(fieldName, value);
+    this.cacheRelationship(fieldName, value);
   }
 
   /**
@@ -6986,7 +7171,7 @@ export class SmrtObject extends SmrtClass {
     // biome-ignore lint/suspicious/noExplicitAny: returns a polymorphic related object whose concrete subclass only the CALLER knows (e.g. `metafield.validateValue(...)`); `any` lets callers use the concrete API without a cast. S4 #1579.
   ): Promise<any> {
     // Check if already loaded
-    if (this._loadedRelationships.has(fieldName)) {
+    if (this.hasCurrentRelationship(fieldName)) {
       const cached = this._loadedRelationships.get(fieldName);
       // Re-validate cached targets: a cache populated by an eager `include`
       // load (or a prior allowCrossTenant load) must not leak cross-tenant data
@@ -7022,7 +7207,7 @@ export class SmrtObject extends SmrtClass {
     const foreignKeyValue = this[fieldName as keyof this];
     if (!foreignKeyValue) {
       // No related object (foreign key is null)
-      this._loadedRelationships.set(fieldName, null);
+      this.cacheRelationship(fieldName, null, foreignKeyValue);
       return null;
     }
 
@@ -7049,6 +7234,13 @@ export class SmrtObject extends SmrtClass {
       const row = await tempInstance.db.get(tempInstance.tableName, {
         id: foreignKeyValue as string,
       });
+
+      // The key field can change while the stored subtype is read. That row
+      // belongs to the old key, so it decides nothing (not even a subtype
+      // refusal): it is discarded and the current key loaded instead.
+      if (this[fieldName as keyof this] !== foreignKeyValue) {
+        return this.loadRelated(fieldName, opts);
+      }
 
       if (row?._meta_type) {
         // Get the actual class from the registry based on _meta_type
@@ -7090,12 +7282,19 @@ export class SmrtObject extends SmrtClass {
     });
     await relatedInstance.initialize();
 
+    // The key field can change while the target loads. A result belongs to
+    // the key it was loaded for, so a load whose key is no longer current is
+    // discarded and the current key is loaded instead.
+    if (this[fieldName as keyof this] !== foreignKeyValue) {
+      return this.loadRelated(fieldName, opts);
+    }
+
     // `loadFromId()` deliberately treats a missing row as a no-op. A
     // relationship loader must not return that unpersisted constructor shell:
     // its defaults/options can look like authoritative related data. Cache the
     // miss just as we do for an empty foreign key so repeat reads remain null.
     if (!relatedInstance.isPersisted) {
-      this._loadedRelationships.set(fieldName, null);
+      this.cacheRelationship(fieldName, null, foreignKeyValue);
       return null;
     }
 
@@ -7107,8 +7306,8 @@ export class SmrtObject extends SmrtClass {
       opts?.allowCrossTenant,
     );
 
-    // Cache the loaded object
-    this._loadedRelationships.set(fieldName, relatedInstance);
+    // Cache the loaded object under the key it was loaded for
+    this.cacheRelationship(fieldName, relatedInstance, foreignKeyValue);
     return relatedInstance;
   }
 
@@ -7201,7 +7400,7 @@ export class SmrtObject extends SmrtClass {
     // biome-ignore lint/suspicious/noExplicitAny: polymorphic related objects whose concrete type is caller-known (see loadRelated). S4 #1579.
   ): Promise<any[]> {
     // Check if already loaded
-    if (this._loadedRelationships.has(fieldName)) {
+    if (this.hasCurrentRelationship(fieldName)) {
       const cached = this._loadedRelationships.get(fieldName);
       // Re-validate cached targets: a cache populated by an eager `include`
       // load (or a prior allowCrossTenant load) must not leak cross-tenant data
@@ -7405,7 +7604,7 @@ export class SmrtObject extends SmrtClass {
     opts?: LoadRelatedOptions,
     // biome-ignore lint/suspicious/noExplicitAny: polymorphic related object(s) whose concrete type is caller-known (see loadRelated). S4 #1579.
   ): Promise<any> {
-    if (this._loadedRelationships.has(fieldName)) {
+    if (this.hasCurrentRelationship(fieldName)) {
       const cached = this._loadedRelationships.get(fieldName);
       // Re-validate cached targets so an eager `include` load cannot leak
       // cross-tenant data through this convenience accessor (Issue #1321).

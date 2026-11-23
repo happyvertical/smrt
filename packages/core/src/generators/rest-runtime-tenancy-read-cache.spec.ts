@@ -6,12 +6,14 @@
  */
 
 import { afterAll, afterEach, beforeAll, describe, expect, it } from 'vitest';
+import {
+  installTestTenancySource,
+  removeTestTenancySource,
+  setTestRuntimeTenancy,
+} from '../__tests__/fixtures/test-tenancy-source';
 import { SmrtCollection } from '../collection';
 import { field } from '../decorators';
-import {
-  setDispatchTenantResolver,
-  setTenantScopedClassResolver,
-} from '../dispatch';
+import { setDispatchTenantResolver } from '../dispatch';
 import { SmrtObject } from '../object';
 import { ObjectRegistry } from '../registry';
 import { getTestDatabase } from '../testing/database';
@@ -40,6 +42,7 @@ describe('shared-cache policy follows the runtime tenancy of the qualified model
   let rowId: string;
 
   beforeAll(async () => {
+    installTestTenancySource();
     ObjectRegistry.registerCollection(
       'CachedScopeDoc',
       CachedScopeDocCollection,
@@ -65,12 +68,13 @@ describe('shared-cache policy follows the runtime tenancy of the qualified model
   });
 
   afterAll(async () => {
+    removeTestTenancySource();
     await db?.close?.();
   });
 
   afterEach(() => {
     setDispatchTenantResolver(undefined);
-    setTenantScopedClassResolver(undefined);
+    setTestRuntimeTenancy(undefined);
   });
 
   const read = async (path: string) => {
@@ -86,7 +90,7 @@ describe('shared-cache policy follows the runtime tenancy of the qualified model
     ['item', '/ID'],
   ])('a %s read of a runtime-tenancy model is never shared-cacheable', async (_kind, suffix) => {
     setDispatchTenantResolver(() => undefined);
-    setTenantScopedClassResolver((name) => name === qualified);
+    setTestRuntimeTenancy((name) => name === qualified);
     const header = await read(suffix.replace('ID', rowId));
     expect(header).not.toMatch(/s-maxage/);
     expect(header).toMatch(/private/);

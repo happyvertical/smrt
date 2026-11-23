@@ -53,7 +53,9 @@ import { isServiceOptionInput } from '../service-options.js';
 import { jsonValuesEqual } from '../utils/json-equal.js';
 import {
   assignUpdateInput,
+  FIELD_NOT_WRITABLE_CODE,
   isWriteInputError,
+  notWritableFieldOf,
   resolveUpdateInput,
   STRUCTURAL_UPDATE_RULES,
 } from '../write-input.js';
@@ -94,7 +96,9 @@ export type SyncApplyRejectionReason =
   | 'forbidden'
   | 'not_found'
   | 'id_conflict'
-  | 'write_failed';
+  | 'write_failed'
+  /** The host throttled this item; retry it later (#5195). */
+  | 'rate_limited';
 
 /** Machine-readable reasons for `conflict` items. */
 export type SyncApplyConflictReason = 'stale_write' | 'create_conflict';
@@ -144,6 +148,11 @@ export interface SyncApplyItemResult {
   status: SyncApplyStatus;
   reason?: SyncApplyReason;
   updatedAt?: string;
+  /**
+   * On an `invalid_payload` rejection for a field the caller may not write
+   * (`VALIDATION_FIELD_NOT_WRITABLE`, as on the CRUD routes): the field.
+   */
+  details?: { code: string; field: string };
 }
 
 /** Response body of `POST …/sync/apply` (HTTP 200). */
@@ -215,16 +224,16 @@ export interface SyncApplyTarget {
    */
   run?: <T>(op: SyncApplyOp, apply: () => Promise<T>) => Promise<T>;
   /**
-   * Host check on the stored row an update or delete targets, before anything
-   * about it is answered (replay, staleness, the write). A host whose route
-   * does not serve that row (an STI subtype the server does not serve, or
-   * whose own policy refuses the operation) throws
-   * {@link SyncApplyRejection}.
+   * Host check on the stored row an item names, before anything about it is
+   * answered (replay, staleness, the write). A host whose route does not
+   * serve that row (an STI subtype the server does not serve, or whose own
+   * policy refuses the operation) throws {@link SyncApplyRejection}. For a
+   * create (`op: 'create'`) the row is an existing row the create's id names:
+   * a host whose caller may not read that row's type throws
+   * `SyncApplyRejection('id_conflict')`, the answer a hidden row gets, so a
+   * replay discloses nothing about it.
    */
-  admitRow?: (
-    row: SyncApplyRowLike,
-    op: 'update' | 'delete',
-  ) => Promise<void> | void;
+  admitRow?: (row: SyncApplyRowLike, op: SyncApplyOp) => Promise<void> | void;
   /**
    * Refuse an update payload the row does not accept, without changing the
    * row: a key that is not a declared field or settable accessor throws
@@ -238,6 +247,15 @@ export interface SyncApplyTarget {
    * the item is `rejected` / `invalid_payload` and nothing is written.
    */
   assertCreate?: (data: Record<string, unknown>) => void;
+  /**
+   * Whether a create payload's type selector (`createType`, or the
+   * `_meta_type` alias), read before the writable policy drops it, names a
+   * type this target writes. A sync create writes the target's own type, so
+   * an STI target answers `false` for any other; the item is `rejected` /
+   * `invalid_payload` and nothing is written. Without the hook the selector
+   * is dropped with the other framework keys.
+   */
+  acceptsCreateType?: (payload: Record<string, unknown>) => boolean;
   /** Registry/class name, for diagnostics. */
   objectName: string;
   /** Collection whose get/create/save/delete run the full interceptor stack. */
@@ -249,11 +267,19 @@ export interface SyncApplyTarget {
     op: SyncApplyOp,
   ): Promise<SyncApplyAuthzDecision> | SyncApplyAuthzDecision;
   /**
-   * Mass-assignment guard (#1540): strip server-managed/readonly/disallowed
-   * fields from the item payload. The row UUID is injected from the validated
-   * envelope `id` AFTER this runs — never from the body.
+   * Mass-assignment guard (#1540): the write body for the item payload.
+   * Called after the row is loaded: `stored` is the row an update targets
+   * and is absent for a create. Hosts with a registered model use
+   * `prepareWriteInput`, which skips server-managed keys and refuses a field
+   * the caller may not write when the payload would change it (#5195),
+   * throwing a `WriteInputError` that rejects the item as `invalid_payload`.
+   * The row UUID is injected from the validated envelope `id` AFTER this
+   * runs — never from the body.
    */
-  prepare(payload: Record<string, unknown>): Record<string, unknown>;
+  prepare(
+    payload: Record<string, unknown>,
+    stored?: SyncApplyRowLike,
+  ): Record<string, unknown>;
 }
 
 /**
@@ -283,7 +309,18 @@ const SYNC_APPLY_REJECTION_REASONS: readonly string[] = [
   'not_found',
   'id_conflict',
   'write_failed',
+  'rate_limited',
 ] satisfies readonly SyncApplyRejectionReason[];
+
+/** Codes of the request tenancy refusals (`request-tenancy.ts`, #5375). */
+const REQUEST_TENANCY_CODES: ReadonlySet<string> = new Set([
+  'TENANT_CONTEXT_REQUIRED',
+  'TENANT_CONTEXT_CONFLICT',
+  'TENANT_MEMBER_EXCLUDED',
+  'TENANT_POLICY_CHANGED',
+  'TENANT_POLICY_UNRESOLVED',
+  'TENANT_WRITE_REFUSED',
+]);
 
 function rejectionReasonOf(error: unknown): SyncApplyRejectionReason {
   const marked =
@@ -304,6 +341,16 @@ function rejectionReasonOf(error: unknown): SyncApplyRejectionReason {
     (error as { code?: unknown }).code === 'TENANT_ISOLATION_VIOLATION'
   ) {
     return 'forbidden';
+  }
+  // A request tenancy refusal (#5375): no tenant (401 for an anonymous
+  // caller), a write under a read grant, a policy that changed while the
+  // item was applied, a type the route does not serve.
+  const { code, status } =
+    error && typeof error === 'object'
+      ? (error as { code?: unknown; status?: unknown })
+      : { code: undefined, status: undefined };
+  if (typeof code === 'string' && REQUEST_TENANCY_CODES.has(code)) {
+    return status === 401 ? 'auth_required' : 'forbidden';
   }
   // A payload key the object does not accept is the client's error.
   return isWriteInputError(error) ? 'invalid_payload' : 'write_failed';
@@ -581,6 +628,24 @@ function isUniqueConstraintError(error: unknown): boolean {
   return isUniqueViolationError(error);
 }
 
+/**
+ * A create payload without the type selectors (`createType`, `_meta_type`)
+ * that name the target's own type, the only value a target that accepted
+ * the payload's selector can carry. Any other value is left in place.
+ */
+function withoutOwnTypeSelector(
+  payload: Record<string, unknown>,
+  ownType: string,
+): Record<string, unknown> {
+  const rest = { ...payload };
+  for (const selector of ['createType', '_meta_type']) {
+    if (Object.hasOwn(rest, selector) && rest[selector] === ownType) {
+      delete rest[selector];
+    }
+  }
+  return rest;
+}
+
 async function applyValidatedItem(
   item: SyncApplyItem,
   target: SyncApplyTarget,
@@ -609,10 +674,16 @@ async function applyAuthorizedItem(
 ): Promise<SyncApplyItemResult> {
   const base = { itemId: item.itemId, id: item.id } as const;
 
-  // Payload passes through the host's writable policy; the row UUID comes
-  // from the validated envelope `id`, never from the body — the #1540
-  // mass-assignment guard stays intact on this path too.
-  const data = item.op === 'delete' ? {} : target.prepare(item.payload ?? {});
+  // A create's type selector is read before the writable policy drops it:
+  // a payload that selects a type the target does not write is rejected
+  // rather than written as the target's own type.
+  if (
+    item.op === 'create' &&
+    target.acceptsCreateType &&
+    !target.acceptsCreateType(item.payload ?? {})
+  ) {
+    return { ...base, status: 'rejected', reason: 'invalid_payload' };
+  }
 
   // Tenant isolation: collection.get runs the interceptor stack, so rows
   // outside the caller's tenant are simply not visible here.
@@ -621,11 +692,26 @@ async function applyAuthorizedItem(
 
   switch (item.op) {
     case 'create': {
+      // Payload passes through the host's writable policy; the row UUID
+      // comes from the validated envelope `id`, never from the body — the
+      // #1540 mass-assignment guard stays intact on this path too. A type
+      // selector the target accepted names its own type: it is consumed
+      // here, so field validation and replay comparison never see it as a
+      // field. A create has no stored value, so a field the caller may not
+      // write is refused when sent with a value, replay or not.
+      const data = target.prepare(
+        target.acceptsCreateType
+          ? withoutOwnTypeSelector(item.payload ?? {}, target.objectName)
+          : (item.payload ?? {}),
+      );
       // The payload is checked before anything is answered about an existing
       // row: a key the model does not accept rejects the item, never reports
       // a replay or a conflict.
       target.assertCreate?.(data);
       if (row) {
+        // The caller must be allowed to read the existing row's type before
+        // a replay or a conflict (with its timestamp) is answered about it.
+        await target.admitRow?.(row, 'create');
         if (payloadMatchesRow(data, row)) {
           // Idempotent replay of an already-applied create.
           return {
@@ -677,8 +763,9 @@ async function applyAuthorizedItem(
         return { ...base, status: 'rejected', reason: 'not_found' };
       }
       // The payload is checked before anything is answered about the row: a
-      // key it does not accept rejects the item, never reports a replay or a
-      // stale write.
+      // key it does not accept, or a protected field it would change,
+      // rejects the item, never reports a replay or a stale write.
+      const data = target.prepare(item.payload ?? {}, row);
       if (target.assertUpdate) target.assertUpdate(row, data);
       else resolveUpdateInput(row, data, STRUCTURAL_UPDATE_RULES);
       if (payloadMatchesRow(data, row)) {
@@ -720,7 +807,7 @@ async function applyAuthorizedItem(
           updatedAt: rowUpdatedAtIso(row),
         };
       }
-      if (target.mutate) await target.mutate(row, 'delete', data);
+      if (target.mutate) await target.mutate(row, 'delete', {});
       else await row.delete();
       return { ...base, status: 'applied' };
     }
@@ -751,11 +838,13 @@ async function processOneItem(
   } catch (error) {
     // One item's failure must never fail the batch. A reason the host gave,
     // or a payload key the object does not accept, is reported as such.
+    const field = notWritableFieldOf(error);
     return {
       itemId: item.itemId,
       id: item.id,
       status: 'rejected',
       reason: rejectionReasonOf(error),
+      ...(field ? { details: { code: FIELD_NOT_WRITABLE_CODE, field } } : {}),
     };
   }
 }

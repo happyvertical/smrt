@@ -8,6 +8,7 @@ import {
 import { createSheet, createWorkbook } from '@happyvertical/spreadsheets';
 import { afterEach, beforeEach, expect, it } from 'vitest';
 import { savedValueFallback } from '../lib/server/import-workflow.ts';
+import { hostOwner } from '../test/engine-principal.ts';
 import { createEngineImportTarget } from './import-target.ts';
 import { AppHost, MemoryVersionStore } from './index.ts';
 
@@ -103,7 +104,7 @@ it.each([
   ],
 ])('imports Hours x Rate as %s and proves it', async (_name, expr) => {
   const fixture = timeEntries(expr);
-  const target = createEngineImportTarget(draft);
+  const target = createEngineImportTarget(draft, () => hostOwner(draft));
   const result = await runImport({ ...fixture, target });
   expect(result.findings).toEqual([]);
   expect(result.ok).toBe(true);
@@ -114,7 +115,7 @@ it.each([
 });
 it('falls back to saved values when a calculation fails proof', async () => {
   const fixture = timeEntries({ op: 'add', left: mul, right: { value: 1 } });
-  const target = createEngineImportTarget(draft);
+  const target = createEngineImportTarget(draft, () => hostOwner(draft));
   const failed = await runImport({ ...fixture, target });
   expect(failed.ok).toBe(false);
   const errors = failed.findings.filter((f) => f.severity === 'error');
@@ -131,7 +132,7 @@ it('falls back to saved values when a calculation fails proof', async () => {
   const again = await runImport({
     workbook: fixture.workbook,
     plan: fallback!,
-    target: createEngineImportTarget(draft),
+    target: createEngineImportTarget(draft, () => hostOwner(draft)),
   });
   expect(again.ok).toBe(true);
 });

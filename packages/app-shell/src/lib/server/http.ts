@@ -86,10 +86,13 @@ export async function readOptionalJson(
 const ENGINE_STATUS: Record<string, number> = {
   invalid: 400,
   not_found: 404,
+  unauthorized: 401,
+  forbidden: 403,
   refused: 409,
   approval_required: 409,
   migration_failed: 409,
   worker_crashed: 503,
+  unavailable: 503,
   stale_fence: 409,
 };
 

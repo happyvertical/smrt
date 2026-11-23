@@ -20,7 +20,6 @@ import {
   type BatchBlocker,
   type BatchCheck,
   batchDigest,
-  type ChangePrincipal,
   type ChangeResult,
   type Command,
   createSqliteChangeEngine,
@@ -64,7 +63,13 @@ import {
 } from './drafts.ts';
 import { publish } from './events.ts';
 import { getDraftSlot, getHost, getShellDb } from './host.ts';
-import { assertOwner, type Principal, requireOwner, runAs } from './owner.ts';
+import {
+  assertOwner,
+  type Principal,
+  principalFor,
+  requireOwner,
+  runAs,
+} from './owner.ts';
 import { publicChangeResult } from './results.ts';
 import { createTenantQueue } from './tenant-queue.ts';
 
@@ -72,7 +77,6 @@ const WORKING_COPY_NAME = CHANGES_WAITING_NAME;
 const DEPENDS_ON_REMOVED =
   'This change needs one you removed. Put that one back, or remove this one too.';
 const engine = createSqliteChangeEngine();
-const principalOf = (owner: Principal): ChangePrincipal => ({ id: owner.id });
 
 // ---------- shapes ----------
 
@@ -499,12 +503,16 @@ async function rebuild(
   try {
     await startDraftWith(
       async ({ dir, store, live: base }) => {
-        const result = await engine.rebuild(principalOf(owner), base, {
-          draftDir: dir,
-          store,
-          commands,
-          author: owner.id,
-        });
+        const result = await engine.rebuild(
+          principalFor(owner, base.def),
+          base,
+          {
+            draftDir: dir,
+            store,
+            commands,
+            author: owner.id,
+          },
+        );
         outcome.blockers = result.blockers;
         for (const a of result.applied)
           outcome.applied.set(a.key, [
@@ -702,9 +710,10 @@ async function checksJob(
     await batch.save();
     let check: BatchCheck;
     try {
+      const live = await getHost();
       check = await engine.checkBatch(
-        principalOf(owner),
-        await getHost(),
+        principalFor(owner, live.def),
+        live,
         slot.host,
       );
     } catch {
@@ -1294,7 +1303,9 @@ export function addChangeCard(
             if (slot) return workingCopy(batch, owner);
             const info = await startDraftWith(
               ({ dir, store, live: base }) =>
-                engine.forkDraft(principalOf(owner), base, dir, { store }),
+                engine.forkDraft(principalFor(owner, base.def), base, dir, {
+                  store,
+                }),
               WORKING_COPY_NAME,
               owner.id,
             );
@@ -2142,7 +2153,11 @@ async function freshCheck(
   const cards = await cardsOf(batch.id as string);
   const active = cards.filter(isActive);
   const live = await getHost();
-  const check = await engine.checkBatch(principalOf(owner), live, host);
+  const check = await engine.checkBatch(
+    principalFor(owner, live.def),
+    live,
+    host,
+  );
   const { byCard, general } = ownBlockers(check.blockers, active);
   const blockers: OwnedBlocker[] = [
     ...general,
@@ -2364,10 +2379,14 @@ export function undoOwnBatch(
           'the app changed since this was shown; reload and try again',
           'refused',
         );
-      const result = await engine.undoBatch(principalOf(owner), live, {
-        versions: readArray<number>(batch.appliedVersions),
-        author: owner.id,
-      });
+      const result = await engine.undoBatch(
+        principalFor(owner, live.def),
+        live,
+        {
+          versions: readArray<number>(batch.appliedVersions),
+          author: owner.id,
+        },
+      );
       batch.undoneAt = new Date().toISOString();
       await batch.save();
       emit(batch, 'undone', 0);

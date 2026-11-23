@@ -1,8 +1,8 @@
 /**
  * Generated CLI create/update honour the same write policy as the REST
- * routes and MCP tools (#3831 review): `api.writable`, `readonly` and
- * server-managed fields are dropped for every input mode, including
- * `--from-file`.
+ * routes and MCP tools (#3831 review, #5195): a change to a field outside
+ * `api.writable` or a `readonly` field is refused for every input mode,
+ * including `--from-file`; server-managed keys are skipped.
  */
 import { mkdtempSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
@@ -130,7 +130,7 @@ describe('generated CLI write policy', () => {
     ).toBe('CLI Updated');
   });
 
-  it('drops non-writable fields from --from-file create and update', async () => {
+  it('refuses a changed non-writable field from --from-file and accepts an unchanged one', async () => {
     const rows = await CliWritablePolicyRows.create({ db });
     const handler = new CLIGenerator(
       { prompt: false, colors: false },
@@ -142,25 +142,50 @@ describe('generated CLI write policy', () => {
       return path;
     };
 
+    // A create naming a field outside `api.writable` with a value is refused.
+    await expect(
+      handler([
+        'cliwritablepolicyrow:create',
+        '--from-file',
+        file('refused-create.json', { title: 'Refused', status: 'forged' }),
+      ]),
+    ).rejects.toThrow("Field 'status' cannot be written.");
+    expect(await rows.list({})).toHaveLength(0);
+
     await handler([
       'cliwritablepolicyrow:create',
       '--from-file',
-      file('create.json', { title: 'Allowed', status: 'forged' }),
+      file('create.json', { title: 'Allowed', status: null }),
     ]);
     const [created] = await rows.list({});
     expect(created).toMatchObject({ title: 'Allowed', status: 'pending' });
 
+    await expect(
+      handler([
+        'cliwritablepolicyrow:update',
+        created!.id!,
+        '--from-file',
+        file('refused-update.json', { title: 'Renamed', status: 'forged' }),
+      ]),
+    ).rejects.toThrow("Field 'status' cannot be written.");
+    expect(await rows.get(created!.id!, { cache: false })).toMatchObject({
+      title: 'Allowed',
+      status: 'pending',
+    });
+
+    // Negative control: the stored value sent back, and a server-managed key,
+    // are accepted and the writable field changes.
     await handler([
       'cliwritablepolicyrow:update',
       created!.id!,
       '--from-file',
       file('update.json', {
         title: 'Renamed',
-        status: 'forged',
+        status: 'pending',
         id: 'not-this-id',
       }),
     ]);
-    const updated = await rows.get({ id: created!.id! });
+    const updated = await rows.get(created!.id!, { cache: false });
     expect(updated).toMatchObject({ title: 'Renamed', status: 'pending' });
   });
 

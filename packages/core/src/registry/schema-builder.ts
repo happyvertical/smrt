@@ -49,7 +49,12 @@ import { isFrameworkBaseClass } from './framework-base-classes';
 import { getOwnTableFieldsSync } from './inheritance-resolver';
 import { readFieldAttribute } from './manifest-field-merge';
 import { findClass } from './name-resolver';
-import { getClasses, getCollectionTableNames } from './shared-state';
+import {
+  getClasses,
+  getCollectionTableNames,
+  getConstructorFieldDecorators,
+  getLegacyFieldDecorators,
+} from './shared-state';
 import {
   assertRuntimeTableBindings,
   assertTableFamilies,
@@ -69,11 +74,25 @@ const collectionRegistrationLookup: CollectionRegistrationLookup = {
     ObjectRegistry.getInheritanceChain(className),
 };
 
+/**
+ * Decorator `sqlType` overrides for one registered class.
+ *
+ * Reads the class's own constructor-keyed decorators, plus explicit
+ * string-only registrations for its simple name. The simple-name inspection
+ * mirror (`ObjectRegistry.getFieldDecorators`) is shared by every class with
+ * that name, so it must never type another class's columns.
+ */
 function applyDecoratorSqlTypeOverrides(
   className: string,
+  ctor: Function | undefined,
   columns: Record<string, ColumnDefinition>,
 ): Record<string, ColumnDefinition> {
-  const decorators = ObjectRegistry.getFieldDecorators(className);
+  const decorators = new Map(getLegacyFieldDecorators().get(className));
+  for (const [fieldName, options] of (ctor
+    ? getConstructorFieldDecorators().get(ctor)
+    : undefined) ?? []) {
+    decorators.set(fieldName, { ...decorators.get(fieldName), ...options });
+  }
   if (!decorators.size) {
     return columns;
   }
@@ -89,7 +108,9 @@ function applyDecoratorSqlTypeOverrides(
       continue;
     }
 
-    const referenceKind = getReferenceKind(options as FieldDefinition);
+    const referenceKind = getReferenceKind(
+      options as unknown as FieldDefinition,
+    );
     columns[columnName] = {
       ...existing,
       type: String(options.sqlType).toUpperCase() as SQLDataType,
@@ -102,6 +123,7 @@ function applyDecoratorSqlTypeOverrides(
 
 function mergeRuntimeFieldColumns(
   className: string,
+  ctor: Function | undefined,
   schemaColumns: Record<string, ColumnDefinition> | undefined,
   fields: Map<string, FieldDefinition>,
   options?: FieldsToColumnsOptions,
@@ -147,7 +169,7 @@ function mergeRuntimeFieldColumns(
     }
   }
 
-  applyDecoratorSqlTypeOverrides(className, columnsToUse);
+  applyDecoratorSqlTypeOverrides(className, ctor, columnsToUse);
   return columnsToUse;
 }
 
@@ -771,6 +793,7 @@ function buildMergedTableSchemas(
         : getOwnTableFieldsSync(registered);
       const columnsToUse = mergeRuntimeFieldColumns(
         simpleName,
+        registered.constructor,
         registered.schema?.columns,
         contributorFields,
         { stiUnionColumns: isSTI, conflictColumns },

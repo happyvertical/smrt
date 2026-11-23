@@ -8,6 +8,7 @@
 // Every schema, role and directory here is created and removed by this file,
 // as a host's provisioning would; the engine creates only the side schemas
 // of a copy (a draft, a rehearsal) and removes them.
+
 import {
   existsSync,
   mkdirSync,
@@ -32,6 +33,7 @@ import {
   it,
   vi,
 } from 'vitest';
+import { hostOwner } from '../test/engine-principal.ts';
 import type { DatabaseConfig, PGliteClient } from './db/index.ts';
 import { copyAppDatabase, withSchemaAdmin } from './db/index.ts';
 import { scopeDatabase } from './db/postgres.ts';
@@ -59,6 +61,7 @@ import {
   type PublishStage,
   StaleFenceError,
 } from './index.ts';
+import { asEngine, ENGINE_CONTEXT } from './pg-test-support.ts';
 import { JOURNAL_FILE, writeJournal } from './publish.ts';
 
 // Record the options of every worker thread the host starts (still real ones).
@@ -102,7 +105,7 @@ describe.each(
   const raws: Sql[] = [];
 
   const rows = async (sql: string, params: unknown[] = []) =>
-    (await admin.query(sql, params)).rows as Array<Record<string, any>>;
+    asEngine(admin as any, sql, params);
   const tablesIn = async (schema: string) =>
     (
       await rows(
@@ -168,7 +171,7 @@ describe.each(
       ['Dishes', 5],
       ['Garage', 8],
     ] as const)
-      await live.host.create('Chore', { title, points });
+      await live.host.create(hostOwner(live.host), 'Chore', { title, points });
     return live;
   };
   const fork = async (live: Awaited<ReturnType<typeof seeded>>) => {
@@ -178,7 +181,9 @@ describe.each(
     return { draft, store };
   };
   const titles = async (host: AppHost) =>
-    (await host.list('Chore')).map((r) => String(r.title)).sort();
+    (await host.list(hostOwner(host), 'Chore'))
+      .map((r) => String(r.title))
+      .sort();
 
   beforeAll(async () => {
     if (backend === 'postgres') {
@@ -481,7 +486,7 @@ describe.each(
         field: 'done',
         definition: { type: 'boolean' },
       });
-      await draft.create('Chore', {
+      await draft.create(hostOwner(draft), 'Chore', {
         title: 'Draft only',
         points: 1,
         done: true,
@@ -496,7 +501,11 @@ describe.each(
         ).map((r) => r.column_name),
       ).not.toContain('done');
       // Draft deletes need no approval (it is the draft's own copy).
-      await draft.remove('Chore', String((await draft.list('Chore'))[0].id));
+      await draft.remove(
+        hostOwner(draft),
+        'Chore',
+        String((await draft.list(hostOwner(draft), 'Chore'))[0].id),
+      );
       expect(await titles(live.host)).toHaveLength(3);
       // Discarding removes its schema and its directory, nothing else.
       const dir = draft.dataDir;
@@ -509,7 +518,10 @@ describe.each(
     it('reopens after a restart from its marker, and an orphan is discarded with its schema', async () => {
       const live = await seeded('reopen');
       const { draft, store } = await fork(live);
-      await draft.create('Chore', { title: 'Kept', points: 2 });
+      await draft.create(hostOwner(draft), 'Chore', {
+        title: 'Kept',
+        points: 2,
+      });
       const dir = draft.dataDir;
       await draft.close();
       hosts.splice(hosts.indexOf(draft), 1);
@@ -736,6 +748,7 @@ describe.each(
       // Report worker.
       let mark = spawned().length;
       await live.host.runReport(
+        hostOwner(live.host),
         parseRuntimeReportSpec({
           version: 1,
           title: 'n',
@@ -852,8 +865,14 @@ describe.each(
       await edit(draft);
       live.host.setFrozen(true);
       // A live record made AFTER the fork, and a draft record: only live's survives.
-      await live.host.create('Chore', { title: 'Late', points: 9 });
-      await draft.create('Chore', { title: 'Draft only', score: 1 });
+      await live.host.create(hostOwner(live.host), 'Chore', {
+        title: 'Late',
+        points: 9,
+      });
+      await draft.create(hostOwner(draft), 'Chore', {
+        title: 'Draft only',
+        score: 1,
+      });
       const base = live.host.version;
       const preview = await live.host.previewPublish(draft);
       // The rehearsal left nothing but the draft's own schema.
@@ -888,8 +907,9 @@ describe.each(
       expect(cols).not.toContain('points');
       expect(
         Number(
-          (await live.host.list('Chore')).find((r) => r.title === 'Late')
-            ?.score,
+          (await live.host.list(hostOwner(live.host), 'Chore')).find(
+            (r) => r.title === 'Late',
+          )?.score,
         ),
       ).toBe(9);
       // The old data's schema and the rehearsal are gone; the draft's stays until discarded.
@@ -897,7 +917,10 @@ describe.each(
       expect(leftoverFiles(live.dir)).toEqual([]);
       // Live thaws, serves and can still undo what was published.
       live.host.setFrozen(false);
-      await live.host.create('Chore', { title: 'After', score: 1 });
+      await live.host.create(hostOwner(live.host), 'Chore', {
+        title: 'After',
+        score: 1,
+      });
       await run(live.host, { type: 'undo' });
       expect(await titles(live.host)).toContain('After');
       await draft.discard();
@@ -971,7 +994,9 @@ describe.each(
       expect(Object.keys(again.def.models)).toContain('Later');
       // The published data (`points` renamed to `score`, values carried over), not the old.
       expect(
-        (await again.list('Chore')).map((r) => Number(r.score)).sort(),
+        (await again.list(hostOwner(again), 'Chore'))
+          .map((r) => Number(r.score))
+          .sort(),
       ).toEqual([3, 5, 8]);
       expect(await sideSchemas(live.schema)).toEqual([]);
       expect(existsSync(join(live.dir, JOURNAL_FILE))).toBe(false);
@@ -1021,7 +1046,9 @@ describe.each(
       expect(again.recovery).toBe('rolled-forward');
       expect(again.version).toBe(version);
       expect(
-        (await again.list('Chore')).map((r) => Number(r.score)).sort(),
+        (await again.list(hostOwner(again), 'Chore'))
+          .map((r) => Number(r.score))
+          .sort(),
       ).toEqual([3, 5, 8]);
       expect(await sideSchemas(live.schema)).toEqual([]);
       expect(existsSync(join(live.dir, JOURNAL_FILE))).toBe(false);
@@ -1097,7 +1124,7 @@ describe.each(
         name: 'Chore',
         fields: { title: { type: 'text' } },
       });
-      await host.create('Chore', { title: 'one' });
+      await host.create(hostOwner(host), 'Chore', { title: 'one' });
       const draftStore = new MemoryVersionStore();
       const draft = await host.forkDraft(draftDirOf(dir), {
         store: draftStore,
@@ -1156,7 +1183,7 @@ describe.each(
         name: 'Chore',
         fields: { title: { type: 'text' } },
       });
-      await first.create('Chore', { title: 'old data' });
+      await first.create(hostOwner(first), 'Chore', { title: 'old data' });
       const version = first.version;
       await first.close();
       const staging = sideName(schema, 'r', 'stage123');
@@ -1164,9 +1191,12 @@ describe.each(
       schemas.push(staging, aside);
       await withSchemaAdmin(config(schema), async (db) => {
         await forkSchema(db, schema, staging, schema);
-        await db.transaction((tx: any) =>
-          tx.query(`UPDATE "${staging}".u_chores SET title = 'new data'`),
-        );
+        await db.transaction(async (tx: any) => {
+          await tx.query(ENGINE_CONTEXT);
+          return tx.query(
+            `UPDATE "${staging}".u_chores SET title = 'new data'`,
+          );
+        });
         await swapSchemas(db, {
           live: schema,
           next: staging,
@@ -1227,9 +1257,9 @@ describe.each(
     ) => {
       expect(host.version).toBe(c.version + (newer ? 1 : 0));
       expect(await c.store.current()).toBe(host.version);
-      expect((await host.list('Chore')).map((r) => r.title)).toEqual([
-        newer ? 'new data' : 'old data',
-      ]);
+      expect(
+        (await host.list(hostOwner(host), 'Chore')).map((r) => r.title),
+      ).toEqual([newer ? 'new data' : 'old data']);
       expect(await sideSchemas(c.schema)).toEqual([]);
       expect(existsSync(join(c.dir, JOURNAL_FILE))).toBe(false);
       expect(await tablesIn(c.schema)).toContain('u_chores');
@@ -1276,9 +1306,9 @@ describe.each(
       });
       const host = await reopen(c);
       expect(host.version).toBe(c.version + 2);
-      expect((await host.list('Chore')).map((r) => r.title)).toEqual([
-        'new data',
-      ]);
+      expect(
+        (await host.list(hostOwner(host), 'Chore')).map((r) => r.title),
+      ).toEqual(['new data']);
       expect(await sideSchemas(c.schema)).toEqual([]);
       expect(existsSync(join(c.dir, JOURNAL_FILE))).toBe(false);
     });
@@ -1379,7 +1409,10 @@ describe.each(
         dumpSchema(db, live.schema, file),
       );
       const name = file.split('/').pop() as string;
-      await live.host.create('Chore', { title: 'After', points: 1 });
+      await live.host.create(hostOwner(live.host), 'Chore', {
+        title: 'After',
+        points: 1,
+      });
       expect(await titles(live.host)).toContain('After');
       const r = await live.host.restoreSnapshot(name, OK);
       expect(r.restoredFrom).toBe(name);
@@ -1387,7 +1420,10 @@ describe.each(
       expect(existsSync(r.snapshot)).toBe(true);
       expect(await sideSchemas(live.schema)).toEqual([]);
       // Serving normally afterwards, and the restore itself can be undone by restoring its snapshot.
-      await live.host.create('Chore', { title: 'Next', points: 2 });
+      await live.host.create(hostOwner(live.host), 'Chore', {
+        title: 'Next',
+        points: 2,
+      });
       const undo = await live.host.restoreSnapshot(
         r.snapshot.split('/').pop() as string,
         OK,
@@ -1456,7 +1492,12 @@ describe.each(
           code: `for (const c of data.Chore) app.update('Chore', c.id, { title: 'wiped' }); return 'ok';`,
         },
       });
-      const out = await live.host.runMethod('Chore', 'wipe', null);
+      const out = await live.host.runMethod(
+        hostOwner(live.host),
+        'Chore',
+        'wipe',
+        null,
+      );
       expect(out.applied).toBe(3);
       const snapshot = String(out.snapshot);
       expect(snapshot).toMatch(/-method-Chore\.wipe\.pgdump$/);
@@ -1497,10 +1538,11 @@ describe.each(
       const count = async (schema: string) =>
         Number(
           (
-            await reader.query(
+            await asEngine(
+              reader as any,
               `SELECT count(*)::int AS n FROM "${schema}".u_chores`,
             )
-          ).rows[0].n,
+          )[0].n,
         );
       expect(await count(a.schema)).toBe(3);
       const { draft } = await fork(a);
@@ -1510,9 +1552,15 @@ describe.each(
         field: 'done',
         definition: { type: 'boolean' },
       });
-      await draft.create('Chore', { title: 'Draft only', points: 1 });
+      await draft.create(hostOwner(draft), 'Chore', {
+        title: 'Draft only',
+        points: 1,
+      });
       a.host.setFrozen(true);
-      await a.host.create('Chore', { title: 'Late', points: 4 });
+      await a.host.create(hostOwner(a.host), 'Chore', {
+        title: 'Late',
+        points: 4,
+      });
       const bBefore = await rows(
         `SELECT id::text, title FROM "${b.schema}".u_chores ORDER BY id`,
       );
@@ -1543,7 +1591,10 @@ describe.each(
         ),
       ).toEqual(bBefore);
       expect(await titles(b.host)).toEqual(['Bins', 'Dishes', 'Garage']);
-      await b.host.create('Chore', { title: 'B after', points: 1 });
+      await b.host.create(hostOwner(b.host), 'Chore', {
+        title: 'B after',
+        points: 1,
+      });
       expect(await count(b.schema)).toBe(4);
       expect(await sideSchemas(b.schema)).toEqual([]);
     });
@@ -1618,7 +1669,7 @@ describe.each(
         name: 'Chore',
         fields: { title: { type: 'text' } },
       });
-      await live.host.create('Chore', { title: 'one' });
+      await live.host.create(hostOwner(live.host), 'Chore', { title: 'one' });
       const { draft, store } = await fork(live);
       const side = String(draft.draft?.schema);
       expect(Buffer.byteLength(side)).toBeLessThanOrEqual(63);
@@ -1681,7 +1732,7 @@ describe.each(
           name: 'Chore',
           fields: { title: { type: 'text' } },
         });
-        await h.host.create('Chore', { title: 'x' });
+        await h.host.create(hostOwner(h.host), 'Chore', { title: 'x' });
       }
       // Fork both at once.
       const [fa, fb] = await Promise.all([
@@ -1897,7 +1948,10 @@ describe.each(
     const handle = (schema: string, fence?: number) =>
       scopeDatabase(admin as any, schema, { fence }) as any;
     const setPoints = (h: any, n: number) =>
-      h.transaction((tx: any) => tx.query(`UPDATE u_chores SET points = ${n}`));
+      h.transaction(async (tx: any) => {
+        await tx.query(ENGINE_CONTEXT);
+        return tx.query(`UPDATE u_chores SET points = ${n}`);
+      });
 
     it('a host holds the stored generation, and workers on it can write', async () => {
       const live = await seeded('fence_basic');
@@ -1956,7 +2010,10 @@ describe.each(
         StaleFenceError,
       );
       expect(await pointsOf(live.schema)).toEqual([3, 5, 8]);
-      await live.host.create('Chore', { title: 'After', points: 1 });
+      await live.host.create(hostOwner(live.host), 'Chore', {
+        title: 'After',
+        points: 1,
+      });
     });
 
     it('two hosts opening the same app: exactly one can write', async () => {
@@ -1970,7 +2027,10 @@ describe.each(
             database: config(a.schema),
           }),
         ).rejects.toThrow(/another host already runs/);
-        await a.host.create('Chore', { title: 'A', points: 1 });
+        await a.host.create(hostOwner(a.host), 'Chore', {
+          title: 'A',
+          points: 1,
+        });
         return;
       }
       // PGlite has no session lock to claim: the generation alone decides.
@@ -1982,11 +2042,11 @@ describe.each(
       hosts.push(b);
       expect(b.fence).toBe((a.host.fence as number) + 1);
       const err = await a.host
-        .create('Chore', { title: 'A', points: 1 })
+        .create(hostOwner(a.host), 'Chore', { title: 'A', points: 1 })
         .catch((e) => e);
       expect(err).toBeInstanceOf(EngineError);
       expect(err.code).toBe('stale_fence');
-      await b.create('Chore', { title: 'B', points: 2 });
+      await b.create(hostOwner(b), 'Chore', { title: 'B', points: 2 });
       expect(await titles(b)).toEqual(['Bins', 'Dishes', 'Garage', 'B'].sort());
     });
 
@@ -2063,7 +2123,10 @@ describe.each(
       expect(await fenceIn(live.schema)).toBe(before + 2);
       expect(live.host.fence).toBe(before + 2);
       live.host.setFrozen(false);
-      await live.host.create('Chore', { title: 'Still ours', points: 1 });
+      await live.host.create(hostOwner(live.host), 'Chore', {
+        title: 'Still ours',
+        points: 1,
+      });
       expect(await sideSchemas(live.schema)).toHaveLength(1); // the draft's
     });
 
@@ -2077,7 +2140,10 @@ describe.each(
       await withSchemaAdmin(config(live.schema), (db) =>
         dumpSchema(db, live.schema, file),
       );
-      await live.host.create('Chore', { title: 'After', points: 1 });
+      await live.host.create(hostOwner(live.host), 'Chore', {
+        title: 'After',
+        points: 1,
+      });
       const before = live.host.fence as number;
       loseNextSwapReply(live.host);
       await expect(
@@ -2086,7 +2152,10 @@ describe.each(
       expect(await titles(live.host)).toContain('After'); // rolled back
       expect(await fenceIn(live.schema)).toBe(before + 2);
       expect(live.host.fence).toBe(before + 2);
-      await live.host.create('Chore', { title: 'Next', points: 2 });
+      await live.host.create(hostOwner(live.host), 'Chore', {
+        title: 'Next',
+        points: 2,
+      });
     });
 
     it("a draft host that lost ownership cannot discard the new owner's draft", async () => {

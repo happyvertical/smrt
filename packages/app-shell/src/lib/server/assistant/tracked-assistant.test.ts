@@ -9,6 +9,7 @@ import {
   trackedPromptCall,
 } from '@happyvertical/smrt-prompts';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
+import { hostOwner } from '../../../test/engine-principal.ts';
 import type { TurnEvent } from '../../assistant/events.ts';
 import { ApprovalCollection } from '../../objects/Approval.ts';
 import { getHost, getShellDb } from '../host.ts';
@@ -224,7 +225,7 @@ describe('an assistant turn as an AI run (#5005)', () => {
     );
     await applyWaiting(h.owner);
     await callTool(h.owner, 'chore_create', { title: 'tracked-mop' });
-    const chore = (await host.list('Chore')).find(
+    const chore = (await host.list(hostOwner(host), 'Chore')).find(
       (row) => (row as { title?: string }).title === 'tracked-mop',
     );
     const model = await trackedModel([
@@ -279,7 +280,7 @@ describe('an assistant turn as an AI run (#5005)', () => {
     );
     await applyWaiting(h.owner);
     await callTool(h.owner, 'chore_create', { title: 'late-mop' });
-    const chore = (await host.list('Chore')).find(
+    const chore = (await host.list(hostOwner(host), 'Chore')).find(
       (row) => (row as { title?: string }).title === 'late-mop',
     );
     const thread = await createThread(h.owner.id, 'late decision');

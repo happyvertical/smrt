@@ -106,13 +106,21 @@ export class AppCaps {
   private models: () => CapModel[];
   private countTable: (table: string, h: unknown) => Promise<number>;
   private clock: () => number;
+  private txLock?: (h: unknown) => Promise<void>;
 
   constructor(
     limits: AppLimits,
     models: () => CapModel[],
     countTable: (table: string, h: unknown) => Promise<number>,
     clock: () => number = Date.now,
+    /**
+     * PostgreSQL: take the app's caps lock inside the operation's own
+     * transaction (`pg_advisory_xact_lock`), held until it commits. Absent
+     * (SQLite): the in-process chain below is the lock.
+     */
+    txLock?: (h: unknown) => Promise<void>,
   ) {
+    this.txLock = txLock;
     this.limits = assertAppLimits(limits);
     this.run = limits.methodRunState ?? new Float64Array(2);
     this.models = models;
@@ -156,12 +164,31 @@ export class AppCaps {
   /**
    * Run `fn` alone among the capped writes of this app. The check and the
    * write of a create are one unit: without it two concurrent creates with one
-   * slot left would both pass the check before either inserts. A plain promise
-   * chain (never re-entered: holders call only unlocked helpers), taken only
-   * when a row cap is set. A failed `fn` never blocks the next one.
+   * slot left would both pass the check before either inserts. Taken only when
+   * a row cap is set.
+   *
+   * SQLite: a plain promise chain (never re-entered: holders call only
+   * unlocked helpers), enough because one connection runs one operation at a
+   * time. A failed `fn` never blocks the next one.
+   *
+   * PostgreSQL (`h` is the operation's transaction handle): a chain would
+   * release when `fn` returns, BEFORE the operation's transaction commits, so
+   * a second connection could count the rows in between. The lock is
+   * `pg_advisory_xact_lock` on the app's caps key, taken on the operation's
+   * own connection (so after the pool connection: no connection is ever
+   * waited for while holding the lock) and held until COMMIT or ROLLBACK.
+   * Two operations that both write capped rows therefore never overlap, and a
+   * crash or timeout releases the lock with the transaction.
    */
-  withWriteLock<T>(fn: () => Promise<T>): Promise<T> {
+  async withWriteLock<T>(fn: () => Promise<T>, h?: unknown): Promise<T> {
     if (!this.rowsCapped) return fn();
+    if (this.txLock && h !== undefined) {
+      await this.txLock(h);
+      // Another connection (a second worker of this app, another process) may
+      // have written since this runtime last counted.
+      this.invalidate();
+      return fn();
+    }
     const run = this.tail.then(fn, fn);
     this.tail = run.then(
       () => {},

@@ -181,7 +181,17 @@ describe('database-generated fields #4915', () => {
           body: JSON.stringify({ qty: 2, unitPrice: 3, total: 99 }),
         }),
       );
-      expect(denied.status).toBe(201);
+      // A create that sets a generated field is refused (#5195).
+      expect(denied.status).toBe(400);
+      expect(await collection.list()).toHaveLength(0);
+      const created = await api.generateHandler()(
+        new Request('http://test/api/generated_invoices', {
+          method: 'POST',
+          headers: { 'content-type': 'application/json' },
+          body: JSON.stringify({ qty: 2, unitPrice: 3, total: null }),
+        }),
+      );
+      expect(created.status).toBe(201);
       const accepted = (await collection.list())[0];
       expect(accepted.toJSON()).toHaveProperty('total', 6);
       await collection.delete(accepted.id!);
@@ -1822,7 +1832,7 @@ describe('database-generated fields #4915', () => {
 
   for (const engine of persistenceEngines) {
     for (const transport of ['REST', 'MCP', 'SvelteKit'] as const) {
-      it(`#4972 round2 item7: ${engine} ${transport} round-trips a fetched record and drops generated/readonly keys`, async () => {
+      it(`#4972 round2 item7: ${engine} ${transport} round-trips a fetched record; a changed generated/readonly key is refused`, async () => {
         const db = await getTestDatabase({
           type: engine === 'sqlite' ? 'sqlite' : 'pglite',
           classes: [],
@@ -1851,27 +1861,43 @@ describe('database-generated fields #4915', () => {
           cache: false,
         }))!.toPublicJSON();
         expect(fetched).toHaveProperty('total', 6);
-        const body = { ...fetched, qty: 4, total: 999, serverNote: 'forged' };
+        // REST and SvelteKit compare protected keys with the stored row
+        // (#5195): the fetched record goes back as is, a changed generated or
+        // read-only value is refused. REST, MCP and SvelteKit all follow it.
+        const forged = { ...fetched, qty: 4, total: 999, serverNote: 'forged' };
+        const body = { ...fetched, qty: 4 };
         if (transport === 'REST') {
           const api = new APIGenerator({ basePath: '/api' }, { db });
           api.registerCollection('generated_invoices', collection);
-          const response = await api.generateHandler()(
-            new Request(`http://test/api/generated_invoices/${row.id}`, {
-              method: 'PUT',
-              headers: { 'content-type': 'application/json' },
-              body: JSON.stringify(body),
-            }),
-          );
+          const put = (payload: unknown) =>
+            api.generateHandler()(
+              new Request(`http://test/api/generated_invoices/${row.id}`, {
+                method: 'PUT',
+                headers: { 'content-type': 'application/json' },
+                body: JSON.stringify(payload),
+              }),
+            );
+          const refused = await put(forged);
+          expect(refused.status).toBe(400);
+          expect((await refused.json()).error).toMatchObject({
+            code: 'VALIDATION_FIELD_NOT_WRITABLE',
+            details: { field: 'total' },
+          });
+          const response = await put(body);
           expect(response.status).toBe(200);
         } else if (transport === 'MCP') {
           const generator = new MCPGenerator({ classNames: [name] }, { db });
-          const response = await generator.handleToolCall({
-            method: 'tools/call',
-            params: {
-              name: 'generatedinvoice_update',
-              arguments: body,
-            },
+          const update = (args: unknown) =>
+            generator.handleToolCall({
+              method: 'tools/call',
+              params: { name: 'generatedinvoice_update', arguments: args },
+            } as never);
+          const refused = await update(forged);
+          expect(refused.isError, JSON.stringify(refused)).toBe(true);
+          expect(refused.structuredContent).toMatchObject({
+            error: { code: 'VALIDATION_FIELD_NOT_WRITABLE' },
           });
+          const response = await update({ ...body, id: row.id });
           expect(response.isError, JSON.stringify(response)).not.toBe(true);
         } else {
           const root = await mkdtemp(
@@ -1936,15 +1962,19 @@ describe('database-generated fields #4915', () => {
             // Execute the actual emitted PUT handler; no server or listening port.
             new Function('require', 'exports', js)(require, exports);
             expect(exports.PUT).toBeTypeOf('function');
-            const response = await exports.PUT!({
-              params: { id: row.id! },
-              locals: {},
-              request: new Request('http://test/item', {
-                method: 'PUT',
-                headers: { 'content-type': 'application/json' },
-                body: JSON.stringify(body),
-              }),
-            });
+            const put = (payload: unknown) =>
+              exports.PUT!({
+                params: { id: row.id! },
+                locals: {},
+                request: new Request('http://test/item', {
+                  method: 'PUT',
+                  headers: { 'content-type': 'application/json' },
+                  body: JSON.stringify(payload),
+                }),
+              });
+            const refused = await put(forged);
+            expect(refused.status).toBe(400);
+            const response = await put(body);
             expect(response.status).toBe(200);
           } finally {
             await rm(root, { recursive: true, force: true });

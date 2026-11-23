@@ -1,5 +1,6 @@
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { EMPTY_APP, type VersionRecord } from '../../engine/index.ts';
+import { hostOwner } from '../../test/engine-principal.ts';
 import { App } from '../objects/App.ts';
 import { closeHost, getHost } from './host.ts';
 import { runAs } from './owner.ts';
@@ -61,15 +62,15 @@ describe('host restart', () => {
       );
       await applyWaiting(h2.owner);
       const host = await getHost();
-      await host.create('Chore', { title: 'survives' });
+      await host.create(hostOwner(host), 'Chore', { title: 'survives' });
       const version = host.version;
       await closeHost();
       const again = await getHost();
       expect(again).not.toBe(host);
       expect(again.version).toBe(version);
-      expect((await again.list('Chore')).map((r) => r.title)).toEqual([
-        'survives',
-      ]);
+      expect(
+        (await again.list(hostOwner(again), 'Chore')).map((r) => r.title),
+      ).toEqual(['survives']);
       // plain files inside the data root, no symlinks
       const { lstatSync } = await import('node:fs');
       const { join } = await import('node:path');

@@ -1,4 +1,5 @@
 // Real shell database and engine workers; only SvelteKit's request event is supplied.
+
 import {
   checkLoaded,
   runImport,
@@ -11,6 +12,7 @@ import { flushChecks } from '../lib/server/changes.ts';
 import { startDraft } from '../lib/server/drafts.ts';
 import { closeHost, hostFor } from '../lib/server/host.ts';
 import { openShell, type ShellHarness } from '../lib/server/test-support.ts';
+import { hostOwner } from '../test/engine-principal.ts';
 import * as changesRoute from './api/shell/changes/+server.ts';
 import * as applyRoute from './api/shell/changes/apply/+server.ts';
 import * as recordsRoute from './api/shell/records/[model]/+server.ts';
@@ -82,7 +84,7 @@ it.each([
     column: 4,
     required: true,
   });
-  const target = createEngineImportTarget(draft);
+  const target = createEngineImportTarget(draft, () => hostOwner(draft));
   const proof = await runImport({ ...fixture, target });
   expect(proof.ok).toBe(true);
   for (const model of Object.values(draft.def.models)) {
@@ -101,7 +103,9 @@ it.each([
     id?: string,
   ) => {
     if (surface === 'host')
-      return id ? host.update(model, id, values) : host.create(model, values);
+      return id
+        ? host.update(hostOwner(host), model, id, values)
+        : host.create(hostOwner(host), model, values);
     const path = `/api/shell/records/${model}${id ? `/${id}` : ''}`;
     const response = id
       ? await recordRoute.PUT(event(path, 'PUT', values, { model, id }))
@@ -114,7 +118,7 @@ it.each([
     email: 'lin@example.test',
   });
   expect(customer).toMatchObject({ name: 'Lin', email: 'lin@example.test' });
-  const original = (await host.list('Customers')).find(
+  const original = (await host.list(hostOwner(host), 'Customers')).find(
     (row) => row.name === 'Ada',
   );
   if (!original) throw new Error('Missing imported customer');
@@ -147,10 +151,12 @@ it.each([
     toRuntimeModel('Orders', host.def.models.Orders).fields?.total.required,
   ).toBe(false);
   await expect(
-    host.create('Customers', { email: 'missing-name@example.test' }),
+    host.create(hostOwner(host), 'Customers', {
+      email: 'missing-name@example.test',
+    }),
   ).rejects.toThrow(/name.*required/i);
   await expect(
-    host.create('Orders', {
+    host.create(hostOwner(host), 'Orders', {
       price: 250,
       quantity: 4,
       status: 'Open',
@@ -158,7 +164,7 @@ it.each([
     }),
   ).rejects.toThrow(/customer.*required/i);
   await expect(
-    host.create('Orders', {
+    host.create(hostOwner(host), 'Orders', {
       customer: customer.id,
       price: 250,
       quantity: 4,
@@ -166,6 +172,7 @@ it.each([
     }),
   ).rejects.toThrow(/Workbook total.*required/i);
   const rows = await host.readStoredRows(
+    hostOwner(host),
     'Orders',
     ['workbookRow', 'workbookLookup', 'total'],
     'workbookRow',
@@ -259,14 +266,19 @@ it('repairs a persisted pre-release sealed import through a fresh draft and owne
     const live = await hostFor('live');
     if (phase === 'legacy') {
       // The old NOT NULL column is repaired when the published table opens.
-      expect(await live.create('Customers', { name: 'Mae' })).toMatchObject({
+      expect(
+        await live.create(hostOwner(live), 'Customers', { name: 'Mae' }),
+      ).toMatchObject({
         name: 'Mae',
       });
     } else {
-      expect(await live.create('Customers', { name: 'Lin' })).toMatchObject({
+      expect(
+        await live.create(hostOwner(live), 'Customers', { name: 'Lin' }),
+      ).toMatchObject({
         name: 'Lin',
       });
       const stored = await live.readStoredRows(
+        hostOwner(live),
         'Customers',
         ['workbookRow'],
         'workbookRow',
@@ -286,7 +298,10 @@ it('repairs a persisted pre-release sealed import through a fresh draft and owne
 
 it('requires real workbook rows on import batches before inserting anything', async () => {
   await startDraft('Workbook', h.owner.id);
-  const target = createEngineImportTarget(await hostFor('draft'));
+  const draftHost = await hostFor('draft');
+  const target = createEngineImportTarget(draftHost, () =>
+    hostOwner(draftHost),
+  );
   await target.applyStructure(businessWorkbook().plan);
   for (const sourceRow of [0, undefined as never]) {
     await expect(

@@ -97,6 +97,9 @@
       "@happyvertical/smrt-app-shell": [
         "./packages/app-shell/src/lib/objects/index.ts"
       ],
+      "@happyvertical/smrt-app-shell/embed": [
+        "./packages/app-shell/src/lib/server/embed.ts"
+      ],
       "@happyvertical/smrt-app-shell/engine": [
         "./packages/app-shell/src/engine/index.ts"
       ],
@@ -1131,6 +1134,12 @@
       ],
       "@happyvertical/smrt-users/playground": [
         "./packages/users/src/playground.ts"
+      ],
+      "@happyvertical/smrt-users/postgres-policies": [
+        "./packages/users/src/postgres-policies.ts"
+      ],
+      "@happyvertical/smrt-users/postgres-settings": [
+        "./packages/users/src/postgres-settings.ts"
       ],
       "@happyvertical/smrt-users/step-up": [
         "./packages/users/src/step-up.ts"

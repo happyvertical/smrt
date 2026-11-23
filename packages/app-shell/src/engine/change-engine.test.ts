@@ -1,10 +1,12 @@
 // ChangeEngine (#5202): rebuild, checkBatch, undoBatch over the SQLite adapter.
+
 import { createHash } from 'node:crypto';
 import { existsSync, mkdtempSync, readFileSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { parseRuntimeReportSpec } from '@happyvertical/smrt-reports';
 import { afterAll, describe, expect, it } from 'vitest';
+import { hostOwner } from '../test/engine-principal.ts';
 import {
   type BatchCommand,
   batchDigest,
@@ -14,7 +16,9 @@ import {
 import {
   AppHost,
   type Command,
+  DESKTOP_TENANT,
   EMPTY_APP,
+  enginePrincipal,
   MemoryVersionStore,
 } from './index.ts';
 
@@ -22,7 +26,12 @@ const root = mkdtempSync(join(tmpdir(), 'engine-change-'));
 afterAll(() => rmSync(root, { recursive: true, force: true }));
 
 const engine = createSqliteChangeEngine();
-const me = { id: 'owner' };
+// The default tenant of an AppHost opened without one.
+const me = enginePrincipal({
+  kind: 'user',
+  tenantId: DESKTOP_TENANT,
+  userId: 'owner',
+});
 const AUTHOR = { author: 'tester', approved: true };
 const sha = (p: string) =>
   createHash('sha256').update(readFileSync(p)).digest('hex');
@@ -44,7 +53,11 @@ async function world() {
     },
     AUTHOR,
   );
-  await live.create('Chore', { title: 'Bins', notes: 'blue', points: 3 });
+  await live.create(hostOwner(live), 'Chore', {
+    title: 'Bins',
+    notes: 'blue',
+    points: 3,
+  });
   let k = 0;
   const rebuild = (commands: BatchCommand[], signal?: AbortSignal) =>
     engine.rebuild(me, live, {
@@ -284,7 +297,10 @@ describe('undoBatch', () => {
       expect: check.engineDigest as string,
     });
     await r.draft.discard();
-    await w.live.create('Chore', { title: 'Added after', points: 9 });
+    await w.live.create(hostOwner(w.live), 'Chore', {
+      title: 'Added after',
+      points: 9,
+    });
     expect(w.live.def.models.Chore.fields.notes).toBeUndefined();
 
     await engine.undoBatch(me, w.live, {
@@ -293,7 +309,7 @@ describe('undoBatch', () => {
     });
     expect(w.live.def.models.Chore.fields.notes).toBeTruthy();
     expect(w.live.def.models.Chore.fields.size).toBeUndefined();
-    const rows = await w.live.list('Chore');
+    const rows = await w.live.list(hostOwner(w.live), 'Chore');
     expect(rows.map((x) => x.title).sort()).toEqual(['Added after', 'Bins']);
     expect(rows.find((x) => x.title === 'Bins')?.notes).toBe('blue');
     await w.live.close();
@@ -347,10 +363,13 @@ describe('checkBatch review digest and plain blockers', () => {
     const r = await w.rebuild([{ key: 'l', command: load }]);
     const first = await engine.checkBatch(me, w.live, r.draft);
     expect(first.reviewDigest).toBeTruthy();
-    await w.live.create('Chore', { title: 'unrelated' });
+    await w.live.create(hostOwner(w.live), 'Chore', { title: 'unrelated' });
     const second = await engine.checkBatch(me, w.live, r.draft);
     expect(second.reviewDigest).toBe(first.reviewDigest);
-    await w.live.create('Chore', { title: 'pin-me', points: 2 }); // the load would now overwrite it
+    await w.live.create(hostOwner(w.live), 'Chore', {
+      title: 'pin-me',
+      points: 2,
+    }); // the load would now overwrite it
     const third = await engine.checkBatch(me, w.live, r.draft);
     expect(third.overwrites.recordsUpdated).toBe(1);
     expect(third.ok).toBe(true); // shown, never blocking

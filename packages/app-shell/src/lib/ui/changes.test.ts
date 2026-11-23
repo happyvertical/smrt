@@ -10,6 +10,7 @@ import {
   overwriteLines,
   planPill,
   planQuickEdit,
+  planReplyBlock,
   quickEditCalls,
 } from './changes.ts';
 import { announcement, DEPENDS, keysFor, parseShellEvent } from './events.ts';
@@ -203,5 +204,25 @@ describe('groupCards', () => {
     expect(group.kind === 'group' && group.title).toBe(
       'Imported from your workbook',
     );
+  });
+});
+
+describe('planReplyBlock (#5395)', () => {
+  const asked = card({
+    questions: [{ id: 'q', text: 'Keep it here?', choices: [], state: 'open' }],
+  });
+  it('carries the open questions and leads with Review, even for a small addition', () => {
+    const block = planReplyBlock(changes({ cards: [asked], applyNow: true }));
+    expect(block).toMatchObject({
+      questions: 1,
+      questionTexts: ['Keep it here?'],
+      lead: 'review',
+      applyNow: false,
+    });
+  });
+  it('offers Apply now for a small addition with nothing to answer', () => {
+    expect(
+      planReplyBlock(changes({ cards: [card()], applyNow: true })),
+    ).toMatchObject({ applyNow: true, questionTexts: [] });
   });
 });

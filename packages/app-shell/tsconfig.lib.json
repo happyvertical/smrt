@@ -13,6 +13,6 @@
     "emitDecoratorMetadata": false,
     "types": ["node"]
   },
-  "include": ["src/engine/**/*.ts", "src/lib/objects/index.ts", "src/lib/server/shutdown.ts"],
+  "include": ["src/engine/**/*.ts", "src/lib/objects/index.ts", "src/lib/server/shutdown.ts", "src/lib/server/embed.ts"],
   "exclude": ["src/engine/**/*.test.ts"]
 }

@@ -19,13 +19,13 @@ import {
 } from './definition.ts';
 import { EngineError } from './errors.ts';
 import type { AppHost } from './host.ts';
-
 import {
   type ImportNames,
   importNames,
   WORKBOOK_LOOKUP,
   WORKBOOK_ROW,
 } from './import-names.ts';
+import type { EnginePrincipal } from './principal.ts';
 
 export { importFieldName, importModelName } from './import-names.ts';
 
@@ -121,6 +121,8 @@ export interface EngineImportTarget extends ImportTarget {
 
 export function createEngineImportTarget(
   host: AppHost,
+  /** Who runs the import; read at each call, since the definition (and the owner's slugs) grow as it runs. */
+  caller: () => EnginePrincipal,
   beforeCommand: () => Promise<void> = async () => {},
   retainNames: (names: ImportNames) => Promise<void> = async () => {},
   onCommand?: ImportCommandHook,
@@ -369,7 +371,7 @@ export function createEngineImportTarget(
     },
     async count(key) {
       table(key);
-      return host.countRows(modelName(key));
+      return host.countRows(caller(), modelName(key));
     },
     async sum(key, field) {
       const fd = definitions.get(key)?.get(field);
@@ -401,6 +403,7 @@ export function createEngineImportTarget(
         if (!definitions.get(key)?.has(field))
           throw new EngineImportError(key, field);
       const rows = await host.readStoredRows(
+        caller(),
         modelName(key),
         [SOURCE_ROW, ...fields.map((field) => fieldName(key, field))],
         SOURCE_ROW,

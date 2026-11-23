@@ -5,12 +5,14 @@
 // a real server when `SMRT_TEST_POSTGRES_URL` is set (CI's "Registered
 // PostgreSQL Suites" lane); each case gets its own schema, created and dropped
 // here as a host's provisioning would.
+
 import { mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { getDatabase } from '@happyvertical/sql';
 import { importPGlite } from '@happyvertical/sql/pglite';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
+import { hostOwner } from '../test/engine-principal.ts';
 import type { DatabaseConfig, PGliteClient } from './db/index.ts';
 import {
   AppHost,
@@ -22,6 +24,7 @@ import {
   type PortableUserApp,
   verifyUserApp,
 } from './index.ts';
+import { asEngine } from './pg-test-support.ts';
 
 const serverUrl = process.env.SMRT_TEST_POSTGRES_URL;
 const backends = ['pglite', ...(serverUrl ? ['postgres'] : [])] as const;
@@ -56,7 +59,7 @@ describe.each(
       ? { kind: 'postgres', schema, connection: { url: serverUrl, max: 2 } }
       : { kind: 'pglite', schema, client: pglite as PGliteClient };
   const rows = async (sql: string, params: unknown[] = []) =>
-    (await admin.query(sql, params)).rows as Array<Record<string, any>>;
+    asEngine(admin as any, sql, params);
 
   beforeAll(async () => {
     if (backend === 'postgres') {
@@ -117,8 +120,8 @@ describe.each(
       },
       A,
     );
-    const ann = await host.create('Owner', { name: 'Ann' });
-    await host.create('Chore', {
+    const ann = await host.create(hostOwner(host), 'Owner', { name: 'Ann' });
+    await host.create(hostOwner(host), 'Chore', {
       title: 'Bins',
       points: 3,
       done: true,
@@ -130,7 +133,7 @@ describe.each(
       secret: 's-1',
       notes: 'note 1',
     });
-    await host.create('Chore', {
+    await host.create(hostOwner(host), 'Chore', {
       title: 'Dishes',
       points: 0,
       done: false,
@@ -212,21 +215,23 @@ describe.each(
     });
     expect(hosted.source).toBe('postgres');
     expect(hosted.digest).toBe(local.digest);
-    expect(hosted.tables.map((t) => [t.name, t.digest])).toEqual(
-      local.tables.map((t) => [t.name, t.digest]),
-    );
+    // Core's `_smrt_*` tables stay out of the comparison: SQLite carries
+    // them, PostgreSQL's own boot makes them.
+    const appTables = (b: typeof local) =>
+      b.tables
+        .filter((t) => !t.name.startsWith('_smrt_'))
+        .map((t) => [t.name, t.digest]);
+    expect(appTables(hosted)).toEqual(appTables(local));
 
     // And the hosted app works: records, and undo of the removed field.
     const h1 = await hostOn(local, hostedDir, database);
-    expect((await h1.list('Chore')).map((r: any) => r.title).sort()).toEqual([
-      'Bins',
-      'Dishes',
-    ]);
+    expect(
+      (await h1.list(hostOwner(h1), 'Chore')).map((r: any) => r.title).sort(),
+    ).toEqual(['Bins', 'Dishes']);
     expect(await h1.execute({ type: 'undo' }, OK)).toBeTruthy();
-    expect((await h1.list('Chore')).map((r: any) => r.notes).sort()).toEqual([
-      'note 1',
-      'note 2',
-    ]);
+    expect(
+      (await h1.list(hostOwner(h1), 'Chore')).map((r: any) => r.notes).sort(),
+    ).toEqual(['note 1', 'note 2']);
     await h1.close();
 
     // Back to a desktop database.
@@ -246,10 +251,9 @@ describe.each(
     expect(again.digest).toBe(local.digest);
     const h2 = await hostOn(local, back);
     expect(await h2.execute({ type: 'undo' }, OK)).toBeTruthy();
-    expect((await h2.list('Chore')).map((r: any) => r.notes).sort()).toEqual([
-      'note 1',
-      'note 2',
-    ]);
+    expect(
+      (await h2.list(hostOwner(h2), 'Chore')).map((r: any) => r.notes).sort(),
+    ).toEqual(['note 1', 'note 2']);
     await h2.close();
   });
 
@@ -402,14 +406,14 @@ describe.each(
     expect(inspected).toMatchObject({ integrity: true, recorded: true });
     expect(inspected.rows).toBeGreaterThan(2);
 
-    await admin.query(
+    await rows(
       `UPDATE "${schema}".u_chores SET _sync_revision = 1152921504606846976 WHERE title = 'Bins'`,
     );
     await expect(
       exportUserApp({ dataDir: target, database, versions: bundle.versions }),
     ).rejects.toThrow(/2\^53/);
     // The digits a server pool returns (and a safe value) are read exactly.
-    await admin.query(
+    await rows(
       `UPDATE "${schema}".u_chores SET _sync_revision = 9007199254740991 WHERE title = 'Bins'`,
     );
     const ok = await exportUserApp({
@@ -442,7 +446,7 @@ describe.each(
       },
       A,
     );
-    await host.create('Gadget', {
+    await host.create(hostOwner(host), 'Gadget', {
       extraData: { a: 1, b: [1, 2] },
       armed: true,
     });

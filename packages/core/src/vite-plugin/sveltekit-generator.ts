@@ -27,9 +27,7 @@ import {
   isCrudOperation,
   isFrameworkLifecycleMethod,
   queryStringDecoderFor,
-  readActionReceivesTenantScope,
   resolveApiMethodExposure,
-  resolveCustomActionMetadata,
   resolveCustomActionNames,
   resolveDeclaredScopeMismatch,
   resolveEffectiveActionMetadata,
@@ -40,6 +38,7 @@ import {
   BUILD_SCHEMA_MODULE,
   generateBuildSchemaModule,
 } from '../migrations/build-schema.js';
+import { resolvePermissionCollection } from '../permission-collection.js';
 import {
   buildDefaultListOrderBy,
   DEFAULT_LIST_LIMIT,
@@ -76,15 +75,10 @@ import {
 } from './resources-route.js';
 import { AUTO_GENERATED_ROUTE_HEADER } from './route-header.js';
 import {
-  allowsSuperAdminBypass,
-  collectRouteReadonlyFields,
   generateTenantContextHelper,
   getApiConfigObject,
   getApiPublicAccess,
-  getApiWritableAllowlist,
   isTenantScoped,
-  manifestOwnershipProperties,
-  resolvePermissionCollection,
   usesPrincipalContext,
 } from './route-policy.js';
 import {
@@ -101,7 +95,6 @@ import {
   computeWebManifestHash,
   findManifestObjectByName,
   isCollectionManifestClass,
-  methodNameToKebab,
   orderedManifestObjectEntries,
   type ResolvedApiActionRouteConfig,
   resolveApiActionRouteConfig,
@@ -450,69 +443,6 @@ function findObjectDefByRegistryKey(
   );
 }
 
-/**
- * Emit the mass-assignment guard helper injected into generated route files
- * (#1540, 2b). It strips framework/server-managed (`id`, `tenantId`,
- * timestamps, `_`-prefixed) and `@field({ readonly: true })` fields from
- * request bodies, and — when a `writable` allowlist is configured — intersects
- * with it. Applied to every generated `create`/`update` handler.
- *
- * A body sets fields and nothing else: the keys that configure a service of
- * the object are dropped by the same `ObjectRegistry.isServiceOptionInput`
- * rule the runtime REST and MCP transports apply, evaluated for the route's
- * model (or the selected create target).
- */
-function generateWritablePolicyHelper(
-  className: string,
-  objectDef: SmartObjectDefinition,
-  dynamicTarget = false,
-): string {
-  // The same read-only set the generated sync-apply route uses.
-  const readonly = collectRouteReadonlyFields(objectDef);
-  const writable = getApiWritableAllowlist(objectDef.decoratorConfig?.api);
-
-  return `
-// Mass-assignment guard (#1540): strip framework/server-managed + read-only
-// fields from create/update request bodies before they reach the model.
-const WRITABLE_ALLOWLIST: string[] | null = ${
-    writable ? JSON.stringify(writable) : 'null'
-  };
-const READONLY_FIELDS: string[] = ${JSON.stringify(readonly)};
-const SERVER_MANAGED_FIELDS = [
-  'id',
-  'tenantId',
-  'tenant_id',
-  'createdAt',
-  'created_at',
-  'updatedAt',
-  'updated_at',
-];
-
-function applyWritablePolicy(data: unknown${dynamicTarget ? ', targetName?: string' : ''}): Record<string, unknown> {
-  if (!data || typeof data !== 'object') return {};
-${
-  dynamicTarget
-    ? `  const readonlyFields = targetName ? [...ObjectRegistry.getFields(targetName)].filter(([, field]) => field.readonly === true || field._meta?.readonly === true).map(([name]) => name) : READONLY_FIELDS;
-  if (targetName && typeof ObjectRegistry.getConfig(targetName).display?.label === 'object') readonlyFields.push('displayLabel');
-  const api = targetName ? ObjectRegistry.getConfig(targetName).api : undefined;
-  const writable = targetName ? (api && typeof api === 'object' && Array.isArray(api.writable) ? api.writable : null) : WRITABLE_ALLOWLIST;
-`
-    : ''
-}  const result: Record<string, unknown> = {};
-  for (const [key, value] of Object.entries(data as Record<string, unknown>)) {
-    if (key.startsWith('_')) continue;
-    // A body sets fields only, never a service of the object.
-    if (ObjectRegistry.isServiceOptionInput(${dynamicTarget ? `targetName ?? ${JSON.stringify(className)}` : JSON.stringify(className)}, key)) continue;
-    if (SERVER_MANAGED_FIELDS.includes(key)) continue;
-    if (${dynamicTarget ? 'readonlyFields' : 'READONLY_FIELDS'}.includes(key)) continue;
-    if (${dynamicTarget ? 'writable' : 'WRITABLE_ALLOWLIST'} && !${dynamicTarget ? 'writable' : 'WRITABLE_ALLOWLIST'}.includes(key)) continue;
-    result[key] = value;
-  }
-  return result;
-}
-`;
-}
-
 function toFieldColumnAlias(fieldName: string): string {
   return fieldName
     .replace(/([A-Z]+)([A-Z][a-z])/g, '$1_$2')
@@ -594,6 +524,27 @@ function collectStiHierarchyObjects(
 
   visit(stiBase);
   return [...members.values()];
+}
+
+/**
+ * The registry keys of the STI family members of `objectDef` this manifest
+ * generates, when it has a family: an emitted route serves a member through
+ * its base only when the member is one of them (#5375).
+ */
+function tenancyFamilyScope(
+  objectDef: SmartObjectDefinition | undefined,
+  manifest?: SmartObjectManifest,
+): string[] | undefined {
+  if (!objectDef) return undefined;
+  const members = collectStiHierarchyObjects(objectDef, manifest);
+  // A singleton STI base still carries the boundary: a subtype registered
+  // only at run time must not be admitted through it. A plain model stays
+  // unchanged.
+  const isStiBase =
+    manifest !== undefined &&
+    objectDef.decoratorConfig?.tableStrategy === 'sti';
+  if (members.length < 2 && !isStiBase) return undefined;
+  return members.map((member) => readScopeModelName(member, member.className));
 }
 
 function collectReadPermissionFields(
@@ -837,13 +788,13 @@ function toPublicResult(
 }
 
 /**
- * The registry name an emitted route resolves its tenant read scope with at
+ * The registry name an emitted route resolves its request tenancy with at
  * request time: the model's qualified name, or its class name.
  *
- * Emitted reads resolve the scope from the live registry
- * (`resolveAnonymousTenantReadScope`, `scopeTenantReadOptions`) rather
- * than from this manifest, so a model whose tenancy or ownership field is
- * registered at runtime is scoped like one declared in its manifest.
+ * Emitted routes resolve tenancy from the live registry (`enterTenancy`,
+ * #5375) rather than from this manifest, so a model whose tenancy or
+ * ownership field is registered at runtime is served like one declared in
+ * its manifest.
  */
 function readScopeModelName(
   objectDef: SmartObjectDefinition | undefined,
@@ -856,10 +807,6 @@ function readScopeModelName(
       ? `${objectDef.packageName}:${objectDef.className}`
       : objectDef.className || fallback)
   );
-}
-
-function needsRouteTenantContext(objectDef: SmartObjectDefinition): boolean {
-  return isTenantScoped(objectDef) || usesPrincipalContext(objectDef);
 }
 
 /**
@@ -947,14 +894,15 @@ function resolveDefaultListOrderBy(
 }
 
 /**
-/**
- * The per-handler guard preamble: the fail-closed auth check (#1540 2c) plus, for
- * tenant-scoped objects, tenant-context establishment (#1540 facet 2).
+ * The per-handler guard preamble: the fail-closed auth check (#1540 2c), the
+ * permission check of a write, and the request's tenancy for every model
+ * (#5375).
  */
 function routeGuardPreamble(
-  objectDef: SmartObjectDefinition,
+  _objectDef: SmartObjectDefinition,
   mutating: boolean,
   permissionAction?: 'create' | 'update' | 'delete',
+  readOperation: 'list' | 'get' = 'list',
 ): string {
   const lines = [`  requireRouteAuth(locals, ${mutating});`];
   if (mutating) {
@@ -964,20 +912,14 @@ function routeGuardPreamble(
     lines.push(
       `  requireRoutePermission(locals, ${JSON.stringify(permissionAction)});`,
     );
-  }
-  if (needsRouteTenantContext(objectDef)) {
-    lines.push('  establishTenantContext(locals);');
+    // The request's tenancy (#5375): a write needs a tenant, whatever the
+    // model's tenancy mode and whether it was declared or registered at run
+    // time.
+    lines.push(`  enterTenancy(locals, ${JSON.stringify(permissionAction)});`);
   } else {
-    // Tenancy registered at runtime: enter the caller's tenant when the model
-    // is tenant-scoped now.
     lines.push(
-      `  if (isTenantScopedModel(${JSON.stringify(readScopeModelName(objectDef, objectDef.className))})) establishTenantContext(locals);`,
+      `  const tenancy = enterTenancy(locals, ${JSON.stringify(readOperation)});`,
     );
-  }
-  // A write to a tenant-scoped model needs a tenant (or an explicitly
-  // cross-tenant principal), whatever the model's tenancy mode.
-  if (mutating && isTenantScoped(objectDef)) {
-    lines.push('  requireTenantWriteContext(locals);');
   }
   return lines.join('\n');
 }
@@ -1258,7 +1200,7 @@ function buildActionInvocationExpression(
 }
 
 /**
- * Whether a GET action's options are built through `scopeTenantReadOptions`
+ * Whether a GET action's options are built through `scopeActionOptions`
  * (every GET action that declares parameters). Whether the scope then reaches
  * the method is `readActionReceivesTenantScope`'s question.
  */
@@ -1276,16 +1218,15 @@ function receivesTenantReadOptions(
 function buildScopedOptionsForTenantRead(
   actionDef: MethodDefinition,
   routeConfig: ResolvedApiActionRouteConfig,
-  readScopeModel: string,
 ): { source: string; optionsIdentifier: string } {
   // A read action never takes ownership from the caller. Core's
-  // `scopeTenantReadOptions` (the helper runtime REST uses too) drops every
-  // ownership key from the request options — `tenantId` and each ownership
-  // field under its property or column name — and sets the request's tenant
-  // scope under the model's ownership property: the active tenant, or null
-  // (rows without an owner) when tenancy is on and none is active. It leaves
-  // the options alone for a model that is not tenant-scoped, with tenancy
-  // off, or under a super-admin bypass, all resolved at request time.
+  // `scopeActionOptions` (runtime REST uses it too) drops every ownership key
+  // from the request options — `tenantId` and each ownership field under its
+  // property or column name — and sets the request's tenant scope under the
+  // model's ownership property: the actor's tenant, or null (rows without an
+  // owner) for a caller with no tenant. It leaves the options alone for a
+  // model that is not tenant-scoped, with tenancy off, or for a system actor
+  // or an applicable super-admin bypass, as the request's tenancy decided.
   // Zero-argument methods that perform their own raw reads must infer tenant
   // scope in their implementation or adopt the options contract.
   if (!receivesTenantReadOptions(actionDef, routeConfig)) {
@@ -1293,7 +1234,7 @@ function buildScopedOptionsForTenantRead(
   }
 
   return {
-    source: `  const scopedOptions = scopeTenantReadOptions(${JSON.stringify(readScopeModel)}, options);
+    source: `  const scopedOptions = scopeActionOptions(tenancy, options);
 
 `,
     optionsIdentifier: 'scopedOptions',
@@ -3354,27 +3295,34 @@ function rejectRouteRead(cause: unknown): never {
 function generateListQueryHelper(className: string): string {
   return `
 // A query the route or the collection refuses is a client error, not a
-// server fault.
+// server fault. The public body keeps the refusal's code.
 function rejectListQuery(cause: unknown): never {
   const failure = normalizeTypedHttpError(cause);
-  if (failure) throw error(failure.status, failure.message);
+  if (failure) {
+    const body: { message: string; code: string } = {
+      message: failure.message,
+      code: failure.code,
+    };
+    throw error(failure.status, body);
+  }
   throw cause;
 }
 
 // The caller's filter and ordering. Both may name only fields this caller
-// may read: the permissions the rows are projected with.
+// may read: the permissions the rows are projected with. A repeated query
+// parameter is refused (400) rather than read as one of its values.
 function listQuery(
   url: URL,
   options: PublicJsonOptions,
-): { where: Record<string, string | string[]>; orderBy: string | null } {
-  const where = parseRestListWhere(url.searchParams);
+): { where: Record<string, unknown>; orderBy: string | null } {
   const orderBy = url.searchParams.get('orderBy');
   try {
+    const where = parseRestListWhere(url.searchParams, ${JSON.stringify(className)});
     assertQueryAccess(${JSON.stringify(className)}, { where, orderBy }, options);
+    return { where, orderBy };
   } catch (cause) {
     rejectListQuery(cause);
   }
-  return { where, orderBy };
 }
 `;
 }
@@ -3429,12 +3377,12 @@ function generateCollectionRouteTemplate(
 // DO NOT EDIT - changes will be overwritten
 
 import { error${hasPost ? ', json' : ''} } from '@sveltejs/kit';
-${hasGet ? "import { assertQueryAccess, parseRestListWhere } from '@happyvertical/smrt-core';\n" : ''}${hasGet ? "import { applyWhereScope, resolveAnonymousTenantReadScope } from '@happyvertical/smrt-core';\n" : ''}${hasGet && !hasPost ? "import { normalizeTypedHttpError } from '@happyvertical/smrt-core';\n" : ''}
-${serializerImports ? `${serializerImports}\n` : ''}${hasPost ? "import { assertCreateInput, assertCreateTargetSurface, ObjectRegistry, normalizeTypedHttpError, reportUnexpectedHttpError } from '@happyvertical/smrt-core';\n" : ''}
+${hasGet ? "import { assertQueryAccess, parseRestListWhere } from '@happyvertical/smrt-core';\n" : ''}${hasGet ? "import { applyWhereScope, tenancyReadScope } from '@happyvertical/smrt-core';\n" : ''}${hasGet && !hasPost ? "import { normalizeTypedHttpError } from '@happyvertical/smrt-core';\n" : ''}
+${serializerImports ? `${serializerImports}\n` : ''}${hasPost ? "import { assertCreateInput, assertCreateTargetSurface, ObjectRegistry, normalizeTypedHttpError, prepareWriteInput, reportUnexpectedHttpError } from '@happyvertical/smrt-core';\n" : ''}
 ${modelType.importStatement ? `${modelType.importStatement}\n` : ''}import type { RequestHandler } from './$types';
 ${collectionAccessImports}
 // Note: ${className} is auto-registered by the Vite plugin scanner
-${generateAuthGuardHelper(objectDef, semanticManifest)}${generateTenantContextHelper(usesPrincipalContext(objectDef), isTenantScoped(objectDef), !needsRouteTenantContext(objectDef), allowsSuperAdminBypass(objectDef))}${hasPost ? generateWritablePolicyHelper(className, objectDef, true) : ''}${hasPost ? generateTypedRouteErrorHelper() : ''}${hasPost ? generateCreateTargetAccessHelper() : ''}${hasGet ? generateListBoundsHelper(objectDef) : ''}${hasGet ? generateListQueryHelper(className) : ''}${hasGet ? generateConditionalGetRouteHelper(objectDef.decoratorConfig?.api, { runtimeExposure: true, tenantScoped: isTenantScoped(objectDef), permissionScoped: listUsesPermissionScopedBody, modelName: className, readScopeModel: readScopeModelName(objectDef, className), useBodyHash: listUsesBodyHash, manifestHash: webManifestHash }) : ''}`;
+${generateAuthGuardHelper(objectDef, semanticManifest)}${generateTenantContextHelper(usesPrincipalContext(objectDef), readScopeModelName(objectDef, className), tenancyFamilyScope(objectDef, semanticManifest))}${hasPost ? generateTypedRouteErrorHelper() : ''}${hasPost ? generateCreateTargetAccessHelper() : ''}${hasGet ? generateListBoundsHelper(objectDef) : ''}${hasGet ? generateListQueryHelper(className) : ''}${hasGet ? generateConditionalGetRouteHelper(objectDef.decoratorConfig?.api, { runtimeExposure: true, tenantScoped: isTenantScoped(objectDef), permissionScoped: listUsesPermissionScopedBody, modelName: className, readScopeModel: readScopeModelName(objectDef, className), useBodyHash: listUsesBodyHash, manifestHash: webManifestHash }) : ''}`;
 
   // #1782: tenant-scoped reads fail closed to global (NULL-tenant) rows when no
   // tenant context is active (public/anonymous read). The scope is resolved at
@@ -3448,7 +3396,8 @@ ${generateAuthGuardHelper(objectDef, semanticManifest)}${generateTenantContextHe
   // than implied by the database's row order.
   // `query` is the caller's filter and ordering, already checked against the
   // fields this caller may read (`listQuery`), before any ETag or table work.
-  const listWhere = `applyWhereScope(query.where, resolveAnonymousTenantReadScope(${JSON.stringify(readScopeModelName(objectDef, className))})) ?? {}`;
+  const listWhere =
+    'applyWhereScope(query.where, tenancyReadScope(tenancy)) ?? {}';
   const listAndCount = `  const where = ${listWhere};
   const orderBy = query.orderBy || LIST_ORDER_BY;
   const items = await collection.list({ limit, offset, orderBy, where${objectDef.displayLabelProjection ? ', displayLabel: true' : ''} }).catch(rejectListQuery);
@@ -3458,7 +3407,7 @@ ${generateAuthGuardHelper(objectDef, semanticManifest)}${generateTenantContextHe
     ? `
 // List all ${className.toLowerCase()}s
 export const GET: RequestHandler = async ({ locals, url, request }) => {
-${routeGuardPreamble(objectDef, false)}
+${routeGuardPreamble(objectDef, false, undefined, 'list')}
   const publicJsonOptions = getPublicJsonOptions(locals);
   const { limit, offset } = listBounds(url);
   const query = listQuery(url, publicJsonOptions);
@@ -3509,7 +3458,9 @@ ${routeGuardPreamble(objectDef, true, 'create')}
     // a subtype authorizes its own create as well as the base.
     assertCreateTargetSurface('${className}', target, 'api');
     if (target.collectionName !== '${className}') requireCreateTargetAccess(locals, target.name);
-    const data = applyWritablePolicy(target.data, target.collectionName === '${className}' ? undefined : target.name);
+    // A create sets no field the caller may not write: server-managed keys
+    // are skipped, a protected field sent with a value is refused.
+    const data = prepareWriteInput(target.collectionName, target.data);
     const collection = await getCollection${modelType.typeName ? `<${modelType.typeName}>` : ''}(target.collectionName);
     // Create input names declared fields and settable accessors only.
     assertCreateInput(target.collectionName, data, collection);
@@ -3638,10 +3589,10 @@ function generateItemRouteTemplate(
 // DO NOT EDIT - changes will be overwritten
 
 import { error${hasPut || hasDelete ? ', json' : ''} } from '@sveltejs/kit';
-${serializerImports ? `${serializerImports}\n` : ''}${hasGet || hasPut || hasDelete ? "import { normalizeTypedHttpError, reportUnexpectedHttpError } from '@happyvertical/smrt-core';\n" : ''}${hasPut ? "import { applyUpdateInput, ObjectRegistry } from '@happyvertical/smrt-core';\n" : ''}${hasGet ? "import { resolveAnonymousTenantReadScope } from '@happyvertical/smrt-core';\n" : ''}
+${serializerImports ? `${serializerImports}\n` : ''}${hasGet || hasPut || hasDelete ? "import { normalizeTypedHttpError, reportUnexpectedHttpError } from '@happyvertical/smrt-core';\n" : ''}${hasPut ? "import { applyUpdateInput, prepareWriteInput, ObjectRegistry } from '@happyvertical/smrt-core';\n" : ''}${hasGet ? "import { tenancyReadScope } from '@happyvertical/smrt-core';\n" : ''}
 ${modelType.importStatement ? `${modelType.importStatement}\n` : ''}import type { RequestHandler } from './$types';
 ${collectionAccessImports}
-${generateAuthGuardHelper(objectDef, semanticManifest)}${generateTenantContextHelper(usesPrincipalContext(objectDef), isTenantScoped(objectDef), !needsRouteTenantContext(objectDef), allowsSuperAdminBypass(objectDef))}${hasPut ? generateWritablePolicyHelper(className, objectDef) : ''}${hasPut || hasDelete ? generateTypedRouteErrorHelper() : ''}${hasGet || hasPut || hasDelete ? generateRouteReadErrorHelper() : ''}${hasGet ? generateConditionalGetRouteHelper(objectDef.decoratorConfig?.api, { runtimeExposure: true, tenantScoped: isTenantScoped(objectDef), permissionScoped: getUsesPermissionScopedBody, modelName: className, readScopeModel: readScopeModelName(objectDef, className), useBodyHash: getUsesBodyHash, manifestHash: webManifestHash }) : ''}`;
+${generateAuthGuardHelper(objectDef, semanticManifest)}${generateTenantContextHelper(usesPrincipalContext(objectDef), readScopeModelName(objectDef, className), tenancyFamilyScope(objectDef, semanticManifest))}${hasPut || hasDelete ? generateTypedRouteErrorHelper() : ''}${hasGet || hasPut || hasDelete ? generateRouteReadErrorHelper() : ''}${hasGet ? generateConditionalGetRouteHelper(objectDef.decoratorConfig?.api, { runtimeExposure: true, tenantScoped: isTenantScoped(objectDef), permissionScoped: getUsesPermissionScopedBody, modelName: className, readScopeModel: readScopeModelName(objectDef, className), useBodyHash: getUsesBodyHash, manifestHash: webManifestHash }) : ''}`;
 
   // #1782: a tenant-scoped single read fails closed to global (NULL-tenant)
   // rows when no tenant context is active, so a public/anonymous GET /:id can't
@@ -3649,7 +3600,7 @@ ${generateAuthGuardHelper(objectDef, semanticManifest)}${generateTenantContextHe
   // from the live registry (undefined for a model that is not tenant-scoped).
   // Mutations (PUT/DELETE) require auth, so they keep the plain id lookup and
   // rely on the interceptor.
-  const getForRead = `  const readScope = resolveAnonymousTenantReadScope(${JSON.stringify(readScopeModelName(objectDef, className))});
+  const getForRead = `  const readScope = tenancyReadScope(tenancy);
   const item = await collection.get(
     readScope ? { id: params.id, ...readScope } : params.id,${objectDef.displayLabelProjection ? '\n    { displayLabel: true },' : ''}
   ).catch(rejectRouteRead);`;
@@ -3658,7 +3609,7 @@ ${generateAuthGuardHelper(objectDef, semanticManifest)}${generateTenantContextHe
     ? `
 // Get single ${simpleClassName.toLowerCase()}
 export const GET: RequestHandler = async ({ locals, params, request }) => {
-${routeGuardPreamble(objectDef, false)}
+${routeGuardPreamble(objectDef, false, undefined, 'get')}
   const publicJsonOptions = getPublicJsonOptions(locals);
 ${generateCollectionLoad(className, { typeName: modelType.typeName })}
 ${
@@ -3700,8 +3651,10 @@ ${generateCollectionLoad(className, { typeName: modelType.typeName })}
 ${generateNotFoundError(className)}
 
   const body: unknown = await request.json();
-  const data = applyWritablePolicy(body);
   try {
+    // A field the caller may not write is compared with the loaded row: an
+    // unchanged value is accepted, a changed one refused.
+    const data = prepareWriteInput(${JSON.stringify(className)}, body, item, publicJsonOptions);
     await collection.withAuditMutation(item, 'updated', async (bound) => {
       // The body sets declared fields and settable accessors, nothing else.
       applyUpdateInput(bound, data, ${JSON.stringify(className)});
@@ -3812,8 +3765,8 @@ function generateActionRouteTemplate(
     'normalizeCustomActionFailure',
     'normalizeTypedHttpError',
     'reportUnexpectedHttpError',
-    ...(readsItemScope ? ['resolveAnonymousTenantReadScope'] : []),
-    ...(readsOptionsScope ? ['scopeTenantReadOptions'] : []),
+    ...(readsItemScope ? ['tenancyReadScope'] : []),
+    ...(readsOptionsScope ? ['scopeActionOptions'] : []),
     ...[...decoderImports].sort(),
   ].join(', ');
   const usesCollection =
@@ -3848,26 +3801,12 @@ function generateActionRouteTemplate(
     .filter(Boolean)
     .join('\n');
 
-  const tenantScoped =
-    isTenantScoped(objectDef) ||
-    routeSpecs.some(
-      (spec) => !!spec.lookupObjectDef && isTenantScoped(spec.lookupObjectDef),
-    );
-  // The tenant-scoped model whose write gate the action uses: the host when
-  // it is tenant-scoped, otherwise the first tenant-scoped lookup model.
-  const writeGateDef = isTenantScoped(objectDef)
-    ? objectDef
-    : (routeSpecs.find(
-        (spec) =>
-          !!spec.lookupObjectDef && isTenantScoped(spec.lookupObjectDef),
-      )?.lookupObjectDef ?? objectDef);
   const principalContext =
     usesPrincipalContext(objectDef) ||
     routeSpecs.some(
       (spec) =>
         !!spec.lookupObjectDef && usesPrincipalContext(spec.lookupObjectDef),
     );
-  const needsTenantContext = tenantScoped || principalContext;
   const handlers = routeSpecs
     .map((spec) =>
       generateActionRouteHandler(
@@ -3876,8 +3815,6 @@ function generateActionRouteTemplate(
         spec.actionDef,
         spec.routeConfig,
         spec.hostType,
-        tenantScoped,
-        needsTenantContext,
         lookupModelType.typeName,
         hostModelType.typeName,
         resolveOperationPermissionAlias(
@@ -3892,8 +3829,6 @@ function generateActionRouteTemplate(
               semanticManifest,
             )
           : undefined,
-        readScopeModelName(spec.lookupObjectDef, spec.lookupClassName),
-        manifestOwnershipProperties(spec.lookupObjectDef ?? writeGateDef),
       ),
     )
     .join('\n');
@@ -3912,7 +3847,7 @@ ${generateAuthGuardHelper(
     isCollectionManifestClass(semanticManifest, objectDef)
     ? firstSpec.lookupObjectDef
     : objectDef,
-)}${generateTenantContextHelper(principalContext, tenantScoped, !needsTenantContext, allowsSuperAdminBypass(writeGateDef))}
+)}${generateTenantContextHelper(principalContext, readScopeModelName(firstSpec.lookupObjectDef, firstSpec.lookupClassName), tenancyFamilyScope(firstSpec.lookupObjectDef, semanticManifest))}
 ${generateTypedRouteErrorHelper()}
 ${handlers}`;
 }
@@ -3923,22 +3858,17 @@ function generateActionRouteHandler(
   actionDef: MethodDefinition,
   routeConfig: ResolvedApiActionRouteConfig,
   hostType: 'item' | 'collection',
-  tenantScoped: boolean,
-  needsTenantContext: boolean,
   lookupTypeName: string,
   hostTypeName: string,
   permissionAction?: string,
   collectionRegistryKey = lookupClassName,
-  readScopeModel = lookupClassName,
-  ownershipProperties: readonly string[] = [],
 ): string {
   const successResponse = `  return json({
     action: '${actionName}',
     result: toPublicResult(result, publicJsonOptions),
   });`;
   const handlerName = routeConfig.method;
-  // Mutating verbs require auth even when reads are public (#1540). Tenant-scoped
-  // objects also establish tenant context so the action runs filtered.
+  // Mutating verbs require auth even when reads are public (#1540).
   const mutating = routeConfig.method !== 'GET';
   const guardLines = [`  requireRouteAuth(locals, ${mutating});`];
   if (mutating) {
@@ -3947,46 +3877,27 @@ function generateActionRouteHandler(
       `  requireRoutePermission(locals, ${JSON.stringify(permissionAction ?? actionName)});`,
     );
   }
-  if (needsTenantContext) {
-    guardLines.push('  establishTenantContext(locals);');
-  } else {
-    // Tenancy registered at runtime: enter the caller's tenant when the model
-    // is tenant-scoped now.
-    guardLines.push(
-      `  if (isTenantScopedModel(${JSON.stringify(readScopeModel)})) establishTenantContext(locals);`,
-    );
-  }
-  // A mutating action on a tenant-scoped model needs a tenant too, and so
-  // does a collection-scoped read whose arguments do not carry the scope: its
-  // body reads through the collection with no tenant scope of its own
-  // (runtime REST refuses it too, as it refuses a caller with no tenant every
-  // custom collection action of a tenant-scoped model). A read handed the
-  // scoped options whole, or the scope under parameters named after every
-  // ownership property, is scoped through it (`scopeTenantReadOptions`), so a
-  // caller with no tenant reads only rows without an owner.
+  // The request's tenancy (#5375), decided for this action at request time:
+  // a mutating action needs a tenant; a collection-scoped read whose scanned
+  // parameters do not carry the scope (an options bag, or parameters named
+  // after every ownership property) is refused to a caller with no tenant;
+  // an item action reads its row under the read scope. Every collection call
+  // in the body is held to the bound decision, whatever it does with its
+  // options.
   const collectionScoped = hostType === 'collection' || !!actionDef.isStatic;
   const parameterNames = (
     Array.isArray(actionDef.parameters) ? actionDef.parameters : []
   ).map((parameter) => parameter.name);
-  const readsScopedOptions =
-    routeConfig.method === 'GET' &&
-    readActionReceivesTenantScope(parameterNames, ownershipProperties);
-  if (tenantScoped && (mutating || (collectionScoped && !readsScopedOptions))) {
-    guardLines.push('  requireTenantWriteContext(locals);');
-  } else if (
-    tenantScoped &&
-    collectionScoped &&
-    !(parameterNames.length === 1 && parameterNames[0] === 'options')
-  ) {
-    // Named ownership parameters: the manifest's ownership property is among
-    // them, but the scope is injected from the live registry, which may name
-    // more ownership properties. Decide again at request time against the
-    // properties `scopeTenantReadOptions` sets (none when tenancy is off or a
-    // super-admin bypass applies).
-    guardLines.push(
-      `  if (Object.keys(scopeTenantReadOptions(${JSON.stringify(readScopeModel)}, {})).some((property) => !${JSON.stringify(parameterNames)}.includes(property))) requireTenantWriteContext(locals);`,
-    );
-  }
+  const actionShape = [
+    `mutating: ${mutating}`,
+    ...(Array.isArray(actionDef.parameters)
+      ? [`parameters: ${JSON.stringify(parameterNames)}`]
+      : []),
+    ...(collectionScoped ? [] : ['itemScoped: true']),
+  ].join(', ');
+  guardLines.push(
+    `  const tenancy = enterTenancy(locals, 'action', { ${actionShape} });`,
+  );
   const authGuardLine = guardLines.join('\n');
   // Even input-free actions need request context for failure correlation.
   const needsRequest = true;
@@ -4013,7 +3924,6 @@ function generateActionRouteHandler(
     const scopedOptions = buildScopedOptionsForTenantRead(
       actionDef,
       routeConfig,
-      readScopeModel,
     );
     const invocationArgs = buildActionInvocationArgs(
       actionDef,
@@ -4062,7 +3972,6 @@ ${successResponse}
     const scopedOptions = buildScopedOptionsForTenantRead(
       actionDef,
       routeConfig,
-      readScopeModel,
     );
     const invocationArgs = buildActionInvocationArgs(
       actionDef,
@@ -4107,7 +4016,7 @@ ${successResponse}
   );
   const scopedItemLoad =
     routeConfig.method === 'GET'
-      ? `  const readScope = resolveAnonymousTenantReadScope(${JSON.stringify(readScopeModel)});
+      ? `  const readScope = tenancyReadScope(tenancy);
   const item = await collection.get(
     readScope ? { id: params.id, ...readScope } : params.id,
   );`
@@ -4115,7 +4024,6 @@ ${successResponse}
   const itemScopedOptions = buildScopedOptionsForTenantRead(
     actionDef,
     routeConfig,
-    readScopeModel,
   );
   const invocationArgs = buildActionInvocationArgs(
     actionDef,

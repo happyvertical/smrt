@@ -99,6 +99,7 @@ file an application's deployment declaration. Guide:
 - **AI credentials are bound to their source's provider**: a lower-priority key/baseUrl is dropped when another provider wins; redacted base URLs show only the origin. **AI keys come from the environment**: the `ai` block names a variable (`apiKeyEnv`); resolver errors/`toJSON()` never contain keys or URL credentials. Core and the chat dev routes use this resolver; agents share its provider key-name map (`getDefaultAIKeyEnvName`) and keep per-tenant secret lookup; do not add new provider-env parsing elsewhere.
 - **clearCache() is global**: affects all modules sharing the config instance
 - **SSG export defaults to no secrets**: must explicitly set `includeSecrets: true` to include them
+- **Value rules are versioned**: any change between the `secret-value-rules` markers in `export.ts` (what `redactSecretValues()` masks) appends a row with a higher `SECRET_VALUE_RULES_VERSION` to `src/secret-value-rules-ledger.json`; core stamps stored AI run text with it. Never edit an existing row (`pnpm check:redaction-ledgers`).
 - **Deep merge**: later values override earlier ones at each key level
 - **Profiles do not alter application policy**: domain objects, generated REST/CLI/MCP/WebMCP surfaces, action effects, approval policy, authorization records, and job invocation stay identical across profiles.
 - **Runtime snapshots contain selectors, never credentials**: provider-specific URLs, tokens, paths, and secret values belong in the implementing provider's configuration. Unknown runtime fields fail closed.

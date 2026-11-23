@@ -12,7 +12,10 @@ registry instead of running from a checkout. Cloud-profile behaviour
 | `smrt-app-shell` (`bin/smrt-app-shell.mjs`) | Starts the server. Same as `node build`. |
 | `@happyvertical/smrt-app-shell/start` | `build/index.js`, importable as a start entry (importing it starts listening). |
 | `build/` | The SvelteKit adapter-node output (`build/index.js` raises `BODY_SIZE_LIMIT`, then imports `server-start.js`). Published in `files`; a `turbo.json` output and the release workspace archive carry it (without them the published 0.62.1 to 0.66.1 had `dist/` only: the release job archived `*/dist/*` and prepack reused it). |
-| `@happyvertical/smrt-app-shell/shutdown` | `installShutdown`, `shutdown`, `resolveDeadlineMs` (below). |
+| `@happyvertical/smrt-app-shell/embed` | `build/embed.js`: `handler` (Node request listener, also Express/Connect middleware) and `drain`. Importing it initialises the shell and listens on nothing (below). |
+| `@happyvertical/smrt-app-shell/shutdown` | `installShutdown`, `shutdown`, `createDrain`, `resolveDeadlineMs` (below). |
+
+`./start` is built on the two `./embed` pieces: `build/index.js` (from `tools/start-entry.js`) loads the handler, lets adapter-node start its listener (`build/server-start.js`), takes over adapter-node's SIGTERM/SIGINT handler as the drain's listener step, and exits with the drain's code. `build/embed.js` is `tools/embed-entry.js`; its types are `src/lib/server/embed.ts`. `hooks.server.ts` installs no signal handler: it publishes the drain (`registerEmbeddedDrain`, a `Symbol.for` slot, because the server bundle and the entries are separate module instances).
 
 `pnpm verify:exports` (run by prepack, also on a reused CI build) fails when
 any file `exports` or `bin` names is missing, so a package without its server
@@ -30,12 +33,16 @@ Configuration is environment only. adapter-node reads `HOST`, `PORT`,
 `SOCKET_PATH`, `ORIGIN`, `SHUTDOWN_TIMEOUT` (seconds, default 30). The profile
 and storage come from app-runtime: `SMRT_RUNTIME_PROFILE`, `SMRT_APP_ID`,
 `SMRT_DATA_DIR` (local; a dedicated directory outside the working directory and
-its state root), `DATABASE_URL` and the provider settings (hosted). Liveness:
+its state root), `DATABASE_URL` and the provider settings (hosted). Hosted apps
+on PostgreSQL optionally split the credentials: `DATABASE_URL` stays the admin and
+`SMRT_APP_SHELL_RUNTIME_DATABASE_URL` is the unprivileged login user operations
+run as (cloud-profile.md "User apps on PostgreSQL"); the shared pool and the
+operation deadline have their own `SMRT_APP_SHELL_*` variables there. Liveness:
 `GET /api/_runtime/health`.
 
 ## Stopping: SIGTERM and SIGINT
 
-Installed when the server initialises (`hooks.server.ts`, not under `vite dev`).
+Installed by `./start` (`build/index.js`) once the server has initialised; not under `vite dev`, and not by `./embed`.
 
 One ordered sequence, owned by `shutdown.ts`; a step that throws or runs past
 its limit makes the exit non-zero but never skips the later steps, and the
@@ -55,13 +62,70 @@ process exits only after all of them returned:
    apps are closed anyway), or when a step never returns (the process leaves
    1 s after the deadline).
 
+`SMRT_APP_SHELL_PREDRAIN_MS` (whole milliseconds, default 0 = today's behaviour) keeps `./start`'s listener open and serving for that long after the signal, before step 1; the deadline below starts after it. Use it when a load balancer needs time to stop sending traffic (the shell's health endpoint stays 200 during the delay: readiness is the host's to flip, see Embedding).
+
 Deadline: `SMRT_APP_SHELL_SHUTDOWN_MS` (whole milliseconds, default 30000),
 or `installShutdown({ deadlineMs })`. The listener gets at most half of it; set
 adapter-node's `SHUTDOWN_TIMEOUT` (seconds) at or below the deadline, and the
-orchestrator's termination grace period above it (Kubernetes
-`terminationGracePeriodSeconds`).
+orchestrator's termination grace period above it, plus
+`SMRT_APP_SHELL_PREDRAIN_MS` and 1 s (Kubernetes `terminationGracePeriodSeconds`).
 
-Embedding hosts:
+## Embedding: the host owns the listener, the signals and the exit
+
+A host behind a load balancer wants the opposite of `./start`: keep listening,
+answer its readiness endpoint 503 until traffic has moved away, stop the shell,
+then close and exit. Use `./embed`:
+
+```ts
+import http from 'node:http';
+import { drain, handler } from '@happyvertical/smrt-app-shell/embed';
+
+let ready = true;
+const server = http.createServer((req, res) => {
+  if (req.url === '/ready') {
+    res.statusCode = ready ? 200 : 503; // the load balancer's probe
+    return void res.end();
+  }
+  return handler(req, res); // everything else is the shell
+});
+server.listen(3000);
+
+async function stop() {
+  ready = false; // 1. readiness 503: the balancer stops sending traffic
+  await new Promise((r) => setTimeout(r, 5_000)); //    ...and drains its side
+  const result = await drain(); // 2. end streams, finish imports, close apps
+  if (!result.clean) console.error('shell drain', result.steps); // which step failed
+  server.close(); // 3. only now close YOUR listener, and exit
+  server.closeAllConnections();
+  process.exit(result.code);
+}
+process.once('SIGTERM', stop);
+```
+
+- `handler(req, res, next?)` serves static files, then the app; `next` is only
+  a fallback (default 404). Importing `./embed` raises `BODY_SIZE_LIMIT` for
+  workbook imports unless you set it first.
+- `drain(call?)` runs steps 1, 3 and 4 above (streams, imports, apps). It never
+  closes a listener, installs a signal handler or calls `process.exit`. It
+  returns the same promise on every call, never rejects, and resolves by the
+  deadline plus 1 s (`SMRT_APP_SHELL_SHUTDOWN_MS`, default 30 s) even if a step
+  hangs. The result is `{ code, clean, closed, busy, steps }`; `steps` maps
+  `endStreams`, `stopAccepting`, `stopWork`, `drain` to `ok`, `skipped`,
+  `failed`, `timeout` or `busy`. `stopAccepting` is `skipped` unless you pass
+  `drain({ stopAccepting })` for a listener step of your own, which then runs
+  second, as in `./start`.
+- A step that outlasts the deadline is reported `timeout` and the promise
+  resolves, but the sequence keeps going in the background (the later steps
+  still run, so the apps still close).
+- `drain` installs no signal handler. Importing `./embed` initialises the
+  runtime, which, when `ORIGIN` is a loopback origin, installs its own
+  SIGTERM/SIGINT handlers to remove the origin file; keep your own handler
+  registered, or the process is re-killed when none exists.
+- After the drain the shell refuses new app work; requests that still reach
+  `handler` get errors. Close your listener next.
+
+Hosts that build their own process around the engine-free sequence can use
+`createDrain({ drain, endStreams, stopWork })` or `installShutdown`:
 
 ```ts
 import { installShutdown } from '@happyvertical/smrt-app-shell/shutdown';

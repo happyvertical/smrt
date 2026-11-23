@@ -20,6 +20,7 @@ import { versionSummary } from '../lib/ui/command-summary.ts';
 import { announcement } from '../lib/ui/events.ts';
 import { initialValues, serializeForm } from '../lib/ui/fields.ts';
 import { reportCell } from '../lib/ui/reports.ts';
+import { hostOwner } from '../test/engine-principal.ts';
 import {
   createEngineImportTarget,
   importFieldName,
@@ -50,7 +51,7 @@ it('passes the same related money/choice/cached-formula fixture as the SQLite re
   const reference = await createSqliteReferenceTarget();
   try {
     const expected = await runImport({ ...fixture, target: reference });
-    const target = createEngineImportTarget(draft);
+    const target = createEngineImportTarget(draft, () => hostOwner(draft));
     const result = await runImport({ ...fixture, target, batchSize: 1 });
     expect(result.ok).toBe(true);
     expect(result.findings).toEqual(expected.findings);
@@ -59,7 +60,10 @@ it('passes the same related money/choice/cached-formula fixture as the SQLite re
     await target.seal();
     expect(await target.sum('orders', 'price')).toBe(1750);
     expect(await target.count('orders')).toBe(2);
-    const report = await draft.runReport(importFieldName('sales'));
+    const report = await draft.runReport(
+      hostOwner(draft),
+      importFieldName('sales'),
+    );
     expect(report.rows.map((r) => r.revenue).sort()).toEqual([1500, 2500]);
     expect(
       draft.describe().models[importModelName('orders')].fields.workbookRow,
@@ -69,7 +73,7 @@ it('passes the same related money/choice/cached-formula fixture as the SQLite re
       rows.push(row);
     expect(rows).toEqual([{ sourceRow: 4, values: { total: 2500 } }]);
     expect(
-      (await draft.list(importModelName('orders'))).every(
+      (await draft.list(hostOwner(draft), importModelName('orders'))).every(
         (r) => r[importFieldName('customer')],
       ),
     ).toBe(true);
@@ -88,7 +92,10 @@ it('refuses a formula the engine cannot represent before loading and preserves l
     calculated: { value: 'Paid' },
   });
   await expect(
-    runImport({ ...fixture, target: createEngineImportTarget(draft) }),
+    runImport({
+      ...fixture,
+      target: createEngineImportTarget(draft, () => hostOwner(draft)),
+    }),
   ).rejects.toThrow();
   expect(Object.keys(draft.describe().models)).toEqual([]);
 });
@@ -97,7 +104,7 @@ it('proves 42 orders and eight customers against the reference contract without 
   const reference = await createSqliteReferenceTarget();
   try {
     const expected = await runImport({ ...fixture, target: reference });
-    const target = createEngineImportTarget(draft);
+    const target = createEngineImportTarget(draft, () => hostOwner(draft));
     const actual = await runImport({ ...fixture, target, batchSize: 10 });
     expect(expected.ok).toBe(true);
     expect(actual).toMatchObject({
@@ -136,10 +143,12 @@ it('proves 42 orders and eight customers against the reference contract without 
     const advertised = JSON.parse(
       reportTool.properties.report.description.split('Example: ')[1],
     );
-    expect((await draft.runReport(advertised)).rows).toEqual([
+    expect((await draft.runReport(hostOwner(draft), advertised)).rows).toEqual([
       { order_count: 14, order_total: 63600 },
     ]);
-    expect((await draft.appTools()).map((tool) => tool.name)).toEqual(
+    expect(
+      (await draft.appTools(hostOwner(draft))).map((tool) => tool.name),
+    ).toEqual(
       expect.arrayContaining([
         'orders_list',
         'orders_get',
@@ -149,7 +158,10 @@ it('proves 42 orders and eight customers against the reference contract without 
         'customers_list',
       ]),
     );
-    const response = await draft.rest({ method: 'GET', url: '/api/orders' });
+    const response = await draft.rest(hostOwner(draft), {
+      method: 'GET',
+      url: '/api/orders',
+    });
     expect(response.status).toBe(200);
     expect(JSON.stringify(response.body)).toContain('orderNo');
     expect(JSON.stringify(response.body)).toContain('SO-1042');
@@ -185,7 +197,7 @@ it('proves 42 orders and eight customers against the reference contract without 
 });
 it('refuses a whole batch with an unresolved lookup and leaves earlier batches intact', async () => {
   const { plan } = businessWorkbook();
-  const target = createEngineImportTarget(draft);
+  const target = createEngineImportTarget(draft, () => hostOwner(draft));
   await target.applyStructure(plan);
   await target.load({
     table: 'customers',
@@ -218,7 +230,7 @@ it('loads 10,000 rows in 500-row commands', async () => {
   sheet.cells.set(1, 1, { value: 'Quantity', type: 'text' });
   for (let n = 2; n <= 10001; n++)
     sheet.cells.set(n, 1, { value: n, type: 'number' });
-  const target = createEngineImportTarget(draft);
+  const target = createEngineImportTarget(draft, () => hostOwner(draft));
   const result = await runImport({
     workbook: createWorkbook([sheet]),
     plan: {
@@ -250,7 +262,7 @@ it('rehearses publishing twenty 500-row versions without journal overflow', {
   sheet.cells.set(1, 1, { value: 'Quantity', type: 'text' });
   for (let n = 2; n <= 10001; n++)
     sheet.cells.set(n, 1, { value: n, type: 'number' });
-  const target = createEngineImportTarget(draft);
+  const target = createEngineImportTarget(draft, () => hostOwner(draft));
   const result = await runImport({
     workbook: createWorkbook([sheet]),
     plan: {
@@ -279,7 +291,7 @@ it('rehearses publishing twenty 500-row versions without journal overflow', {
   ).toHaveLength(20);
 });
 it('preserves unsafe integer totals as bigint rather than rounding them', async () => {
-  const target = createEngineImportTarget(draft);
+  const target = createEngineImportTarget(draft, () => hostOwner(draft));
   await target.applyStructure({
     version: 1,
     tables: [
@@ -317,7 +329,7 @@ it('resolves composite lookup keys without merging records that share one compon
       sheet.cells.set(row + 2, 2, { value, type: 'text' });
     });
   }
-  const target = createEngineImportTarget(draft);
+  const target = createEngineImportTarget(draft, () => hostOwner(draft));
   const result = await runImport({
     workbook: createWorkbook([customers, orders]),
     target,
@@ -355,9 +367,9 @@ it('resolves composite lookup keys without merging records that share one compon
     },
   });
   expect(result.ok).toBe(true);
-  const references = (await draft.list(importModelName('orders'))).map(
-    (r) => r[importFieldName('customer')],
-  );
+  const references = (
+    await draft.list(hostOwner(draft), importModelName('orders'))
+  ).map((r) => r[importFieldName('customer')]);
   expect(new Set(references).size).toBe(2);
 });
 
@@ -379,10 +391,15 @@ it('retains the collision map before any command and uses it for loading, links 
     right: { col: 'unit__price' },
   };
   const retained: unknown[] = [];
-  const target = createEngineImportTarget(draft, undefined, async (names) => {
-    expect(Object.keys(draft.def.models)).toEqual(['Orders']);
-    retained.push(structuredClone(names));
-  });
+  const target = createEngineImportTarget(
+    draft,
+    () => hostOwner(draft),
+    undefined,
+    async (names) => {
+      expect(Object.keys(draft.def.models)).toEqual(['Orders']);
+      retained.push(structuredClone(names));
+    },
+  );
   const proof = await runImport({ plan, workbook, target });
   expect(proof.ok).toBe(true);
   expect(retained).toEqual([target.names]);
@@ -402,8 +419,12 @@ it('retains the collision map before any command and uses it for loading, links 
   );
   expect(await target.count('orders')).toBe(2);
   expect(await target.sum('orders', 'total')).toBe(4000);
-  expect(await draft.countRows('Orders')).toBe(0);
-  expect((await draft.list('Orders2')).every((row) => row.customer)).toBe(true);
+  expect(await draft.countRows(hostOwner(draft), 'Orders')).toBe(0);
+  expect(
+    (await draft.list(hostOwner(draft), 'Orders2')).every(
+      (row) => row.customer,
+    ),
+  ).toBe(true);
 });
 
 it('announces imported commands with labels, including bookkeeping, and keeps History calculations readable', async () => {
@@ -414,7 +435,7 @@ it('announces imported commands with labels, including bookkeeping, and keeps Hi
   });
   try {
     const fixture = realisticBusinessWorkbook();
-    const target = createEngineImportTarget(draft);
+    const target = createEngineImportTarget(draft, () => hostOwner(draft));
     expect((await runImport({ ...fixture, target })).ok).toBe(true);
     await target.seal();
     expect(lines).toContain(
@@ -517,12 +538,12 @@ it.each([
   const proof = await runImport({
     workbook: createWorkbook([sheet]),
     plan,
-    target: createEngineImportTarget(draft),
+    target: createEngineImportTarget(draft, () => hostOwner(draft)),
   });
   expect(proof.ok).toBe(true);
   const fields = draft.describe().models.Amounts.fields;
   expect(fields.amount).toMatchObject({ money: { currency, scale } });
-  const [row] = await draft.list('Amounts');
+  const [row] = await draft.list(hostOwner(draft), 'Amounts');
   expect(row.amount).toBe(minor);
   const display = new Intl.NumberFormat(undefined, {
     style: 'currency',
@@ -535,9 +556,9 @@ it.each([
   expect(values.amount).toBe(input);
   const edit = serializeForm(fields, { ...values, amount: input }, ['amount']);
   expect(edit).toEqual({ data: { amount: minor }, errors: {} });
-  await draft.update('Amounts', String(row.id), edit.data);
-  expect((await draft.list('Amounts'))[0].amount).toBe(minor);
-  const report = await draft.runReport('totals');
+  await draft.update(hostOwner(draft), 'Amounts', String(row.id), edit.data);
+  expect((await draft.list(hostOwner(draft), 'Amounts'))[0].amount).toBe(minor);
+  const report = await draft.runReport(hostOwner(draft), 'totals');
   expect(
     reportCell(report.rows[0].total, report.columns[0], report.rows[0]),
   ).toBe(display);
@@ -571,7 +592,7 @@ it.each([
         },
       ],
     },
-    target: createEngineImportTarget(draft),
+    target: createEngineImportTarget(draft, () => hostOwner(draft)),
   });
   expect(proof.ok).toBe(true);
   if (calculated)
@@ -597,12 +618,12 @@ it.each([
   const after = draft.describe().models.Amounts.fields.amount;
   expect(after.type).toBe(type);
   expect(after.money).toBeUndefined();
-  expect((await draft.list('Amounts'))[0].amount).toBe(
+  expect((await draft.list(hostOwner(draft), 'Amounts'))[0].amount).toBe(
     type === 'text' ? '1000' : 1000,
   );
   await draft.execute({ type: 'undo' }, { author: 'test' });
   expect(draft.describe().models.Amounts.fields.amount).toEqual(before);
-  expect((await draft.list('Amounts'))[0].amount).toBe(1000);
+  expect((await draft.list(hostOwner(draft), 'Amounts'))[0].amount).toBe(1000);
   expect(cellText(draft.describe().models.Amounts.fields.amount, 1000)).toBe(
     cellText({ type: 'money', money }, 1000),
   );

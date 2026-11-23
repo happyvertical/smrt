@@ -3,11 +3,13 @@ import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { AppHost, type Command, MemoryVersionStore } from '../src/engine/index.ts';
+import { hostOwner } from '../src/test/engine-principal.ts';
 import { commandSummary, versionSummary } from '../src/lib/ui/command-summary.ts';
 
 const dir = mkdtempSync(join(tmpdir(), 'history-engine-'));
 const store = new MemoryVersionStore();
 const host = await AppHost.open(dir, { store });
+const owner = () => hostOwner(host);
 const headings: string[] = [];
 async function run(command: Command) {
   const plan = await host.plan(command);
@@ -22,7 +24,7 @@ try {
     group: { type: 'text', label: 'Category' },
   } });
   await run({ type: 'loadRecords', model: 'Order', mode: 'insert', rows: [{ qty: 2, amount: 4, group: 'Food' }, { qty: 3, amount: 6, group: 'Food' }] });
-  const rows = await host.list('Order');
+  const rows = await host.list(owner(), 'Order');
   await run({ type: 'mergeRecords', model: 'Order', keep: String(rows[0].id), merge: [String(rows[1].id)] });
   await run({ type: 'undo' });
   await run({ type: 'setCalculation', model: 'Order', field: 'amount', calculated: { col: 'qty' } });

@@ -4,8 +4,11 @@ export type EngineErrorCode =
   | 'invalid'
   | 'not_found'
   | 'refused'
+  | 'unauthorized'
+  | 'forbidden'
   | 'approval_required'
   | 'worker_crashed'
+  | 'unavailable'
   | 'stale_fence'
   | 'migration_failed';
 
@@ -26,11 +29,52 @@ export class EngineError extends Error {
   }
 }
 
+/** A call reached the engine with no valid principal, or one for another tenant (#5188). Nothing ran. */
+export class NoPrincipalError extends EngineError {
+  constructor(message = 'this call carries no valid principal') {
+    super(message, 'unauthorized');
+    this.name = 'NoPrincipalError';
+  }
+}
+
+/**
+ * A database handle was used after the operation it belonged to ended, or
+ * outside any operation (#5188). Nothing ran: the transaction is gone.
+ */
+export class OperationEndedError extends EngineError {
+  constructor(
+    message = 'this database handle belongs to an operation that has ended',
+  ) {
+    super(message, 'refused');
+    this.name = 'OperationEndedError';
+  }
+}
+
+/** The principal is valid but does not hold the permission the operation needs (#5188). */
+export class PermissionDeniedError extends EngineError {
+  constructor(message = 'permission denied') {
+    super(message, 'forbidden');
+    this.name = 'PermissionDeniedError';
+  }
+}
+
 /** The budget of database connections has no room: retry later. Never a verdict on the caller's data. */
 export class CapacityError extends EngineError {
-  constructor(message: string) {
-    super(message, 'refused');
+  constructor(message: string, code: EngineErrorCode = 'refused') {
+    super(message, code);
     this.name = 'CapacityError';
+  }
+}
+
+/**
+ * The shared database pool is saturated (#5188): too many operations queued,
+ * or one waited too long for a connection. The server's state, never a verdict
+ * on the caller's request; routes answer 503 and the caller may retry.
+ */
+export class DatabaseBusyError extends CapacityError {
+  constructor(message: string) {
+    super(message, 'unavailable');
+    this.name = 'DatabaseBusyError';
   }
 }
 

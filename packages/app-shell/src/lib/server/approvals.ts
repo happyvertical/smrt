@@ -23,7 +23,7 @@ import {
 } from './changes.ts';
 import { publish } from './events.ts';
 import { getHost, getShellDb } from './host.ts';
-import { assertOwner } from './owner.ts';
+import { assertOwner, authorCaller } from './owner.ts';
 import { ownerRestFailure, ownerResult, ownerText } from './owner-text.ts';
 import { publicChangeResult } from './results.ts';
 
@@ -423,13 +423,21 @@ export async function decideApproval(
           }),
         );
       else if (action.kind === 'tool')
-        result = await host.callAppTool(action.name, action.args, {
-          approved: true,
-        });
+        result = await host.callAppTool(
+          authorCaller(host, decidedBy),
+          action.name,
+          action.args,
+          { approved: true },
+        );
       else if (action.kind === 'record-delete')
-        result = await host.remove(action.model, action.id);
+        result = await host.remove(
+          authorCaller(host, decidedBy),
+          action.model,
+          action.id,
+        );
       else
         result = await host.rest(
+          authorCaller(host, decidedBy),
           { method: action.method, url: action.url, body: action.body },
           { approved: true },
         );

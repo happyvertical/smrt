@@ -17,20 +17,18 @@ import { normalizeTypedHttpError } from '../generators/typed-http-error.js';
 import { SmrtObject } from '../object.js';
 import { publicSerializerOf, toPublicJSONValue } from '../public-json.js';
 import { ObjectRegistry, smrt } from '../registry.js';
-import { applyUpdateInput } from '../request-input.js';
+import { enterRequestTenancy, tenancyReadScope } from '../request-actor.js';
+import { applyUpdateInput, prepareWriteInput } from '../request-input.js';
 import {
-  enterRequestTenantContext,
-  getRequestTenantContext,
-} from '../request-tenant-context.js';
+  boundTenancyCacheScoped,
+  boundTenancyEtagDiscriminator,
+} from '../request-tenancy.js';
+import { getRequestTenantContext } from '../request-tenant-context.js';
 import {
   hasRuntimeExposureGate,
   isRuntimeModelEnabled,
 } from '../runtime-exposure.js';
 import type { SmartObjectManifest } from '../scanner/types.js';
-import {
-  isTenantScopedModel,
-  resolveAnonymousTenantReadScope,
-} from '../tenant-read-scope.js';
 import { getTestDatabase } from '../testing/database.js';
 import { generateSvelteKitRoutes } from '../vite-plugin/sveltekit-generator.js';
 
@@ -517,13 +515,16 @@ for (const type of ['sqlite', 'duckdb', 'postgres'] as const) {
         hasRuntimeExposureGate,
         normalizeTypedHttpError,
         reportUnexpectedHttpError,
-        resolveAnonymousTenantReadScope,
-        isTenantScopedModel,
-        enterRequestTenantContext,
+        // The real request tenancy the emitted handlers resolve and bind.
+        enterRequestTenancy,
+        tenancyReadScope,
+        boundTenancyCacheScoped,
+        boundTenancyEtagDiscriminator,
         getRequestTenantContext,
         // The real request helpers the emitted handlers assign an update and
         // serialise a row with.
         applyUpdateInput,
+        prepareWriteInput,
         publicSerializerOf,
         toPublicJSONValue,
       };
@@ -599,7 +600,7 @@ for (const type of ['sqlite', 'duckdb', 'postgres'] as const) {
                     if (args.path === '@happyvertical/smrt-core')
                       return {
                         contents:
-                          'const host = globalThis[Symbol.for("smrt.issue3460.generated-route")]; export const isRuntimeModelEnabled = host.isRuntimeModelEnabled; export const hasRuntimeExposureGate = host.hasRuntimeExposureGate; export const createGeneratedCollectionAccess = host.createGeneratedCollectionAccess; export const normalizeTypedHttpError = host.normalizeTypedHttpError; export const reportUnexpectedHttpError = host.reportUnexpectedHttpError; export const ObjectRegistry = host.ObjectRegistry; export const resolveAnonymousTenantReadScope = host.resolveAnonymousTenantReadScope; export const isTenantScopedModel = host.isTenantScopedModel; export const enterRequestTenantContext = host.enterRequestTenantContext; export const getRequestTenantContext = host.getRequestTenantContext; export const applyUpdateInput = host.applyUpdateInput; export const publicSerializerOf = host.publicSerializerOf; export const toPublicJSONValue = host.toPublicJSONValue;',
+                          'const host = globalThis[Symbol.for("smrt.issue3460.generated-route")]; export const isRuntimeModelEnabled = host.isRuntimeModelEnabled; export const hasRuntimeExposureGate = host.hasRuntimeExposureGate; export const createGeneratedCollectionAccess = host.createGeneratedCollectionAccess; export const normalizeTypedHttpError = host.normalizeTypedHttpError; export const reportUnexpectedHttpError = host.reportUnexpectedHttpError; export const ObjectRegistry = host.ObjectRegistry; export const enterRequestTenancy = host.enterRequestTenancy; export const tenancyReadScope = host.tenancyReadScope; export const boundTenancyCacheScoped = host.boundTenancyCacheScoped; export const boundTenancyEtagDiscriminator = host.boundTenancyEtagDiscriminator; export const getRequestTenantContext = host.getRequestTenantContext; export const applyUpdateInput = host.applyUpdateInput; export const prepareWriteInput = host.prepareWriteInput; export const publicSerializerOf = host.publicSerializerOf; export const toPublicJSONValue = host.toPublicJSONValue;',
                         loader: 'js',
                       };
                     if (args.path.endsWith('smrt-register'))
@@ -637,7 +638,7 @@ for (const type of ['sqlite', 'duckdb', 'postgres'] as const) {
             request: Request;
           }): Promise<Response>;
         };
-        const event = () => ({
+        const event = (locked = 'fixed') => ({
           locals: {},
           params: { id: row.id as string },
           request: new Request('http://localhost/api/record', {
@@ -645,7 +646,7 @@ for (const type of ['sqlite', 'duckdb', 'postgres'] as const) {
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({
               title: 'Changed',
-              locked: 'overwrite',
+              locked,
               secret: 'secret-after',
             }),
           }),
@@ -664,6 +665,9 @@ for (const type of ['sqlite', 'duckdb', 'postgres'] as const) {
         expect(
           (await emitted.GET(readEvent(originalEtag as string))).status,
         ).toBe(304);
+        // A changed read-only field is refused before anything is written;
+        // the stored value is accepted unchanged (#5195).
+        expect((await emitted.PUT(event('overwrite'))).status).toBe(400);
         fail = true;
         expect((await emitted.PUT(event())).status).toBe(500);
         expect(
@@ -735,12 +739,23 @@ for (const type of ['sqlite', 'duckdb', 'postgres'] as const) {
         (await records.get(row.id as string, { cache: false }))?.title,
       ).toBe('MCP initial');
       fail = false;
+      // A changed read-only field is refused before anything is written or
+      // audited; the stored value sent back is accepted.
+      expect(
+        (
+          await call('update', {
+            id: row.id,
+            title: 'MCP refused',
+            locked: 'overwrite',
+          })
+        ).isError,
+      ).toBe(true);
       expect(
         (
           await call('update', {
             id: row.id,
             title: 'MCP updated',
-            locked: 'overwrite',
+            locked: 'fixed',
           })
         ).isError,
       ).not.toBe(true);

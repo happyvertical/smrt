@@ -127,6 +127,16 @@ through REST, MCP, CLI's create handler and assistant manifest dispatch on SQLit
 Use onDeny: 'return', checkOperationPermission or hasOperationPermission only
 when the caller handles a structured/boolean denial.
 
+Inside a runtime REST request acting for a host-resolved principal
+(`getRequestPrincipal()` from core, #5195), `checkOperationPermission` and
+its siblings are capped by that principal: a slug it lacks is denied
+whichever branch would grant it (system context, super-admin bypass, live
+role, explicit `permissionSet`). For the principal's own user and tenant its
+permissions stand in for resolution (an explicit set is intersected); for
+another subject a transaction-scoped request denies with `subject_mismatch`
+and any other request resolves that subject live, still capped. Outside such
+a request the gate is unchanged. Test: `src/__tests__/rest-request-scope.test.ts`.
+
 Generated SvelteKit write routes (POST/PUT/PATCH/DELETE CRUD and mutating
 custom actions) enforce the same `collection.action` slug (custom actions use
 `collection.<method>`; actions hosted on a collection class use the item collection, which the catalog now emits) after authentication: the slug must be in the request's
@@ -200,6 +210,13 @@ access once principal context is set. Child-tenant sessions receive resolved
 inherited permissions automatically, but RLS row filtering remains bound to the
 session tenant: a root session's app-level guard authorization does not itself
 permit child rows through RLS. Preserve this distinction.
+
+A host with run-time models in an app schema passes a `PostgresPolicyScope` (second
+argument; `@happyvertical/smrt-users/postgres-policies`, `applyScopedPostgresPermissionPolicies`
+on a handle it already holds): tables and the `smrt_*` helpers live in
+`schemaName`, never `public`; only `includeClass` classes get policies;
+`permissionsFor` names the slugs; explicit bindings are not applied. Helper bodies
+never call each other (a schema copied whole creates functions in name order).
 
 RolePermission's natural key is `(role_id, permission_id)` (#3329); repeated or
 concurrent inserts converge without changing the grant ID. Existing deployments

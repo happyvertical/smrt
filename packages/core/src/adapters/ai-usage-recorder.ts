@@ -25,7 +25,7 @@ import type { DatabaseInterface } from '@happyvertical/sql';
 import { observeAiTranscriptUsage } from '../ai-transcripts.js';
 import type { AiUsageConfig } from '../config.js';
 import { config } from '../config.js';
-import { AiUsagePersistenceHandler } from './ai-usage.js';
+import { AiUsagePersistenceHandler, routeAiRunCallUsage } from './ai-usage.js';
 import { estimateAiUsageCost } from './cost-rates.js';
 
 const logger = createLogger({ level: 'info' });
@@ -130,7 +130,8 @@ declare global {
 
 /**
  * Register the resolver whose user id every usage row records as the
- * `userId` tag when the event does not carry one. The hosted gate
+ * `userId` tag when the sink attribution names none (a per-call tag never
+ * does). The hosted gate
  * (`@happyvertical/smrt-inference/gate`, #4760) registers the ambient
  * principal's user, because per-user spend caps sum `_smrt_ai_usage` by that
  * tag. Pass `undefined` to clear. Stored on `globalThis` like the tenant
@@ -312,17 +313,23 @@ export function normalizeAiUsageEvent(
 
   const duration = firstNumber(raw.duration, raw.durationMs, raw.latency) ?? 0;
   const eventTags = normalizeAiUsageTags(raw.tags);
-  // An explicit `userId` tag (attribution or event) wins; otherwise the
-  // ambient principal's user, when a resolver is registered (#4760).
-  const explicitUser =
-    eventTags?.[AI_USAGE_USER_TAG] ?? attribution.tags?.[AI_USAGE_USER_TAG];
-  const ambientUser = explicitUser ? undefined : readAmbientAiUsageUser();
+  // The user a row is metered to (#4760) comes only from trusted sources:
+  // the sink attribution's `userId` tag (host code that built the sink),
+  // else the ambient principal's user when a resolver is registered. A
+  // per-call `userId` tag is never the billing identity: it is dropped.
+  const attributedUser =
+    typeof attribution.tags?.[AI_USAGE_USER_TAG] === 'string' &&
+    attribution.tags[AI_USAGE_USER_TAG] !== ''
+      ? attribution.tags[AI_USAGE_USER_TAG]
+      : undefined;
+  const user = attributedUser ?? readAmbientAiUsageUser();
+  const { [AI_USAGE_USER_TAG]: _callerUser, ...callTags } = eventTags ?? {};
   const tags =
-    attribution.tags || eventTags || ambientUser
+    attribution.tags || eventTags || user
       ? normalizeAiUsageTags({
-          ...(ambientUser ? { [AI_USAGE_USER_TAG]: ambientUser } : {}),
           ...(attribution.tags ?? {}),
-          ...(eventTags ?? {}),
+          ...callTags,
+          [AI_USAGE_USER_TAG]: user,
         })
       : undefined;
 
@@ -360,6 +367,10 @@ export async function dispatchAiUsageEvent(
       usageConfig.costRates,
     );
   }
+  // A tracked call's usage that arrived after its call stopped listening
+  // still belongs to the call: it is settled or corrected there (priced as
+  // above), and its handlers run once, never a second time here.
+  if (await routeAiRunCallUsage(event, handlers)) return;
 
   const results = await Promise.allSettled(
     handlers.map((handler) => handler.handle(event)),

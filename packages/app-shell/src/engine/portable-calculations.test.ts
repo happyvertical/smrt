@@ -1,9 +1,11 @@
 // biome-ignore-all lint/suspicious/noThenProperty: SQL SDK conditionals require a non-callable then data property.
+
 import { mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import type { GeneratedExpression } from '@happyvertical/smrt-core';
 import { expect, it } from 'vitest';
+import { hostOwner } from '../test/engine-principal.ts';
 import { AppHost, type Command, MemoryVersionStore } from './index.ts';
 
 it('accepts every portable node through addField and setCalculation, with date-only literals #4916', async () => {
@@ -23,7 +25,7 @@ it('accepts every portable node through addField and setCalculation, with date-o
         when: { type: 'date' },
       },
     });
-    const row = await host.create('Portable', {
+    const row = await host.create(hostOwner(host), 'Portable', {
       unitPrice: 12.345,
       paid: false,
       label: ' AbC ',
@@ -126,7 +128,9 @@ it('accepts every portable node through addField and setCalculation, with date-o
         field,
         definition: { type, calculated },
       });
-      const added = (await host.get('Portable', String(row.id)))[field];
+      const added = (
+        await host.get(hostOwner(host), 'Portable', String(row.id))
+      )[field];
       if (typeof expected === 'number')
         expect(Number(added), field).toBeCloseTo(expected, 8);
       else expect(added, field).toBe(expected);
@@ -137,7 +141,7 @@ it('accepts every portable node through addField and setCalculation, with date-o
         calculated,
       });
       expect(
-        (await host.get('Portable', String(row.id)))[field],
+        (await host.get(hostOwner(host), 'Portable', String(row.id)))[field],
         field,
       ).toEqual(added);
     }
@@ -167,18 +171,25 @@ it('accepts every portable node through addField and setCalculation, with date-o
     await expect(
       host.plan({ type: 'hideField', model: 'Portable', field: 'price' }),
     ).rejects.toThrow(/calculated field/);
-    expect((await host.get('Portable', String(row.id))).rounded).toBe(12.35);
-    await host.update('Portable', String(row.id), { paid: true, price: 3.456 });
-    const updated = await host.get('Portable', String(row.id));
+    expect(
+      (await host.get(hostOwner(host), 'Portable', String(row.id))).rounded,
+    ).toBe(12.35);
+    await host.update(hostOwner(host), 'Portable', String(row.id), {
+      paid: true,
+      price: 3.456,
+    });
+    const updated = await host.get(hostOwner(host), 'Portable', String(row.id));
     expect(updated.conditional).toBe(0);
     expect(updated.branches).toBe(0);
     expect(updated.rounded).toBe(3.46);
     await expect(
-      host.update('Portable', String(row.id), { rounded: 0 }),
+      host.update(hostOwner(host), 'Portable', String(row.id), { rounded: 0 }),
     ).rejects.toThrow(/read-only/);
     await host.close();
     host = await AppHost.open(dir, { store });
-    expect((await host.get('Portable', String(row.id))).rounded).toBe(3.46);
+    expect(
+      (await host.get(hostOwner(host), 'Portable', String(row.id))).rounded,
+    ).toBe(3.46);
   } finally {
     await host.close();
     rmSync(dir, { recursive: true, force: true });

@@ -3,6 +3,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { DatabaseSync } from 'node:sqlite';
 import { afterAll, beforeAll, expect, it } from 'vitest';
+import { hostOwner } from '../test/engine-principal.ts';
 import { AppHost, type Command, MemoryVersionStore } from './index.ts';
 
 const dir = mkdtempSync(join(tmpdir(), 'extract-4916-'));
@@ -26,7 +27,7 @@ beforeAll(async () => {
     fields: { category: { type: 'text' } },
   });
   for (const category of ['Food', 'Food', ' food ', '', null])
-    await host.create('Sale', { category });
+    await host.create(hostOwner(host), 'Sale', { category });
 });
 afterAll(async () => {
   await host.close();
@@ -56,15 +57,14 @@ it('extracts exact distinct nonempty values; undo restores raw source and remove
     type: 'reference',
     ref: 'Category',
   });
-  expect((await host.list('Category')).map((r) => r.name).sort()).toEqual([
-    ' food ',
-    'Food',
-  ]);
+  expect(
+    (await host.list(hostOwner(host), 'Category')).map((r) => r.name).sort(),
+  ).toEqual([' food ', 'Food']);
   const labels = new Map(
-    (await host.list('Category')).map((r) => [r.id, r.name]),
+    (await host.list(hostOwner(host), 'Category')).map((r) => [r.id, r.name]),
   );
   expect(
-    (await host.list('Sale'))
+    (await host.list(hostOwner(host), 'Sale'))
       .map((r) => labels.get(r.category) ?? r.category)
       .sort(),
   ).toEqual([null, ' food ', 'Food', 'Food', null].sort());
@@ -81,7 +81,9 @@ it('folds only when requested, matches existing targets and refuses undo with ne
     name: 'Group',
     fields: { name: { type: 'text' } },
   });
-  const existing = await host.create('Group', { name: 'Unrelated' });
+  const existing = await host.create(hostOwner(host), 'Group', {
+    name: 'Unrelated',
+  });
   for (const name of ['Note', 'Task'])
     await run({
       type: 'defineModel',
@@ -103,21 +105,29 @@ it('folds only when requested, matches existing targets and refuses undo with ne
     matched: 0,
   });
   await run(cmd);
-  const created = (await host.list('Group')).find((r) => r.id !== existing.id);
-  const note = await host.create('Note', { groupId: created?.id });
-  const task = await host.create('Task', { groupId: created?.id });
+  const created = (await host.list(hostOwner(host), 'Group')).find(
+    (r) => r.id !== existing.id,
+  );
+  const note = await host.create(hostOwner(host), 'Note', {
+    groupId: created?.id,
+  });
+  const task = await host.create(hostOwner(host), 'Task', {
+    groupId: created?.id,
+  });
   await expect(run({ type: 'undo' })).rejects.toThrow(
     /still refers to a record this undo would remove/,
   );
-  await host.remove('Note', String(note.id));
+  await host.remove(hostOwner(host), 'Note', String(note.id));
   await expect(run({ type: 'undo' })).rejects.toThrow(
     /Task record: still refers to a record this undo would remove/,
   );
-  await host.remove('Task', String(task.id));
+  await host.remove(hostOwner(host), 'Task', String(task.id));
   await run({ type: 'undo' });
   expect(raw('u_sales')).toEqual(before);
-  expect((await host.list('Group')).map((r) => r.id)).toEqual([existing.id]);
-  await host.create('Group', { name: 'FOOD' });
+  expect((await host.list(hostOwner(host), 'Group')).map((r) => r.id)).toEqual([
+    existing.id,
+  ]);
+  await host.create(hostOwner(host), 'Group', { name: 'FOOD' });
   expect((await host.plan(cmd)).preview).toMatchObject({
     matched: 1,
     create: 0,
@@ -147,20 +157,22 @@ it('replays extraction on live values and rolls back an injected partial migrati
   });
   try {
     await draft.execute(cmd, { author: 't' });
-    await host.create('Sale', { category: 'Live' });
+    await host.create(hostOwner(host), 'Sale', { category: 'Live' });
     const p = await host.previewPublish(draft);
     await host.publishDraft(draft, {
       author: 't',
       approved: true,
       expect: p.digest,
     });
-    expect((await host.list('Department')).map((r) => r.name).sort()).toEqual([
-      ' food ',
-      'Food',
-      'Live',
-    ]);
+    expect(
+      (await host.list(hostOwner(host), 'Department'))
+        .map((r) => r.name)
+        .sort(),
+    ).toEqual([' food ', 'Food', 'Live']);
     await run({ type: 'undo' });
-    expect((await host.list('Sale')).map((r) => r.category)).toContain('Live');
+    expect(
+      (await host.list(hostOwner(host), 'Sale')).map((r) => r.category),
+    ).toContain('Live');
   } finally {
     await draft.discard();
   }
@@ -176,7 +188,10 @@ it('matches existing targets that have other required fields without inventing v
     },
   });
   for (const name of ['Food', 'Live'])
-    await host.create('Known', { name, note: 'Existing metadata' });
+    await host.create(hostOwner(host), 'Known', {
+      name,
+      note: 'Existing metadata',
+    });
   const before = raw('u_sales');
   const targets = raw('u_knowns');
   const command: Command = {
@@ -204,7 +219,9 @@ it('keeps later edits outside the extracted column and refuses deleted or change
   });
   const orders = [];
   for (let i = 0; i < 50; i++)
-    orders.push(await host.create('Order', { vendor: 'Acme', total: i }));
+    orders.push(
+      await host.create(hostOwner(host), 'Order', { vendor: 'Acme', total: i }),
+    );
   const extract: Command = {
     type: 'extractModel',
     model: 'Order',
@@ -213,21 +230,27 @@ it('keeps later edits outside the extracted column and refuses deleted or change
   };
   await run(extract);
   for (const order of orders)
-    await host.update('Order', String(order.id), { total: 500 });
+    await host.update(hostOwner(host), 'Order', String(order.id), {
+      total: 500,
+    });
   await run({ type: 'undo' });
-  expect((await host.list('Order')).map((r) => [r.vendor, r.total])).toEqual(
-    Array.from({ length: 50 }, () => ['Acme', 500]),
-  );
+  expect(
+    (await host.list(hostOwner(host), 'Order')).map((r) => [r.vendor, r.total]),
+  ).toEqual(Array.from({ length: 50 }, () => ['Acme', 500]));
   await run(extract);
   const version = host.version;
-  await host.update('Order', String(orders[0].id), { vendor: null });
+  await host.update(hostOwner(host), 'Order', String(orders[0].id), {
+    vendor: null,
+  });
   await expect(run({ type: 'undo' })).rejects.toThrow(/changed since/);
   expect(host.version).toBe(version);
-  const vendor = (await host.list('Vendor'))[0];
-  await host.update('Order', String(orders[0].id), { vendor: vendor.id });
-  await host.remove('Order', String(orders[1].id));
+  const vendor = (await host.list(hostOwner(host), 'Vendor'))[0];
+  await host.update(hostOwner(host), 'Order', String(orders[0].id), {
+    vendor: vendor.id,
+  });
+  await host.remove(hostOwner(host), 'Order', String(orders[1].id));
   await expect(run({ type: 'undo' })).rejects.toThrow(/deleted since/);
-  expect(await host.list('Order')).toHaveLength(49);
+  expect(await host.list(hostOwner(host), 'Order')).toHaveLength(49);
   expect(host.def.models.Order.fields.vendor.type).toBe('reference');
 });
 
@@ -237,34 +260,44 @@ it('refuses undo of an existing-target extract with a later created or changed r
     name: 'Supplier',
     fields: { name: { type: 'text' } },
   });
-  const vendor = await host.create('Supplier', { name: 'Known' });
+  const vendor = await host.create(hostOwner(host), 'Supplier', {
+    name: 'Known',
+  });
   await run({
     type: 'defineModel',
     name: 'Purchase',
     fields: { vendor: { type: 'text' } },
   });
-  await host.create('Purchase', { vendor: 'Known' });
-  const blank = await host.create('Purchase', { vendor: null });
+  await host.create(hostOwner(host), 'Purchase', { vendor: 'Known' });
+  const blank = await host.create(hostOwner(host), 'Purchase', {
+    vendor: null,
+  });
   await run({
     type: 'extractModel',
     model: 'Purchase',
     field: 'vendor',
     into: 'Supplier',
   });
-  const late = await host.create('Purchase', { vendor: vendor.id });
+  const late = await host.create(hostOwner(host), 'Purchase', {
+    vendor: vendor.id,
+  });
   await expect(run({ type: 'undo' })).rejects.toThrow(
     /a link was changed since extraction/,
   );
-  await host.remove('Purchase', String(late.id));
-  await host.update('Purchase', String(blank.id), { vendor: vendor.id });
+  await host.remove(hostOwner(host), 'Purchase', String(late.id));
+  await host.update(hostOwner(host), 'Purchase', String(blank.id), {
+    vendor: vendor.id,
+  });
   await expect(run({ type: 'undo' })).rejects.toThrow(
     /a link was changed since extraction/,
   );
-  await host.update('Purchase', String(blank.id), { vendor: null });
+  await host.update(hostOwner(host), 'Purchase', String(blank.id), {
+    vendor: null,
+  });
   await run({ type: 'undo' });
-  expect((await host.list('Purchase')).map((r) => r.vendor).sort()).toEqual(
-    ['Known', null].sort(),
-  );
+  expect(
+    (await host.list(hostOwner(host), 'Purchase')).map((r) => r.vendor).sort(),
+  ).toEqual(['Known', null].sort());
 });
 
 it('turns normalized whitespace and empty strings into null references and restores exact blanks on undo', async () => {
@@ -274,7 +307,7 @@ it('turns normalized whitespace and empty strings into null references and resto
     fields: { category: { type: 'text' } },
   });
   for (const category of ['', '   ', null, 'Known'])
-    await host.create('BlankSource', { category });
+    await host.create(hostOwner(host), 'BlankSource', { category });
   const before = raw('u_blank_sources');
   await run({
     type: 'extractModel',
@@ -283,7 +316,9 @@ it('turns normalized whitespace and empty strings into null references and resto
     into: 'BlankTarget',
     normalize: true,
   });
-  const categorys = (await host.list('BlankSource')).map((row) => row.category);
+  const categorys = (await host.list(hostOwner(host), 'BlankSource')).map(
+    (row) => row.category,
+  );
   expect(categorys.filter((value) => value === null)).toHaveLength(3);
   expect(categorys).not.toContain('');
   expect(categorys).not.toContain('   ');

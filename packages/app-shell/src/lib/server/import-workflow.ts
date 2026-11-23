@@ -77,7 +77,7 @@ import {
 } from './import-assistant.ts';
 import { IMPORT_MAX_BYTES, importSettings } from './import-settings.ts';
 import { shellInference } from './inference.ts';
-import { type Principal, requireOwner, runAs } from './owner.ts';
+import { type Principal, principalFor, requireOwner, runAs } from './owner.ts';
 
 /**
  * A calculation the app cannot build or whose proof fails keeps the workbook's
@@ -662,6 +662,7 @@ export function createShellImportService(options: ShellImportOptions) {
               };
               const target = createEngineImportTarget(
                 importHost,
+                () => principalFor(importer, importHost.def),
                 ensureActive,
                 async (engineNames) => {
                   await ensureActive();

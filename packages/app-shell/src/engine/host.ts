@@ -95,11 +95,19 @@ import {
   CapacityError,
   ClaimLostError,
   EngineError,
+  NoPrincipalError,
+  PermissionDeniedError,
   StaleFenceError,
 } from './errors.ts';
 import type { ExtractPreview } from './extract-model.ts';
 import { WORKBOOK_LOOKUP, WORKBOOK_ROW } from './import-bookkeeping.ts';
 import type { MergePreview } from './merge-records.ts';
+import {
+  type EnginePrincipal,
+  mintSystemPrincipal,
+  requirePrincipal,
+  tenantFor,
+} from './principal.ts';
 import {
   archivedTables,
   assertNoAside,
@@ -138,6 +146,13 @@ const now = () => new Date().toISOString();
 
 export interface HostOptions {
   store: VersionStore;
+  /**
+   * The tenant of the app (#5188). Every call into the app carries a principal
+   * of this tenant and a call for another is refused, on every backend. The
+   * shell sets it from the holder: the tenant in cloud, and on the desktop the
+   * installation's one tenant (the store's pin). Default: the desktop tenant.
+   */
+  tenantId?: string;
   /** The worker entry. Defaults to `./app-worker.ts` or `.js` next to this module. */
   workerUrl?: URL | string;
   /**
@@ -414,6 +429,10 @@ export class AppHost extends EventEmitter {
   def: AppDefinition = EMPTY_APP;
   version = 0;
   readonly dataDir: string;
+  /** The tenant of the app (#5188): the only tenant a call's principal may name. */
+  readonly tenantId: string;
+  /** The engine's own authority in this tenant; never leaves this class. */
+  readonly #system: EnginePrincipal;
   lastSwapMs = 0;
   private store: VersionStore;
   private workerUrl: URL | string;
@@ -454,6 +473,8 @@ export class AppHost extends EventEmitter {
   ) {
     super();
     this.dataDir = dataDir;
+    this.tenantId = tenantFor(opts.tenantId, database.config.kind);
+    this.#system = mintSystemPrincipal(this.tenantId);
     this.database = database.config;
     this.dialect = dialectFor(database.config);
     this.releaseDatabase = database.release;
@@ -625,6 +646,7 @@ export class AppHost extends EventEmitter {
 
   private spawn(def: AppDefinition, version: number, migration?: Migration) {
     const worker = new AppWorker(this.workerUrl, {
+      tenantId: this.tenantId,
       dataDir: this.dataDir,
       def,
       version,
@@ -1938,6 +1960,7 @@ export class AppHost extends EventEmitter {
         report.spec = parseRuntimeReportSpec(report.spec);
       // Plan against the imported registry, without touching app.db or creating tables.
       const worker = new AppWorker(this.workerUrl, {
+        tenantId: this.tenantId,
         dataDir: this.dataDir,
         def,
         version: this.version,
@@ -2188,8 +2211,22 @@ export class AppHost extends EventEmitter {
   private async sweepSideSchemas() {
     const base = schemaOf(this.database);
     await this.admin(async (db) => {
-      for (const n of await listSideSchemas(db, base, 'ron'))
-        await dropSchema(db, n, this.lockTimeoutMs, base);
+      for (const n of await listSideSchemas(db, base, 'ron')) {
+        // A rehearsal a crashed or terminated host left may still have a
+        // session finishing its last statement: DROP SCHEMA can lose a
+        // deadlock to it (40P01, the server's own victim pick). The drop is
+        // idempotent and nothing was dropped, so try again; the session is
+        // gone or done by then.
+        for (let attempt = 1; ; attempt++) {
+          try {
+            await dropSchema(db, n, this.lockTimeoutMs, base);
+            break;
+          } catch (e) {
+            if (attempt >= 4 || !isDeadlockError(e)) throw e;
+            await new Promise((r) => setTimeout(r, 250 * attempt));
+          }
+        }
+      }
     });
   }
 
@@ -2451,10 +2488,23 @@ export class AppHost extends EventEmitter {
 
   // ---------- the running app ----------
 
-  /** Talk to the app. Callers inside the change queue use this; others use onApp. */
-  private async callApp<T>(op: WorkerOp, ...args: unknown[]): Promise<T> {
+  /**
+   * The engine's own call into the app: change-queue work, as the system
+   * principal of this host's tenant. Never reachable for a caller's request;
+   * those go through `onApp` with the caller's principal.
+   */
+  private callApp<T>(op: WorkerOp, ...args: unknown[]): Promise<T> {
+    return this.callAs<T>(this.#system, op, ...args);
+  }
+
+  /** Talk to the app as `principal` (already checked by the caller of this). */
+  private async callAs<T>(
+    principal: EnginePrincipal,
+    op: WorkerOp,
+    ...args: unknown[]
+  ): Promise<T> {
     try {
-      return await this.app.call<T>(op, ...args);
+      return await this.app.call<T>(op, principal, ...args);
     } catch (e) {
       // A call in flight when the claim was lost sees the loss, not the
       // retired worker's crash. The worker commits on its own connection, so
@@ -2467,6 +2517,8 @@ export class AppHost extends EventEmitter {
         throw lost;
       }
       if (e instanceof AppCallError) {
+        if (e.code === 'unauthorized') throw new NoPrincipalError(e.message);
+        if (e.code === 'forbidden') throw new PermissionDeniedError(e.message);
         if (e.stale) throw new StaleFenceError(e.message);
         if (e.user) throw new EngineError(e.message, 'invalid', e.details);
         throw new EngineError(e.message, 'refused');
@@ -2475,7 +2527,13 @@ export class AppHost extends EventEmitter {
     }
   }
 
-  private async onApp<T>(op: WorkerOp, ...args: unknown[]): Promise<T> {
+  private async onApp<T>(
+    principal: EnginePrincipal,
+    op: WorkerOp,
+    ...args: unknown[]
+  ): Promise<T> {
+    // No principal, or one of another tenant: nothing is queued or posted.
+    requirePrincipal(principal, this.tenantId);
     // Never talk to an app that is being replaced: wait until the queue is
     // idle AND no change was queued while waiting. The check and the call below
     // run in one synchronous step, so no change can start in between.
@@ -2488,7 +2546,7 @@ export class AppHost extends EventEmitter {
     if (this.claimLost) throw this.claimLost;
     this.inflight++;
     try {
-      return await this.callApp<T>(op, ...args);
+      return await this.callAs<T>(principal, op, ...args);
     } finally {
       if (--this.inflight === 0) {
         const waiters = this.idleWaiters;
@@ -2553,6 +2611,7 @@ export class AppHost extends EventEmitter {
         await opts.store.setCurrent(base.version);
         return await AppHost.open(dir, {
           store: opts.store,
+          tenantId: this.tenantId,
           workerUrl: this.workerUrl,
           workerLimits: this.workerLimits,
           appLimits: this.appLimits,
@@ -2721,6 +2780,7 @@ export class AppHost extends EventEmitter {
           const before =
             carried ??
             new AppWorker(this.workerUrl, {
+              tenantId: this.tenantId,
               dataDir: dir,
               def: chain.base.definition,
               version: chain.baseVersion,
@@ -2736,6 +2796,7 @@ export class AppHost extends EventEmitter {
               if (step.op === 'loadRecords') {
                 const counts = await before.call<LoadPreview>(
                   'previewLoad',
+                  this.#system,
                   step.command,
                 );
                 step.maxUpdates = counts.update;
@@ -2753,6 +2814,7 @@ export class AppHost extends EventEmitter {
                   step.op === 'extractModel'
                     ? 'previewExtract'
                     : 'previewMerge',
+                  this.#system,
                   step.command,
                 );
                 impacts.push({
@@ -2768,6 +2830,7 @@ export class AppHost extends EventEmitter {
         }
         dataSteps.push(impacts);
         const w = new AppWorker(this.workerUrl, {
+          tenantId: this.tenantId,
           dataDir: dir,
           def: rec.definition,
           version: numbers[i],
@@ -2784,12 +2847,13 @@ export class AppHost extends EventEmitter {
           if (i === chain.versions.length - 1) {
             archives = await w.call(
               'countArchives',
+              this.#system,
               numbers,
               archivedTables(allSteps),
             );
             // SQLite: the result is written as one standalone file. On
             // PostgreSQL the rehearsal schema already is the result.
-            if (!place.database) await w.call('copyTo', file);
+            if (!place.database) await w.call('copyTo', this.#system, file);
           }
         } catch (e) {
           await w.terminate().catch(() => {});
@@ -3219,9 +3283,15 @@ export class AppHost extends EventEmitter {
 
   /** Bounded read worker: a timeout never terminates the live app worker. */
   runReport(
+    principal: EnginePrincipal,
     input: string | RuntimeReportSpec,
     options: ReportOptions = {},
   ): Promise<AppReportResult> {
+    try {
+      requirePrincipal(principal, this.tenantId);
+    } catch (e) {
+      return Promise.reject(e);
+    }
     const timeoutMs = options.timeoutMs ?? 5000;
     const maxRows = options.maxRows ?? 1000;
     if (
@@ -3238,6 +3308,7 @@ export class AppHost extends EventEmitter {
     return this.run(async () => {
       await this.drainInflight();
       const worker = new AppWorker(this.workerUrl, {
+        tenantId: this.tenantId,
         dataDir: this.dataDir,
         def: this.def,
         version: this.version,
@@ -3251,7 +3322,9 @@ export class AppHost extends EventEmitter {
       try {
         await worker.ready;
         return await Promise.race([
-          worker.call<AppReportResult>('runReport', input, { maxRows }),
+          worker.call<AppReportResult>('runReport', principal, input, {
+            maxRows,
+          }),
           new Promise<never>((_, reject) => {
             timer = setTimeout(
               () =>
@@ -3269,13 +3342,14 @@ export class AppHost extends EventEmitter {
     });
   }
 
-  countRows(model: string) {
+  countRows(principal: EnginePrincipal, model: string) {
     if (
       !Object.hasOwn(this.def.models, model) ||
       this.def.models[model].extends
     )
       throw new EngineError('Row counting requires an app-owned model.');
     return this.onApp<number>(
+      principal,
       'countRows',
       tableFor(model, this.def.models[model]),
     );
@@ -3283,6 +3357,7 @@ export class AppHost extends EventEmitter {
 
   /** Bounded engine read-back, including hidden provenance; never exposed as a tool. */
   readStoredRows(
+    principal: EnginePrincipal,
     model: string,
     fields: string[],
     order: string,
@@ -3290,6 +3365,7 @@ export class AppHost extends EventEmitter {
     options?: { limit?: number; nullsLast?: boolean },
   ) {
     return this.onApp<Row[]>(
+      principal,
       'readStoredRows',
       model,
       fields,
@@ -3300,39 +3376,51 @@ export class AppHost extends EventEmitter {
   }
 
   /** Read only the linked records requested, in bounded core batches. */
-  listByIds(model: string, ids: string[]) {
-    return this.onApp<Row[]>('listByIds', model, ids);
+  listByIds(principal: EnginePrincipal, model: string, ids: string[]) {
+    return this.onApp<Row[]>(principal, 'listByIds', model, ids);
   }
 
-  list(model: string, limit = 200) {
-    return this.onApp<Row[]>('list', model, limit);
+  list(principal: EnginePrincipal, model: string, limit = 200) {
+    return this.onApp<Row[]>(principal, 'list', model, limit);
   }
-  get(model: string, id: string) {
-    return this.onApp<Row>('get', model, id);
+  get(principal: EnginePrincipal, model: string, id: string) {
+    return this.onApp<Row>(principal, 'get', model, id);
   }
-  async create(model: string, data: Row) {
-    const r = await this.onApp<Row>('create', model, data);
+  async create(principal: EnginePrincipal, model: string, data: Row) {
+    const r = await this.onApp<Row>(principal, 'create', model, data);
     this.emit('records', { model });
     return r;
   }
-  async update(model: string, id: string, data: Row) {
-    const r = await this.onApp<Row>('update', model, id, data);
+  async update(
+    principal: EnginePrincipal,
+    model: string,
+    id: string,
+    data: Row,
+  ) {
+    const r = await this.onApp<Row>(principal, 'update', model, id, data);
     this.emit('records', { model });
     return r;
   }
-  async remove(model: string, id: string) {
-    const r = await this.onApp<{ deleted: string }>('remove', model, id);
+  async remove(principal: EnginePrincipal, model: string, id: string) {
+    const r = await this.onApp<{ deleted: string }>(
+      principal,
+      'remove',
+      model,
+      id,
+    );
     this.emit('records', { model });
     return r;
   }
 
   async runMethod(
+    principal: EnginePrincipal,
     model: string,
     method: string,
     id: string | null = null,
     params: Row = {},
   ) {
     const out = await this.onApp<MethodResult>(
+      principal,
       'runMethod',
       model,
       method,
@@ -3344,14 +3432,15 @@ export class AppHost extends EventEmitter {
   }
 
   /** The app's own generated MCP tools. */
-  appTools() {
+  appTools(principal: EnginePrincipal) {
     return this.onApp<
       { name: string; description?: string; inputSchema?: unknown }[]
-    >('tools');
+    >(principal, 'tools');
   }
 
   /** Call one of the app's generated tools. A delete needs `approved: true`. */
   async callAppTool(
+    principal: EnginePrincipal,
     name: string,
     args: Row = {},
     opts: { approved?: boolean } = {},
@@ -3362,7 +3451,7 @@ export class AppHost extends EventEmitter {
         risky: true,
         preview: { tool: name, args },
       });
-    const r = await this.onApp<ToolResult>('callTool', name, args);
+    const r = await this.onApp<ToolResult>(principal, 'callTool', name, args);
     if (!r.isError) {
       const model =
         Object.entries(this.def.models).find(([m, md]) =>
@@ -3375,6 +3464,7 @@ export class AppHost extends EventEmitter {
 
   /** The worker's generated REST routes, passed through. A DELETE needs `approved: true`. */
   async rest(
+    principal: EnginePrincipal,
     req: { method: string; url: string; body?: string },
     opts: { approved?: boolean } = {},
   ) {
@@ -3393,7 +3483,10 @@ export class AppHost extends EventEmitter {
         risky: true,
         preview: { method, url: req.url },
       });
-    const r = await this.onApp<RestResult>('rest', { ...req, method });
+    const r = await this.onApp<RestResult>(principal, 'rest', {
+      ...req,
+      method,
+    });
     if (method !== 'GET' && method !== 'HEAD' && r.status < 400)
       this.emit('records', { model: null });
     return r;
@@ -3482,4 +3575,12 @@ export async function discardOrphanDraft(
     );
   }
   removeDraftDirectory(dataDir, true);
+}
+
+/** A PostgreSQL deadlock the server resolved by cancelling this statement (SQLSTATE 40P01). */
+function isDeadlockError(error: unknown): boolean {
+  let e = error as { code?: unknown; cause?: unknown } | undefined;
+  for (let i = 0; e && i < 6; i++, e = e.cause as typeof e)
+    if (e.code === '40P01') return true;
+  return false;
 }

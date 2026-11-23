@@ -193,6 +193,17 @@ describe('saved report screens', () => {
       true,
     );
   });
+  it('fit renders the table only, with no chart switch', () => {
+    const { container } = render(ReportResult, { result, fit: true });
+    expect(container.querySelector('table')).toBeTruthy();
+    expect(
+      container
+        .querySelector('[data-smrt-component="ReportResult"]')
+        ?.hasAttribute('data-fit'),
+    ).toBe(true);
+    expect(screen.queryByRole('button', { name: 'Chart' })).toBeNull();
+    expect(screen.queryByRole('button', { name: 'Table' })).toBeNull();
+  });
   it('describes the proposal and rejects synthetic approval; decline saves nothing', async () => {
     const confirm = vi.fn(async () => saved);
     render(ReportConfirmation, { proposal, confirm });

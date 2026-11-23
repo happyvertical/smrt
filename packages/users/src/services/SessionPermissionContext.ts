@@ -8,6 +8,10 @@ import { getPackageConfig } from '@happyvertical/smrt-config';
 import type { SmrtClassOptions } from '@happyvertical/smrt-core';
 import type { DatabaseInterface } from '@happyvertical/sql';
 import type { Membership } from '../models/Membership.js';
+import {
+  postgresPrincipalSettings,
+  resolvePostgresSessionIdValue,
+} from '../postgres-settings.js';
 import { PermissionResolver } from './PermissionResolver.js';
 import {
   type SessionContext,
@@ -178,46 +182,15 @@ function isProbablyPostgres(
   return (database.constructor?.name || '').toLowerCase().includes('postgres');
 }
 
-/**
- * Value published to the `smrt.session_id` RLS GUC. Only a session that was
- * actually loaded (`context.session` non-null) is published; a principal run's
- * `sessionId` is an unverified server-set label and keeps the GUC empty
- * (fail closed).
- */
-export function resolvePostgresSessionIdValue(
-  context: Pick<SessionPermissionRuntimeContext, 'session' | 'sessionId'>,
-): string {
-  return context.session ? (context.sessionId ?? '') : '';
-}
+export { resolvePostgresSessionIdValue };
 
 async function setPostgresSessionVariables(
   database: QueryableDatabase,
   context: SessionPermissionRuntimeContext,
 ): Promise<void> {
-  await database.query(
-    "SELECT set_config('smrt.tenant_id', $1, true)",
-    context.tenantId ?? '',
-  );
-  await database.query(
-    "SELECT set_config('smrt.user_id', $1, true)",
-    context.userId ?? '',
-  );
-  await database.query(
-    "SELECT set_config('smrt.session_id', $1, true)",
-    resolvePostgresSessionIdValue(context),
-  );
-  await database.query(
-    "SELECT set_config('smrt.permissions', $1, true)",
-    JSON.stringify(context.permissions),
-  );
-  await database.query(
-    "SELECT set_config('smrt.super_admin_bypass', $1, true)",
-    context.superAdminBypass ? 'true' : 'false',
-  );
-  await database.query(
-    "SELECT set_config('smrt.system_context', $1, true)",
-    context.systemContext ? 'true' : 'false',
-  );
+  // `name` is one of the six fixed constants of `postgresPrincipalSettings`.
+  for (const [name, value] of postgresPrincipalSettings(context))
+    await database.query(`SELECT set_config('${name}', $1, true)`, value);
 }
 
 function isModuleNotFoundError(error: unknown): boolean {
@@ -228,46 +201,49 @@ function isModuleNotFoundError(error: unknown): boolean {
   );
 }
 
+/**
+ * The tenancy package, or `undefined` when it is not installed. Only the
+ * import is guarded: an error the caller's callback throws is never read as
+ * a missing package, so the callback runs at most once.
+ */
+async function loadTenancy(): Promise<
+  typeof import('@happyvertical/smrt-tenancy') | undefined
+> {
+  try {
+    return await import('@happyvertical/smrt-tenancy');
+  } catch (error) {
+    if (isModuleNotFoundError(error)) return undefined;
+    throw error;
+  }
+}
+
 async function runWithOptionalTenantContext<T>(
   controls: PermissionRuntimeControls,
   context: SessionPermissionRuntimeContext,
   fn: () => Promise<T>,
 ): Promise<T> {
   if (controls.systemContext) {
-    try {
-      const tenancy = await import('@happyvertical/smrt-tenancy');
-      return await tenancy.withSystemContext(fn);
-    } catch (error) {
-      if (isModuleNotFoundError(error)) {
-        return await fn();
-      }
-      throw error;
-    }
+    const tenancy = await loadTenancy();
+    return tenancy ? await tenancy.withSystemContext(fn) : await fn();
   }
 
   if (!controls.enterTenantContext || !context.tenantId) {
     return await fn();
   }
 
-  try {
-    const tenancy = await import('@happyvertical/smrt-tenancy');
-    return await tenancy.withTenant(
-      {
-        database: context.database,
-        permissions: context.permissionSet,
-        superAdminBypass: context.superAdminBypass,
-        tenantId: context.tenantId,
-        user: context.user ?? undefined,
-        userId: context.userId ?? undefined,
-      },
-      fn,
-    );
-  } catch (error) {
-    if (isModuleNotFoundError(error)) {
-      return await fn();
-    }
-    throw error;
-  }
+  const tenancy = await loadTenancy();
+  if (!tenancy) return await fn();
+  return await tenancy.withTenant(
+    {
+      database: context.database,
+      permissions: context.permissionSet,
+      superAdminBypass: context.superAdminBypass,
+      tenantId: context.tenantId,
+      user: context.user ?? undefined,
+      userId: context.userId ?? undefined,
+    },
+    fn,
+  );
 }
 
 /**

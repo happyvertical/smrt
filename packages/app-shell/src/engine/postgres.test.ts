@@ -1,12 +1,14 @@
 // PostgreSQL behaviour of the engine (#5186), always on PGlite regardless of
 // SMRT_APP_SHELL_DB: tenancy (one schema per app, transaction-local
 // search_path, unqualified names), the loud failures, and the schema scope.
+
 import { mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { getDatabase } from '@happyvertical/sql';
 import { importPGlite } from '@happyvertical/sql/pglite';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
+import { hostOwner } from '../test/engine-principal.ts';
 import type { PGliteClient } from './db/index.ts';
 import { PASS_THROUGH, SCOPED_MEMBERS, scopeDatabase } from './db/postgres.ts';
 import { AppHost, EngineError, MemoryVersionStore } from './index.ts';
@@ -69,7 +71,7 @@ describe('one schema per app (tenancy)', () => {
         },
         { author: 't' },
       );
-      await host.create('Note', { title: `only ${who}` });
+      await host.create(hostOwner(host), 'Note', { title: `only ${who}` });
     }
     // Only A has this model at all.
     await a.execute(
@@ -80,24 +82,31 @@ describe('one schema per app (tenancy)', () => {
       },
       { author: 't' },
     );
-    await a.create('Secret', { code: 'a-secret' });
+    await a.create(hostOwner(a), 'Secret', { code: 'a-secret' });
 
     const titles = async (h: AppHost) =>
-      ((await h.list('Note')) as any[]).map((r) => r.title);
+      ((await h.list(hostOwner(h), 'Note')) as any[]).map((r) => r.title);
     expect(await titles(a)).toEqual(['only a']);
     expect(await titles(b)).toEqual(['only b']);
     // B cannot reach A's table by any engine route.
-    await expect(b.list('Secret')).rejects.toBeInstanceOf(EngineError);
-    const rest = await b.rest({ method: 'GET', url: '/api/secrets' });
+    await expect(b.list(hostOwner(b), 'Secret')).rejects.toBeInstanceOf(
+      EngineError,
+    );
+    const rest = await b.rest(hostOwner(b), {
+      method: 'GET',
+      url: '/api/secrets',
+    });
     expect(rest.status).toBe(404);
     expect(
-      ((await b.appTools()) as { name: string }[]).some((t) =>
+      ((await b.appTools(hostOwner(b))) as { name: string }[]).some((t) =>
         t.name.includes('secret'),
       ),
     ).toBe(false);
     // The REST list of the shared name is each app's own rows.
     const restNotes = async (h: AppHost) =>
-      JSON.stringify((await h.rest({ method: 'GET', url: '/api/notes' })).body);
+      JSON.stringify(
+        (await h.rest(hostOwner(h), { method: 'GET', url: '/api/notes' })).body,
+      );
     expect(await restNotes(a)).toContain('only a');
     expect(await restNotes(a)).not.toContain('only b');
     expect(await restNotes(b)).toContain('only b');

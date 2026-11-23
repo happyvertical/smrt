@@ -63,7 +63,7 @@ in the data folder. If the link is lost, stop the
 server and run `smrt app recover` for a new one. Setup is loopback only and
 single use. Health: `GET /api/_runtime/health`.
 
-From the registry package (no checkout): `npx smrt-app-shell`; SIGTERM/SIGINT drain open apps and exit within `SMRT_APP_SHELL_SHUTDOWN_MS`. See [deploy](agents/deploy.md), which also states the supported Node version.
+From the registry package (no checkout): `npx smrt-app-shell`; SIGTERM/SIGINT drain open apps and exit within `SMRT_APP_SHELL_SHUTDOWN_MS`. A host that owns its own listener imports `@happyvertical/smrt-app-shell/embed` (`handler`, `drain`) instead. See [deploy](agents/deploy.md), which also states the supported Node version.
 
 Desktop: the shell also mounts `GET /api/_runtime/owner-link`
 (`createOwnerLinkHandler`), the route the desktop wrapper opens its window on.
@@ -180,11 +180,10 @@ created by `prepareShellSchema` on first start (`consumer.packages` in
 The chat column (`src/lib/assistant/AssistantPanel.svelte`, the `panel` of
 smrt-svelte's `AppShell` in `src/routes/+layout.svelte`, mounted for the owner)
 talks to `mountAssistantRoutes` (`src/lib/server/assistant/`). The layout is
-left sidebar, chat, content; the voice and assistant toggles and the user menu
+left sidebar, content, chat (the chat sits at the right of the page, 400px by default); the voice and assistant toggles and the user menu
 sit in the sidebar footer. Each model gets its own sidebar icon, picked from its name and fields (`src/lib/ui/model-icon.ts`) and stable across reloads. The sidebar collapses to an icon rail (nav icons with
 tooltips, the footer controls as icons) from the chevron above the footer; the
-choice is remembered per owner, and the footer has no divider line (it would sit
-beside the chat composer's top border). The boundary between chat and content is a draggable
+choice is remembered per owner, and the footer has no divider line. The boundary between chat and content is a draggable
 separator (arrow keys, double-click resets); its width and the open state are
 remembered per owner. As a plugin view (iframe, or `?embed=plugin`) there is no
 chat and no toggles: the host app is the chat. Voice mode shows as not

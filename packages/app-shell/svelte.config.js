@@ -1,5 +1,5 @@
 import adapter from '@sveltejs/adapter-node';
-import { rename, writeFile } from 'node:fs/promises';
+import { readFile, rename, writeFile } from 'node:fs/promises';
 import { IMPORT_MAX_BYTES } from './src/lib/import-limits.ts';
 
 const nodeAdapter = adapter();
@@ -13,10 +13,21 @@ export default {
       ...nodeAdapter,
       async adapt(builder) {
         await nodeAdapter.adapt(builder);
-        // Both `node build` and the desktop sidecar enter here, before handler imports
-        // capture adapter-node's default 512 KiB BODY_SIZE_LIMIT.
+        // Both `node build` and the desktop sidecar enter at build/index.js,
+        // which raises BODY_SIZE_LIMIT before handler imports capture
+        // adapter-node's default 512 KiB, owns the shutdown (tools/start-entry.js)
+        // and starts adapter-node's listener (kept as server-start.js).
+        // build/embed.js is the same handler without a listener, plus the
+        // drain, for a host that owns both (tools/embed-entry.js, #5546).
         await rename('build/index.js', 'build/server-start.js');
-        await writeFile('build/index.js', `process.env.BODY_SIZE_LIMIT ??= '${IMPORT_MAX_BYTES}';\nawait import('./server-start.js');\n`);
+        const limit = String(IMPORT_MAX_BYTES);
+        for (const [from, to] of [
+          ['tools/start-entry.js', 'build/index.js'],
+          ['tools/embed-entry.js', 'build/embed.js'],
+        ]) {
+          const text = await readFile(from, 'utf8');
+          await writeFile(to, text.replaceAll('__IMPORT_MAX_BYTES__', limit));
+        }
       },
     },
     alias: { $lib: 'src/lib' },

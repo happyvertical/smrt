@@ -20,6 +20,7 @@ import {
   it,
   vi,
 } from 'vitest';
+import { hostOwner } from '../../../test/engine-principal.ts';
 import type { TurnEvent } from '../../assistant/events.ts';
 import {
   CHATGPT_ASSISTANT_CLASS,
@@ -196,7 +197,8 @@ describe('what the engine sends', () => {
 describe('a turn on the plan', () => {
   it('runs a tool call through the approval hold and returns the outcome to the model', async () => {
     const host = await getHost();
-    const id = (await host.create('Chore', { title: 'keep' })).id as string;
+    const id = (await host.create(hostOwner(host), 'Chore', { title: 'keep' }))
+      .id as string;
     script = [
       reply('Removing it.', [toolCall('c1', 'chore_delete', { id })]),
       reply('Understood, it was not removed.'),
@@ -217,7 +219,7 @@ describe('a turn on the plan', () => {
     expect(ask).toBeTruthy();
     expect(held).toEqual([ask.approvalId]);
     expect(stop).toBe('complete');
-    expect((await host.get('Chore', id)).id).toBe(id); // nothing deleted
+    expect((await host.get(hostOwner(host), 'Chore', id)).id).toBe(id); // nothing deleted
     // The second call replays the assistant's tool call and the tool result.
     const replay = JSON.stringify(chatCalls[1].messages);
     expect(replay).toContain('"tool_calls"');

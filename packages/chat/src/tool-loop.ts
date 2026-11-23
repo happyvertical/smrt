@@ -63,6 +63,7 @@ import {
   isCreateOpenOnSurface,
   ObjectRegistry,
   type PublicJsonOptions,
+  prepareWriteInput,
   type SmrtClassOptions,
   type SmrtObject,
   toPublicResultValue,
@@ -695,14 +696,6 @@ function writablePolicyFor(tool: ManifestTool): {
   };
 }
 
-/** Apply the generated CRUD surface's public write policy to manifest input. */
-function writableToolInput(
-  tool: ManifestTool,
-  input: Record<string, unknown>,
-): Record<string, unknown> {
-  return applySyncWritablePolicy(input, writablePolicyFor(tool));
-}
-
 /**
  * Build the closed catalog of manifest operations available as tools.
  *
@@ -1104,10 +1097,9 @@ export async function invokeManifestTool(
     }
     case 'create': {
       const createModel = target?.collectionName ?? registryKeyFor(tool);
-      const createData = writableToolInput(
-        { ...tool, qualifiedName: createModel },
-        target?.data ?? args,
-      );
+      // Arguments set fields the principal may write and nothing else: a
+      // protected field with a value is refused, as on the REST routes.
+      const createData = prepareWriteInput(createModel, target?.data ?? args);
       // Create input names declared fields and settable accessors only.
       assertCreateInput(createModel, createData, collection);
       const item = (await collection.create(
@@ -1125,11 +1117,14 @@ export async function invokeManifestTool(
       if (!item) {
         return { found: false };
       }
-      // Arguments set declared fields and settable accessors, nothing else:
-      // the same rule the REST routes and MCP tools apply to an update.
+      // A protected field is compared with the loaded row (unchanged is
+      // accepted, changed refused), then arguments set declared fields and
+      // settable accessors, nothing else: the rule REST and MCP apply.
       applyUpdateInput(
         item,
-        writableToolInput(tool, rest),
+        prepareWriteInput(registryKeyFor(tool), rest, item, {
+          permissions: run.permissions,
+        }),
         registryKeyFor(tool),
       );
       await item.save();

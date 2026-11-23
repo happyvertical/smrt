@@ -2,11 +2,13 @@
 // engine ADD COLUMN and core's planned table must agree, or the next boot's
 // storage-family check refuses the column. Table-driven per field type, on
 // both databases.
+
 import { mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { DatabaseSync } from 'node:sqlite';
 import { afterAll, describe, expect, it } from 'vitest';
+import { hostOwner } from '../test/engine-principal.ts';
 import { harnessDatabase } from './db/harness.ts';
 import { dialectFor } from './db/index.ts';
 import { FIELD_TYPES, type FieldType } from './definition.ts';
@@ -133,8 +135,8 @@ describe.each([
       { author: 't' },
     );
     for (const [i, v] of values.entries())
-      await host.create('Keep', { label: `r${i}`, value: v });
-    await host.create('Keep', { label: 'rnull', value: null });
+      await host.create(hostOwner(host), 'Keep', { label: `r${i}`, value: v });
+    await host.create(hostOwner(host), 'Keep', { label: 'rnull', value: null });
     const scoped = async <T>(
       fn: (tx: any) => Promise<T>,
     ): Promise<T | undefined> => {

@@ -1,5 +1,57 @@
 # @happyvertical/smrt-core
 
+## 0.70.0
+
+### Minor Changes
+
+- ### Breaking Changes
+  
+  - refuse writes that change a field the caller may not write (#5604) (core)
+  - route late AI usage to its call; take row id, run and user from trusted sources (#5600) (core)
+  - return a cut run event payload only under the rules that redacted it (#5595) (core)
+  - runtime REST acts for a principal its host resolves once per request (#5588) (core)
+  - resolve tenancy for the effective row model on every request path (#5568) (core)
+  
+  ### Features
+  
+  - carry the caller into the engine, one transaction per operation (#5607) (app-shell)
+  - assistant chat pass — one scroll, action said once, quieter steps (#5601) (app-shell)
+  - narrow OAuth consent to held scopes and check scopes per tool (#5587) (users,app-mcp)
+  - opt-in legacy MCP protocol support for 2025-era clients (#5586) (app-mcp)
+  - warn when a database without a migrate record has old system tables (#5582) (core)
+  
+  ### Bug Fixes
+  
+  - junction adopt exact id and late-parent chain derivation (#5598) (core)
+  - load smrt-features manifest from source in device-entitlements tests (#5602) (app-runtime)
+  - registry and object-runtime fixes for same-named classes and more (#5589) (core)
+  - make two slow test setups fast (#5573)
+
+### Patch Changes
+
+- @happyvertical/smrt-config@0.70.0
+  - @happyvertical/smrt-scanner@0.70.0
+  - @happyvertical/smrt-types@0.70.0
+
+## 0.69.0
+
+### Minor Changes
+
+- ### Breaking Changes
+  
+  - async generated client fetchers; list() sends its params (#5565) (core)
+  
+  ### Features
+  
+  - embed entry with handler and drain; build ./start on them (#5550) (app-shell)
+  - hosted engine follow-ups: caps wiring, hosted keys, migration (#5183) (#5540) (app-shell)
+
+### Patch Changes
+
+- @happyvertical/smrt-config@0.69.0
+  - @happyvertical/smrt-scanner@0.69.0
+  - @happyvertical/smrt-types@0.69.0
+
 ## 0.68.0
 
 ### Minor Changes

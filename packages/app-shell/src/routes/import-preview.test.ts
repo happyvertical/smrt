@@ -1,5 +1,6 @@
 // Real owner checks, import target and SQLite draft; only the current-run
 // projection is supplied, so these reads do not need an AI/job runner.
+
 import { checkPlan } from '@happyvertical/smrt-spreadsheets/import';
 import { afterEach, beforeEach, expect, it, vi } from 'vitest';
 import { businessWorkbook } from '../../test-support/import-workbook.ts';
@@ -9,6 +10,7 @@ import { getDraftSlot, hostFor } from '../lib/server/host.ts';
 import type { Principal } from '../lib/server/owner.ts';
 import { openShell, type ShellHarness } from '../lib/server/test-support.ts';
 import type { ImportState } from '../lib/ui/import.ts';
+import { hostOwner } from '../test/engine-principal.ts';
 import { GET } from './api/shell/import/preview/+server.ts';
 
 const saved = vi.hoisted(() => ({ current: null as ImportState | null }));
@@ -46,7 +48,7 @@ it('returns a database-limited workbook prefix, nulls last, and labels for only 
   plan.tables[0].key = 'sales_orders';
   delete plan.reports;
   delete plan.tables[1].titleField;
-  const target = createEngineImportTarget(host);
+  const target = createEngineImportTarget(host, () => hostOwner(host));
   await target.applyStructure(plan);
   // Ada is loaded first, strictly before the rest (created_at is millisecond
   // resolution, so a same-ms tie leaves "newest 1,000" order undefined), and
@@ -76,10 +78,12 @@ it('returns a database-limited workbook prefix, nulls last, and labels for only 
     })),
   });
   await target.seal();
-  const customers = await host.list('Customers', 1002);
+  const customers = await host.list(hostOwner(host), 'Customers', 1002);
   const ada = customers.find((row) => row.name === 'Ada')!;
   expect(
-    (await host.list('Customers', 1000)).some((row) => row.id === ada.id),
+    (await host.list(hostOwner(host), 'Customers', 1000)).some(
+      (row) => row.id === ada.id,
+    ),
   ).toBe(false);
   // The actual engine definition, not the plan types, decides the label.
   await host.execute(
@@ -91,13 +95,15 @@ it('returns a database-limited workbook prefix, nulls last, and labels for only 
     },
     { author: 'test' },
   );
-  await host.update('Customers', String(ada.id), { displayName: 'Ada’s shop' });
+  await host.update(hostOwner(host), 'Customers', String(ada.id), {
+    displayName: 'Ada’s shop',
+  });
   await host.execute(
     { type: 'hideField', model: 'Customers', field: 'name' },
     { author: 'test' },
   );
   for (let i = 0; i < 2; i++)
-    await host.create('SalesOrders', {
+    await host.create(hostOwner(host), 'SalesOrders', {
       price: 900 + i,
       quantity: 1,
       status: 'Open',
@@ -127,12 +133,16 @@ it('returns a database-limited workbook prefix, nulls last, and labels for only 
   expect(prefixResponse.headers.get('cache-control')).toBe('no-store');
   const prefix = await prefixResponse.json();
   expect(prefix.records).toHaveLength(3);
-  expect(lookup).toHaveBeenCalledExactlyOnceWith('Customers', [ada.id]);
+  expect(lookup).toHaveBeenCalledExactlyOnceWith(
+    expect.objectContaining({ kind: 'user' }),
+    'Customers',
+    [ada.id],
+  );
   expect(generic).not.toHaveBeenCalled();
   const full = await (await read('?table=sales_orders&limit=1000')).json();
   expect(full.records).toHaveLength(7);
   expect(prefix.records).toEqual(full.records.slice(0, 3));
-  const original = (await host.list('SalesOrders')).filter(
+  const original = (await host.list(hostOwner(host), 'SalesOrders')).filter(
     (row) => Number(row.price) < 900,
   );
   const tieIds = original
