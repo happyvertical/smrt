@@ -55,6 +55,7 @@ import {
   resolveInheritedFields,
 } from '../schema/field-inheritance.js';
 import {
+  parseForeignKeyReference,
   resolveForeignKeyDeleteAction,
   resolveForeignKeyUpdateAction,
 } from '../schema/foreign-key-policy.js';
@@ -1636,7 +1637,7 @@ export class ManifestGenerator {
       }
     }
 
-    this.resolveSamePackageForeignKeyColumnTypes(manifest, generator);
+    this.resolveForeignKeyColumnTypes(manifest, generator, aggregatedManifest);
 
     // Preserve collection metadata, but take persistence identity from the item
     // model only after every model schema (including FK repair) is complete.
@@ -1792,9 +1793,10 @@ export class ManifestGenerator {
     }
   }
 
-  private resolveSamePackageForeignKeyColumnTypes(
+  private resolveForeignKeyColumnTypes(
     manifest: SmartObjectManifest,
     generator: SchemaGeneratorLike,
+    targets: SmartObjectManifest,
   ): void {
     // One representative schema per table for target-id lookups, plus EVERY
     // schema that describes a table: each class of an STI hierarchy carries a
@@ -1822,6 +1824,10 @@ export class ManifestGenerator {
       }
     }
 
+    for (const obj of Object.values(targets.objects)) {
+      if (obj.schema) schemaByTable.set(obj.schema.tableName, obj.schema);
+    }
+
     for (const obj of Object.values(manifest.objects)) {
       const sourceTable = this.getObjectTableName(obj);
       if (!sourceTable) {
@@ -1847,7 +1853,7 @@ export class ManifestGenerator {
         const columnName = toSnakeCase(fieldName);
         const targetSchema = this.findForeignKeyTargetSchema(
           field.related,
-          manifest,
+          targets,
           schemaByTable,
           obj.packageName,
         );
@@ -1865,7 +1871,9 @@ export class ManifestGenerator {
           continue;
         }
 
-        const [, declaredTargetColumn] = field.related.split('.');
+        const { column: declaredTargetColumn } = parseForeignKeyReference(
+          field.related,
+        );
         const targetColumn =
           declaredTargetColumn ||
           Object.entries(targetSchema.columns).find(
@@ -1936,38 +1944,60 @@ export class ManifestGenerator {
     schemaByTable: Map<string, ManifestSchema>,
     sourcePackageName?: string,
   ): ManifestSchema | undefined {
-    const relatedTarget = related.split('.')[0];
-    if (schemaByTable.has(relatedTarget)) {
+    const { target: relatedTarget } = parseForeignKeyReference(related);
+    if (!relatedTarget.includes(':') && schemaByTable.has(relatedTarget)) {
       return schemaByTable.get(relatedTarget);
     }
-
-    const candidates = Object.values(manifest.objects).filter(
-      (candidate) =>
-        candidate.className === relatedTarget ||
-        candidate.qualifiedName === relatedTarget ||
-        candidate.name === relatedTarget ||
-        candidate.decoratorConfig?.tableName === relatedTarget ||
-        candidate.schema?.tableName === relatedTarget,
-    );
-    const localTarget = candidates.find(
-      (candidate) => candidate.packageName === sourcePackageName,
-    );
-    if (!localTarget && candidates.length > 1) {
-      throw new Error(
-        `Ambiguous foreign key target ${relatedTarget} from package ${sourcePackageName}`,
+    // Resolve identity before table lookup: a qualified missing model must
+    // never bind to an unrelated model that happens to own the same table.
+    const resolve = (ref: string, packageName?: string) => {
+      const candidates = Object.entries(manifest.objects)
+        .filter(
+          ([key, candidate]) =>
+            key === ref ||
+            candidate.qualifiedName === ref ||
+            (!ref.includes(':') &&
+              (candidate.className === ref ||
+                candidate.name === ref ||
+                candidate.decoratorConfig?.tableName === ref ||
+                candidate.schema?.tableName === ref)),
+        )
+        .map(([, candidate]) => candidate);
+      const local = candidates.filter(
+        (candidate) => candidate.packageName === packageName,
       );
+      const matches = local.length ? local : candidates;
+      if (matches.length > 1) {
+        throw new Error(
+          `Ambiguous foreign key target ${ref} from package ${packageName}`,
+        );
+      }
+      return matches[0];
+    };
+    const target = resolve(relatedTarget, sourcePackageName);
+    if (!target) {
+      return relatedTarget.includes(':')
+        ? undefined
+        : schemaByTable.get(relatedTarget);
     }
-    const targetObj = localTarget ?? candidates[0];
 
-    if (!targetObj && relatedTarget.includes(':')) {
-      return undefined;
+    // An STI descendant need not publish a schema. Its physical owner is the
+    // oldest STI ancestor, not a guessed table derived from its class name.
+    let physical = target;
+    let current: SmartObjectDefinition | undefined = target;
+    const visited = new Set<SmartObjectDefinition>();
+    while (current && !visited.has(current)) {
+      visited.add(current);
+      const parent = this.parentRef(current);
+      current = parent ? resolve(parent, current.packageName) : undefined;
+      if (current?.decoratorConfig?.tableStrategy === 'sti') physical = current;
     }
-
-    const targetTable = targetObj
-      ? this.getObjectTableName(targetObj)
-      : this.classNameToTableName(relatedTarget);
-
-    return targetTable ? schemaByTable.get(targetTable) : undefined;
+    return (
+      physical.schema ??
+      (physical.decoratorConfig?.tableName
+        ? schemaByTable.get(physical.decoratorConfig.tableName)
+        : undefined)
+    );
   }
 
   private getObjectTableName(obj: SmartObjectDefinition): string | undefined {

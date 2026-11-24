@@ -57,6 +57,23 @@ registry paths, and through `getAllSchemasAsDefinitions()`, asserting identical
 column and index sets. Extend that fixture with every generator change; a
 divergence is a bug in the generator, not an exception to add to the test.
 
+### Physical FK targets through STI (#5622)
+
+Build-time FK reconciliation resolves the declared model identity in the local
+and dependency manifests before choosing a physical table. An STI descendant,
+including a multilevel or external descendant with no schema of its own, targets
+the oldest STI ancestor's schema. Qualified references select only the named
+package; simple names prefer the declaring package and reject ambiguous peers.
+Missing manifests do not authorize a guessed table or constraint. Optional
+`Model.column` suffixes are parsed after the package qualifier, so dotted package
+names retain their identity. Target id types, explicit SQL type overrides,
+constraint engine restrictions and delete/update actions retain their meaning.
+
+The static manifest, runtime generator and registry aggregation must yield the
+same FK metadata and schema fingerprint. The built-core regression migrates and
+queries in separate production processes using the same immutable artifact;
+repair belongs in schema generation, never in stamp rewriting or startup bypasses.
+
 ### Field inheritance: one rule, one module (#4922, #4940, #4942)
 
 "What fields does a class have, counting what it inherits" is decided in ONE
