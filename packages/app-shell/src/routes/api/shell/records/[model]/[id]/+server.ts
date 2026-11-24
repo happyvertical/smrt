@@ -49,7 +49,7 @@ export const DELETE: RequestHandler = guarded(async (event) => {
   const out = await requestRecordDelete(
     ident(event.params.model, 'model'),
     ident(event.params.id, 'id'),
-    owner.id,
+    owner,
     'live',
   );
   return isPending(out) ? json(out, 202) : json(out);

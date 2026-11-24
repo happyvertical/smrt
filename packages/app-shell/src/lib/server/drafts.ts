@@ -40,6 +40,7 @@ import {
   withAppLease,
   withDraftConnections,
 } from './host.ts';
+import { type Principal, principalFor } from './owner.ts';
 import type { Target } from './target.ts';
 import { createTenantQueue } from './tenant-queue.ts';
 import { DraftVersionStore } from './version-store.ts';
@@ -238,14 +239,15 @@ export function startDraftWith(
 /** Start an empty working copy (a plain fork of live). */
 export function startDraft(
   name: unknown,
-  ownerId: string,
+  owner: Principal,
   beforeFork?: (id: string) => Promise<void>,
   hold?: string,
 ): Promise<DraftInfo> {
   return startDraftWith(
-    ({ dir, store, live }) => live.forkDraft(dir, { store }),
+    ({ dir, store, live }) =>
+      live.forkDraft(principalFor(owner, live.def), dir, { store }),
     name,
-    ownerId,
+    owner.id,
     beforeFork,
     hold,
   );

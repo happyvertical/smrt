@@ -20,7 +20,7 @@ beforeEach(async () => {
   live = await AppHost.open(join(dir, 'live'), {
     store: new MemoryVersionStore(),
   });
-  draft = await live.forkDraft(join(dir, 'draft'), {
+  draft = await live.forkDraft(hostOwner(live), join(dir, 'draft'), {
     store: new MemoryVersionStore(),
   });
 });
@@ -126,7 +126,7 @@ it('falls back to saved values when a calculation fails proof', async () => {
   expect(amount?.calculated).toBeUndefined();
   expect(amount?.cachedColumn).toBeUndefined();
   await draft.close();
-  draft = await live.forkDraft(join(dir, 'draft2'), {
+  draft = await live.forkDraft(hostOwner(live), join(dir, 'draft2'), {
     store: new MemoryVersionStore(),
   });
   const again = await runImport({

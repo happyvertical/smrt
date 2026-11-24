@@ -107,6 +107,7 @@ describe('frozen host', () => {
   beforeAll(async () => {
     host = await AppHost.open(dir, { store });
     await host.execute(
+      hostOwner(host),
       {
         type: 'defineModel',
         name: 'Chore',
@@ -135,7 +136,8 @@ describe('frozen host', () => {
       const cmd = SAMPLES[type as CommandType];
       for (const call of [
         () => host.plan(cmd),
-        () => host.execute(cmd, { author: 't', approved: true }),
+        () =>
+          host.execute(hostOwner(host), cmd, { author: 't', approved: true }),
       ]) {
         const err = await call().then(
           () => null,
@@ -153,12 +155,17 @@ describe('frozen host', () => {
 
   it('refuses a command of unknown type', async () => {
     await expect(
-      host.execute({ type: 'drop' } as never, { author: 't', approved: true }),
+      host.execute(hostOwner(host), { type: 'drop' } as never, {
+        author: 't',
+        approved: true,
+      }),
     ).rejects.toThrow(/frozen/);
   });
 
   it('still exports the template, with records', async () => {
-    const t = await host.execute(SAMPLES.exportTemplate, { author: 't' });
+    const t = await host.execute(hostOwner(host), SAMPLES.exportTemplate, {
+      author: 't',
+    });
     expect(
       (t as { records: Record<string, unknown[]> }).records.Chore,
     ).toHaveLength(1);
@@ -200,7 +207,7 @@ describe('frozen host', () => {
   it('thaws, and a host can also start frozen', async () => {
     host.setFrozen(false);
     expect(host.frozen).toBe(false);
-    await host.execute(SAMPLES.addField, { author: 't' });
+    await host.execute(hostOwner(host), SAMPLES.addField, { author: 't' });
     expect(host.def.models.Chore.fields.notes).toBeTruthy();
 
     const other = join(root, 'starts-frozen');
@@ -211,7 +218,7 @@ describe('frozen host', () => {
     try {
       expect(h.frozen).toBe(true);
       await expect(
-        h.execute(SAMPLES.defineModel, { author: 't' }),
+        h.execute(hostOwner(h), SAMPLES.defineModel, { author: 't' }),
       ).rejects.toThrow(/frozen/);
     } finally {
       await h.close();
@@ -259,6 +266,7 @@ describe('autoApprove', () => {
     try {
       expect(draft.draft?.baseVersion).toBe(0);
       await draft.execute(
+        hostOwner(draft),
         {
           type: 'defineModel',
           name: 'Chore',
@@ -272,6 +280,7 @@ describe('autoApprove', () => {
         .id as string;
       // risky, no `approved`: runs
       await draft.execute(
+        hostOwner(draft),
         { type: 'removeField', model: 'Chore', field: 'junk' },
         { author: 't' },
       );
@@ -304,11 +313,13 @@ describe('autoApprove', () => {
     const draft = await AppHost.open(dir, { store: new MemoryVersionStore() });
     try {
       await draft.execute(
+        hostOwner(draft),
         { type: 'defineModel', name: 'Chore', fields: { a: { type: 'text' } } },
         { author: 't' },
       );
       await expect(
         draft.execute(
+          hostOwner(draft),
           { type: 'removeField', model: 'Chore', field: 'a' },
           { author: 't' },
         ),

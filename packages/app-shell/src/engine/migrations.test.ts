@@ -32,7 +32,7 @@ const cols = (table: string) =>
     `select group_concat(name, ',') from pragma_table_info('${table}')`,
   ).split(',');
 const run = (cmd: Command, approved = true) =>
-  host.execute(cmd, { author: 'test', approved });
+  host.execute(hostOwner(host), cmd, { author: 'test', approved });
 const toolProps = async (name: string) => {
   const t = (await host.appTools(hostOwner(host))).find((x) => x.name === name);
   return Object.keys(
@@ -210,7 +210,8 @@ describe('migrations (sequential, one app)', () => {
   });
 
   it('18-24 undo walks back through every kind of step', async () => {
-    const undo = () => host.execute({ type: 'undo' }, { author: 'test' });
+    const undo = () =>
+      host.execute(hostOwner(host), { type: 'undo' }, { author: 'test' });
     await undo(); // remove model Errand
     expect(sql(`select what from u_errands`)).toBe('post office');
     await undo(); // define Errand
@@ -265,9 +266,9 @@ describe('migrations (sequential, one app)', () => {
     };
     expect(cu.purgedVersions.length).toBeGreaterThanOrEqual(1);
     expect(sql(`select count(*) from _archive where col='notes'`)).toBe('0');
-    await host.execute({ type: 'undo' }, { author: 'test' }); // room: additive, fine
+    await host.execute(hostOwner(host), { type: 'undo' }, { author: 'test' }); // room: additive, fine
     await expect(
-      host.execute({ type: 'undo' }, { author: 'test' }),
+      host.execute(hostOwner(host), { type: 'undo' }, { author: 'test' }),
     ).rejects.toThrow(/cleaned up/);
     const v = (await host.versions()).find((x) => x.purged);
     expect(v).toBeTruthy();

@@ -391,6 +391,7 @@ describe.skipIf(!serverUrl)('the shared pool on a PostgreSQL server', () => {
     });
     try {
       await host.execute(
+        hostOwner(host),
         {
           type: 'defineModel',
           name: 'Chore',

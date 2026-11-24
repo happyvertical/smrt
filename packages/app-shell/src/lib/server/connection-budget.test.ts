@@ -452,7 +452,11 @@ describe('no connections left during a publish check', () => {
     const live = await AppHost.open(join(dir, 'live'), {
       store: new MemoryVersionStore(),
     });
-    await live.execute({ type: 'defineModel', name: 'Chore', fields: {} }, as);
+    await live.execute(
+      hostOwner(live),
+      { type: 'defineModel', name: 'Chore', fields: {} },
+      as,
+    );
     const built = await engine.rebuild(hostOwner(live), live, {
       draftDir: join(dir, 'draft'),
       store: new MemoryVersionStore(),

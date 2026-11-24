@@ -21,7 +21,7 @@ afterAll(async () => {
   await harness.close();
 });
 const execute = async (command: Command) =>
-  (await getHost()).execute(command, {
+  (await getHost()).execute(hostOwner(await getHost()), command, {
     author: harness.owner.id,
     approved: true,
   });
@@ -30,14 +30,14 @@ async function card(command: Command) {
   // release is reproduced from the live host's own refusal.
   const live = await getHost();
   const pending = await live
-    .execute(command, { author: harness.owner.id })
+    .execute(hostOwner(live), command, { author: harness.owner.id })
     .then(
       () => {
         throw new Error('expected the command to need approval');
       },
       (e) => {
         if (!(e instanceof ApprovalRequiredError)) throw e;
-        return requestCommandApproval(live, command, e, harness.owner.id);
+        return requestCommandApproval(live, command, e, harness.owner);
       },
     );
   const approval = (await listApprovalViews()).find(
@@ -186,7 +186,7 @@ it('limits stored reference labels to models used by the card', async () =>
   }));
 it('projects only data-step model labels into publish previews', async () =>
   runAs(harness.owner, async () => {
-    await startDraft('Data labels', harness.owner.id);
+    await startDraft('Data labels', harness.owner);
     try {
       await runCommand(
         {
@@ -195,7 +195,7 @@ it('projects only data-step model labels into publish previews', async () =>
           mode: 'insert',
           rows: [{ name: 'Draft import' }],
         },
-        harness.owner.id,
+        harness.owner,
         'draft',
       );
       const { preview } = await previewDraft();
@@ -266,9 +266,9 @@ it('hydrates legacy merge reference labels through list, get and reused approval
       id: row.id,
       preview: { referenceLabels: { MergeOrder: 'Orders' } },
     });
-    await startDraft('Merge references', harness.owner.id);
+    await startDraft('Merge references', harness.owner);
     try {
-      await runCommand(command, harness.owner.id, 'draft');
+      await runCommand(command, harness.owner, 'draft');
       const { preview } = await previewDraft();
       expect(preview.modelLabels).toMatchObject({
         MergeCustomer: 'Customers',

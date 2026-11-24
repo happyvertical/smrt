@@ -42,7 +42,7 @@ function read(query = '', actor: Principal | null = h.owner) {
 }
 
 it('returns a database-limited workbook prefix, nulls last, and labels for only the linked ids even beyond the first thousand', async () => {
-  await startDraft('Workbook', h.owner.id);
+  await startDraft('Workbook', h.owner);
   const host = await hostFor('draft');
   const { plan, workbook } = businessWorkbook();
   plan.tables[0].key = 'sales_orders';
@@ -87,6 +87,7 @@ it('returns a database-limited workbook prefix, nulls last, and labels for only 
   ).toBe(false);
   // The actual engine definition, not the plan types, decides the label.
   await host.execute(
+    hostOwner(host),
     {
       type: 'addField',
       model: 'Customers',
@@ -99,6 +100,7 @@ it('returns a database-limited workbook prefix, nulls last, and labels for only 
     displayName: 'Ada’s shop',
   });
   await host.execute(
+    hostOwner(host),
     { type: 'hideField', model: 'Customers', field: 'name' },
     { author: 'test' },
   );
@@ -184,7 +186,7 @@ it('plainly refuses when no import is ready, even if another draft exists', asyn
     error: 'There is no workbook import ready to review.',
   });
   expect((await read('?table=orders')).status).toBe(409);
-  await startDraft('Other draft', h.owner.id);
+  await startDraft('Other draft', h.owner);
   saved.current = {
     id: 'run',
     draftId: 'old-draft',

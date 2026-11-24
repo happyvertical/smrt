@@ -208,7 +208,8 @@ describe.each(backends)('the version store in the swap (%s)', (backend) => {
     hosts.push(host);
     return { host, dir, store, schema, claim };
   };
-  const run = (host: AppHost, cmd: Command) => host.execute(cmd, OK);
+  const run = (host: AppHost, cmd: Command) =>
+    host.execute(hostOwner(host), cmd, OK);
   const seeded = async () => {
     const schema = await newSchema();
     const live = await openOn(tmp(), schema);
@@ -256,6 +257,7 @@ describe.each(backends)('the version store in the swap (%s)', (backend) => {
     await row.save();
     const id = row.id as string;
     const draft = await live.host.forkDraft(
+      hostOwner(live.host),
       `${live.dir}-draft-${id.slice(0, 6)}`,
       {
         store: new DraftVersionStore(shell as never, id),
@@ -285,7 +287,7 @@ describe.each(backends)('the version store in the swap (%s)', (backend) => {
     const preview = await live.host.previewPublish(d.draft);
     live.store.publishing = { draftId: d.id };
     try {
-      return await live.host.publishDraft(d.draft, {
+      return await live.host.publishDraft(hostOwner(live.host), d.draft, {
         ...OK,
         expect: preview.digest,
         onStage,
@@ -318,7 +320,10 @@ describe.each(backends)('the version store in the swap (%s)', (backend) => {
     const moved = await moveStore(live.store);
     live.store.publishing = { draftId: d.id };
     const err = await live.host
-      .publishDraft(d.draft, { ...OK, expect: preview.digest })
+      .publishDraft(hostOwner(live.host), d.draft, {
+        ...OK,
+        expect: preview.digest,
+      })
       .catch((e) => e);
     live.store.publishing = null;
     expect(err).toBeInstanceOf(StaleStoreError);
@@ -377,9 +382,13 @@ describe.each(backends)('the version store in the swap (%s)', (backend) => {
       createdAt: new Date().toISOString(),
     });
     await row.save();
-    const draft = await live.host.forkDraft(`${live.dir}-draft-two`, {
-      store: new DraftVersionStore(shell as never, row.id as string),
-    });
+    const draft = await live.host.forkDraft(
+      hostOwner(live.host),
+      `${live.dir}-draft-two`,
+      {
+        store: new DraftVersionStore(shell as never, row.id as string),
+      },
+    );
     hosts.push(draft);
     await run(draft, {
       type: 'addField',
@@ -429,14 +438,16 @@ describe.each(backends)('the version store in the swap (%s)', (backend) => {
       points: 1,
     });
     const moved = await moveStore(live.store);
-    const err = await live.host.restoreSnapshot(name, OK).catch((e) => e);
+    const err = await live.host
+      .restoreSnapshot(hostOwner(live.host), name, OK)
+      .catch((e) => e);
     expect(err).toBeInstanceOf(StaleStoreError);
     expect(await titles(live.host)).toContain('After');
     expect(await live.store.current()).toBe(moved);
     expect(await sideSchemas(live.schema)).toEqual([]);
     // The store back where the host has it: the restore goes through.
     await live.store.setCurrent(live.host.version);
-    await live.host.restoreSnapshot(name, OK);
+    await live.host.restoreSnapshot(hostOwner(live.host), name, OK);
     expect(await titles(live.host)).toEqual(['Bins', 'Dishes', 'Garage']);
     expect(await live.store.current()).toBe(live.host.version);
   });
@@ -715,7 +726,10 @@ describe.each(backends)('the version store in the swap (%s)', (backend) => {
       await terminateClaim(live.schema);
       live.store.publishing = { draftId: d.id };
       await expect(
-        live.host.publishDraft(d.draft, { ...OK, expect: preview.digest }),
+        live.host.publishDraft(hostOwner(live.host), d.draft, {
+          ...OK,
+          expect: preview.digest,
+        }),
       ).rejects.toBeInstanceOf(ClaimLostError);
       live.store.publishing = null;
       expect(await live.store.current()).toBe(before);

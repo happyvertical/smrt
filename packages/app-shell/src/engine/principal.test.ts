@@ -42,8 +42,12 @@ beforeAll(async () => {
     { type: 'defineModel', name: 'Secret', fields: { note: { type: 'text' } } },
   ];
   for (const command of defs)
-    await host.execute(command, { author: 't', approved: true });
+    await host.execute(hostOwner(host), command, {
+      author: 't',
+      approved: true,
+    });
   await host.execute(
+    hostOwner(host),
     {
       type: 'defineReport',
       name: 'chores',

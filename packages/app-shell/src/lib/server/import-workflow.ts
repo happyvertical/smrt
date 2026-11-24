@@ -642,7 +642,7 @@ export function createShellImportService(options: ShellImportOptions) {
             try {
               await startDraft(
                 'Workbook import',
-                row.ownerId,
+                { id: row.ownerId, tenantId: row.tenantId },
                 async (id) => {
                   await save(row, {
                     draftId: id,

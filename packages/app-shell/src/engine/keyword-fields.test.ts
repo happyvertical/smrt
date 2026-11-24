@@ -11,7 +11,7 @@ it('defines, writes, updates, lists, bulk-loads, reports and calculates keyword 
   const dir = mkdtempSync(join(tmpdir(), 'keywords-4917-'));
   const host = await AppHost.open(dir, { store: new MemoryVersionStore() });
   const run = (cmd: Command) =>
-    host.execute(cmd, { author: 'test', approved: true });
+    host.execute(hostOwner(host), cmd, { author: 'test', approved: true });
   const names = [
     'order',
     'group',

@@ -14,7 +14,7 @@ const dir = mkdtempSync(join(tmpdir(), 'reports-4916-'));
 const store = new MemoryVersionStore();
 let host: AppHost;
 const run = (cmd: Command) =>
-  host.execute(cmd, { author: 't', approved: true });
+  host.execute(hostOwner(host), cmd, { author: 't', approved: true });
 const spec = (extra: Record<string, unknown> = {}) =>
   parseRuntimeReportSpec({
     version: 1,
@@ -161,11 +161,12 @@ it('renames/removes/replaces with undo, survives restart and runs frozen and dra
     host.runReport(hostOwner(host), 'sales', { timeoutMs: 0 }),
   ).rejects.toThrow(/limits/);
   host.setFrozen(false);
-  const draft = await host.forkDraft(`${dir}-draft`, {
+  const draft = await host.forkDraft(hostOwner(host), `${dir}-draft`, {
     store: new MemoryVersionStore(),
   });
   try {
     await draft.execute(
+      hostOwner(draft),
       { type: 'renameReport', from: 'sales', to: 'monthly' },
       { author: 't' },
     );
@@ -173,7 +174,7 @@ it('renames/removes/replaces with undo, survives restart and runs frozen and dra
       2,
     );
     const p = await host.previewPublish(draft);
-    await host.publishDraft(draft, {
+    await host.publishDraft(hostOwner(host), draft, {
       author: 't',
       approved: true,
       expect: p.digest,
@@ -291,6 +292,7 @@ it('normalizes omitted spec defaults and compiles template reports against their
       measures: [{ fn: 'count', as: 'orders' }],
     });
     await imported.execute(
+      hostOwner(imported),
       { type: 'importTemplate', data: { format: 1, definition } },
       { author: 't' },
     );

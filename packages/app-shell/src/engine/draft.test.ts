@@ -42,6 +42,7 @@ describe('forkDraft', () => {
   beforeAll(async () => {
     live = await AppHost.open(liveDir, { store: liveStore });
     await live.execute(
+      hostOwner(live),
       {
         type: 'defineModel',
         name: 'Chore',
@@ -61,7 +62,9 @@ describe('forkDraft', () => {
 
   it('copies the live data without touching live', async () => {
     const before = sha(join(liveDir, 'app.db'));
-    draft = await live.forkDraft(draftDir, { store: draftStore });
+    draft = await live.forkDraft(hostOwner(live), draftDir, {
+      store: draftStore,
+    });
     expect(sha(join(liveDir, 'app.db'))).toBe(before);
     expect(existsSync(join(draftDir, DRAFT_MARKER_FILE))).toBe(true);
     expect(draft.draft?.baseVersion).toBe(live.version);
@@ -80,6 +83,7 @@ describe('forkDraft', () => {
   it('is isolated both ways: structure and records', async () => {
     // draft: risky change without approval (autoApprove), new record
     await draft.execute(
+      hostOwner(draft),
       { type: 'removeField', model: 'Chore', field: 'notes' },
       { author: 't' },
     );
@@ -110,13 +114,14 @@ describe('forkDraft', () => {
   });
 
   it('a draft cannot undo past its base', async () => {
-    await draft.execute({ type: 'undo' }, { author: 't' });
+    await draft.execute(hostOwner(draft), { type: 'undo' }, { author: 't' });
     expect(draft.version).toBe(live.version);
     await expect(
-      draft.execute({ type: 'undo' }, { author: 't' }),
+      draft.execute(hostOwner(draft), { type: 'undo' }, { author: 't' }),
     ).rejects.toThrow(/nothing to undo in the draft/);
     // and it can change again afterwards
     await draft.execute(
+      hostOwner(draft),
       {
         type: 'addField',
         model: 'Chore',
@@ -152,7 +157,7 @@ describe('forkDraft', () => {
     });
     try {
       await expect(
-        reopened.forkDraft(join(root, 'nested-draft'), {
+        reopened.forkDraft(hostOwner(reopened), join(root, 'nested-draft'), {
           store: new MemoryVersionStore(),
         }),
       ).rejects.toMatchObject({ code: 'refused' });
@@ -167,7 +172,9 @@ describe('forkDraft', () => {
       draftDir, // exists
     ])
       await expect(
-        live.forkDraft(bad, { store: new MemoryVersionStore() }),
+        live.forkDraft(hostOwner(live), bad, {
+          store: new MemoryVersionStore(),
+        }),
       ).rejects.toMatchObject({ code: 'refused' });
     // the live dir and the existing draft are intact
     expect(existsSync(join(liveDir, 'app.db'))).toBe(true);
@@ -178,7 +185,7 @@ describe('forkDraft', () => {
     const used = new MemoryVersionStore();
     await used.setCurrent(0);
     await expect(
-      live.forkDraft(join(root, 'never'), { store: used }),
+      live.forkDraft(hostOwner(live), join(root, 'never'), { store: used }),
     ).rejects.toMatchObject({ code: 'refused' });
     expect(existsSync(join(root, 'never'))).toBe(false);
   });
@@ -189,9 +196,9 @@ describe('forkDraft', () => {
       throw new Error('store is down');
     };
     const dir = join(root, 'half-made');
-    await expect(live.forkDraft(dir, { store: failing })).rejects.toThrow(
-      /store is down/,
-    );
+    await expect(
+      live.forkDraft(hostOwner(live), dir, { store: failing }),
+    ).rejects.toThrow(/store is down/);
     expect(existsSync(dir)).toBe(false);
     // live still works
     await live.create(hostOwner(live), 'Chore', {
@@ -205,7 +212,7 @@ describe('forkDraft', () => {
     mkdirSync(dir);
     writeFileSync(join(dir, 'precious.txt'), 'mine');
     await expect(
-      live.forkDraft(dir, { store: new MemoryVersionStore() }),
+      live.forkDraft(hostOwner(live), dir, { store: new MemoryVersionStore() }),
     ).rejects.toMatchObject({ code: 'refused' });
     expect(readFileSync(join(dir, 'precious.txt'), 'utf8')).toBe('mine');
   });
@@ -215,7 +222,9 @@ describe('forkDraft', () => {
     const writes = Array.from({ length: 12 }, (_, i) =>
       live.create(hostOwner(live), 'Chore', { title: `busy-${i}`, notes: 'n' }),
     );
-    const busy = await live.forkDraft(dir, { store: new MemoryVersionStore() });
+    const busy = await live.forkDraft(hostOwner(live), dir, {
+      store: new MemoryVersionStore(),
+    });
     await Promise.all(writes);
     try {
       const inDraft = (await busy.list(hostOwner(busy), 'Chore', 1000)).map(
@@ -251,12 +260,15 @@ describe('forkDraft', () => {
 
   it('discardIfEmpty keeps a changed draft and refuses an edit queued behind the discard (#5122)', async () => {
     const dir = join(root, 'discard-if-empty');
-    const d = await live.forkDraft(dir, { store: new MemoryVersionStore() });
+    const d = await live.forkDraft(hostOwner(live), dir, {
+      store: new MemoryVersionStore(),
+    });
     // An edit queued behind the discard: it must be refused, not restart a
     // worker on the removed directory.
     const discarded = d.discardIfEmpty();
     const late = d
       .execute(
+        hostOwner(d),
         { type: 'defineModel', name: 'Late', fields: { n: { type: 'text' } } },
         { author: 'owner' },
       )
@@ -268,10 +280,15 @@ describe('forkDraft', () => {
     expect(await late).toMatch(/closed/);
     expect(existsSync(dir)).toBe(false);
     // A changed draft is kept, and stays usable.
-    const kept = await live.forkDraft(join(root, 'discard-if-empty-kept'), {
-      store: new MemoryVersionStore(),
-    });
+    const kept = await live.forkDraft(
+      hostOwner(live),
+      join(root, 'discard-if-empty-kept'),
+      {
+        store: new MemoryVersionStore(),
+      },
+    );
     await kept.execute(
+      hostOwner(kept),
       { type: 'defineModel', name: 'Early', fields: { n: { type: 'text' } } },
       { author: 'owner' },
     );

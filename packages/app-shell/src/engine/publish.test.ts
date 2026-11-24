@@ -90,6 +90,7 @@ async function world(opts: { undoneBranch?: boolean } = {}) {
   const draftStore = new MemoryVersionStore();
   const live = await AppHost.open(liveDir, { store: liveStore });
   await live.execute(
+    hostOwner(live),
     {
       type: 'defineModel',
       name: 'Chore',
@@ -102,6 +103,7 @@ async function world(opts: { undoneBranch?: boolean } = {}) {
     AUTHOR,
   );
   await live.execute(
+    hostOwner(live),
     {
       type: 'addMethod',
       model: 'Chore',
@@ -111,6 +113,7 @@ async function world(opts: { undoneBranch?: boolean } = {}) {
     OK,
   );
   await live.execute(
+    hostOwner(live),
     {
       type: 'defineModel',
       name: 'Other',
@@ -132,6 +135,7 @@ async function world(opts: { undoneBranch?: boolean } = {}) {
   await live.create(hostOwner(live), 'Other', { label: 'o2' });
   if (opts.undoneBranch) {
     await live.execute(
+      hostOwner(live),
       {
         type: 'addField',
         model: 'Chore',
@@ -140,9 +144,11 @@ async function world(opts: { undoneBranch?: boolean } = {}) {
       },
       AUTHOR,
     );
-    await live.execute({ type: 'undo' }, AUTHOR);
+    await live.execute(hostOwner(live), { type: 'undo' }, AUTHOR);
   }
-  const draft = await live.forkDraft(draftDir, { store: draftStore });
+  const draft = await live.forkDraft(hostOwner(live), draftDir, {
+    store: draftStore,
+  });
   live.setFrozen(true);
   return { dir, liveDir, draftDir, liveStore, draftStore, live, draft, ids };
 }
@@ -160,6 +166,7 @@ describe('publish: what lands in live', () => {
     try {
       const d = w.draft;
       await d.execute(
+        hostOwner(d),
         {
           type: 'addField',
           model: 'Chore',
@@ -169,10 +176,12 @@ describe('publish: what lands in live', () => {
         AUTHOR,
       );
       await d.execute(
+        hostOwner(d),
         { type: 'renameField', model: 'Chore', from: 'size', to: 'qty' },
         AUTHOR,
       );
       await d.execute(
+        hostOwner(d),
         {
           type: 'defineModel',
           name: 'Tag',
@@ -181,6 +190,7 @@ describe('publish: what lands in live', () => {
         AUTHOR,
       );
       await d.execute(
+        hostOwner(d),
         {
           type: 'addMethod',
           model: 'Tag',
@@ -191,7 +201,7 @@ describe('publish: what lands in live', () => {
       );
       const base = w.live.version;
       const preview = await w.live.previewPublish(d);
-      const r = await w.live.publishDraft(d, {
+      const r = await w.live.publishDraft(hostOwner(w.live), d, {
         ...OK,
         expect: preview.digest,
         draftName: 'Spring  cleanup',
@@ -231,6 +241,7 @@ describe('publish: what lands in live', () => {
       w.live.setFrozen(false);
       await w.live.create(hostOwner(w.live), 'Chore', { title: 'new', qty: 2 });
       await w.live.execute(
+        hostOwner(w.live),
         {
           type: 'addField',
           model: 'Tag',
@@ -249,10 +260,12 @@ describe('publish: what lands in live', () => {
     try {
       const d = w.draft;
       await d.execute(
+        hostOwner(d),
         { type: 'removeField', model: 'Chore', field: 'notes' },
         AUTHOR,
       );
       await d.execute(
+        hostOwner(d),
         {
           type: 'changeFieldType',
           model: 'Chore',
@@ -261,7 +274,11 @@ describe('publish: what lands in live', () => {
         },
         AUTHOR,
       );
-      await d.execute({ type: 'removeModel', model: 'Other' }, AUTHOR);
+      await d.execute(
+        hostOwner(d),
+        { type: 'removeModel', model: 'Other' },
+        AUTHOR,
+      );
       // a live row written AFTER the fork, with data in both changed fields
       const late = (
         await w.live.create(hostOwner(w.live), 'Chore', {
@@ -275,7 +292,10 @@ describe('publish: what lands in live', () => {
       // 4 notes values (3 + Late), 1 table; points archived too
       expect(preview.archives.tables).toBe(1);
       expect(preview.archives.values).toBeGreaterThanOrEqual(8);
-      const r = await w.live.publishDraft(d, { ...OK, expect: preview.digest });
+      const r = await w.live.publishDraft(hostOwner(w.live), d, {
+        ...OK,
+        expect: preview.digest,
+      });
       expect(r.archives).toEqual(preview.archives);
       expect(w.live.version).toBe(base + 3);
       expect(columns(w.liveDir, 'u_chores')).not.toContain('notes');
@@ -292,9 +312,9 @@ describe('publish: what lands in live', () => {
       // the shell thaws live after a publish; then undo x3 (the type change
       // overwrites, so it needs approval)
       w.live.setFrozen(false);
-      await w.live.execute({ type: 'undo' }, OK);
-      await w.live.execute({ type: 'undo' }, OK);
-      await w.live.execute({ type: 'undo' }, OK);
+      await w.live.execute(hostOwner(w.live), { type: 'undo' }, OK);
+      await w.live.execute(hostOwner(w.live), { type: 'undo' }, OK);
+      await w.live.execute(hostOwner(w.live), { type: 'undo' }, OK);
       expect(w.live.version).toBe(base);
       const back = await w.live.list(hostOwner(w.live), 'Chore');
       expect(back.find((x) => x.title === 'Garage')?.points).toBe('lots');
@@ -313,6 +333,7 @@ describe('publish: what lands in live', () => {
         title: 'draft-only',
       });
       await w.draft.execute(
+        hostOwner(w.draft),
         {
           type: 'addField',
           model: 'Chore',
@@ -327,7 +348,10 @@ describe('publish: what lands in live', () => {
       });
       const { digest } = await w.live.previewPublish(w.draft);
       // a record written while the publish runs waits for it and lands in the new data
-      const pub = w.live.publishDraft(w.draft, { ...OK, expect: digest });
+      const pub = w.live.publishDraft(hostOwner(w.live), w.draft, {
+        ...OK,
+        expect: digest,
+      });
       const during = w.live.create(hostOwner(w.live), 'Chore', {
         title: 'during-publish',
       });
@@ -349,17 +373,21 @@ describe('publish: what lands in live', () => {
     try {
       expect(await w.liveStore.maxVersion()).toBe(w.live.version + 1);
       await w.draft.execute(
+        hostOwner(w.draft),
         { type: 'removeField', model: 'Chore', field: 'notes' },
         AUTHOR,
       );
       const base = w.live.version;
       const { digest } = await w.live.previewPublish(w.draft);
-      const r = await w.live.publishDraft(w.draft, { ...OK, expect: digest });
+      const r = await w.live.publishDraft(hostOwner(w.live), w.draft, {
+        ...OK,
+        expect: digest,
+      });
       expect(r.versions).toEqual([base + 2]);
       expect((await w.liveStore.get(base + 2))?.parent).toBe(base);
       w.live.setFrozen(false);
       // the archive is keyed by the number live gave it, so undo finds it
-      await w.live.execute({ type: 'undo' }, AUTHOR);
+      await w.live.execute(hostOwner(w.live), { type: 'undo' }, AUTHOR);
       expect(
         (await w.live.list(hostOwner(w.live), 'Chore'))[0].notes,
       ).toBeTruthy();
@@ -372,6 +400,7 @@ describe('publish: what lands in live', () => {
     const w = await world();
     try {
       await w.draft.execute(
+        hostOwner(w.draft),
         { type: 'removeField', model: 'Chore', field: 'notes' },
         AUTHOR,
       );
@@ -384,7 +413,7 @@ describe('publish: what lands in live', () => {
       // it, so the side files are not asserted here; moveAside/restoreAside
       // are tested on their own below.)
       await expect(
-        w.live.publishDraft(w.draft, {
+        w.live.publishDraft(hostOwner(w.live), w.draft, {
           ...OK,
           expect: digest,
           onStage: (s) => {
@@ -395,7 +424,10 @@ describe('publish: what lands in live', () => {
       expect(sha(join(w.liveDir, 'app.db'))).toBe(before);
       expect(leftovers(w.liveDir)).toEqual([]);
       // a success leaves no stale side file next to the new database
-      await w.live.publishDraft(w.draft, { ...OK, expect: digest });
+      await w.live.publishDraft(hostOwner(w.live), w.draft, {
+        ...OK,
+        expect: digest,
+      });
       expect(columns(w.liveDir, 'u_chores')).not.toContain('notes');
       expect(leftovers(w.liveDir)).toEqual([]);
       for (const f of ['app.db-wal', 'app.db-shm'])
@@ -414,10 +446,12 @@ describe('preview', () => {
     const w = await world();
     try {
       await w.draft.execute(
+        hostOwner(w.draft),
         { type: 'removeField', model: 'Chore', field: 'notes' },
         AUTHOR,
       );
       await w.draft.execute(
+        hostOwner(w.draft),
         {
           type: 'addMethod',
           model: 'Chore',
@@ -469,38 +503,40 @@ describe('publish: refusals', () => {
     try {
       const { draft, live } = w;
       await expect(
-        live.publishDraft(draft, { author: 'a', expect: 'x' }),
+        live.publishDraft(hostOwner(live), draft, { author: 'a', expect: 'x' }),
       ).rejects.toBeInstanceOf(ApprovalRequiredError);
       await expect(
-        live.publishDraft(draft, { ...OK, expect: '' }),
+        live.publishDraft(hostOwner(live), draft, { ...OK, expect: '' }),
       ).rejects.toMatchObject({ code: 'refused' });
       // nothing to publish
       await expect(live.previewPublish(draft)).rejects.toThrow(/no changes/);
       await draft.execute(
+        hostOwner(draft),
         { type: 'removeField', model: 'Chore', field: 'notes' },
         AUTHOR,
       );
       const { digest } = await live.previewPublish(draft);
       // the draft changes after the preview: refused, nothing published
       await draft.execute(
+        hostOwner(draft),
         { type: 'removeField', model: 'Chore', field: 'points' },
         AUTHOR,
       );
       const before = sha(join(w.liveDir, 'app.db'));
       await expect(
-        live.publishDraft(draft, { ...OK, expect: digest }),
+        live.publishDraft(hostOwner(live), draft, { ...OK, expect: digest }),
       ).rejects.toThrow(/not what was reviewed/);
       expect(sha(join(w.liveDir, 'app.db'))).toBe(before);
       expect(live.version).toBe(draft.draft?.baseVersion);
       // an undo inside the draft also changes the chain
-      await draft.execute({ type: 'undo' }, AUTHOR);
+      await draft.execute(hostOwner(draft), { type: 'undo' }, AUTHOR);
       expect(await digestOf(w)).toBe(digest);
       await expect(
-        live.publishDraft(draft, { ...OK, expect: digest }),
+        live.publishDraft(hostOwner(live), draft, { ...OK, expect: digest }),
       ).resolves.toBeTruthy();
       // published: a second publish of the same draft is refused (live moved on)
       await expect(
-        live.publishDraft(draft, { ...OK, expect: digest }),
+        live.publishDraft(hostOwner(live), draft, { ...OK, expect: digest }),
       ).rejects.toThrow(/moved from version/);
     } finally {
       await close(w);
@@ -512,10 +548,12 @@ describe('publish: refusals', () => {
     const other = await world();
     try {
       await w.draft.execute(
+        hostOwner(w.draft),
         { type: 'removeField', model: 'Chore', field: 'notes' },
         AUTHOR,
       );
       await other.draft.execute(
+        hostOwner(other.draft),
         { type: 'removeField', model: 'Chore', field: 'notes' },
         AUTHOR,
       );
@@ -532,6 +570,7 @@ describe('publish: refusals', () => {
       const { digest } = await w.live.previewPublish(w.draft);
       w.live.setFrozen(false);
       await w.live.execute(
+        hostOwner(w.live),
         {
           type: 'addField',
           model: 'Chore',
@@ -541,7 +580,10 @@ describe('publish: refusals', () => {
         AUTHOR,
       );
       await expect(
-        w.live.publishDraft(w.draft, { ...OK, expect: digest }),
+        w.live.publishDraft(hostOwner(w.live), w.draft, {
+          ...OK,
+          expect: digest,
+        }),
       ).rejects.toThrow(/moved from version/);
     } finally {
       await close(w);
@@ -553,6 +595,7 @@ describe('publish: refusals', () => {
     const w = await world();
     try {
       await w.draft.execute(
+        hostOwner(w.draft),
         { type: 'removeField', model: 'Chore', field: 'notes' },
         AUTHOR,
       );
@@ -560,7 +603,10 @@ describe('publish: refusals', () => {
       writeFileSync(join(w.liveDir, `app.db${ASIDE}`), 'precious');
       const before = sha(join(w.liveDir, 'app.db'));
       await expect(
-        w.live.publishDraft(w.draft, { ...OK, expect: digest }),
+        w.live.publishDraft(hostOwner(w.live), w.draft, {
+          ...OK,
+          expect: digest,
+        }),
       ).rejects.toThrow(/already there/);
       expect(readFileSync(join(w.liveDir, `app.db${ASIDE}`), 'utf8')).toBe(
         'precious',
@@ -600,6 +646,7 @@ describe('publish: a failure anywhere leaves live exactly as it was', () => {
       const w = await world();
       try {
         await w.draft.execute(
+          hostOwner(w.draft),
           { type: 'removeField', model: 'Chore', field: 'notes' },
           AUTHOR,
         );
@@ -607,7 +654,7 @@ describe('publish: a failure anywhere leaves live exactly as it was', () => {
         const hash = sha(join(w.liveDir, 'app.db'));
         const base = w.live.version;
         await expect(
-          w.live.publishDraft(w.draft, {
+          w.live.publishDraft(hostOwner(w.live), w.draft, {
             ...OK,
             expect: digest,
             onStage: (s) => {
@@ -618,7 +665,10 @@ describe('publish: a failure anywhere leaves live exactly as it was', () => {
         await intact(w, hash, base);
         // live still works and the retry goes through
         expect(await w.live.list(hostOwner(w.live), 'Chore')).toHaveLength(3);
-        await w.live.publishDraft(w.draft, { ...OK, expect: digest });
+        await w.live.publishDraft(hostOwner(w.live), w.draft, {
+          ...OK,
+          expect: digest,
+        });
         expect(w.live.version).toBe(base + 1);
         expect(columns(w.liveDir, 'u_chores')).not.toContain('notes');
       } finally {
@@ -630,10 +680,12 @@ describe('publish: a failure anywhere leaves live exactly as it was', () => {
     const w = await world();
     try {
       await w.draft.execute(
+        hostOwner(w.draft),
         { type: 'removeField', model: 'Chore', field: 'notes' },
         AUTHOR,
       );
       await w.draft.execute(
+        hostOwner(w.draft),
         { type: 'removeField', model: 'Chore', field: 'points' },
         AUTHOR,
       );
@@ -642,12 +694,18 @@ describe('publish: a failure anywhere leaves live exactly as it was', () => {
       const base = w.live.version;
       w.liveStore.failCommit = true;
       await expect(
-        w.live.publishDraft(w.draft, { ...OK, expect: digest }),
+        w.live.publishDraft(hostOwner(w.live), w.draft, {
+          ...OK,
+          expect: digest,
+        }),
       ).rejects.toThrow('store write failed');
       await intact(w, hash, base);
       expect(columns(w.liveDir, 'u_chores')).toContain('notes');
       w.liveStore.failCommit = false;
-      await w.live.publishDraft(w.draft, { ...OK, expect: digest });
+      await w.live.publishDraft(hostOwner(w.live), w.draft, {
+        ...OK,
+        expect: digest,
+      });
       expect(w.live.version).toBe(base + 2);
     } finally {
       await close(w);
@@ -658,10 +716,12 @@ describe('publish: a failure anywhere leaves live exactly as it was', () => {
     const w = await world();
     try {
       await w.draft.execute(
+        hostOwner(w.draft),
         { type: 'removeField', model: 'Chore', field: 'notes' },
         AUTHOR,
       );
       await w.draft.execute(
+        hostOwner(w.draft),
         { type: 'removeField', model: 'Chore', field: 'points' },
         AUTHOR,
       );
@@ -688,7 +748,10 @@ describe('publish: a failure anywhere leaves live exactly as it was', () => {
       const live2 = await AppHost.open(w.liveDir, { store: plain });
       live2.setFrozen(true);
       await expect(
-        live2.publishDraft(w.draft, { ...OK, expect: digest }),
+        live2.publishDraft(hostOwner(live2), w.draft, {
+          ...OK,
+          expect: digest,
+        }),
       ).rejects.toThrow('append failed');
       expect(sha(join(w.liveDir, 'app.db'))).toBe(hash);
       expect(live2.version).toBe(base);
@@ -696,7 +759,10 @@ describe('publish: a failure anywhere leaves live exactly as it was', () => {
       expect(leftovers(w.liveDir)).toEqual([]);
       // the retry numbers after the orphan and succeeds
       failing = false;
-      const r = await live2.publishDraft(w.draft, { ...OK, expect: digest });
+      const r = await live2.publishDraft(hostOwner(live2), w.draft, {
+        ...OK,
+        expect: digest,
+      });
       expect(r.versions).toEqual([base + 2, base + 3]);
       await live2.close();
     } finally {
@@ -708,6 +774,7 @@ describe('publish: a failure anywhere leaves live exactly as it was', () => {
     const w = await world();
     try {
       await w.draft.execute(
+        hostOwner(w.draft),
         { type: 'removeField', model: 'Chore', field: 'notes' },
         AUTHOR,
       );
@@ -731,7 +798,10 @@ describe('publish: a failure anywhere leaves live exactly as it was', () => {
         code: 'migration_failed',
       });
       await expect(
-        w.live.publishDraft(w.draft, { ...OK, expect: digest }),
+        w.live.publishDraft(hostOwner(w.live), w.draft, {
+          ...OK,
+          expect: digest,
+        }),
       ).rejects.toMatchObject({ code: 'migration_failed' });
       await intact(w, hash, base);
     } finally {
@@ -745,6 +815,7 @@ describe('boot reconcile after a crash', () => {
   async function crashAt(at: PublishStage) {
     const w = await world();
     await w.draft.execute(
+      hostOwner(w.draft),
       { type: 'removeField', model: 'Chore', field: 'notes' },
       AUTHOR,
     );
@@ -753,7 +824,7 @@ describe('boot reconcile after a crash', () => {
     const base = w.live.version;
     const crashed = join(w.dir, 'crashed');
     let crashedStore!: MemoryVersionStore;
-    await w.live.publishDraft(w.draft, {
+    await w.live.publishDraft(hostOwner(w.live), w.draft, {
       ...OK,
       expect: digest,
       onStage: async (s) => {
@@ -840,11 +911,12 @@ describe('boot reconcile after a crash', () => {
     const w = await world();
     try {
       await w.draft.execute(
+        hostOwner(w.draft),
         { type: 'removeField', model: 'Chore', field: 'notes' },
         AUTHOR,
       );
       const { digest } = await w.live.previewPublish(w.draft);
-      const result = await w.live.publishDraft(w.draft, {
+      const result = await w.live.publishDraft(hostOwner(w.live), w.draft, {
         ...OK,
         expect: digest,
         // The journal's temp file cannot be created (a stand-in for a full disk).
@@ -860,6 +932,7 @@ describe('boot reconcile after a crash', () => {
       // The owner edits: the store is now past the journal's final version.
       w.live.setFrozen(false);
       await w.live.execute(
+        hostOwner(w.live),
         {
           type: 'defineModel',
           name: 'Later',
@@ -992,10 +1065,12 @@ describe('undoTo after a publish', () => {
     const w = await world();
     try {
       await w.draft.execute(
+        hostOwner(w.draft),
         { type: 'removeField', model: 'Chore', field: 'notes' },
         AUTHOR,
       );
       await w.draft.execute(
+        hostOwner(w.draft),
         {
           type: 'changeFieldType',
           model: 'Chore',
@@ -1004,17 +1079,24 @@ describe('undoTo after a publish', () => {
         },
         AUTHOR,
       );
-      await w.draft.execute({ type: 'removeModel', model: 'Other' }, AUTHOR);
+      await w.draft.execute(
+        hostOwner(w.draft),
+        { type: 'removeModel', model: 'Other' },
+        AUTHOR,
+      );
       const base = w.live.version;
       const { digest } = await w.live.previewPublish(w.draft);
-      await w.live.publishDraft(w.draft, { ...OK, expect: digest });
+      await w.live.publishDraft(hostOwner(w.live), w.draft, {
+        ...OK,
+        expect: digest,
+      });
       w.live.setFrozen(false);
       const cmd = { type: 'undoTo', version: base, from: base + 3 } as const;
       expect((await w.live.plan(cmd)).risky).toBe(true);
-      await expect(w.live.execute(cmd, AUTHOR)).rejects.toBeInstanceOf(
-        ApprovalRequiredError,
-      );
-      await w.live.execute(cmd, OK);
+      await expect(
+        w.live.execute(hostOwner(w.live), cmd, AUTHOR),
+      ).rejects.toBeInstanceOf(ApprovalRequiredError);
+      await w.live.execute(hostOwner(w.live), cmd, OK);
       expect(w.live.version).toBe(base);
       const rows = await w.live.list(hostOwner(w.live), 'Chore');
       expect(rows.find((x) => x.title === 'Garage')).toMatchObject({
@@ -1033,6 +1115,7 @@ describe('reviewed replay data impacts', () => {
     const w = await world();
     try {
       await w.draft.execute(
+        hostOwner(w.draft),
         {
           type: 'loadRecords',
           model: 'Chore',
@@ -1056,7 +1139,10 @@ describe('reviewed replay data impacts', () => {
         notes: 'live',
       });
       await expect(
-        w.live.publishDraft(w.draft, { ...OK, expect: first.digest }),
+        w.live.publishDraft(hostOwner(w.live), w.draft, {
+          ...OK,
+          expect: first.digest,
+        }),
       ).rejects.toThrow(/review.*again/);
       expect(
         (await w.live.list(hostOwner(w.live), 'Chore')).find(
@@ -1068,7 +1154,10 @@ describe('reviewed replay data impacts', () => {
         insert: 0,
         update: 1,
       });
-      await w.live.publishDraft(w.draft, { ...OK, expect: fresh.digest });
+      await w.live.publishDraft(hostOwner(w.live), w.draft, {
+        ...OK,
+        expect: fresh.digest,
+      });
       expect(
         (await w.live.list(hostOwner(w.live), 'Chore')).find(
           (r) => r.title === 'New',
@@ -1085,10 +1174,12 @@ it('counts extract and merge steps sequentially against current live records', a
   try {
     const others = await w.live.list(hostOwner(w.live), 'Other');
     await w.draft.execute(
+      hostOwner(w.draft),
       { type: 'extractModel', model: 'Chore', field: 'notes', into: 'Note' },
       AUTHOR,
     );
     await w.draft.execute(
+      hostOwner(w.draft),
       {
         type: 'mergeRecords',
         model: 'Other',
@@ -1120,7 +1211,10 @@ it('counts extract and merge steps sequentially against current live records', a
       notes: 'another distinct',
     });
     await expect(
-      w.live.publishDraft(w.draft, { ...OK, expect: preview.digest }),
+      w.live.publishDraft(hostOwner(w.live), w.draft, {
+        ...OK,
+        expect: preview.digest,
+      }),
     ).rejects.toThrow(/review.*again/);
     expect(await w.live.list(hostOwner(w.live), 'Other')).toHaveLength(2);
     expect(w.live.def.models.Note).toBeUndefined();

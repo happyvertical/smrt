@@ -151,7 +151,8 @@ describe.each(
     hosts.push(host);
     return { host, dir, store, schema };
   };
-  const run = (host: AppHost, cmd: Command) => host.execute(cmd, OK);
+  const run = (host: AppHost, cmd: Command) =>
+    host.execute(hostOwner(host), cmd, OK);
   const draftDirOf = (dir: string) => join(`${dir}-draft`);
 
   /** Live app with a model, rows and a method, ready to be forked. */
@@ -176,7 +177,11 @@ describe.each(
   };
   const fork = async (live: Awaited<ReturnType<typeof seeded>>) => {
     const store = new MemoryVersionStore();
-    const draft = await live.host.forkDraft(draftDirOf(live.dir), { store });
+    const draft = await live.host.forkDraft(
+      hostOwner(live.host),
+      draftDirOf(live.dir),
+      { store },
+    );
     hosts.push(draft);
     return { draft, store };
   };
@@ -614,7 +619,9 @@ describe.each(
       });
       await taken.setCurrent(0);
       await expect(
-        live.host.forkDraft(draftDirOf(live.dir), { store: taken }),
+        live.host.forkDraft(hostOwner(live.host), draftDirOf(live.dir), {
+          store: taken,
+        }),
       ).rejects.toThrow(/empty version store/);
       expect(await sideSchemas(live.schema)).toEqual([]);
       expect(existsSync(draftDirOf(live.dir))).toBe(false);
@@ -878,9 +885,12 @@ describe.each(
       // The rehearsal left nothing but the draft's own schema.
       expect(await sideSchemas(live.schema)).toHaveLength(1);
       await expect(
-        live.host.publishDraft(draft, { ...AUTHOR, expect: preview.digest }),
+        live.host.publishDraft(hostOwner(live.host), draft, {
+          ...AUTHOR,
+          expect: preview.digest,
+        }),
       ).rejects.toBeInstanceOf(ApprovalRequiredError);
-      const result = await live.host.publishDraft(draft, {
+      const result = await live.host.publishDraft(hostOwner(live.host), draft, {
         ...OK,
         expect: preview.digest,
         draftName: 'Spring',
@@ -934,7 +944,7 @@ describe.each(
       await edit(draft);
       live.host.setFrozen(true);
       const preview = await live.host.previewPublish(draft);
-      const result = await live.host.publishDraft(draft, {
+      const result = await live.host.publishDraft(hostOwner(live.host), draft, {
         ...OK,
         expect: preview.digest,
       });
@@ -960,7 +970,7 @@ describe.each(
       const drop = vi
         .spyOn(live.host as any, 'dropSideSchemaOrThrow')
         .mockRejectedValueOnce(new Error('lock timeout'));
-      const result = await live.host.publishDraft(draft, {
+      const result = await live.host.publishDraft(hostOwner(live.host), draft, {
         ...OK,
         expect: preview.digest,
       });
@@ -1008,7 +1018,7 @@ describe.each(
       await edit(draft);
       live.host.setFrozen(true);
       const preview = await live.host.previewPublish(draft);
-      const result = await live.host.publishDraft(draft, {
+      const result = await live.host.publishDraft(hostOwner(live.host), draft, {
         ...OK,
         expect: preview.digest,
         // The journal's temp file cannot be created (a stand-in for a full disk).
@@ -1077,7 +1087,7 @@ describe.each(
         `SELECT id::text, title, points::text FROM "${live.schema}".u_chores ORDER BY id`,
       );
       await expect(
-        live.host.publishDraft(draft, {
+        live.host.publishDraft(hostOwner(live.host), draft, {
           ...OK,
           expect: preview.digest,
           onStage: (s) => {
@@ -1098,7 +1108,10 @@ describe.each(
       // Still serving, and publishable again.
       expect(await titles(live.host)).toEqual(['Bins', 'Dishes', 'Garage']);
       const again = await live.host.previewPublish(draft);
-      await live.host.publishDraft(draft, { ...OK, expect: again.digest });
+      await live.host.publishDraft(hostOwner(live.host), draft, {
+        ...OK,
+        expect: again.digest,
+      });
       expect(live.host.version).toBe(base + 2);
     });
 
@@ -1126,7 +1139,7 @@ describe.each(
       });
       await host.create(hostOwner(host), 'Chore', { title: 'one' });
       const draftStore = new MemoryVersionStore();
-      const draft = await host.forkDraft(draftDirOf(dir), {
+      const draft = await host.forkDraft(hostOwner(host), draftDirOf(dir), {
         store: draftStore,
       });
       hosts.push(draft);
@@ -1141,7 +1154,10 @@ describe.each(
       const preview = await host.previewPublish(draft);
       store.failCommit = true;
       await expect(
-        host.publishDraft(draft, { ...OK, expect: preview.digest }),
+        host.publishDraft(hostOwner(host), draft, {
+          ...OK,
+          expect: preview.digest,
+        }),
       ).rejects.toThrow(/store write failed/);
       expect(host.version).toBe(base);
       expect(
@@ -1414,7 +1430,7 @@ describe.each(
         points: 1,
       });
       expect(await titles(live.host)).toContain('After');
-      const r = await live.host.restoreSnapshot(name, OK);
+      const r = await live.host.restoreSnapshot(hostOwner(live.host), name, OK);
       expect(r.restoredFrom).toBe(name);
       expect(await titles(live.host)).toEqual(['Bins', 'Dishes', 'Garage']);
       expect(existsSync(r.snapshot)).toBe(true);
@@ -1425,6 +1441,7 @@ describe.each(
         points: 2,
       });
       const undo = await live.host.restoreSnapshot(
+        hostOwner(live.host),
         r.snapshot.split('/').pop() as string,
         OK,
       );
@@ -1443,7 +1460,7 @@ describe.each(
         dumpSchema(db, live.schema, file),
       );
       const err = await live.host
-        .restoreSnapshot(file.split('/').pop() as string)
+        .restoreSnapshot(hostOwner(live.host), file.split('/').pop() as string)
         .then(
           () => null,
           (e) => e,
@@ -1470,14 +1487,18 @@ describe.each(
         definition: { type: 'text' },
       });
       await expect(
-        live.host.restoreSnapshot(file.split('/').pop() as string, OK),
+        live.host.restoreSnapshot(
+          hostOwner(live.host),
+          file.split('/').pop() as string,
+          OK,
+        ),
       ).rejects.toThrow(/Undo to that version first/);
       await expect(
-        live.host.restoreSnapshot('../../etc/passwd', OK),
+        live.host.restoreSnapshot(hostOwner(live.host), '../../etc/passwd', OK),
       ).rejects.toBeInstanceOf(EngineError);
-      await expect(live.host.restoreSnapshot(file, OK)).rejects.toBeInstanceOf(
-        EngineError,
-      );
+      await expect(
+        live.host.restoreSnapshot(hostOwner(live.host), file, OK),
+      ).rejects.toBeInstanceOf(EngineError);
       expect(await titles(live.host)).toEqual(['Bins', 'Dishes', 'Garage']);
     });
 
@@ -1502,7 +1523,11 @@ describe.each(
       const snapshot = String(out.snapshot);
       expect(snapshot).toMatch(/-method-Chore\.wipe\.pgdump$/);
       expect(await titles(live.host)).toEqual(['wiped', 'wiped', 'wiped']);
-      await live.host.restoreSnapshot(snapshot.split('/').pop() as string, OK);
+      await live.host.restoreSnapshot(
+        hostOwner(live.host),
+        snapshot.split('/').pop() as string,
+        OK,
+      );
       expect(await titles(live.host)).toEqual(['Bins', 'Dishes', 'Garage']);
       expect(live.host.notices).toEqual([]);
     });
@@ -1565,7 +1590,10 @@ describe.each(
         `SELECT id::text, title FROM "${b.schema}".u_chores ORDER BY id`,
       );
       const preview = await a.host.previewPublish(draft);
-      await a.host.publishDraft(draft, { ...OK, expect: preview.digest });
+      await a.host.publishDraft(hostOwner(a.host), draft, {
+        ...OK,
+        expect: preview.digest,
+      });
       // The same session now sees the published tables, not the ones swapped out.
       expect(await count(a.schema)).toBe(4);
       expect(
@@ -1634,7 +1662,10 @@ describe.each(
         await lockTaken;
         try {
           await expect(
-            live.host.publishDraft(draft, { ...OK, expect: preview.digest }),
+            live.host.publishDraft(hostOwner(live.host), draft, {
+              ...OK,
+              expect: preview.digest,
+            }),
           ).rejects.toThrow(/lock timeout|canceling statement/i);
         } finally {
           release();
@@ -1645,7 +1676,10 @@ describe.each(
         expect(await titles(live.host)).toEqual(['Bins', 'Dishes', 'Garage']);
         // Once the other session lets go, the same publish goes through.
         const again = await live.host.previewPublish(draft);
-        await live.host.publishDraft(draft, { ...OK, expect: again.digest });
+        await live.host.publishDraft(hostOwner(live.host), draft, {
+          ...OK,
+          expect: again.digest,
+        });
         expect(live.host.version).toBe(base + 1);
       },
     );
@@ -1692,7 +1726,10 @@ describe.each(
       });
       live.host.setFrozen(true);
       const preview = await live.host.previewPublish(again);
-      await live.host.publishDraft(again, { ...OK, expect: preview.digest });
+      await live.host.publishDraft(hostOwner(live.host), again, {
+        ...OK,
+        expect: preview.digest,
+      });
       // Restart recovery on that name, then discard the draft.
       await live.host.close();
       hosts.splice(hosts.indexOf(live.host), 1);
@@ -1739,7 +1776,11 @@ describe.each(
         fork(A),
         (async () => {
           const store = new MemoryVersionStore();
-          const draft = await B.host.forkDraft(draftDirOf(B.dir), { store });
+          const draft = await B.host.forkDraft(
+            hostOwner(B.host),
+            draftDirOf(B.dir),
+            { store },
+          );
           hosts.push(draft);
           return { draft, store };
         })(),
@@ -1766,8 +1807,11 @@ describe.each(
       ]);
       // A publishes while B's publish fails and rolls back, at the same time.
       const [ra, rb] = await Promise.allSettled([
-        A.host.publishDraft(fa.draft, { ...OK, expect: pa.digest }),
-        B.host.publishDraft(fb.draft, {
+        A.host.publishDraft(hostOwner(A.host), fa.draft, {
+          ...OK,
+          expect: pa.digest,
+        }),
+        B.host.publishDraft(hostOwner(B.host), fb.draft, {
           ...OK,
           expect: pb.digest,
           onStage: (st) => {
@@ -1973,7 +2017,10 @@ describe.each(
       });
       live.host.setFrozen(true);
       const preview = await live.host.previewPublish(draft);
-      await live.host.publishDraft(draft, { ...OK, expect: preview.digest });
+      await live.host.publishDraft(hostOwner(live.host), draft, {
+        ...OK,
+        expect: preview.digest,
+      });
       expect(live.host.fence).toBe(before + 1);
       expect(await fenceIn(live.schema)).toBe(before + 1);
       const err = await setPoints(stale, 99).catch((e: any) => e);
@@ -2003,7 +2050,11 @@ describe.each(
       );
       const before = live.host.fence as number;
       const stale = handle(live.schema, before);
-      await live.host.restoreSnapshot(file.split('/').pop() as string, OK);
+      await live.host.restoreSnapshot(
+        hostOwner(live.host),
+        file.split('/').pop() as string,
+        OK,
+      );
       expect(live.host.fence).toBe(before + 1);
       expect(await fenceIn(live.schema)).toBe(before + 1);
       await expect(setPoints(stale, 99)).rejects.toBeInstanceOf(
@@ -2063,7 +2114,7 @@ describe.each(
       const preview = await live.host.previewPublish(draft);
       const before = live.host.fence as number;
       await expect(
-        live.host.publishDraft(draft, {
+        live.host.publishDraft(hostOwner(live.host), draft, {
           ...OK,
           expect: preview.digest,
           onStage: async (stage) => {
@@ -2111,7 +2162,10 @@ describe.each(
       const before = live.host.fence as number;
       loseNextSwapReply(live.host);
       const err = await live.host
-        .publishDraft(draft, { ...OK, expect: preview.digest })
+        .publishDraft(hostOwner(live.host), draft, {
+          ...OK,
+          expect: preview.digest,
+        })
         .catch((e: any) => e);
       expect(String(err.message)).toMatch(/reply lost/);
       // The rollback itself succeeded: it is not the "put back failed" error.
@@ -2147,7 +2201,11 @@ describe.each(
       const before = live.host.fence as number;
       loseNextSwapReply(live.host);
       await expect(
-        live.host.restoreSnapshot(file.split('/').pop() as string, OK),
+        live.host.restoreSnapshot(
+          hostOwner(live.host),
+          file.split('/').pop() as string,
+          OK,
+        ),
       ).rejects.toThrow(/reply lost/);
       expect(await titles(live.host)).toContain('After'); // rolled back
       expect(await fenceIn(live.schema)).toBe(before + 2);
@@ -2204,11 +2262,11 @@ describe.each(
     const live = await seeded('dbfile');
     const name = `${Date.now()}-0-method-x.db`;
     writeFileSync(join(live.dir, 'snapshots', name), 'SQLite format 3');
-    await expect(live.host.restoreSnapshot(name, OK)).rejects.toBeInstanceOf(
-      EngineError,
-    );
-    await expect(live.host.restoreSnapshot(name, OK)).rejects.toThrow(
-      /SQLite database file/,
-    );
+    await expect(
+      live.host.restoreSnapshot(hostOwner(live.host), name, OK),
+    ).rejects.toBeInstanceOf(EngineError);
+    await expect(
+      live.host.restoreSnapshot(hostOwner(live.host), name, OK),
+    ).rejects.toThrow(/SQLite database file/);
   });
 });

@@ -48,6 +48,7 @@ describe.each(['sqlite', 'postgres'] as const)('column types on %s', (kind) => {
     });
     hosts.push(host);
     await host.execute(
+      hostOwner(host),
       {
         type: 'defineModel',
         name: 'Probe',
@@ -127,6 +128,7 @@ describe.each([
     });
     hosts.push(host);
     await host.execute(
+      hostOwner(host),
       {
         type: 'defineModel',
         name: 'Keep',
@@ -185,11 +187,16 @@ describe.each([
     expect(declared).toHaveLength(1);
     expect(before).toHaveLength(values.length + 1);
     await host.execute(
+      hostOwner(host),
       { type: 'removeField', model: 'Keep', field: 'value' },
       { author: 't', approved: true },
     );
     expect(await columns(), 'column gone after removeField').toEqual([]);
-    await host.execute({ type: 'undo' }, { author: 't', approved: true });
+    await host.execute(
+      hostOwner(host),
+      { type: 'undo' },
+      { author: 't', approved: true },
+    );
     expect(await columns(), 'same column type after undo').toEqual(declared);
     expect(await raw(), type).toEqual(before);
   });

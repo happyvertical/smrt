@@ -94,6 +94,7 @@ describe.each(
       store,
     });
     await host.execute(
+      hostOwner(host),
       {
         type: 'defineModel',
         name: 'Owner',
@@ -102,6 +103,7 @@ describe.each(
       A,
     );
     await host.execute(
+      hostOwner(host),
       {
         type: 'defineModel',
         name: 'Chore',
@@ -142,10 +144,12 @@ describe.each(
       notes: 'note 2',
     });
     await host.execute(
+      hostOwner(host),
       { type: 'hideField', model: 'Chore', field: 'secret' },
       A,
     );
     await host.execute(
+      hostOwner(host),
       { type: 'removeField', model: 'Chore', field: 'notes' },
       OK,
     );
@@ -228,7 +232,7 @@ describe.each(
     expect(
       (await h1.list(hostOwner(h1), 'Chore')).map((r: any) => r.title).sort(),
     ).toEqual(['Bins', 'Dishes']);
-    expect(await h1.execute({ type: 'undo' }, OK)).toBeTruthy();
+    expect(await h1.execute(hostOwner(h1), { type: 'undo' }, OK)).toBeTruthy();
     expect(
       (await h1.list(hostOwner(h1), 'Chore')).map((r: any) => r.notes).sort(),
     ).toEqual(['note 1', 'note 2']);
@@ -250,7 +254,7 @@ describe.each(
     });
     expect(again.digest).toBe(local.digest);
     const h2 = await hostOn(local, back);
-    expect(await h2.execute({ type: 'undo' }, OK)).toBeTruthy();
+    expect(await h2.execute(hostOwner(h2), { type: 'undo' }, OK)).toBeTruthy();
     expect(
       (await h2.list(hostOwner(h2), 'Chore')).map((r: any) => r.notes).sort(),
     ).toEqual(['note 1', 'note 2']);
@@ -337,6 +341,7 @@ describe.each(
     // The archive's identity continues after the carried ids.
     const h = await hostOn(bundle, target, database);
     await h.execute(
+      hostOwner(h),
       { type: 'removeField', model: 'Chore', field: 'title' },
       OK,
     );
@@ -436,6 +441,7 @@ describe.each(
       store,
     });
     await host.execute(
+      hostOwner(host),
       {
         type: 'defineModel',
         name: 'Gadget',
@@ -451,6 +457,7 @@ describe.each(
       armed: true,
     });
     await host.execute(
+      hostOwner(host),
       { type: 'hideField', model: 'Gadget', field: 'armed' },
       A,
     );
@@ -479,6 +486,7 @@ describe.each(
     // Un-hiding works: the column holds the kind the engine expects.
     const h = await hostOn(bundle, target, database);
     await h.execute(
+      hostOwner(h),
       {
         type: 'addField',
         model: 'Gadget',

@@ -299,7 +299,7 @@ for the one operation on the host thread; a PGlite uses the host's client).
   the marker, so it can be retried); `discardOrphanDraft(dir, database)` does
   the same for a directory no host holds.
 - **Snapshot** (undo points, `.pgdump` in `snapshots/`, same retention as
-  `.db`): restore-only, adds no table. `AppHost.restoreSnapshot(name)` builds
+  `.db`): restore-only, adds no table. `AppHost.restoreSnapshot(principal, name)` builds
   the dump as a side schema, retires the worker, swaps it in and starts a
   new worker; the data it replaces is first kept as its own snapshot
   (`migrate-before-restore`), so a restore can be undone by another. Only a
@@ -432,7 +432,7 @@ stages, refusals, digest and version numbering.
   refuses it unless the directory holds the engine's draft marker
   (`.smrt-draft.json`, written only by `forkDraft`) naming a different live
   directory. A live directory never has a marker.
-- **`live.forkDraft(draftDir, { store })`** (queue, calls drained): worker op
+- **`live.forkDraft(principal, draftDir, { store })`** (queue, calls drained): worker op
   `copyTo(path)` is `VACUUM INTO` (one consistent state, no -wal/-shm needed).
   The call creates `draftDir` (must not exist, must not be/contain/lie inside
   live), copies `app.db`, writes the marker, seeds the EMPTY draft store with
@@ -451,7 +451,7 @@ stages, refusals, digest and version numbering.
   live data (live only waits while the copy is taken); `digest` pins the draft's
   chain and every replayed load/extract/merge count; each version exposes
   `dataSteps` from that sequential rehearsal. A changed count at apply requires
-  a fresh preview before any live swap. `live.publishDraft(draft, { author, approved: true, expect: digest, draftName? })`
+  a fresh preview before any live swap. `live.publishDraft(principal, draft, { author, approved: true, expect: digest, draftName? })`
   refuses without `approved`, without the digest, if the chain or the app it
   started from changed, or if a `.prepublish` file is lying around. Inside the
   queue, calls drained: copy live, replay each draft version in order (one short
@@ -660,9 +660,21 @@ the PostgreSQL half is "The broker" below.
   `onApp` and `AppWorker.call(op, principal, ...args)` throw `NoPrincipalError`
   (401) without a valid one and `PermissionDeniedError` (403) for another
   tenant, before anything is queued or posted. Engine work in the change queue
-  (`callApp`) runs as the host's own system principal. Boot gets the system
-  principal in `workerData.bootPrincipal`; the worker refuses to start
-  without it.
+  (`callApp`) runs as the host's own system principal.
+- Change-queue entry points (#5609): `execute`, `forkDraft`, `publishDraft` and
+  `restoreSnapshot` take the caller first and check it before anything is cloned,
+  queued, created or read (`requireOwnerPrincipal`): minted, same tenant, not a
+  guest, and holding `OWNER_SLUG` (`_engine.owner`, granted only by
+  `principalFor`, held by the system). The slug does not depend on the definition,
+  which grows while a change batch replays. `ChangeEngine` (`asCaller`) checks the
+  same. What runs inside is unchanged: engine work as the system principal on the
+  owner lane, so the caller is gated at the entry, not re-checked per worker op.
+  `authorCaller(owner, host)` builds the principal from the verified shell
+  `Principal`, so a host of another tenant refuses it. `opts.author` stays a
+  History label, not an identity. Tests: `change-principal.test.ts`,
+  `author-caller.test.ts`.
+- Boot gets the system principal in `workerData.bootPrincipal`; the worker
+  refuses to start without it.
 - Worker: `app-worker.ts` re-reads the principal off the wire
   (`readPrincipal`: shape, bounds, the app's tenant, a fresh frozen copy),
   then `authorizeOp` (`authorize.ts`) gates the op, then runs it inside an
@@ -1077,7 +1089,8 @@ preserves the workbook's explicit display field.
 `SqliteChangeEngine` (`createSqliteChangeEngine()`) over `forkDraft` /
 `previewPublish` / `publishDraft` / `undoTo`. Every method takes a `principal`
 (an `EnginePrincipal`, #5188: refused unless it was built by `enginePrincipal()`
-for the live host's tenant, and never a guest) and an optional `fence` (#5190),
+for the live host's tenant, never a guest, and holding `OWNER_SLUG`: `asCaller` is
+`requireOwnerPrincipal`, so `previewPublish`/`checkBatch` refuse a member too) and an optional `fence` (#5190),
 unused on SQLite. Hosts are passed in.
 
 - `rebuild(principal, live, { draftDir, store, commands: {key, command}[], author, signal? })`:

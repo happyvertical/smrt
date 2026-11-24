@@ -53,7 +53,7 @@ const handle: RequestHandler = guarded(async (event) => {
   }
   const out = await runRest(
     { method, url: appUrl(event.params.path ?? '', event.url.search), body },
-    owner.id,
+    owner,
     'live',
   );
   if (isPending(out)) return json(out, 202);

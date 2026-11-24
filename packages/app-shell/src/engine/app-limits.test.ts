@@ -40,8 +40,8 @@ async function open(
     database: pg ? pg.config : { kind: 'sqlite' },
   });
   hosts.push(host);
-  const run = (cmd: Parameters<AppHost['execute']>[0]) =>
-    host.execute(cmd, { author: 't', approved: true });
+  const run = (cmd: Parameters<AppHost['execute']>[1]) =>
+    host.execute(hostOwner(host), cmd, { author: 't', approved: true });
   return { host, run, dir, store };
 }
 
@@ -273,12 +273,13 @@ describe.each(['sqlite', 'postgres'] as const)('app caps on %s', (kind) => {
       method: { description: 'noop', code: 'return 1;' },
     });
     await host.runMethod(hostOwner(host), 'A', 'noop');
-    const draft = await host.forkDraft(`${dir}-draft`, {
+    const draft = await host.forkDraft(hostOwner(host), `${dir}-draft`, {
       store: new MemoryVersionStore(),
     });
     hosts.push(draft);
     await draft.runMethod(hostOwner(draft), 'A', 'noop'); // its own allowance, not live's used one
     await draft.execute(
+      hostOwner(draft),
       {
         type: 'defineModel',
         name: 'B',
@@ -645,6 +646,7 @@ describe('the caps write lock (#5188)', () => {
     });
     hosts.push(host);
     await host.execute(
+      hostOwner(host),
       { type: 'defineModel', name: 'A', fields: { t: { type: 'text' } } },
       { author: 't', approved: true },
     );

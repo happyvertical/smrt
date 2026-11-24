@@ -37,7 +37,7 @@ beforeEach(async () => {
   live = await AppHost.open(join(dir, 'live'), {
     store: new MemoryVersionStore(),
   });
-  draft = await live.forkDraft(join(dir, 'draft'), {
+  draft = await live.forkDraft(hostOwner(live), join(dir, 'draft'), {
     store: new MemoryVersionStore(),
   });
 });
@@ -375,6 +375,7 @@ it('resolves composite lookup keys without merging records that share one compon
 
 it('retains the collision map before any command and uses it for loading, links and proof', async () => {
   await draft.execute(
+    hostOwner(draft),
     { type: 'defineModel', name: 'Orders', fields: { note: { type: 'text' } } },
     { author: 'test' },
   );
@@ -463,8 +464,8 @@ it('preserves owner labels in announcements after fields and models are renamed 
     if (event.type === 'changed') lines.push(announcement(event) ?? '');
   });
   try {
-    const run = (command: Parameters<AppHost['execute']>[0]) =>
-      draft.execute(command, { author: 'test' });
+    const run = (command: Parameters<AppHost['execute']>[1]) =>
+      draft.execute(hostOwner(draft), command, { author: 'test' });
     await run({
       type: 'defineModel',
       name: 'InternalOrders',
@@ -597,6 +598,7 @@ it.each([
   expect(proof.ok).toBe(true);
   if (calculated)
     await draft.execute(
+      hostOwner(draft),
       {
         type: 'setCalculation',
         model: 'Amounts',
@@ -607,6 +609,7 @@ it.each([
     );
   const before = draft.describe().models.Amounts.fields.amount;
   await draft.execute(
+    hostOwner(draft),
     {
       type: 'changeFieldType',
       model: 'Amounts',
@@ -621,7 +624,7 @@ it.each([
   expect((await draft.list(hostOwner(draft), 'Amounts'))[0].amount).toBe(
     type === 'text' ? '1000' : 1000,
   );
-  await draft.execute({ type: 'undo' }, { author: 'test' });
+  await draft.execute(hostOwner(draft), { type: 'undo' }, { author: 'test' });
   expect(draft.describe().models.Amounts.fields.amount).toEqual(before);
   expect((await draft.list(hostOwner(draft), 'Amounts'))[0].amount).toBe(1000);
   expect(cellText(draft.describe().models.Amounts.fields.amount, 1000)).toBe(
@@ -632,6 +635,7 @@ it.each([
 it('retains money units through rename, calculation, hiding and a template round trip', async () => {
   const money = { currency: 'CAD', scale: 3 };
   await draft.execute(
+    hostOwner(draft),
     {
       type: 'defineModel',
       name: 'Amounts',
@@ -642,10 +646,12 @@ it('retains money units through rename, calculation, hiding and a template round
     { author: 'test' },
   );
   await draft.execute(
+    hostOwner(draft),
     { type: 'renameField', model: 'Amounts', from: 'amount', to: 'total' },
     { author: 'test' },
   );
   await draft.execute(
+    hostOwner(draft),
     {
       type: 'setCalculation',
       model: 'Amounts',
@@ -656,10 +662,12 @@ it('retains money units through rename, calculation, hiding and a template round
   );
   expect(draft.describe().models.Amounts.fields.total.money).toEqual(money);
   await draft.execute(
+    hostOwner(draft),
     { type: 'hideField', model: 'Amounts', field: 'total' },
     { author: 'test' },
   );
   const exported = await draft.execute(
+    hostOwner(draft),
     { type: 'exportTemplate' },
     { author: 'test' },
   );
@@ -680,6 +688,7 @@ it('retains money units through rename, calculation, hiding and a template round
     },
   });
   await live.execute(
+    hostOwner(live),
     {
       type: 'importTemplate',
       data: exported as import('./commands.ts').Template,
@@ -687,6 +696,7 @@ it('retains money units through rename, calculation, hiding and a template round
     { author: 'test' },
   );
   const reexported = await live.execute(
+    hostOwner(live),
     { type: 'exportTemplate' },
     { author: 'test' },
   );

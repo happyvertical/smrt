@@ -23,7 +23,7 @@ import {
 } from './changes.ts';
 import { publish } from './events.ts';
 import { getHost, getShellDb } from './host.ts';
-import { assertOwner, authorCaller } from './owner.ts';
+import { assertOwner, authorCaller, type Principal } from './owner.ts';
 import { ownerRestFailure, ownerResult, ownerText } from './owner-text.ts';
 import { publicChangeResult } from './results.ts';
 
@@ -355,8 +355,9 @@ export function returnedFailure(
 export async function decideApproval(
   id: string,
   approve: boolean,
-  decidedBy: string,
+  decider: Principal,
 ): Promise<ApprovalOutcome> {
+  const decidedBy = decider.id;
   const coll = await approvals();
   const row = await coll.get(id);
   if (!row) throw new Error('approval not found');
@@ -386,7 +387,7 @@ export async function decideApproval(
       const host = await getHost();
       if (action.kind === 'apply-batch')
         result = await applyApproved(action, (live, draft, o) =>
-          live.publishDraft(draft, {
+          live.publishDraft(authorCaller(decider, live), draft, {
             author: row.requestedBy || decidedBy,
             approved: true,
             expect: o.expect,
@@ -414,7 +415,7 @@ export async function decideApproval(
         );
       else if (action.kind === 'command')
         result = publicChangeResult(
-          await host.execute(action.command, {
+          await host.execute(authorCaller(decider, host), action.command, {
             author: row.requestedBy || decidedBy,
             approved: true,
             reviewedPreview:
@@ -424,20 +425,20 @@ export async function decideApproval(
         );
       else if (action.kind === 'tool')
         result = await host.callAppTool(
-          authorCaller(host, decidedBy),
+          authorCaller(decider, host),
           action.name,
           action.args,
           { approved: true },
         );
       else if (action.kind === 'record-delete')
         result = await host.remove(
-          authorCaller(host, decidedBy),
+          authorCaller(decider, host),
           action.model,
           action.id,
         );
       else
         result = await host.rest(
-          authorCaller(host, decidedBy),
+          authorCaller(decider, host),
           { method: action.method, url: action.url, body: action.body },
           { approved: true },
         );
@@ -519,7 +520,7 @@ export async function applyOwnBatch(
   const pending = await requestApply(expect, owner.id, opts);
   let outcome: ApprovalOutcome;
   try {
-    outcome = await decideApproval(pending.approvalId, true, owner.id);
+    outcome = await decideApproval(pending.approvalId, true, owner);
   } catch (e) {
     if (e instanceof Error && /^approval is already/.test(e.message))
       throw new EngineError(

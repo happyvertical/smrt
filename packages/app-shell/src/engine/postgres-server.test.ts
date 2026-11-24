@@ -85,7 +85,7 @@ describe.each(backends)('app engine on PostgreSQL (%s)', (backend) => {
     await host.close();
   };
   const run = (host: AppHost, cmd: Command) =>
-    host.execute(cmd, { author: 'test', approved: true });
+    host.execute(hostOwner(host), cmd, { author: 'test', approved: true });
 
   beforeAll(async () => {
     if (backend === 'postgres') {
@@ -528,6 +528,7 @@ describe.each(backends)('app engine on PostgreSQL (%s)', (backend) => {
       expect(String(out.snapshot)).toMatch(/-method-Chore\.wipe\.pgdump$/);
       expect(await titles()).toEqual(['wiped', 'wiped']);
       await host.restoreSnapshot(
+        hostOwner(host),
         String(out.snapshot).split('/').pop() as string,
         { approved: true },
       );

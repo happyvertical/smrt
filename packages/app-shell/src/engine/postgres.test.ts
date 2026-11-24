@@ -64,6 +64,7 @@ describe('one schema per app (tenancy)', () => {
       [b, 'b'],
     ] as const) {
       await host.execute(
+        hostOwner(host),
         {
           type: 'defineModel',
           name: 'Note',
@@ -75,6 +76,7 @@ describe('one schema per app (tenancy)', () => {
     }
     // Only A has this model at all.
     await a.execute(
+      hostOwner(a),
       {
         type: 'defineModel',
         name: 'Secret',

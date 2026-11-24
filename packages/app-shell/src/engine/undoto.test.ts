@@ -21,6 +21,7 @@ let n = 0;
 async function build(store = new MemoryVersionStore()) {
   const host = await AppHost.open(join(root, `h${n++}`), { store });
   await host.execute(
+    hostOwner(host),
     {
       type: 'defineModel',
       name: 'Chore',
@@ -38,6 +39,7 @@ async function build(store = new MemoryVersionStore()) {
   ])
     await host.create(hostOwner(host), 'Chore', { title, notes, points });
   await host.execute(
+    hostOwner(host),
     {
       type: 'addField',
       model: 'Chore',
@@ -47,10 +49,12 @@ async function build(store = new MemoryVersionStore()) {
     AUTHOR,
   );
   await host.execute(
+    hostOwner(host),
     { type: 'removeField', model: 'Chore', field: 'notes' },
     OK,
   );
   await host.execute(
+    hostOwner(host),
     {
       type: 'changeFieldType',
       model: 'Chore',
@@ -60,6 +64,7 @@ async function build(store = new MemoryVersionStore()) {
     OK,
   );
   await host.execute(
+    hostOwner(host),
     {
       type: 'addMethod',
       model: 'Chore',
@@ -98,10 +103,14 @@ describe('undoTo', () => {
       ]);
       // not approved: nothing changes
       await expect(
-        host.execute({ type: 'undoTo', version: 1 }, AUTHOR),
+        host.execute(hostOwner(host), { type: 'undoTo', version: 1 }, AUTHOR),
       ).rejects.toBeInstanceOf(ApprovalRequiredError);
       expect(host.version).toBe(5);
-      const r = await host.execute({ type: 'undoTo', version: 1 }, OK);
+      const r = await host.execute(
+        hostOwner(host),
+        { type: 'undoTo', version: 1 },
+        OK,
+      );
       expect(r).toMatchObject({ version: 1 });
       expect(host.version).toBe(1);
       const rows = await host.list(hostOwner(host), 'Chore');
@@ -141,11 +150,15 @@ describe('undoTo', () => {
       const plan = await host.plan({ type: 'undoTo', version: 4 });
       expect(plan.risky).toBe(false);
       // v5 -> v4: only the method comes off
-      await host.execute({ type: 'undoTo', version: 4 }, AUTHOR);
+      await host.execute(
+        hostOwner(host),
+        { type: 'undoTo', version: 4 },
+        AUTHOR,
+      );
       expect(host.version).toBe(4);
       // v4 -> v2 converts: risky
       await expect(
-        host.execute({ type: 'undoTo', version: 2 }, AUTHOR),
+        host.execute(hostOwner(host), { type: 'undoTo', version: 2 }, AUTHOR),
       ).rejects.toBeInstanceOf(ApprovalRequiredError);
       expect(host.version).toBe(4);
     } finally {
@@ -162,17 +175,23 @@ describe('undoTo', () => {
         { type: 'undoTo', version: 1.5 },
         { type: 'undoTo', version: 1, from: 4 },
       ] as const)
-        await expect(host.execute(cmd, OK)).rejects.toMatchObject({
+        await expect(
+          host.execute(hostOwner(host), cmd, OK),
+        ).rejects.toMatchObject({
           code: expect.stringMatching(/refused|invalid/),
         });
       expect(host.version).toBe(5);
       // go back to 3: 4 and 5 are in the store but off the path now
-      await host.execute({ type: 'undoTo', version: 3 }, OK);
+      await host.execute(hostOwner(host), { type: 'undoTo', version: 3 }, OK);
       await expect(
-        host.execute({ type: 'undoTo', version: 5 }, OK),
+        host.execute(hostOwner(host), { type: 'undoTo', version: 5 }, OK),
       ).rejects.toMatchObject({ code: 'refused' });
       // a pinned undo to the right place works
-      await host.execute({ type: 'undoTo', version: 2, from: 3 }, OK);
+      await host.execute(
+        hostOwner(host),
+        { type: 'undoTo', version: 2, from: 3 },
+        OK,
+      );
       expect(host.version).toBe(2);
       expect(host.version).toBe(2);
     } finally {
@@ -184,13 +203,13 @@ describe('undoTo', () => {
     const { host } = await build();
     try {
       // keep the last 2 changes: v1..v3's archives are purged
-      await host.execute({ type: 'cleanUp', keep: 2 }, OK);
+      await host.execute(hostOwner(host), { type: 'cleanUp', keep: 2 }, OK);
       await expect(
-        host.execute({ type: 'undoTo', version: 1 }, OK),
+        host.execute(hostOwner(host), { type: 'undoTo', version: 1 }, OK),
       ).rejects.toThrow(/cleaned up/);
       expect(host.version).toBe(5);
       // the recent ones still go back
-      await host.execute({ type: 'undoTo', version: 3 }, OK);
+      await host.execute(hostOwner(host), { type: 'undoTo', version: 3 }, OK);
       expect(host.version).toBe(3);
     } finally {
       await host.close();
@@ -208,7 +227,7 @@ describe('undoTo', () => {
         return real(v);
       };
       await expect(
-        host.execute({ type: 'undoTo', version: 1 }, OK),
+        host.execute(hostOwner(host), { type: 'undoTo', version: 1 }, OK),
       ).rejects.toThrow(/undid 1 of 4 changes.*version 4.*store went away/);
       // consistent at version 4: the method is gone, the type change is still applied
       expect(host.version).toBe(4);
@@ -219,7 +238,7 @@ describe('undoTo', () => {
           ?.points,
       ).toBe(3);
       store.setCurrent = real;
-      await host.execute({ type: 'undoTo', version: 1 }, OK);
+      await host.execute(hostOwner(host), { type: 'undoTo', version: 1 }, OK);
       expect(host.version).toBe(1);
     } finally {
       await host.close();
@@ -237,6 +256,7 @@ describe('undo across a removal that was added again', () => {
     });
     try {
       await host.execute(
+        hostOwner(host),
         {
           type: 'defineModel',
           name: 'Chore',
@@ -251,17 +271,22 @@ describe('undo across a removal that was added again', () => {
         field: 'size',
         definition: { type: 'text' },
       } as const;
-      await host.execute(addSize, AUTHOR);
+      await host.execute(hostOwner(host), addSize, AUTHOR);
       const made = await host.create(hostOwner(host), 'Chore', {
         title: 'a',
         size: 'big',
       });
       await host.execute(
+        hostOwner(host),
         { type: 'removeField', model: 'Chore', field: 'size' },
         OK,
       );
-      await host.execute(addSize, AUTHOR);
-      await host.execute({ type: 'undoTo', version: defined }, AUTHOR);
+      await host.execute(hostOwner(host), addSize, AUTHOR);
+      await host.execute(
+        hostOwner(host),
+        { type: 'undoTo', version: defined },
+        AUTHOR,
+      );
       expect(host.version).toBe(defined);
       expect(host.describe().models.Chore.fields).not.toHaveProperty('size');
       expect(
@@ -282,14 +307,22 @@ describe('undo across a removal that was added again', () => {
         name: 'Gizmo',
         fields: { name: { type: 'text' } },
       } as const;
-      await host.execute(gizmo, AUTHOR);
+      await host.execute(hostOwner(host), gizmo, AUTHOR);
       const first = host.version;
       const row = await host.create(hostOwner(host), 'Gizmo', {
         name: 'original',
       });
-      await host.execute({ type: 'removeModel', model: 'Gizmo' }, OK);
-      await host.execute(gizmo, AUTHOR);
-      await host.execute({ type: 'undoTo', version: first }, AUTHOR);
+      await host.execute(
+        hostOwner(host),
+        { type: 'removeModel', model: 'Gizmo' },
+        OK,
+      );
+      await host.execute(hostOwner(host), gizmo, AUTHOR);
+      await host.execute(
+        hostOwner(host),
+        { type: 'undoTo', version: first },
+        AUTHOR,
+      );
       expect(host.version).toBe(first);
       expect(
         (await host.get(hostOwner(host), 'Gizmo', row.id as string)).name,
