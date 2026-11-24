@@ -1,3 +1,10 @@
+<!--
+  FirstRunOnboarding: the first-run flow for an app with an assistant. It walks
+  the owner through a welcome, connecting an AI engine (ConnectAi) and choosing
+  a starting template, showing the owner approval a template needs before it
+  applies. Progress lives on the server (`client`), so a reload resumes where
+  the owner stopped; re-running it from Settings leaves `oncomplete` uncalled.
+-->
 <script lang="ts">
 import {
   AssistantApprovalCard,
@@ -30,14 +37,23 @@ let {
   backHref = '/settings',
   aiAlternative,
 }: {
+  /** Reads and advances the saved onboarding progress on the server. */
   client: OnboardingClient;
+  /** Transport for the AI connection step, usually `createConnectAiClient`. */
   connectAi: ConnectAiClient;
+  /** Connection used to show and decide the owner approval a template needs. */
   approvalTransport: AssistantTransport;
+  /** Server-loaded progress the first screen renders; refreshed after each action. */
   initialState: OnboardingState;
+  /** App name shown in the welcome heading. */
   appName: string;
+  /** One-paragraph introduction under the welcome heading. */
   description: string;
+  /** Host's inference settings or API-key form, linked from the AI step. */
   apiKeyHref: string;
+  /** Called once onboarding finishes; not called when re-running it from Settings. */
   oncomplete: () => void | Promise<void>;
+  /** Where the back-to-settings links go. Default `/settings`. */
   backHref?: string;
   /** Host-owned alternative connection link, inside the AI step card. */
   aiAlternative?: InferenceEngineAction;

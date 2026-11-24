@@ -60,8 +60,10 @@ export const MESSAGING_PERMISSION_DEFINITIONS: PermissionDefinition[] = [
 /**
  * Tenant `messages.*` permissions for the built-in system roles. Per-account
  * mail access (grants, `MailAccessService`) is checked against smrt-users role
- * permissions, so a fresh app fails closed for everyone, owners included,
- * until these exist.
+ * permissions, so until these exist a fresh app fails closed on every grant
+ * and on `messages.manage-access`, even for users holding the `owner` system
+ * role. An account's own owner (`ownerUserId`) is not affected: `decideMailAccess`
+ * allows that user before any permission lookup.
  *
  * - `owner`, `admin`: every mail scope plus `manage-credentials` and
  *   `manage-access`

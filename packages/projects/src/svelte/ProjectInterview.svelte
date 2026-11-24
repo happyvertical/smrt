@@ -1,3 +1,8 @@
+<!--
+  ProjectInterview: asks a project's open questions and decisions one record
+  at a time, with plain-language framing. It saves each answer through the
+  host's callbacks and moves on once the host persists it.
+-->
 <script lang="ts">
 import { Form, Input, Textarea } from '@happyvertical/smrt-ui/forms';
 import { useI18n } from '@happyvertical/smrt-ui/i18n';
