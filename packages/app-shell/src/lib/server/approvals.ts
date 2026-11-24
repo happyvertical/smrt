@@ -506,16 +506,20 @@ export async function decideApproval(
           'approval',
         );
     }
-    applying.delete(id);
     row.status = error === undefined ? 'approved' : 'failed';
-    await authority.complete(
-      tenantId,
-      id,
-      error === undefined,
-      error === undefined
-        ? result
-        : { error, ...(result ? { pending: result } : {}) },
-    );
+    try {
+      await authority.complete(
+        tenantId,
+        id,
+        error === undefined,
+        error === undefined
+          ? result
+          : { error, ...(result ? { pending: result } : {}) },
+      );
+    } finally {
+      // Only once the row is settled: a poll in between still reads approved.
+      applying.delete(id);
+    }
     publish({
       type: 'approval',
       id,
