@@ -1655,6 +1655,8 @@ export class AppHost extends EventEmitter {
         preview,
       },
       apply: async () => {
+        // Undo can bring back code a later version removed: same rule as a change.
+        await this.requireMethodCodeFor(this.def, parent.definition);
         const migration: Migration | undefined = rec.migration?.steps.length
           ? {
               steps: rec.migration.steps,

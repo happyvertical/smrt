@@ -21,8 +21,9 @@ shell `src/lib/server/method-code.ts` (`installMethodCodeGate`,
 - **Run.** `onApp` refuses `runMethod`, a method tool (`callTool`) and a REST
   request whose path names a code-bearing method (`methodCodeTarget`) with
   `EngineError('refused')` and `details.code = 'method_code_not_enabled'`
-  (routes keep that code, like `app_limit`). Any other op never reaches the
-  sandbox; the test pins that over `WORKER_OPS`. A call that cannot run code is
+  (routes keep that code, like `app_limit`). Any other op reaches the
+  sandbox only through a method installed on the model prototype, which the
+  hook-named rule below closes; the test pins `methodCodeTarget` over `WORKER_OPS`. A call that cannot run code is
   never charged a lookup.
 - **Publish: refuse new code, keep old code inert.** `applyChange` (every
   structural command, undo, import) and `publishInputs` (preview and publish of
@@ -33,6 +34,14 @@ shell `src/lib/server/method-code.ts` (`installMethodCodeGate`,
   definition that carries code because boot never validates against the key and
   an app that loses the key keeps booting, serving data and accepting unrelated
   changes (add a field, publish a draft); only its methods stop.
+- **Hook-named methods.** A method named like a member the framework calls
+  itself (`initialize`, `validateBeforeSave`, any `SmrtObject` or recipe-parent
+  member) is not installed on the model prototype (`AppRuntime.register`), so it
+  never runs on a record load or save; it stays runnable through `runMethod`
+  (and is gated there). Otherwise stored code could run on ordinary record ops
+  with no run-time check.
+- **Undo.** `analyseUndo` applies the same rule as a change: an undo that
+  brings back code the current definition lacks needs the key.
 - **Fail closed.** A gate that throws (stores down, check not installed) refuses
   with `unavailable`; a non-`true` answer is a refusal.
 - **Messages.** Owner-facing, no plan names or prices: the method, "not enabled

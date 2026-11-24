@@ -9,6 +9,7 @@
 // change of plan applies at once. No gate injected (the desktop, any other
 // profile, every test that does not choose) means no check and no lookup.
 import type { AppDefinition } from './definition.ts';
+import { routeFor } from './definition.ts';
 import { toolTarget } from './permissions.ts';
 
 /**
@@ -41,8 +42,9 @@ const hasCode = (def: AppDefinition, model: string, method: string) =>
  * The method an op would run, or null when it cannot run method code. The
  * three worker ops that end in the sandbox are `runMethod`, the app's own
  * method tools (`callTool`) and a REST request whose last segment names a
- * method. Every other op never reaches `runMethod` (the runtime's only caller
- * of the sandbox), which `method-code.test.ts` pins.
+ * method. Every other op reaches `runMethod` only through a method installed on
+ * the model prototype; `AppRuntime.register` never installs one that shadows a
+ * framework member (`initialize`, `validateBeforeSave`, ...), so none does.
  */
 export function methodCodeTarget(
   def: AppDefinition,
@@ -74,11 +76,14 @@ export function methodCodeTarget(
     } catch {
       return null;
     }
-    // Conservative: any model whose method of that name sits in the path.
-    for (const [model, md] of Object.entries(def.models))
-      for (const method of Object.keys(md.methods ?? {}))
-        if (parts.slice(1).includes(method) && hasCode(def, model, method))
-          return { model, method };
+    // `/api/<route>/<idOrAction>`: the routed model, and only its own method
+    // named in the action position (never the route segment itself).
+    const hit = Object.entries(def.models).find(
+      ([m, md]) => routeFor(m, md) === parts[1],
+    );
+    const action = parts[2];
+    if (hit && action !== undefined && hasCode(def, hit[0], action))
+      return { model: hit[0], method: action };
   }
   return null;
 }

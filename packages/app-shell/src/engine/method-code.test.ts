@@ -214,6 +214,42 @@ describe('method code without the entitlement', () => {
   });
 });
 
+describe('code that is not reached through a run', () => {
+  it('a method named like a framework hook never runs on a record load or save', async () => {
+    const w = await seeded(false);
+    await w.run({
+      type: 'addMethod',
+      model: 'Order',
+      name: 'initialize',
+      method: {
+        description: 'hook',
+        code: `app.create('Order', { title: 'hijack' }); return 1;`,
+      },
+    });
+    w.setAllowed(false);
+    const owner = hostOwner(w.host);
+    await w.host.create(owner, 'Order', { title: 'a', qty: 1 });
+    const rows = await w.host.list(owner, 'Order');
+    await w.host.get(owner, 'Order', String(rows[0].id));
+    expect((await w.host.list(owner, 'Order')).map((r) => r.title)).toEqual([
+      'a',
+    ]);
+  });
+
+  it('an undo that would bring stored code back needs the entitlement, like a change', async () => {
+    const w = await seeded(true);
+    await w.run({ type: 'removeModel', model: 'Order' });
+    expect(w.host.def.models.Order).toBeUndefined();
+    w.setAllowed(false);
+    const r = await w.run({ type: 'undo' }).catch((e) => e);
+    expect(denied(r)).toBe(true);
+    expect(w.host.def.models.Order).toBeUndefined();
+    w.setAllowed(true);
+    await w.run({ type: 'undo' });
+    expect(w.host.def.models.Order.methods?.stamp.code).toBe(METHOD.code);
+  });
+});
+
 describe('method code with the entitlement', () => {
   it('runs a method, by call, tool and add, asking the gate with the host tenant', async () => {
     const w = await seeded();
@@ -279,7 +315,7 @@ describe('no gate (the desktop and other profiles)', () => {
 describe('drafts and publish', () => {
   it('a forked draft inherits the gate; publish refuses code the plan no longer allows', async () => {
     const w = await seeded(false);
-    const draftDir = join(w.dir + '-draft1');
+    const draftDir = `${w.dir}-draft1`;
     const draft = await w.host.forkDraft(hostOwner(w.host), draftDir, {
       store: new MemoryVersionStore(),
     });
@@ -325,11 +361,9 @@ describe('drafts and publish', () => {
   it('a draft change that leaves existing code alone publishes without the entitlement', async () => {
     const w = await seeded(true);
     w.setAllowed(false);
-    const draft = await w.host.forkDraft(
-      hostOwner(w.host),
-      join(w.dir + '-draft2'),
-      { store: new MemoryVersionStore() },
-    );
+    const draft = await w.host.forkDraft(hostOwner(w.host), `${w.dir}-draft2`, {
+      store: new MemoryVersionStore(),
+    });
     hosts.push(draft);
     await draft.execute(
       hostOwner(draft),
@@ -377,6 +411,31 @@ describe('what reaches the sandbox', () => {
     ).toBeNull();
     expect(methodCodeTarget(def, 'runMethod', ['Order', 'nope'])).toBeNull();
     expect(methodCodeTarget(def, 'runMethod', ['Nope', 'stamp'])).toBeNull();
+  });
+
+  it('a CRUD route whose name collides with a method is not a method call', () => {
+    const clash = structuredClone(def);
+    clash.models.Order.methods = {
+      orders: { description: 'x', code: 'return 1;' },
+    };
+    for (const url of ['/api/orders', '/api/orders/abc', '/api/orders/count'])
+      expect(
+        methodCodeTarget(clash, 'rest', [{ method: 'GET', url }]),
+      ).toBeNull();
+    expect(
+      methodCodeTarget(clash, 'rest', [{ method: 'POST', url: '/api/orders' }]),
+    ).toBeNull();
+    // The action position still names the method, and only on its own model.
+    expect(
+      methodCodeTarget(clash, 'rest', [
+        { method: 'POST', url: '/api/orders/orders' },
+      ]),
+    ).toEqual({ model: 'Order', method: 'orders' });
+    expect(
+      methodCodeTarget(clash, 'rest', [
+        { method: 'POST', url: '/api/others/orders' },
+      ]),
+    ).toBeNull();
   });
 
   it('introducedCode lists new and changed code, never unchanged or removed', () => {

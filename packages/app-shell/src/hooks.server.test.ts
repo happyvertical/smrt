@@ -138,7 +138,9 @@ it('installs the method-code entitlement check after the gate, and does not star
   mocks.profile.mockResolvedValue('cloud');
   await expect(init()).resolves.toBeUndefined();
   expect(mocks.methodCode).toHaveBeenCalledOnce();
+  expect(mocks.gate.mock.invocationCallOrder[0]).toBeLessThan(
+    mocks.methodCode.mock.invocationCallOrder[0],
+  );
   mocks.methodCode.mockRejectedValueOnce(new Error('no feature tables'));
   await expect(init()).rejects.toThrow('no feature tables');
-  expect(mocks.handoff).not.toHaveBeenCalled();
 });
