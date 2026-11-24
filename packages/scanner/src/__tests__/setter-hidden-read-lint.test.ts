@@ -79,6 +79,29 @@ describe('lintSetterHiddenReads', () => {
     }
   });
 
+  it('flags a setter with a quoted name', () => {
+    const source = model("set 'label'(v: string) { if (this.secretHash) {} }");
+    expect(sourceMayContainSetterHiddenRead(source)).toBe(true);
+    expect(lintSetterHiddenReads(source, 'a.ts')).toHaveLength(1);
+  });
+
+  it('treats a for-of/for-in target as a write, not a read', () => {
+    expect(
+      lint('set label(v: string) { for (this.secretHash of [v]) {} }'),
+    ).toEqual([]);
+    expect(
+      lint('set label(v: string) { for (this.secretHash in { a: 1 }) {} }'),
+    ).toEqual([]);
+    expect(
+      lint('set label(v: string) { for (const x of [this.secretHash]) {} }'),
+    ).toHaveLength(1);
+    expect(
+      lint(
+        'set label(v: string) { for (this.name of [v]) { this.secretHash; } }',
+      ),
+    ).toHaveLength(1);
+  });
+
   it('ignores getters, methods, and non-hidden option values', () => {
     expect(lint('get label() { return this.secretHash; }')).toEqual([]);
     expect(lint('rotate() { return this.secretHash; }')).toEqual([]);

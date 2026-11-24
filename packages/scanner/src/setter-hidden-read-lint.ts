@@ -72,7 +72,7 @@ const TS_WRAPPERS = new Set([
 /** Cheap pre-filter: a file without all three words cannot produce a finding. */
 export function sourceMayContainSetterHiddenRead(source: string): boolean {
   return (
-    /\bset\s+[\w$#[]/.test(source) &&
+    /\bset\s*[\w$#['"`]/.test(source) &&
     /\bthis\b/.test(source) &&
     /\b(?:sensitive|readPermission)\b/.test(source)
   );
@@ -221,6 +221,14 @@ function collectReads(body: Node, hidden: ReadonlySet<string>): Read[] {
           return;
         }
         break;
+      case 'ForOfStatement':
+      case 'ForInStatement':
+        // `for (this.f of xs)` assigns the field; the iterable and body read.
+        if (node.left?.type === 'VariableDeclaration') visit(node.left);
+        else visitTarget(node.left);
+        visit(node.right);
+        visit(node.body);
+        return;
       case 'VariableDeclarator':
         if (
           unwrap(node.init)?.type === 'ThisExpression' &&
