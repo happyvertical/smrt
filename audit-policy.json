@@ -25,12 +25,12 @@
       ],
       "firstPatchedVersion": "0.91.1",
       "reachability": "prod",
-      "introducedVia": "@happyvertical/ai@0.106.0 -> @anthropic-ai/sdk@0.90.0; npm latest AI 0.107.0 also pins SDK 0.90.0 (rechecked 2026-10-24).",
+      "introducedVia": "@happyvertical/ai@0.106.0 -> @anthropic-ai/sdk@0.90.0; installed AI is 0.116.6 and npm latest AI 0.119.0 still pins SDK 0.90.0 (rechecked 2026-11-23).",
       "exploitability": "The optional BetaLocalFilesystemMemoryTool persists files with unsafe default modes. Fresh searches of SMRT source and installed AI distribution found no import or construction of this helper or beta/tools/memory; the provider constructs ordinary Anthropic clients. Exposure requires a downstream consumer separately constructing the optional helper. Advisory: https://github.com/anthropics/anthropic-sdk-typescript/security/advisories/GHSA-p7fg-763f-g4gf",
-      "decision": "Retain non-suppressed acceptance for the unconstructed optional tool rather than force an unvalidated 0.x SDK minor beneath the owning published AI package. An override is technically possible, but its provider compatibility has not been validated; the patched SDK already exists, so recheck in 30 days.",
-      "remediation": "Request an @happyvertical/ai release adopting SDK >=0.91.1, then raise the catalog pin. Latest owner metadata: https://registry.npmjs.org/@happyvertical%2fai/latest . Reassess reachability and owner update by 2026-11-23.",
+      "decision": "Retain non-suppressed acceptance for the unconstructed optional tool rather than force an unvalidated 0.x SDK minor beneath the owning published AI package. An override is technically possible, but its provider compatibility has not been validated; the patched SDK already exists, so recheck in 30 days (renewed 2026-11-23: no owner release adopts the patched SDK yet).",
+      "remediation": "Request an @happyvertical/ai release adopting SDK >=0.91.1, then raise the catalog pin. Latest owner metadata: https://registry.npmjs.org/@happyvertical%2fai/latest . Reassess reachability and owner update by 2026-12-23.",
       "suppressed": false,
-      "recheckBy": "2026-11-23"
+      "recheckBy": "2026-12-23"
     },
     {
       "ghsa": "GHSA-w5hq-g745-h8pq",
@@ -42,12 +42,12 @@
       ],
       "firstPatchedVersion": "11.1.1",
       "reachability": "prod",
-      "introducedVia": "Runtime parents bull@4.16.5 -> uuid@8.3.2; gaxios@6.7.1 and googleapis-common@7.2.0 -> uuid@9.0.1 (rechecked installed sources 2026-10-24).",
+      "introducedVia": "Runtime parents bull@4.16.5 -> uuid@8.3.2; gaxios@6.7.1 and googleapis-common@7.2.0 -> uuid@9.0.1 (rechecked 2026-11-23: bull latest is still 4.16.5 requiring uuid ^8.3.0).",
       "exploitability": "Only v3/v5/v6 with caller-provided undersized output buffers or large offsets are affected. All installed vulnerable parent calls are zero-argument v4(): bull queue/timer-manager, gaxios request IDs, and googleapis-common multipart boundaries. No affected function or caller buffer/offset is constructed on these edges. Advisory: https://github.com/uuidjs/uuid/security/advisories/GHSA-w5hq-g745-h8pq",
-      "decision": "Retain non-suppressed acceptance for verified v4-only usage instead of crossing several owning packages' declared major ranges without validating their contracts. Patched uuid 11.1.1 does support named v4 through CommonJS; an override is plausible, not inherently incompatible. Bull latest still requires ^8.3.0, so newer Google packages alone do not clear the graph. Recheck in 30 days.",
-      "remediation": "Prefer owner dependency updates, then adopt them here; otherwise validate a targeted uuid >=11.1.1 override across all three parents. Modern gaxios 8/google-auth-library 11 remove their uuid edges but cross additional parent majors. Metadata: https://registry.npmjs.org/uuid/11.1.1 and https://registry.npmjs.org/bull/latest . Reassess by 2026-11-23.",
+      "decision": "Retain non-suppressed acceptance for verified v4-only usage instead of crossing several owning packages' declared major ranges without validating their contracts. Patched uuid 11.1.1 does support named v4 through CommonJS; an override is plausible, not inherently incompatible. Bull latest still requires ^8.3.0, so newer Google packages alone do not clear the graph. Recheck in 30 days (renewed 2026-11-23; no owner release clears the graph).",
+      "remediation": "Prefer owner dependency updates, then adopt them here; otherwise validate a targeted uuid >=11.1.1 override across all three parents. Modern gaxios 8/google-auth-library 11 remove their uuid edges but cross additional parent majors. Metadata: https://registry.npmjs.org/uuid/11.1.1 and https://registry.npmjs.org/bull/latest . Reassess by 2026-12-23.",
       "suppressed": false,
-      "recheckBy": "2026-11-23"
+      "recheckBy": "2026-12-23"
     },
     {
       "ghsa": "GHSA-3r8g-jcqq-3p5j",
