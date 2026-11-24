@@ -537,6 +537,22 @@ export function openDraftHost(
 }
 
 /**
+ * Run `work` on the draft rows. On a live host with a fenced claim it is one
+ * claim transaction (#5486): the claim's proof comes first, so a host that lost
+ * its claim changes no draft row, whoever holds the app now.
+ */
+export async function withDraftRows<T>(
+  live: AppHost,
+  work: (drafts: AppDraftCollection) => Promise<T>,
+): Promise<T> {
+  if (live.lendableClaim)
+    return live.claimTransaction(async (tx) =>
+      work(await AppDraftCollection.create({ db: tx as DatabaseInterface })),
+    );
+  return work(await AppDraftCollection.create({ db: await getShellDb() }));
+}
+
+/**
  * After the live host is open: settle drafts a restart interrupted, and if one
  * is open, FREEZE live structure again (the freeze is not persisted) and
  * reopen the draft host. A draft whose copy cannot be opened still counts as
@@ -556,7 +572,7 @@ async function adoptDraft(
   // host that lost its claim marks no draft discarded, whoever holds it now.
   const discard = async (list: typeof rows, note: string) => {
     if (!list.length) return;
-    const mark = async (coll: typeof drafts) => {
+    await withDraftRows(live, async (coll) => {
       for (const r of list) {
         const row = (await coll.get(r.id as string)) ?? r;
         row.status = 'discarded';
@@ -564,12 +580,7 @@ async function adoptDraft(
         row.endedAt = now;
         await row.save();
       }
-    };
-    if (live.lendableClaim)
-      await live.claimTransaction(async (tx) =>
-        mark(await AppDraftCollection.create({ db: tx as DatabaseInterface })),
-      );
-    else await mark(drafts);
+    });
   };
   await discard(
     rows.filter((r) => r.status === 'starting'),

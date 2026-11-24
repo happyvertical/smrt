@@ -500,6 +500,7 @@ export class AppHost extends EventEmitter {
   private claim?: AppClaim;
   /** A draft host: the live host's claim, lent for its store writes; never released here (#5486). */
   private borrowed?: AppClaim;
+  private unlisten?: () => void;
   private claimLost: Error | null = null;
   /** The approval a running command was asked under (the queue runs one at a time; #5486). */
   private currentRequest: string | null = null;
@@ -548,7 +549,7 @@ export class AppHost extends EventEmitter {
     this.allowUnfencedStore = opts.allowUnfencedStore === true;
     this.claim?.onLost((e) => this.loseClaim(e));
     this.borrowed = borrowed;
-    this.borrowed?.onLost((e) => this.loseClaim(e));
+    this.unlisten = this.borrowed?.onLost((e) => this.loseClaim(e));
     this.lockTimeoutMs = opts.swapLockTimeoutMs ?? DEFAULT_LOCK_TIMEOUT_MS;
     this.store = opts.store;
     this.workerUrl = opts.workerUrl ?? defaultWorkerUrl();
@@ -4034,6 +4035,7 @@ export class AppHost extends EventEmitter {
   async close() {
     await this.queue;
     this.closed = true;
+    this.unlisten?.(); // a draft stops listening to the claim it was lent
     this.releaseSpare();
     try {
       await this.app.terminate();

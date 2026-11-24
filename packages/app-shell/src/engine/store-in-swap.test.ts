@@ -753,9 +753,25 @@ describe.each(backends)('the version store in the swap (%s)', (backend) => {
       it('starts with no change journal of its own, and journals and records its changes', async () => {
         const live = await hooked();
         await run(live.host, rename); // leaves a committed key in live's schema
-        expect((await meta(live.schema)).change).toBeTruthy();
+        // An approval-linked change live rolled back keeps its journal too: a
+        // draft that inherited it would decide it and refuse every change.
+        await shell.query(
+          `INSERT INTO "${live.schema}"._app_meta (key, value) VALUES ('change', ?), ('reversed', 'c-live') ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value`,
+          [
+            JSON.stringify({
+              id: 'c-live',
+              from: 1,
+              to: 2,
+              record: null,
+              request: 'appr-live',
+            }),
+          ],
+        );
         const d = await fork(live);
-        expect((await draftMeta(d.draft)).change).toBeUndefined();
+        const inherited = await draftMeta(d.draft);
+        expect(inherited.change).toBeUndefined();
+        expect(inherited.reversed).toBeUndefined();
+        expect(d.draft.recoveredChange).toBeNull();
         const v = d.draft.version;
         await run(d.draft, {
           type: 'addField',

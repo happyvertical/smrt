@@ -113,7 +113,7 @@ export interface AppClaim {
   /** The claim is gone: every call refuses with a `ClaimLostError`. */
   readonly lost: boolean;
   /** Called once, when the claim is lost. */
-  onLost(fn: (e: Error) => void): void;
+  onLost(fn: (e: Error) => void): () => void;
   /** Give the lock back and close the connection. */
   release(): Promise<void>;
 }

@@ -345,8 +345,12 @@ for the one operation on the host thread; a PGlite uses the host's client).
   `DraftVersionStore.commitIn` (a compare on `app_drafts.current_version`, and
   the draft must still be `starting` or `open`). The draft stops when the lent
   claim is lost. `forkDraft` clears the journal keys the copy inherited. The
-  shell's `adoptDraft` marks stale drafts discarded in one
-  `claimTransaction`, so a host that lost its claim marks nothing.
+  shell's draft row UPDATES (`adoptDraft`'s discards, a draft's
+  starting -> open, a failed start, `discardNow`) run through `withDraftRows`,
+  one `claimTransaction` on a host with a fenced claim, so a host that lost
+  its claim changes no draft row. The `starting` row's INSERT and `forkDraft`'s
+  seeding of the new draft's own first version stay on the shell's connection
+  (they create rows nobody else holds).
   **Still unfenced** (hosted PostgreSQL; slice 3 of #5486):
   - A draft host's boot, ownership bump and schema drops (admin connections,
     no claim). The draft's own generation still guards its schema.
