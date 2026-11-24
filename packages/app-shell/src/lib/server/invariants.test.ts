@@ -58,7 +58,7 @@ describe('approval gate invariants', () => {
     // the definition plus the one call inside applyOwnBatch
     expect(approvals.match(/decideApproval\s*\(/g)?.length).toBe(2);
     expect(approvals).toMatch(
-      /export async function applyOwnBatch[\s\S]*await assertOwner\(\)[\s\S]*typeof expect !== 'string'[\s\S]*requestApply\(expect, owner\.id, opts\)[\s\S]*decideApproval\(pending\.approvalId, true, owner\.id\)/,
+      /export async function applyOwnBatch[\s\S]*await assertOwner\(\)[\s\S]*typeof expect !== 'string'[\s\S]*requestApply\(expect, owner\.id, opts\)[\s\S]*decideApproval\(pending\.approvalId, true, owner\)/,
     );
   });
 

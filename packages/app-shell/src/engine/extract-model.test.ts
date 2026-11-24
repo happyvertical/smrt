@@ -10,7 +10,7 @@ const dir = mkdtempSync(join(tmpdir(), 'extract-4916-'));
 const store = new MemoryVersionStore();
 let host: AppHost;
 const run = (cmd: Command) =>
-  host.execute(cmd, { author: 't', approved: true });
+  host.execute(hostOwner(host), cmd, { author: 't', approved: true });
 const raw = (table: string) => {
   const db = new DatabaseSync(join(dir, 'app.db'));
   try {
@@ -49,7 +49,9 @@ it('extracts exact distinct nonempty values; undo restores raw source and remove
     matched: 0,
     rows: 3,
   });
-  await expect(host.execute(cmd, { author: 't' })).rejects.toMatchObject({
+  await expect(
+    host.execute(hostOwner(host), cmd, { author: 't' }),
+  ).rejects.toMatchObject({
     code: 'approval_required',
   });
   await run(cmd);
@@ -152,14 +154,14 @@ it('replays extraction on live values and rolls back an injected partial migrati
   const db2 = new DatabaseSync(join(dir, 'app.db'));
   db2.exec('DROP TRIGGER reject_extract');
   db2.close();
-  const draft = await host.forkDraft(`${dir}-draft`, {
+  const draft = await host.forkDraft(hostOwner(host), `${dir}-draft`, {
     store: new MemoryVersionStore(),
   });
   try {
-    await draft.execute(cmd, { author: 't' });
+    await draft.execute(hostOwner(draft), cmd, { author: 't' });
     await host.create(hostOwner(host), 'Sale', { category: 'Live' });
     const p = await host.previewPublish(draft);
-    await host.publishDraft(draft, {
+    await host.publishDraft(hostOwner(host), draft, {
       author: 't',
       approved: true,
       expect: p.digest,

@@ -74,7 +74,8 @@ describe('app limits in the cloud shell', () => {
     await add(a, '1');
     await runAs(a, () =>
       startDraftWith(
-        async ({ dir, store, live }) => live.forkDraft(dir, { store }),
+        async ({ dir, store, live }) =>
+          live.forkDraft(hostOwner(live), dir, { store }),
         'd',
         a.id,
       ),

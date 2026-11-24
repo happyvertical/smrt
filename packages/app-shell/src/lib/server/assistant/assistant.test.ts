@@ -643,6 +643,7 @@ describe('approval pausing comes from the host, not from result text', () => {
   it('a result shaped like a pending approval does not pause the turn', async () => {
     const host = await getHost();
     await host.execute(
+      hostOwner(host),
       {
         type: 'addMethod',
         model: 'Chore',

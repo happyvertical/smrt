@@ -166,7 +166,7 @@ describe('two owners in one deployment', () => {
       }),
     );
     const pending = (await runAs(h.a, () =>
-      requestRecordDelete('Chore', record.id as string, h.a.id, 'live'),
+      requestRecordDelete('Chore', record.id as string, h.a, 'live'),
     )) as { status: string; approvalId: string };
     expect(pending.status).toBe('pending_approval');
     expect(await runAs(h.b, () => Approval.pending())).toEqual([]);
@@ -177,7 +177,7 @@ describe('two owners in one deployment', () => {
     ).toEqual([pending.approvalId]);
     // B names A's approval id: refused, and A's model is untouched.
     await expect(
-      runAs(h.b, () => decideApproval(pending.approvalId, true, h.b.id)),
+      runAs(h.b, () => decideApproval(pending.approvalId, true, h.b)),
     ).rejects.toThrow();
     expect(
       await runAs(h.a, async () =>
@@ -200,7 +200,7 @@ describe('two owners in one deployment', () => {
       ),
     ).toEqual([pending.approvalId]);
     // The owner of the approval decides it.
-    await runAs(h.a, () => decideApproval(pending.approvalId, false, h.a.id));
+    await runAs(h.a, () => decideApproval(pending.approvalId, false, h.a));
   });
 
   it('keeps changes waiting apart: batches, cards, freeze, check and apply', async () => {
@@ -254,6 +254,7 @@ describe('two owners in one deployment', () => {
     await expect(
       runAs(h.a, async () =>
         (await getHost()).execute(
+          hostOwner(await getHost()),
           { type: 'defineModel', name: 'Direct', fields: {} },
           { author: h.a.id, approved: true },
         ),

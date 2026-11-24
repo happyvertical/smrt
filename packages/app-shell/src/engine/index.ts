@@ -147,6 +147,7 @@ export {
   type EnginePrincipal,
   enginePrincipal,
   isEnginePrincipal,
+  OWNER_SLUG,
   type PrincipalKind,
 } from './principal.ts';
 export type {

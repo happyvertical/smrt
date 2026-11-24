@@ -17,6 +17,7 @@ afterEach(async () => {
 async function importedLegacyTable() {
   const live = await getHost();
   await live.execute(
+    hostOwner(live),
     {
       type: 'defineModel',
       name: 'Walks',
@@ -37,6 +38,7 @@ async function importedLegacyTable() {
     dogName: 'Biscuit',
   });
   await live.execute(
+    hostOwner(live),
     { type: 'hideField', model: 'Walks', field: 'workbookRow' },
     { author: h.owner.id },
   );

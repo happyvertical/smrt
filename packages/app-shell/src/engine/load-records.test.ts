@@ -16,7 +16,7 @@ let dir: string;
 let store: MemoryVersionStore;
 let host: AppHost;
 const run = (cmd: Command) =>
-  host.execute(cmd, { author: 't', approved: true });
+  host.execute(hostOwner(host), cmd, { author: 't', approved: true });
 const raw = (dataDir = dir) => {
   const db = new DatabaseSync(join(dataDir, 'app.db'));
   try {
@@ -140,9 +140,9 @@ it('upserts by key, counts unchanged, requires approval, and restores exact orig
     unchanged: 0,
     rejected: 0,
   });
-  await expect(host.execute(cmd, { author: 't' })).rejects.toBeInstanceOf(
-    ApprovalRequiredError,
-  );
+  await expect(
+    host.execute(hostOwner(host), cmd, { author: 't' }),
+  ).rejects.toBeInstanceOf(ApprovalRequiredError);
   await run(cmd);
   expect((await host.plan(cmd)).preview).toMatchObject({
     unchanged: 2,
@@ -209,12 +209,13 @@ it('rolls back a mid-load database failure, restarts intact, and replays from a 
   await host.close();
   host = await AppHost.open(dir, { store });
   expect(raw()).toEqual(before);
-  const draft = await host.forkDraft(`${dir}-draft`, {
+  const draft = await host.forkDraft(hostOwner(host), `${dir}-draft`, {
     store: new MemoryVersionStore(),
   });
   try {
     expect(raw(draft.dataDir)).toEqual(before);
     await draft.execute(
+      hostOwner(draft),
       {
         type: 'loadRecords',
         model: 'Sale',
@@ -231,7 +232,7 @@ it('rolls back a mid-load database failure, restarts intact, and replays from a 
     const liveBeforePublish = raw();
     const p = await host.previewPublish(draft);
     expect(raw()).toEqual(liveBeforePublish);
-    await host.publishDraft(draft, {
+    await host.publishDraft(hostOwner(host), draft, {
       author: 't',
       approved: true,
       expect: p.digest,
@@ -329,7 +330,7 @@ it.each([
   const sales = raw();
   const version = host.version;
   await expect(
-    host.execute({ type: 'undo' }, { author: 't' }),
+    host.execute(hostOwner(host), { type: 'undo' }, { author: 't' }),
   ).rejects.toBeInstanceOf(ApprovalRequiredError);
   const failure = await run({ type: 'undo' }).catch((error) => error);
   expect(failure).toBeInstanceOf(EngineError);
@@ -496,7 +497,7 @@ it('rechecks load update risk inside the transaction after an insert-only previe
     });
   try {
     await expect(
-      host.execute(cmd, { author: 't', approved: true }),
+      host.execute(hostOwner(host), cmd, { author: 't', approved: true }),
     ).rejects.toThrow(/preview became stale/);
   } finally {
     spy.mockRestore();
@@ -508,7 +509,9 @@ it('rechecks load update risk inside the transaction after an insert-only previe
       code: 'stale-load',
     },
   );
-  await expect(host.execute(cmd, { author: 't' })).rejects.toMatchObject({
+  await expect(
+    host.execute(hostOwner(host), cmd, { author: 't' }),
+  ).rejects.toMatchObject({
     code: 'approval_required',
   });
   await run(cmd);

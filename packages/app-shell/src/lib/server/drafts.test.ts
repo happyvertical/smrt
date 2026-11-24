@@ -44,6 +44,7 @@ beforeAll(async () => {
   h = await openShell();
   off = subscribe((e) => events.push(e));
   await (await getHost()).execute(
+    hostOwner(await getHost()),
     { type: 'defineModel', name: 'Chore', fields: { title: { type: 'text' } } },
     { author: h.owner.id, approved: true },
   );
@@ -130,7 +131,7 @@ describe('starting a draft', () => {
   it('copies live, freezes live structure, keeps live records working', async () => {
     const live = await getHost();
     const before = live.version;
-    const started = await startDraft('  Spring   cleanup ', h.owner.id);
+    const started = await startDraft('  Spring   cleanup ', h.owner);
     expect(started).toMatchObject({
       name: 'Spring cleanup',
       status: 'open',
@@ -146,7 +147,7 @@ describe('starting a draft', () => {
     expect(live.frozen).toBe(true);
     // the copy has live's records at the time of the fork
     expect(await titles('draft')).toEqual(['live-1']);
-    await expect(startDraft('again', h.owner.id)).rejects.toThrow(
+    await expect(startDraft('again', h.owner)).rejects.toThrow(
       /already open \("Spring cleanup"\)/,
     );
     expect(
@@ -162,7 +163,7 @@ describe('starting a draft', () => {
     const liveVersion = live.version;
     const draft = await hostFor('draft');
     const run = (command: Command) =>
-      draft.execute(command, { author: h.owner.id });
+      draft.execute(hostOwner(draft), command, { author: h.owner.id });
     await run({
       type: 'addField',
       model: 'Chore',
@@ -261,10 +262,12 @@ describe('restart with a draft open', () => {
     // autoApprove is back on the reopened draft: a risky change just applies
     const draft = await hostFor('draft');
     await draft.execute(
+      hostOwner(draft),
       { type: 'defineModel', name: 'Scratch', fields: {} },
       { author: h.owner.id },
     );
     await draft.execute(
+      hostOwner(draft),
       { type: 'removeModel', model: 'Scratch' },
       { author: h.owner.id },
     );
@@ -274,7 +277,7 @@ describe('restart with a draft open', () => {
 describe('an unpublishable draft', () => {
   it('a moved data root is detected, explained, and can be discarded', async () => {
     await ensureNoDraft();
-    await startDraft('Moved', h.owner.id);
+    await startDraft('Moved', h.owner);
     await closeHost();
     // the data root was restored elsewhere: the marker names the old live folder
     const marker = join(h.dir, DRAFT_DIRNAME, '.smrt-draft.json');
@@ -293,7 +296,7 @@ describe('an unpublishable draft', () => {
   });
 
   it('a draft whose files are gone keeps live frozen and offers discard', async () => {
-    await startDraft('Gone', h.owner.id);
+    await startDraft('Gone', h.owner);
     await closeHost();
     const { rmSync } = await import('node:fs');
     rmSync(join(h.dir, DRAFT_DIRNAME), { recursive: true, force: true });

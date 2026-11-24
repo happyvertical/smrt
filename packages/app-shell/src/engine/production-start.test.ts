@@ -19,7 +19,7 @@ const saved = {
 };
 let live: AppHost;
 const run = (host: AppHost, cmd: Command) =>
-  host.execute(cmd, { author: 't', approved: true });
+  host.execute(hostOwner(host), cmd, { author: 't', approved: true });
 
 beforeAll(async () => {
   process.env.NODE_ENV = 'production';
@@ -73,7 +73,7 @@ it('covers a draft copy and the read-only report worker', {
     },
   });
   expect((await live.runReport(hostOwner(live), 'sizes')).rowCount).toBe(1);
-  const draft = await live.forkDraft(join(root, 'draft'), {
+  const draft = await live.forkDraft(hostOwner(live), join(root, 'draft'), {
     store: new MemoryVersionStore(),
   });
   try {
@@ -140,9 +140,13 @@ it('publishes a draft that adds a field and reads it from live', {
       fields: { title: { type: 'text' } },
     });
     await host.create(hostOwner(host), 'Chore', { title: 'Bins' });
-    const draft = await host.forkDraft(join(publishRoot, 'draft'), {
-      store: new MemoryVersionStore(),
-    });
+    const draft = await host.forkDraft(
+      hostOwner(host),
+      join(publishRoot, 'draft'),
+      {
+        store: new MemoryVersionStore(),
+      },
+    );
     host.setFrozen(true);
     await run(draft, {
       type: 'addField',
@@ -151,7 +155,7 @@ it('publishes a draft that adds a field and reads it from live', {
       definition: { type: 'integer' },
     });
     const preview = await host.previewPublish(draft);
-    await host.publishDraft(draft, {
+    await host.publishDraft(hostOwner(host), draft, {
       author: 't',
       approved: true,
       expect: preview.digest,

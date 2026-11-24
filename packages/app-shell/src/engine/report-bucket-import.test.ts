@@ -17,7 +17,7 @@ beforeEach(async () => {
   const live = await AppHost.open(join(dir, 'live'), {
     store: new MemoryVersionStore(),
   });
-  draft = await live.forkDraft(join(dir, 'draft'), {
+  draft = await live.forkDraft(hostOwner(live), join(dir, 'draft'), {
     store: new MemoryVersionStore(),
   });
   await live.close();

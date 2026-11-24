@@ -58,6 +58,7 @@ describe('worker memory limits (#5212)', () => {
       workerLimits: { statementTimeoutMs: 1000 },
     });
     await host.execute(
+      hostOwner(host),
       { type: 'defineModel', name: 'Note', fields: { t: { type: 'text' } } },
       { author: 't' },
     );
@@ -73,6 +74,7 @@ describe('worker memory limits (#5212)', () => {
     });
     try {
       await host.execute(
+        hostOwner(host),
         {
           type: 'defineModel',
           name: 'Chore',

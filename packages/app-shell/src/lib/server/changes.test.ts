@@ -52,7 +52,7 @@ const state = async () => {
 
 /** Structure straight onto live, the way the engine tests set an app up (no card). */
 async function liveDo(command: Command) {
-  await (await getHost()).execute(command, {
+  await (await getHost()).execute(hostOwner(await getHost()), command, {
     author: h.owner.id,
     approved: true,
   });
@@ -89,7 +89,7 @@ const addField = (field: string, extra: object = {}) =>
       field,
       definition: { type: 'text', ...extra },
     },
-    h.owner.id,
+    h.owner,
     'live',
     'assistant',
   );
@@ -113,7 +113,7 @@ describe('interception', () => {
             from: 'a',
             to: 'b',
           } as never,
-          h.owner.id,
+          h.owner,
           'live',
           'api',
         ),
@@ -155,7 +155,7 @@ describe('interception', () => {
     await asOwner(() =>
       runCommand(
         { type: 'defineModel', name: 'Gadget', fields: {} },
-        h.owner.id,
+        h.owner,
         'live',
         'api',
       ),
@@ -168,7 +168,7 @@ describe('interception', () => {
           field: 'size',
           definition: { type: 'integer' },
         },
-        h.owner.id,
+        h.owner,
         'live',
         'api',
       ),
@@ -178,13 +178,11 @@ describe('interception', () => {
 
   it("undo and clean up are the owner's from History: refused for others, and while changes wait", async () => {
     await expect(
-      asOwner(() =>
-        runCommand({ type: 'undo' }, h.owner.id, 'live', 'assistant'),
-      ),
+      asOwner(() => runCommand({ type: 'undo' }, h.owner, 'live', 'assistant')),
     ).rejects.toThrow(/owner from History/);
     await asOwner(() => addField('a'));
     await expect(
-      asOwner(() => runCommand({ type: 'undo' }, h.owner.id, 'live', 'owner')),
+      asOwner(() => runCommand({ type: 'undo' }, h.owner, 'live', 'owner')),
     ).rejects.toThrow(/Apply or discard your 1 waiting change first/);
     expect(await asOwner(() => waitingCount())).toBe(1);
   });
@@ -202,7 +200,7 @@ describe('remove, put back, quick edit', () => {
     await asOwner(() =>
       runCommand(
         { type: 'defineModel', name: 'Gadget', fields: {} },
-        h.owner.id,
+        h.owner,
         'live',
         'api',
       ),
@@ -215,7 +213,7 @@ describe('remove, put back, quick edit', () => {
           field: 'size',
           definition: { type: 'integer' },
         },
-        h.owner.id,
+        h.owner,
         'live',
         'api',
       ),
@@ -409,10 +407,11 @@ describe('a working copy lost mid-rebuild', () => {
 
 describe('adopting an open draft', () => {
   it('an existing draft becomes opaque, non-removable cards, and can be applied', async () => {
-    await startDraft('Old draft', h.owner.id);
+    await startDraft('Old draft', h.owner);
     const slotHost = (await import('./host.ts')).getDraftSlot;
     const draft = (await slotHost())?.host;
     await draft?.execute(
+      hostOwner(draft),
       {
         type: 'addField',
         model: 'Chore',
@@ -499,7 +498,7 @@ const gadgetCards = async () => {
   await asOwner(() =>
     runCommand(
       { type: 'defineModel', name: 'Gadget', fields: {} },
-      h.owner.id,
+      h.owner,
       'live',
       'api',
     ),
@@ -512,7 +511,7 @@ const gadgetCards = async () => {
         field: 'size',
         definition: { type: 'integer' },
       },
-      h.owner.id,
+      h.owner,
       'live',
       'api',
     ),
@@ -672,7 +671,7 @@ describe('a stale digest leaves a way forward', () => {
           key: ['name'],
           rows: [{ name: 'stuck-1', age: 1 }],
         },
-        h.owner.id,
+        h.owner,
         'live',
         'api',
       ),
@@ -701,7 +700,7 @@ describe('archive counts are pinned by the digest', () => {
     await asOwner(() =>
       runCommand(
         { type: 'removeField', model: 'Gizmo', field: 'scratch' },
-        h.owner.id,
+        h.owner,
         'live',
         'api',
       ),
@@ -732,7 +731,7 @@ describe('overwrites are shown and pinned, never blocking', () => {
     rows,
   });
   const addLoad = (rows: { name: string; age: number }[]) =>
-    runCommand(load(rows), h.owner.id, 'live', 'api');
+    runCommand(load(rows), h.owner, 'live', 'api');
 
   it('a load that overwrites rows shows the count and still applies', async () => {
     const live = await getHost();

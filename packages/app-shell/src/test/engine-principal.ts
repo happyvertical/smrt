@@ -6,9 +6,10 @@ import {
   appPermissionSlugs,
   type EnginePrincipal,
   enginePrincipal,
+  OWNER_SLUG,
 } from '../engine/index.ts';
 
-/** The owner of `host`: its tenant, every slug of its definition. */
+/** The owner of `host`: its tenant, the owner slug, every slug of its definition. */
 export const hostOwner = (
   host: { def: AppDefinition; tenantId: string },
   userId = 'owner',
@@ -17,5 +18,5 @@ export const hostOwner = (
     kind: 'user',
     tenantId: host.tenantId,
     userId,
-    permissions: appPermissionSlugs(host.def),
+    permissions: [OWNER_SLUG, ...appPermissionSlugs(host.def)],
   });

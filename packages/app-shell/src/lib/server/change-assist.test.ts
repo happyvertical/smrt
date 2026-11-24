@@ -87,7 +87,7 @@ const principal = () => ({
 });
 
 async function liveDo(command: Command) {
-  await (await getHost()).execute(command, {
+  await (await getHost()).execute(hostOwner(await getHost()), command, {
     author: h.owner.id,
     approved: true,
   });
@@ -100,7 +100,7 @@ const addField = (
   asOwner(() =>
     runCommand(
       { type: 'addField', model, field, definition: { type: 'text' } },
-      h.owner.id,
+      h.owner,
       'live',
       source,
     ),

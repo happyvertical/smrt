@@ -57,6 +57,7 @@ async function desktopApp(rows = 3) {
   const dataDir = dir();
   const host = await AppHost.open(dataDir, { allowUnfencedStore: true, store });
   await host.execute(
+    hostOwner(host),
     {
       type: 'defineModel',
       name: 'Chore',

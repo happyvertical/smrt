@@ -22,7 +22,7 @@ export const POST: RequestHandler = guarded(async (event) => {
     throw new HttpError(400, '`version` must be a whole number');
   const version = body.version;
   const out = await runAs(owner, () =>
-    runCommand({ type: 'undoTo', version }, owner.id, target, 'owner'),
+    runCommand({ type: 'undoTo', version }, owner, target, 'owner'),
   );
   return isPending(out) ? json(out, 202) : json(out);
 });

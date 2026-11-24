@@ -261,7 +261,7 @@ describe('every exit', () => {
       const two = errored(raw);
       two.content.push({ type: 'text', text: `Error: ${raw}` });
       vi.spyOn(host, 'callAppTool').mockResolvedValue(two as never);
-      const outcome = (await decideApproval(id, true, h.owner.id)) as {
+      const outcome = (await decideApproval(id, true, h.owner)) as {
         status: string;
         error?: string;
       };
@@ -280,7 +280,7 @@ describe('every exit', () => {
       };
       const pending = (await runRest(
         { method: 'DELETE', url: `/api/chores/${rec.id}` },
-        h.owner.id,
+        h.owner,
         'live',
       )) as { approvalId?: string; result?: { approvalId?: string } };
       const id = (pending.approvalId ?? pending.result?.approvalId) as string;
@@ -289,7 +289,7 @@ describe('every exit', () => {
         status: 500,
         body: JSON.stringify({ error: raw }),
       } as never);
-      const outcome = (await decideApproval(id, true, h.owner.id)) as {
+      const outcome = (await decideApproval(id, true, h.owner)) as {
         status: string;
         error?: string;
       };
@@ -309,7 +309,7 @@ describe('every exit', () => {
       const body = JSON.parse((pending.content as { text: string }[])[0].text);
       const id = (body.result ?? body).approvalId as string;
       await appThrows(raw);
-      const outcome = (await decideApproval(id, true, h.owner.id)) as {
+      const outcome = (await decideApproval(id, true, h.owner)) as {
         error?: string;
       };
       clean(outcome.error ?? '');

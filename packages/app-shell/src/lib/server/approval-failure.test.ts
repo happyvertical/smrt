@@ -56,7 +56,7 @@ describe('an approved action that comes back as an error is a failed approval', 
     const id = (approvalId.result ?? approvalId).approvalId as string;
     // The record disappears between the request and the decision.
     await host.remove(hostOwner(host), 'Chore', rec.id);
-    const outcome = await decideApproval(id, true, h.owner.id);
+    const outcome = await decideApproval(id, true, h.owner);
     expect(outcome.status).toBe('failed');
   });
 });
@@ -72,6 +72,7 @@ it('the real undo and decision routes preserve records and version after a later
   const { getApprovalView } = await import('./approvals.ts');
   const host = await getHost();
   await host.execute(
+    hostOwner(host),
     {
       type: 'defineModel',
       name: 'UndoContact',
@@ -85,6 +86,7 @@ it('the real undo and decision routes preserve records and version after a later
     amount: 1,
   });
   await host.execute(
+    hostOwner(host),
     {
       type: 'loadRecords',
       model: 'UndoContact',
@@ -138,21 +140,16 @@ it('the real undo and decision routes preserve records and version after a later
   expect(persisted?.status).toBe('failed');
   expect(persisted?.summary).toBe('Undo: load into Contacts');
   const deletions = [
-    await requestRecordDelete(
-      'UndoContact',
-      String(row.id),
-      h.owner.id,
-      'live',
-    ),
+    await requestRecordDelete('UndoContact', String(row.id), h.owner, 'live'),
     await runAppTool(
       'undocontact_delete',
       { id: String(row.id) },
-      h.owner.id,
+      h.owner,
       'live',
     ),
     await runRest(
       { method: 'DELETE', url: `/api/undo_contacts/${row.id}` },
-      h.owner.id,
+      h.owner,
       'live',
     ),
   ];
@@ -190,6 +187,7 @@ it('refuses a known undo conflict before storage through HTTP and the assistant,
     await import('./approvals.ts');
   const host = await getHost();
   await host.execute(
+    hostOwner(host),
     {
       type: 'defineModel',
       name: 'Order',
@@ -203,6 +201,7 @@ it('refuses a known undo conflict before storage through HTTP and the assistant,
     amount: 1,
   });
   await host.execute(
+    hostOwner(host),
     {
       type: 'loadRecords',
       model: 'Order',

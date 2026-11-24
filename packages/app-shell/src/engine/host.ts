@@ -105,6 +105,7 @@ import type { MergePreview } from './merge-records.ts';
 import {
   type EnginePrincipal,
   mintSystemPrincipal,
+  requireOwnerPrincipal,
   requirePrincipal,
   tenantFor,
 } from './principal.ts';
@@ -913,8 +914,14 @@ export class AppHost extends EventEmitter {
    * Apply a command. A risky one throws {@link ApprovalRequiredError} unless
    * `approved` is true, and then nothing has changed.
    */
-  execute(cmd: Command, opts: ExecuteOptions): Promise<ExecuteResult> {
+  execute(
+    principal: EnginePrincipal,
+    cmd: Command,
+    opts: ExecuteOptions,
+  ): Promise<ExecuteResult> {
     try {
+      // First: nothing is cloned, queued or read for a caller who may not.
+      requireOwnerPrincipal(principal, this.tenantId);
       if (cmd.type === 'loadRecords') assertLoadBounds(cmd);
       cmd = structuredClone(cmd);
     } catch (e) {
@@ -2378,6 +2385,7 @@ export class AppHost extends EventEmitter {
    * app as it was.
    */
   restoreSnapshot(
+    principal: EnginePrincipal,
     name: string,
     opts: { approved?: boolean } = {},
   ): Promise<{
@@ -2386,6 +2394,11 @@ export class AppHost extends EventEmitter {
     /** The snapshot of the data this restore replaced. */
     snapshot: string;
   }> {
+    try {
+      requireOwnerPrincipal(principal, this.tenantId);
+    } catch (e) {
+      return Promise.reject(e);
+    }
     if (!this.onServer)
       return Promise.reject(
         new EngineError(
@@ -2577,7 +2590,16 @@ export class AppHost extends EventEmitter {
    * Only an ordinary (live) host can fork. Live may keep serving records while
    * the draft is open; the caller freezes live structure with `setFrozen`.
    */
-  forkDraft(draftDir: string, opts: ForkDraftOptions): Promise<AppHost> {
+  forkDraft(
+    principal: EnginePrincipal,
+    draftDir: string,
+    opts: ForkDraftOptions,
+  ): Promise<AppHost> {
+    try {
+      requireOwnerPrincipal(principal, this.tenantId);
+    } catch (e) {
+      return Promise.reject(e);
+    }
     if (this.draft)
       return Promise.reject(
         new EngineError('a draft cannot be forked again', 'refused'),
@@ -2985,7 +3007,16 @@ export class AppHost extends EventEmitter {
    * `app.db` is byte-for-byte what it was) and leaves the version unchanged.
    * Live records wait (not fail) while this runs. The caller discards the draft.
    */
-  publishDraft(draft: AppHost, opts: PublishOptions): Promise<PublishResult> {
+  publishDraft(
+    principal: EnginePrincipal,
+    draft: AppHost,
+    opts: PublishOptions,
+  ): Promise<PublishResult> {
+    try {
+      requireOwnerPrincipal(principal, this.tenantId);
+    } catch (e) {
+      return Promise.reject(e);
+    }
     if (!opts || typeof opts.author !== 'string' || !opts.author)
       return Promise.reject(new EngineError('publish needs an author'));
     if (typeof opts.expect !== 'string' || !opts.expect)

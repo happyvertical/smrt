@@ -47,6 +47,7 @@ describe('undo that overwrites newer data', () => {
   beforeAll(async () => {
     host = await AppHost.open(tmp('undo'), { store: new MemoryVersionStore() });
     await host.execute(
+      hostOwner(host),
       {
         type: 'defineModel',
         name: 'Task',
@@ -60,6 +61,7 @@ describe('undo that overwrites newer data', () => {
           .id as string,
       );
     await host.execute(
+      hostOwner(host),
       {
         type: 'changeFieldType',
         model: 'Task',
@@ -84,28 +86,33 @@ describe('undo that overwrites newer data', () => {
 
   it('refuses without approval and changes nothing; approving applies it', async () => {
     const version = host.version;
-    await expect(host.execute({ type: 'undo' }, asked)).rejects.toBeInstanceOf(
-      ApprovalRequiredError,
-    );
     await expect(
-      host.execute({ type: 'undo' }, { author: 't', approved: false }),
+      host.execute(hostOwner(host), { type: 'undo' }, asked),
+    ).rejects.toBeInstanceOf(ApprovalRequiredError);
+    await expect(
+      host.execute(
+        hostOwner(host),
+        { type: 'undo' },
+        { author: 't', approved: false },
+      ),
     ).rejects.toBeInstanceOf(ApprovalRequiredError);
     expect(host.version).toBe(version);
     expect((await host.get(hostOwner(host), 'Task', ids[0])).points).toBe(90);
 
     // approved for a version the app has moved on from: refused
     await expect(
-      host.execute({ type: 'undo', version: version + 5 }, ok),
+      host.execute(hostOwner(host), { type: 'undo', version: version + 5 }, ok),
     ).rejects.toThrow(/changed since/);
     expect(host.version).toBe(version);
 
-    await host.execute({ type: 'undo', version }, ok);
+    await host.execute(hostOwner(host), { type: 'undo', version }, ok);
     expect(host.version).toBe(version - 1);
     expect((await host.get(hostOwner(host), 'Task', ids[0])).points).toBe('1'); // original won
   });
 
   it('undo of a change without a conversion stays immediate', async () => {
     await host.execute(
+      hostOwner(host),
       {
         type: 'addField',
         model: 'Task',
@@ -115,7 +122,7 @@ describe('undo that overwrites newer data', () => {
       asked,
     );
     expect((await host.plan({ type: 'undo' })).risky).toBe(false);
-    await host.execute({ type: 'undo' }, asked);
+    await host.execute(hostOwner(host), { type: 'undo' }, asked);
   });
 });
 
@@ -126,6 +133,7 @@ describe('the app REST surface', () => {
   beforeAll(async () => {
     host = await AppHost.open(tmp('rest'), { store: new MemoryVersionStore() });
     await host.execute(
+      hostOwner(host),
       {
         type: 'defineModel',
         name: 'Chore',
@@ -269,6 +277,7 @@ describe('snapshot retention', () => {
     const host = await AppHost.open(dir, { store: new MemoryVersionStore() });
     try {
       await host.execute(
+        hostOwner(host),
         {
           type: 'defineModel',
           name: 'Chore',
@@ -277,6 +286,7 @@ describe('snapshot retention', () => {
         asked,
       );
       await host.execute(
+        hostOwner(host),
         {
           type: 'addMethod',
           model: 'Chore',
@@ -301,7 +311,11 @@ describe('snapshot retention', () => {
       writeFileSync(old, 'x');
       writeFileSync(fresh, 'x');
       utimesSync(old, 1, 1);
-      const out = (await host.execute({ type: 'cleanUp', keep: 0 }, ok)) as {
+      const out = (await host.execute(
+        hostOwner(host),
+        { type: 'cleanUp', keep: 0 },
+        ok,
+      )) as {
         snapshots: number;
       };
       expect(out.snapshots).toBeGreaterThanOrEqual(1);
@@ -324,6 +338,7 @@ describe('importTemplate approval shows the code', () => {
     });
     try {
       await src.execute(
+        hostOwner(src),
         {
           type: 'defineModel',
           name: 'Chore',
@@ -332,6 +347,7 @@ describe('importTemplate approval shows the code', () => {
         asked,
       );
       await src.execute(
+        hostOwner(src),
         {
           type: 'addMethod',
           model: 'Chore',
@@ -345,6 +361,7 @@ describe('importTemplate approval shows the code', () => {
         ok,
       );
       const tpl = (await src.execute(
+        hostOwner(src),
         { type: 'exportTemplate' },
         asked,
       )) as Template;

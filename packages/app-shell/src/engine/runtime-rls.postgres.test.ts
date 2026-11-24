@@ -68,7 +68,7 @@ describe.each(backends)('run-time model row-level security (%s)', (backend) => {
     return { host, dir: d };
   };
   const run = (host: AppHost, cmd: Command) =>
-    host.execute(cmd, { author: 'test', approved: true });
+    host.execute(hostOwner(host), cmd, { author: 'test', approved: true });
   const newSchema = async (label: string) => {
     const schema = `app_rls_${label}_${suffix}`;
     await admin.query(`CREATE SCHEMA "${schema}"`);

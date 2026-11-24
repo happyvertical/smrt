@@ -108,7 +108,7 @@ function wholeResult(
  * to (none for a report). `run` executes the command on the import's copy.
  */
 export type ImportCommandHook = (input: {
-  command: Parameters<AppHost['execute']>[0];
+  command: Parameters<AppHost['execute']>[1];
   table?: string;
   run: () => Promise<unknown>;
 }) => Promise<unknown>;
@@ -140,11 +140,12 @@ export function createEngineImportTarget(
     return found;
   };
   const run = async (
-    command: Parameters<AppHost['execute']>[0],
+    command: Parameters<AppHost['execute']>[1],
     table?: string,
   ) => {
     await beforeCommand();
-    const execute = () => host.execute(command, { author: 'workbook import' });
+    const execute = () =>
+      host.execute(caller(), command, { author: 'workbook import' });
     return onCommand ? onCommand({ command, table, run: execute }) : execute();
   };
   const target: EngineImportTarget = {

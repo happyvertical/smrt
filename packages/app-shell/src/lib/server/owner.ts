@@ -23,6 +23,7 @@ import {
   appPermissionSlugs,
   type EnginePrincipal,
   enginePrincipal,
+  OWNER_SLUG,
 } from '../../engine/index.ts';
 import { getShellDb } from './host.ts';
 
@@ -156,7 +157,7 @@ export function principalFor(
     kind: 'user',
     tenantId: owner.tenantId,
     userId: owner.id,
-    permissions: appPermissionSlugs(def),
+    permissions: [OWNER_SLUG, ...appPermissionSlugs(def)],
   });
 }
 
@@ -168,13 +169,13 @@ export async function callerFor(host: {
 }
 
 /**
- * The engine principal of an owner already verified upstream, named by user
- * id (the `author` of a builder call): the app's own tenant, the owner's
- * slugs. For callers that hold the verified owner's id but no async scope.
+ * The engine principal of a verified owner, for a caller that holds the
+ * verified `Principal` but no async scope (a builder call). The tenant is the
+ * principal's own, never the host's: a host of another tenant refuses it.
  */
 export function authorCaller(
-  host: { def: AppDefinition; tenantId: string },
-  author: string,
+  owner: Principal,
+  host: { def: AppDefinition },
 ): EnginePrincipal {
-  return principalFor({ id: author, tenantId: host.tenantId }, host.def);
+  return principalFor(owner, host.def);
 }
