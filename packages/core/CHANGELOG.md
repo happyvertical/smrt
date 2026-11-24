@@ -1,5 +1,21 @@
 # @happyvertical/smrt-core
 
+## 0.70.1
+
+### Patch Changes
+
+- ### Features
+  
+  - tenant-scoped run-time models with row-level-security policies (#5610) (app-shell)
+  
+  ### Bug Fixes
+  
+  - header at phone width, truthful Auto wording; docs and comment fixes (#5613) (planner)
+  - assistant chat follow-ups from #5601 QA (#5614) (app-shell)
+- @happyvertical/smrt-config@0.70.1
+  - @happyvertical/smrt-scanner@0.70.1
+  - @happyvertical/smrt-types@0.70.1
+
 ## 0.70.0
 
 ### Minor Changes
