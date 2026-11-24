@@ -70,13 +70,14 @@ owners and call `configureMailAccess({ options, resolvePrincipal })` at startup
   configured db handle, not a caller's transaction.
 - Draft writes need the `draft` scope on an owned account: `Message.save()`
   and `Message.delete()` check it (`assertMailDraftWrite`, `access.ts`) for a
-  row that is a draft now or was one when stored (unsent `draft` status, and
-  `isDraft` on emails), and for both accounts when a draft moves. Received mail
-  carries the default `draft` status and is not a draft. That covers generated
+  email that is a draft now or was one when stored (`isDraft` with `draft`
+  status), and for both accounts when a draft moves. Received mail
+  carries the default `draft` status and is not a draft; classes without
+  `isDraft` are not covered. That covers generated
   create/update/delete, `createReply`/`createForward` + `save()` and
   `MailDraftService`. Trusted work (`runWithMailSystemAccess`: sync, outbox,
-  triage write-back, approval edits) and the send lifecycle's own saves and held-send
-  move back to draft skip it; with no principal an owned account is closed,
+  triage write-back, approval edits) skip it, and so do the send lifecycle's own saves and a held send's move back
+  to draft while the stored content and account are unchanged; with no principal an owned account is closed,
   unowned accounts are unchanged.
 - `Message.send()` needs the `send` scope on an owned account. Agent sends
   (principal `kind` other than `person`/`human`) on a mail account are held

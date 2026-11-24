@@ -40,6 +40,7 @@ import {
   approvedDraftChanged,
   auditMailAction,
   holdAgentSend,
+  MAIL_CONTENT_FIELDS,
   stampHandledBy,
 } from '../send-approval.js';
 import type {
@@ -324,7 +325,7 @@ export class Message extends SmrtObject {
     lifecycleSaves.delete(this);
     const authorized =
       signature !== undefined && signature === lifecycleSignature(this);
-    if (!authorized && !heldSaves.has(this)) await this.assertDraftScope();
+    await this.assertDraftScope(authorized || heldSaves.has(this));
     return this.withTransaction(async () => {
       await assertProtectedNotificationSave(this, options, authorized);
       if (signature !== undefined && signature !== lifecycleSignature(this))
@@ -344,7 +345,7 @@ export class Message extends SmrtObject {
   override async delete(
     options: { expectedUpdatedAt?: Date | string } = {},
   ): Promise<void> {
-    await this.assertDraftScope();
+    await this.assertDraftScope(false);
     await assertProtectedNotificationDelete(this);
     return super.delete(options);
   }
@@ -353,27 +354,46 @@ export class Message extends SmrtObject {
    * Creating, changing or deleting a draft on an owned account needs the
    * `draft` scope, whichever route the write takes. Both the new and the
    * stored state count, so a draft cannot be edited by first relabelling it,
-   * and both accounts count when a draft is moved. A draft is an unsent row
-   * (`isDraft` too, where the class has it); received mail carries the default
-   * `draft` status and is not one. Trusted system work, unowned accounts and
-   * rows that are not drafts are unaffected.
+   * and both accounts count when a draft is moved. A draft is an unsent email
+   * (`isDraft` with `draft` status); received mail carries the default `draft`
+   * status and is not one, and classes without `isDraft` are not covered.
+   * Trusted system work, unowned accounts and rows that are not drafts are
+   * unaffected.
+   *
+   * `lifecycle` is the send path's own save (status changes, a held send moved
+   * back to draft): it passes only while the stored row still has exactly the
+   * content and account it is saved with, so it cannot carry an edit.
    */
-  private async assertDraftScope(): Promise<void> {
+  private async assertDraftScope(lifecycle: boolean): Promise<void> {
     if (inMailSystemAccess()) return;
-    const hasFlag = 'isDraft' in this;
+    if (!('isDraft' in this)) return;
+    const flagged = (value: unknown) => TRUTHY_STORED.has(value as never);
     const draftNow =
       this.sendStatus === 'draft' &&
-      (!hasFlag || (this as { isDraft?: unknown }).isDraft === true);
+      (this as { isDraft?: unknown }).isDraft === true;
     let priorAccountId: string | null = null;
+    let unchanged = false;
     if (this.id) {
       const stored = await this.getCanonicalPersistedRow({ id: this.id });
-      if (
-        stored?.send_status === 'draft' &&
-        (!hasFlag || TRUTHY_STORED.has(stored.is_draft as never))
-      ) {
+      if (stored?.send_status === 'draft' && flagged(stored.is_draft)) {
         priorAccountId = (stored.account_id as string | null) ?? null;
       }
+      if (stored) {
+        const norm = (value: unknown) =>
+          value === undefined || value === null ? '' : String(value);
+        unchanged =
+          flagged(stored.is_draft) ===
+            ((this as { isDraft?: unknown }).isDraft === true) &&
+          MAIL_CONTENT_FIELDS.every(
+            (name) =>
+              norm((this as Record<string, unknown>)[name]) ===
+              norm(
+                stored[name.replace(/[A-Z]/g, (c) => `_${c.toLowerCase()}`)],
+              ),
+          );
+      }
     }
+    if (lifecycle && unchanged) return;
     if (!draftNow && !priorAccountId) return;
     await assertMailDraftWrite(
       [draftNow ? this.accountId : null, priorAccountId],

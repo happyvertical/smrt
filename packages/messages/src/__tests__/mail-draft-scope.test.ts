@@ -351,6 +351,48 @@ describe('draft scope on message writes (#5616)', () => {
       expect(await exists(id)).toBe(true);
     });
 
+    it('refuses an edit carried by a failed send of a draft', async () => {
+      const id = await seedDraft(ownedId);
+      const result = await as(
+        principal(drafter, { scopes: ['read'] }),
+        async () => {
+          const draft = await load(id);
+          draft.subject = 'rewritten';
+          draft.accountId = '';
+          return draft.send();
+        },
+      ).catch((error) => error);
+      expect(result).toBeInstanceOf(MailAccessError);
+      const stored = await load(id);
+      expect(stored.subject).toBe('seeded');
+      expect(stored.accountId).toBe(ownedId);
+      expect(stored.sendStatus).toBe('draft');
+    });
+
+    it('does not let a held send carry an edit', async () => {
+      const id = await withTenant({ tenantId }, () =>
+        runWithMailSystemAccess(async () => {
+          const draft = await newDraft(ownedId, 'queued');
+          draft.sendStatus = 'draft';
+          draft.fromAddress = 'owned@example.com';
+          await draft.save();
+          return draft.id as string;
+        }),
+      );
+      const result = await as(
+        principal(sender, { kind: 'agent', id: 'agent-credential' }),
+        async () => {
+          const draft = await load(id);
+          draft.subject = 'rewritten';
+          return draft.send();
+        },
+      ).catch((error) => error);
+      // The hold itself refuses changed content, and nothing is written.
+      expect(result).toMatchObject({ success: false });
+      expect(providerSend).not.toHaveBeenCalled();
+      expect((await load(id)).subject).toBe('queued');
+    });
+
     it('refuses the generated collection create, update and delete', async () => {
       // The generated routes read through the collection, then call the
       // model's save and delete, so a reader can reach exactly this path.
@@ -487,6 +529,18 @@ describe('draft scope on message writes (#5616)', () => {
         await sent.save();
         await sent.delete();
       });
+    });
+  });
+
+  it('leaves messages of classes without a draft flag alone', async () => {
+    const { Tweet } = await import('../models/Tweet');
+    await as(principal(stranger), async () => {
+      const tweet = new Tweet({ ...options, tenantId, accountId: ownedId });
+      await tweet.initialize();
+      await tweet.save();
+      tweet.isRead = true;
+      await tweet.save();
+      await tweet.delete();
     });
   });
 
