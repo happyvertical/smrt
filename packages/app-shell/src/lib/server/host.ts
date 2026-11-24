@@ -29,7 +29,7 @@ import { fileURLToPath } from 'node:url';
 import { getCurrentTenant, withTenant } from '@happyvertical/smrt-tenancy';
 import { TenantCollection } from '@happyvertical/smrt-users';
 import type { DatabaseInterface } from '@happyvertical/sql';
-import type { DatabaseConfig } from '../../engine/db/index.ts';
+import type { AppClaim, DatabaseConfig } from '../../engine/db/index.ts';
 import { CapacityError } from '../../engine/errors.ts';
 import {
   AppHost,
@@ -517,10 +517,13 @@ export function openDraftHost(
   pin: string | null = null,
   database: DatabaseConfig | null = null,
   appLimits?: AppLimits,
+  /** The live host's claim, lent for the draft's store writes (#5486); never released by the draft. */
+  claim?: AppClaim,
 ): Promise<AppHost> {
   return withConnections(database, 'draft', () =>
     AppHost.open(dir, {
       store: new DraftVersionStore(db, id, pin),
+      ...(claim ? { claim } : {}),
       ...hostTenant(pin),
       workerUrl: workerUrl(),
       workerLimits: budgetedLimits(),
@@ -549,21 +552,33 @@ async function adoptDraft(
   const drafts = await AppDraftCollection.create({ db });
   const now = new Date().toISOString();
   const rows = await drafts.list({ limit: 1000 });
-  for (const row of rows.filter((r) => r.status === 'starting')) {
-    row.status = 'discarded';
-    row.note = 'the start did not finish';
-    row.endedAt = now;
-    await row.save();
-  }
+  // On a host with a claim these writes are one claim transaction (#5486): a
+  // host that lost its claim marks no draft discarded, whoever holds it now.
+  const discard = async (list: typeof rows, note: string) => {
+    if (!list.length) return;
+    const mark = async (coll: typeof drafts) => {
+      for (const r of list) {
+        const row = (await coll.get(r.id as string)) ?? r;
+        row.status = 'discarded';
+        row.note = note;
+        row.endedAt = now;
+        await row.save();
+      }
+    };
+    if (live.lendableClaim)
+      await live.claimTransaction(async (tx) =>
+        mark(await AppDraftCollection.create({ db: tx as DatabaseInterface })),
+      );
+    else await mark(drafts);
+  };
+  await discard(
+    rows.filter((r) => r.status === 'starting'),
+    'the start did not finish',
+  );
   const open = rows
     .filter((r) => r.status === 'open')
     .sort((a, b) => (String(a.createdAt) < String(b.createdAt) ? 1 : -1));
-  for (const extra of open.slice(1)) {
-    extra.status = 'discarded';
-    extra.note = 'another draft was open';
-    extra.endedAt = now;
-    await extra.save();
-  }
+  await discard(open.slice(1), 'another draft was open');
   const row = open[0];
   if (!row) {
     // A copy nothing refers to any more (a crash after a publish or discard
@@ -607,6 +622,7 @@ async function adoptDraft(
       holder.pin,
       database,
       await appLimitsOf(holder),
+      live.lendableClaim,
     );
     wireHostEvents(draft, 'draft', holder.tenantId);
     slot.host = lifecycleOn() ? leased(holder, draft) : draft;

@@ -702,6 +702,151 @@ describe.each(backends)('the version store in the swap (%s)', (backend) => {
       expect(await columns(b.host)).toContain('later');
     });
 
+    it("claimTransaction runs the shell's own rows under the claim, and writes nothing once it is lost", async () => {
+      const live = await hooked();
+      const ran: string[] = [];
+      await live.host.claimTransaction(async () => {
+        ran.push('before');
+      });
+      (live.claim as ReturnType<typeof killable>).kill();
+      const err = await live.host
+        .claimTransaction(async () => {
+          ran.push('after');
+        })
+        .catch((e) => e);
+      expect(err).toBeInstanceOf(ClaimLostError);
+      expect(ran).toEqual(['before']);
+    });
+
+    describe("a draft on the live host's lent claim", () => {
+      class HookedDraft extends DraftVersionStore {
+        calls = 0;
+        after?: (n: number) => void | Promise<void>;
+        async commitIn(...a: Parameters<DraftVersionStore['commitIn']>) {
+          const n = ++this.calls;
+          const r = await super.commitIn(...a);
+          await this.after?.(n);
+          return r;
+        }
+      }
+      const fork = async (live: Awaited<ReturnType<typeof hooked>>) => {
+        const drafts = await AppDraftCollection.create({ db: shell as never });
+        const row = await drafts.create({
+          name: 'Draft',
+          status: 'open',
+          createdBy: 't',
+          createdAt: new Date().toISOString(),
+        });
+        await row.save();
+        const id = row.id as string;
+        const store = new HookedDraft(shell as never, id);
+        const draft = await live.host.forkDraft(
+          hostOwner(live.host),
+          `${live.dir}-draft-${id.slice(0, 6)}`,
+          { store },
+        );
+        hosts.push(draft);
+        return { draft, store, id };
+      };
+      const draftMeta = (draft: AppHost) => meta(draft.draft?.schema as string);
+
+      it('starts with no change journal of its own, and journals and records its changes', async () => {
+        const live = await hooked();
+        await run(live.host, rename); // leaves a committed key in live's schema
+        expect((await meta(live.schema)).change).toBeTruthy();
+        const d = await fork(live);
+        expect((await draftMeta(d.draft)).change).toBeUndefined();
+        const v = d.draft.version;
+        await run(d.draft, {
+          type: 'addField',
+          model: 'Chore',
+          field: 'done',
+          definition: { type: 'boolean' },
+        });
+        expect(await d.store.current()).toBe(v + 1);
+        expect(JSON.parse((await draftMeta(d.draft)).change)).toMatchObject({
+          to: v + 1,
+          committed: true,
+        });
+        expect(d.store.calls).toBeGreaterThanOrEqual(2);
+      });
+
+      it('refuses a change once the draft has ended, and writes nothing', async () => {
+        const live = await hooked();
+        const d = await fork(live);
+        const v = d.draft.version;
+        await shell.query(
+          `UPDATE app_drafts SET status = 'discarded' WHERE id = ?`,
+          [d.id],
+        );
+        const err = await run(d.draft, {
+          type: 'addField',
+          model: 'Chore',
+          field: 'done',
+          definition: { type: 'boolean' },
+        }).catch((e) => e);
+        expect(err).toBeInstanceOf(StaleStoreError);
+        expect(d.draft.version).toBe(v);
+        expect(await d.store.current()).toBe(v);
+        expect(await columns(d.draft)).not.toContain('done');
+      });
+
+      it('never releases the lent claim: closing the draft leaves live changing', async () => {
+        const live = await hooked();
+        const d = await fork(live);
+        await d.draft.close();
+        hosts.splice(hosts.indexOf(d.draft), 1);
+        await run(live.host, rename);
+        expect(await columns(live.host)).toContain('score');
+        expect(live.host.lostClaim).toBeNull();
+      });
+
+      it('a lost claim stops the draft: it changes nothing, and says so', async () => {
+        const live = await hooked();
+        const d = await fork(live);
+        (live.claim as ReturnType<typeof killable>).kill();
+        const err = await run(d.draft, {
+          type: 'addField',
+          model: 'Chore',
+          field: 'done',
+          definition: { type: 'boolean' },
+        }).catch((e) => e);
+        expect(err).toBeInstanceOf(ClaimLostError);
+        expect(await d.store.current()).toBe(d.draft.version);
+      });
+
+      it('a change interrupted after its migration is rolled forward when the draft reopens', async () => {
+        const live = await hooked();
+        const d = await fork(live);
+        const v = d.draft.version;
+        d.store.calls = 0;
+        d.store.after = (n) => {
+          if (n === 1) (live.claim as ReturnType<typeof killable>).kill();
+        };
+        const err = await run(d.draft, {
+          type: 'addField',
+          model: 'Chore',
+          field: 'done',
+          definition: { type: 'boolean' },
+        }).catch((e) => e);
+        expect(isUnknownOutcome(err)).toBe(true);
+        expect(await d.store.current()).toBe(v);
+        const b = await reopen(live);
+        const again = await AppHost.open(d.draft.dataDir, {
+          store: new DraftVersionStore(shell as never, d.id),
+          database: config(live.schema),
+          ...(b.host.lendableClaim ? { claim: b.host.lendableClaim } : {}),
+          claimOptions: { heartbeatMs: 0 },
+        });
+        hosts.push(again);
+        expect(again.version).toBe(v + 1);
+        expect(
+          await new DraftVersionStore(shell as never, d.id).current(),
+        ).toBe(v + 1);
+        expect(await columns(again)).toContain('done');
+      });
+    });
+
     it('a settled change leaves nothing for the next open to do', async () => {
       const live = await hooked();
       await run(live.host, rename);
