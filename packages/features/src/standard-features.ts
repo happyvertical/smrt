@@ -23,6 +23,8 @@ export const FEATURE_CLOUD_HOSTED = 'cloud.hosted';
 export const FEATURE_INFERENCE_HOSTED = 'inference.hosted';
 /** Remotely installed plugins. */
 export const FEATURE_PLUGINS_REMOTE = 'plugins.remote';
+/** App-authored method code running on hosted infrastructure (#5194, #5597). */
+export const FEATURE_APP_METHODS = 'app.methods';
 
 /** The standard keys by name, for iteration and typed lookups. */
 export const STANDARD_FEATURE_KEYS = {
@@ -31,6 +33,7 @@ export const STANDARD_FEATURE_KEYS = {
   cloudHosted: FEATURE_CLOUD_HOSTED,
   inferenceHosted: FEATURE_INFERENCE_HOSTED,
   pluginsRemote: FEATURE_PLUGINS_REMOTE,
+  appMethods: FEATURE_APP_METHODS,
 } as const;
 
 export type StandardFeatureKey =
@@ -81,6 +84,15 @@ export const STANDARD_FEATURES: readonly FrameworkFeatureDefinition[] =
           packageName: OWNER,
           label: 'Remote plugins',
           description: 'Install plugins from a remote catalog.',
+          defaultEnabled: false,
+          metadata: { paid: true },
+        },
+        {
+          featureKey: FEATURE_APP_METHODS,
+          packageName: OWNER,
+          label: 'App method code',
+          description:
+            'Run app-authored method code in a hosted app. Formulas do not need it.',
           defaultEnabled: false,
           metadata: { paid: true },
         },

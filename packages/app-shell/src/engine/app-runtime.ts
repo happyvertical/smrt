@@ -10,6 +10,7 @@ import {
   ObjectRegistry,
   planRuntimeModelDDL,
   registerRuntimeModel,
+  SmrtObject,
   withCallerOwnedDatabaseTransaction,
   withEmbeddedWriteTransaction,
 } from '@happyvertical/smrt-core';
@@ -428,18 +429,36 @@ export class AppRuntime {
         string,
         (this: { id?: string }, p?: Row) => unknown
       > = {};
+      // A method named like a member the framework itself calls (`initialize`,
+      // `validateBeforeSave`, ...) would replace it and run sandbox code on
+      // every record load or save, outside any run-time entitlement check
+      // (#5194). It stays runnable through `runMethod`; it never shadows.
+      const parentClass = recipeModelFor(model, md)?.parent;
+      const inherited = (name: string) =>
+        name in SmrtObject.prototype ||
+        (!!parentClass &&
+          name in
+            ((
+              ObjectRegistry.getClass(parentClass)?.constructor as
+                | { prototype: object }
+                | undefined
+            )?.prototype ?? {}));
       for (const name of Object.keys(md.methods ?? {}))
-        methods[name] = function (this: { id?: string }, params?: Row) {
-          return rt.runMethod(model, name, this.id ?? null, params ?? {});
-        };
-      registerRuntimeModel(
-        toRuntimeModel(model, md, {
-          tenantScoped: this.database.kind !== 'sqlite',
-        }),
-        {
-          methods: methods as never,
-        },
-      );
+        if (!inherited(name))
+          methods[name] = function (this: { id?: string }, params?: Row) {
+            return rt.runMethod(model, name, this.id ?? null, params ?? {});
+          };
+      const runtimeModel = toRuntimeModel(model, md, {
+        tenantScoped: this.database.kind !== 'sqlite',
+      });
+      // Such a method also gets no generated tool or route: the dispatcher
+      // would call the framework member of that name with the caller's
+      // arguments instead of the app's code.
+      for (const name of Object.keys(runtimeModel.methods ?? {}))
+        if (inherited(name)) delete runtimeModel.methods?.[name];
+      registerRuntimeModel(runtimeModel, {
+        methods: methods as never,
+      });
       // The app uses only its subclass: close the shipped parent's generated
       // surfaces so its tools do not duplicate the subclass's.
       const parent = recipeModelFor(model, md)?.parent;

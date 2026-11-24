@@ -13,6 +13,7 @@ const mocks = vi.hoisted(() => ({
   drain: vi.fn(),
   gate: vi.fn(),
   provisioning: vi.fn(),
+  methodCode: vi.fn(),
   env: { dev: false, building: false },
 }));
 vi.mock('$app/environment', () => mocks.env);
@@ -26,6 +27,9 @@ vi.mock('$lib/server/host', () => ({
 }));
 vi.mock('$lib/server/hosted-inference', () => ({
   installHostedInferenceGate: mocks.gate,
+}));
+vi.mock('$lib/server/method-code', () => ({
+  installMethodCodeGate: mocks.methodCode,
 }));
 vi.mock('$lib/server/hosted-provisioning', () => ({
   installHostedProvisioning: mocks.provisioning,
@@ -129,4 +133,14 @@ it('registers hosted provisioning after the gate, and only once the gate is in',
   mocks.gate.mockRejectedValueOnce(new Error('no kill switch table'));
   await expect(init()).rejects.toThrow('no kill switch table');
   expect(mocks.provisioning).not.toHaveBeenCalled();
+});
+it('installs the method-code entitlement check after the gate, and does not start without it', async () => {
+  mocks.profile.mockResolvedValue('cloud');
+  await expect(init()).resolves.toBeUndefined();
+  expect(mocks.methodCode).toHaveBeenCalledOnce();
+  expect(mocks.gate.mock.invocationCallOrder[0]).toBeLessThan(
+    mocks.methodCode.mock.invocationCallOrder[0],
+  );
+  mocks.methodCode.mockRejectedValueOnce(new Error('no feature tables'));
+  await expect(init()).rejects.toThrow('no feature tables');
 });

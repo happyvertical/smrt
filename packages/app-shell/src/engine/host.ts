@@ -103,6 +103,13 @@ import type { ExtractPreview } from './extract-model.ts';
 import { WORKBOOK_LOOKUP, WORKBOOK_ROW } from './import-bookkeeping.ts';
 import type { MergePreview } from './merge-records.ts';
 import {
+  introducedCode,
+  METHOD_CODE_DENIED,
+  type MethodCodeGate,
+  methodCodeMessage,
+  methodCodeTarget,
+} from './method-code.ts';
+import {
   type EnginePrincipal,
   mintSystemPrincipal,
   requireOwnerPrincipal,
@@ -167,6 +174,13 @@ export interface HostOptions {
    * Absent: unlimited, as on the desktop.
    */
   appLimits?: AppLimits;
+  /**
+   * Whether the app's tenant may run app-authored method code (#5194). Asked
+   * on the host before each call that would run method code and before a
+   * change that adds or changes it; refused without a "yes". Absent: allowed
+   * with no lookup (the desktop). A draft forked from this host inherits it.
+   */
+  methodCode?: MethodCodeGate;
   /**
    * Start frozen: every structural command is refused (see
    * {@link AppHost.setFrozen}). Records, reports, the app's own tools and REST
@@ -439,6 +453,7 @@ export class AppHost extends EventEmitter {
   private workerUrl: URL | string;
   private workerLimits: WorkerLimits | undefined;
   private appLimits: AppLimits | undefined;
+  private methodCode: MethodCodeGate | undefined;
   private database: DatabaseConfig;
   private dialect: EngineDialect;
   private releaseDatabase?: () => Promise<void>;
@@ -492,6 +507,7 @@ export class AppHost extends EventEmitter {
       ...opts.appLimits,
       methodRunState: new Float64Array(new SharedArrayBuffer(16)),
     };
+    this.methodCode = opts.methodCode;
     this.frozenNow = opts.frozen === true;
     this.#autoApprove = opts.autoApprove === true;
     this.draft = readDraftMarker(dataDir);
@@ -804,6 +820,7 @@ export class AppHost extends EventEmitter {
       ),
     ];
     if (errs.length) throw new EngineError(errs.join('\n'));
+    await this.requireMethodCodeFor(this.def, next);
     const v = (await this.store.maxVersion()) + 1;
     const parent = this.version;
     const migration: Migration | undefined = steps.length
@@ -1449,6 +1466,9 @@ export class AppHost extends EventEmitter {
       }
       case 'addMethod': {
         this.model(cmd.model);
+        // Before the parser: unentitled code never reaches QuickJS here.
+        if (this.methodCode)
+          await this.requireMethodCode(`${cmd.model}.${cmd.name}()`);
         const problem = await checkSyntax(cmd.method?.code ?? '');
         if (problem) throw new EngineError(`method does not parse: ${problem}`);
         const d = this.clone();
@@ -1635,6 +1655,8 @@ export class AppHost extends EventEmitter {
         preview,
       },
       apply: async () => {
+        // Undo can bring back code a later version removed: same rule as a change.
+        await this.requireMethodCodeFor(this.def, parent.definition);
         const migration: Migration | undefined = rec.migration?.steps.length
           ? {
               steps: rec.migration.steps,
@@ -1990,6 +2012,7 @@ export class AppHost extends EventEmitter {
       code: string;
     }[] = [];
     let codeChars = 0;
+    await this.requireMethodCodeFor(EMPTY_APP, def);
     for (const [m, md] of Object.entries(def.models))
       for (const [n, meth] of Object.entries(md.methods ?? {})) {
         const problem = await checkSyntax(meth.code);
@@ -2540,6 +2563,39 @@ export class AppHost extends EventEmitter {
     }
   }
 
+  /**
+   * Refuse unless the tenant's entitlement grants method code (#5194). The
+   * answer comes from the injected gate on this host, per call; a failed
+   * lookup is a refusal ("unavailable"), never a yes.
+   */
+  private async requireMethodCode(what: string): Promise<void> {
+    const gate = this.methodCode;
+    if (!gate) return;
+    let ok = false;
+    try {
+      ok = (await gate(this.tenantId)) === true;
+    } catch {
+      throw new EngineError(
+        `${what}: whether custom method code is enabled for this workspace could not be checked, so nothing was run or saved; try again shortly`,
+        'unavailable',
+      );
+    }
+    if (!ok)
+      throw new EngineError(methodCodeMessage(what), 'refused', {
+        code: METHOD_CODE_DENIED,
+      });
+  }
+
+  /** Refuse a change that adds or changes method code when it is not granted. */
+  private async requireMethodCodeFor(
+    from: AppDefinition,
+    to: AppDefinition,
+  ): Promise<void> {
+    if (!this.methodCode) return;
+    const added = introducedCode(from, to);
+    if (added.length) await this.requireMethodCode(added.join(', '));
+  }
+
   private async onApp<T>(
     principal: EnginePrincipal,
     op: WorkerOp,
@@ -2550,10 +2606,20 @@ export class AppHost extends EventEmitter {
     // Never talk to an app that is being replaced: wait until the queue is
     // idle AND no change was queued while waiting. The check and the call below
     // run in one synchronous step, so no change can start in between.
+    // A call that would run method code is also checked against the tenant's
+    // entitlement (#5194); the check awaits, so the queue is looked at again.
+    let entitled = false;
     for (;;) {
       const q = this.queue;
       await q;
-      if (q === this.queue) break;
+      if (q !== this.queue) continue;
+      const target =
+        entitled || !this.methodCode
+          ? null
+          : methodCodeTarget(this.def, op, args);
+      if (!target) break;
+      await this.requireMethodCode(`${target.model}.${target.method}()`);
+      entitled = true;
     }
     if (this.closed) throw new EngineError('the host is closed', 'refused');
     if (this.claimLost) throw this.claimLost;
@@ -2637,6 +2703,7 @@ export class AppHost extends EventEmitter {
           workerUrl: this.workerUrl,
           workerLimits: this.workerLimits,
           appLimits: this.appLimits,
+          methodCode: this.methodCode,
           autoApprove: true,
           database: schema ? this.database : undefined,
           swapLockTimeoutMs: this.lockTimeoutMs,
@@ -2745,6 +2812,12 @@ export class AppHost extends EventEmitter {
       );
     if (!chain.versions.length)
       throw new EngineError('the draft has no changes to publish', 'refused');
+    // Method code the draft adds or changes needs the entitlement at publish
+    // too (a card made while entitled, applied after it was lost).
+    await this.requireMethodCodeFor(
+      this.def,
+      chain.versions[chain.versions.length - 1].definition,
+    );
     return { chain, digest: chainDigest(this.version, chain) };
   }
 

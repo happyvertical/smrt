@@ -16,6 +16,7 @@ import { drainShell, shellProfile } from '$lib/server/host';
 import { installHostedInferenceGate } from '$lib/server/hosted-inference';
 import { installHostedProvisioning } from '$lib/server/hosted-provisioning';
 import { shellImports, stopShellImports } from '$lib/server/import-runtime';
+import { installMethodCodeGate } from '$lib/server/method-code';
 import {
   ensureOwnerHandoff,
   keepOwnerHandoffFresh,
@@ -50,6 +51,11 @@ export const init = async () => {
   // Plan changes provision or revoke the members' hosted keys, where the
   // operator configured a gateway (#5194). Inert otherwise and on the desktop.
   await installHostedProvisioning({
+    db: async () => (await runtime.deployedRuntime()).db,
+  });
+  // Hosted: app-authored method code runs only for a tenant whose plan grants
+  // it (#5194); the check is built here or the server does not start.
+  await installMethodCodeGate({
     db: async () => (await runtime.deployedRuntime()).db,
   });
   // The hosted app has no owner link to hand off and no embedded job runner
