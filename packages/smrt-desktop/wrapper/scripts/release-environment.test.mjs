@@ -121,7 +121,7 @@ describe('checkEnvironment', () => {
     assert.ok(problems.some((p) => /no required reviewers/.test(p)));
   });
 
-  it('refuses self-review being allowed', async () => {
+  it('accepts self-review being allowed (single-owner repository)', async () => {
     for (const flag of [false, undefined]) {
       const problems = await run(
         withEnvironment({
@@ -134,8 +134,34 @@ describe('checkEnvironment', () => {
           ],
         }),
       );
-      assert.ok(problems.some((p) => /Prevent self-review/.test(p)));
+      assert.deepEqual(problems, []);
     }
+  });
+
+  it('still refuses every other failure when self-review is allowed', async () => {
+    const noSelfReview = [
+      {
+        type: 'required_reviewers',
+        prevent_self_review: false,
+        reviewers: [{ type: 'User' }],
+      },
+    ];
+    const emptyReviewers = [
+      { type: 'required_reviewers', prevent_self_review: false, reviewers: [] },
+    ];
+    const bypass = await run(
+      withEnvironment({ protection_rules: noSelfReview, can_admins_bypass: true }),
+    );
+    assert.ok(bypass.some((p) => /bypass/.test(p)));
+    const nobody = await run(withEnvironment({ protection_rules: emptyReviewers }));
+    assert.ok(nobody.some((p) => /no required reviewers/.test(p)));
+    const noBranchRule = await run(
+      withEnvironment({
+        protection_rules: noSelfReview,
+        deployment_branch_policy: null,
+      }),
+    );
+    assert.ok(noBranchRule.some((p) => /deployment branches/.test(p)));
   });
 
   it('refuses admins being able to bypass, or the field being absent', async () => {
