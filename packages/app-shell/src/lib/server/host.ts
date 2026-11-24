@@ -856,7 +856,6 @@ async function openLive(holder: Holder): Promise<AppHost> {
   // by the open: settle the approval that asked for it.
   const recovered = host.recoveredChange;
   if (recovered?.request) {
-    host.recoveredChange = null;
     try {
       const { settleRecoveredChange } = await import('./approvals.ts');
       await settleRecoveredChange({
@@ -864,6 +863,10 @@ async function openLive(holder: Holder): Promise<AppHost> {
         outcome: recovered.outcome,
         partial: recovered.partial,
       });
+      // Settled (or nothing left to settle): the engine may drop its journal.
+      // Until then the outcome is persisted, so a failure here, or a stop
+      // before it, is retried at the next open.
+      await host.acknowledgeRecovery(recovered.id);
     } catch (e) {
       host.notices.push(
         `An approval could not be settled after a reopen (${e instanceof Error ? e.message : String(e)}); it still reads "Outcome unknown".`,

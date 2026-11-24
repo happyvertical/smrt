@@ -452,6 +452,12 @@ interface ChangeKey {
   /** Step `index` of `of` when the change is one step of an `undoTo`. */
   part?: { index: number; of: number };
   committed?: boolean;
+  /**
+   * What a reopen decided, kept (with the key) until the shell has settled the
+   * approval that asked for it (`acknowledgeRecovery`): a failed open or a
+   * stopped process in between must not lose the outcome.
+   */
+  decided?: 'applied' | 'not-applied';
 }
 
 /** What the reopen decided about the change an earlier host left in flight. */
@@ -750,6 +756,7 @@ export class AppHost extends EventEmitter {
       }
       const data = meta.version === undefined ? null : Number(meta.version);
       if (!found) outcome = 'undecided';
+      else if (found.decided) outcome = found.decided;
       else if (found.committed) outcome = 'applied';
       else if (meta[REVERSED_KEY] === found.id) outcome = 'not-applied';
       else if (
@@ -773,7 +780,18 @@ export class AppHost extends EventEmitter {
       )
         outcome = 'not-applied';
       else outcome = 'undecided';
-      await deleteMeta(tx, schema, [CHANGE_KEY, APPLIED_KEY, REVERSED_KEY]);
+      const f = found as ChangeKey | null;
+      if (f?.request && (outcome === 'applied' || outcome === 'not-applied')) {
+        // Decided for an approval: keep the journal until it is acknowledged.
+        await writeMeta(
+          tx,
+          schema,
+          CHANGE_KEY,
+          JSON.stringify({ ...f, decided: outcome }),
+        );
+        await deleteMeta(tx, schema, [APPLIED_KEY, REVERSED_KEY]);
+      } else
+        await deleteMeta(tx, schema, [CHANGE_KEY, APPLIED_KEY, REVERSED_KEY]);
     });
     if (outcome === 'undecided')
       this.notices.push(
@@ -797,6 +815,28 @@ export class AppHost extends EventEmitter {
         summary: f.record?.summary ?? 'recovered change',
       };
     return current;
+  }
+
+  /**
+   * The shell settled the approval of `recoveredChange` (or found nothing to
+   * settle): drop the journal that kept its outcome (#5486). A failure leaves
+   * it for the next open, which settles again.
+   */
+  async acknowledgeRecovery(id: string): Promise<void> {
+    if (!this.atomic || this.claimLost) return;
+    const schema = schemaOf(this.database);
+    await (this.claim as AppClaim).transaction(async (tx) => {
+      await holdFence(tx, schema, this.fence as number);
+      const raw = (await readMeta(tx, schema, [CHANGE_KEY]))[CHANGE_KEY];
+      try {
+        const k = raw ? (JSON.parse(raw) as ChangeKey) : null;
+        if (k?.id === id && k.decided)
+          await deleteMeta(tx, schema, [CHANGE_KEY]);
+      } catch {
+        /* an unreadable journal is the next open's notice */
+      }
+    });
+    if (this.recoveredChange?.id === id) this.recoveredChange = null;
   }
 
   /** Connections parked by `retireApp` for the next worker; see there. */

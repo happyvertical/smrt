@@ -314,8 +314,11 @@ for the one operation on the host thread; a PGlite uses the host's client).
   `reversed` = the id -> never landed; `applied` = the id with S = from and D
   = to -> roll the store forward (`commitIn`), emitting `changed` once the host
   is open; no `applied` with D = S = from -> never landed; anything else -> a
-  notice. Both keys are removed
-  either way (a fork or a snapshot copies them). The first version (seed) is
+  notice. The keys are removed
+  either way (a fork or a snapshot copies them), except that a decided change
+  that names an approval keeps `change` (marked `decided`) until the shell
+  settles the approval and calls `acknowledgeRecovery`, so a failed open or a
+  stopped process in between cannot lose the outcome. The first version (seed) is
   also a claim transaction. `host.recoveredChange` names the approval
   (`ExecuteOptions.request`) of a decided change; the shell settles it only
   if it is still `executing` (`settleRecoveredChange`). The claim session sets

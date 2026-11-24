@@ -594,9 +594,48 @@ describe.each(backends)('the version store in the swap (%s)', (backend) => {
         outcome: 'not-applied',
       });
       expect(b.host.notices).toEqual([]);
+      // Kept, decided, until the shell acknowledges the settlement.
       const m = await meta(live.schema);
-      expect(m.change).toBeUndefined();
+      expect(JSON.parse(m.change)).toMatchObject({ decided: 'not-applied' });
       expect(m.reversed).toBeUndefined();
+      await b.host.acknowledgeRecovery('c1');
+      expect((await meta(live.schema)).change).toBeUndefined();
+      expect(b.host.recoveredChange).toBeNull();
+    });
+
+    it('a recovered outcome survives an open that fails or stops before it is settled', async () => {
+      const live = await hooked();
+      const v = live.host.version;
+      live.store.after = (n) => {
+        if (n === 1) (live.claim as ReturnType<typeof killable>).kill();
+      };
+      const err = await live.host
+        .execute(hostOwner(live.host), rename, { ...OK, request: 'appr-5' })
+        .catch((e) => e);
+      expect(isUnknownOutcome(err)).toBe(true);
+      await live.host.close().catch(() => {});
+      hosts.splice(hosts.indexOf(live.host), 1);
+      // The reopen decides it (rolls the store forward), then its worker fails to start.
+      await expect(
+        openOn(live.dir, live.schema, {
+          workerUrl: new URL('file:///nonexistent/worker.js'),
+        }),
+      ).rejects.toThrow();
+      expect(await live.store.current()).toBe(v + 1);
+      // The next open still knows the outcome, and says nothing twice once acknowledged.
+      const b = await openOn(live.dir, live.schema);
+      expect(b.host.recoveredChange).toMatchObject({
+        request: 'appr-5',
+        outcome: 'applied',
+      });
+      await b.host.acknowledgeRecovery(
+        (b.host.recoveredChange as { id: string }).id,
+      );
+      await b.host.close();
+      hosts.splice(hosts.indexOf(b.host), 1);
+      const c = await openOn(live.dir, live.schema);
+      expect(c.host.recoveredChange).toBeNull();
+      expect(c.host.version).toBe(v + 1);
     });
 
     it('one step of a longer undo that is lost reopens as partial', async () => {
