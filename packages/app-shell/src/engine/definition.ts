@@ -714,6 +714,14 @@ export interface Migration {
   direction: 'up' | 'down';
   /** The version whose steps these are (archives are keyed by it). */
   version: number;
+  /**
+   * #5486: the id of the claimed host's in-flight change. The migrating boot
+   * records it as `applied` in its own transaction, so a change whose store
+   * write never landed can be rolled forward at the next open.
+   */
+  intent?: string;
+  /** With `intent`: this is the change's own reverse; it clears `applied` and `change` instead. */
+  reverse?: boolean;
 }
 
 /** Convert one stored value to a field type. */

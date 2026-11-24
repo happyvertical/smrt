@@ -326,6 +326,17 @@ export class AppRuntime {
     ])
       await this.db
         .execute`INSERT INTO _app_meta (key, value) VALUES (${k}, ${v}) ON CONFLICT(key) DO UPDATE SET value = excluded.value`;
+    // #5486: on a claimed host this is the boot operation's own transaction
+    // (the migration's steps and the version above ride in it), so `applied`
+    // commits with them or not at all.
+    if (migration?.intent && migration.steps.length) {
+      if (migration.reverse)
+        await this.db
+          .execute`DELETE FROM _app_meta WHERE key IN ('applied', 'change')`;
+      else
+        await this.db
+          .execute`INSERT INTO _app_meta (key, value) VALUES ('applied', ${migration.intent}) ON CONFLICT(key) DO UPDATE SET value = excluded.value`;
+    }
     await this.warmCollections();
     return {
       statements,

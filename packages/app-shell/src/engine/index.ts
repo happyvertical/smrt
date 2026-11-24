@@ -84,6 +84,7 @@ export {
   ClaimLostError,
   EngineError,
   type EngineErrorCode,
+  isUnknownOutcome,
   NoPrincipalError,
   PermissionDeniedError,
   StaleFenceError,

@@ -634,6 +634,8 @@ export async function acquireOwnership(
   db: SqlDatabase,
   schema: string,
   lockTimeoutMs = DEFAULT_LOCK_TIMEOUT_MS,
+  /** Run in the same transaction, after the bump (#5486: read what a change left, definitively). */
+  then?: (tx: SqlRunner, fence: number) => Promise<void>,
 ): Promise<number> {
   assertSchemaName(schema);
   return db.transaction(async (tx: SqlRunner) => {
@@ -653,6 +655,7 @@ export async function acquireOwnership(
         `INSERT INTO ${qi(schema)}._app_meta AS m (key, value) VALUES (${lit(FENCE_KEY)}, '1') ON CONFLICT (key) DO UPDATE SET value = (m.value::bigint + 1)::text RETURNING value`,
       ),
     )[0];
+    await then?.(tx, Number(got.value));
     return Number(got.value);
   });
 }
@@ -668,6 +671,72 @@ async function lockFence(tx: SqlRunner, schema: string) {
     await tx.query(
       `LOCK TABLE ${qi(schema)}._app_meta IN ACCESS EXCLUSIVE MODE`,
     );
+}
+
+/**
+ * Inside the caller's transaction: read the app's ownership generation
+ * `FOR SHARE` (held to the end of the transaction, so a takeover's bump waits
+ * for it) and refuse unless it is `expected` (#5486).
+ */
+export async function holdFence(
+  tx: SqlRunner,
+  schema: string,
+  expected: number,
+): Promise<void> {
+  assertSchemaName(schema);
+  const row = asRows(
+    await tx.query(
+      `SELECT value FROM ${qi(schema)}._app_meta WHERE key = ${lit(FENCE_KEY)} FOR SHARE`,
+    ),
+  )[0];
+  const actual = row ? Number(row.value) : null;
+  if (actual !== expected)
+    throw new StaleFenceError(
+      `this host no longer owns the app in schema ${schema} (it holds generation ${expected}, the database is at ${actual ?? 'none'}); another host opened it or a publish or restore replaced its data. Reopen the app; nothing was written.`,
+      { schema, expected, actual },
+    );
+}
+
+/** Inside the caller's transaction: the values of these `_app_meta` keys (absent ones are missing). */
+export async function readMeta(
+  tx: SqlRunner,
+  schema: string,
+  keys: string[],
+): Promise<Record<string, string>> {
+  assertSchemaName(schema);
+  const out: Record<string, string> = {};
+  for (const r of asRows(
+    await tx.query(
+      `SELECT key, value FROM ${qi(schema)}._app_meta WHERE key IN (${keys.map(lit).join(', ')})`,
+    ),
+  ))
+    out[String(r.key)] = String(r.value);
+  return out;
+}
+
+/** Inside the caller's transaction: set an `_app_meta` key (an upsert: a fork copies the table). */
+export async function writeMeta(
+  tx: SqlRunner,
+  schema: string,
+  key: string,
+  value: string,
+): Promise<void> {
+  assertSchemaName(schema);
+  await tx.query(
+    `INSERT INTO ${qi(schema)}._app_meta (key, value) VALUES (${lit(key)}, ${lit(value)}) ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value`,
+  );
+}
+
+/** Inside the caller's transaction: remove `_app_meta` keys. */
+export async function deleteMeta(
+  tx: SqlRunner,
+  schema: string,
+  keys: string[],
+): Promise<void> {
+  assertSchemaName(schema);
+  await tx.query(
+    `DELETE FROM ${qi(schema)}._app_meta WHERE key IN (${keys.map(lit).join(', ')})`,
+  );
 }
 
 /** The generation stored in `schema`, or null when it has none (an app no host owns yet). */
