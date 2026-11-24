@@ -408,6 +408,14 @@ describe('only the owner changes the app (#5609)', () => {
         author: 'tester',
       }),
     );
+    await refused(() =>
+      engine.forkDraft(member, w.live, join(w.dir, 'member-fork'), {
+        store: new MemoryVersionStore(),
+      }),
+    );
+    await refused(() =>
+      engine.undoBatch(member, w.live, { versions: [1], author: 'tester' }),
+    );
     await refused(() => engine.checkBatch(member, w.live, r.draft));
     await refused(() => engine.previewPublish(member, w.live, r.draft));
     await refused(() =>
@@ -420,5 +428,6 @@ describe('only the owner changes the app (#5609)', () => {
       engine.undoTo(member, w.live, 1, { author: 'tester', from: 1 }),
     );
     expect(existsSync(join(w.dir, 'member-draft'))).toBe(false);
+    expect(existsSync(join(w.dir, 'member-fork'))).toBe(false);
   });
 });

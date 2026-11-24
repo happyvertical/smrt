@@ -532,7 +532,7 @@ later replay the draft's changes onto live. Rules and failure behaviour are in
 ```ts
 const live = await AppHost.open(dir, { store });
 // `owner`: enginePrincipal({ kind: 'user', tenantId: live.tenantId, userId,
-//   permissions: [OWNER_SLUG, ...appPermissionSlugs(live.def)] }); every entry point refuses anyone else
+//   permissions: [OWNER_SLUG, ...appPermissionSlugs(live.def)] }); execute/forkDraft/publishDraft/restoreSnapshot refuse anyone else
 const draft = await live.forkDraft(owner, draftDir, { store: emptyDraftStore }); // autoApprove on
 live.setFrozen(true); // live keeps serving records; structural commands are refused
 // ...build in `draft` (draft.execute(owner, ...) / draft.create ...)...
