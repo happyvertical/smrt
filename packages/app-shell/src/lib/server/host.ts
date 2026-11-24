@@ -522,12 +522,12 @@ export function openDraftHost(
 ): Promise<AppHost> {
   return withConnections(database, 'draft', () =>
     AppHost.open(dir, {
+      autoApprove: true,
       store: new DraftVersionStore(db, id, pin),
       ...(claim ? { claim } : {}),
       ...hostTenant(pin),
       workerUrl: workerUrl(),
       workerLimits: budgetedLimits(),
-      autoApprove: true,
       ...(appLimits ? { appLimits } : {}),
       // A draft on PostgreSQL reopens with the LIVE app's config; its own
       // schema comes from the marker in `dir`.
