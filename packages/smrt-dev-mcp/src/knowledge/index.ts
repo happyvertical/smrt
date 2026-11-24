@@ -24,12 +24,14 @@ import {
   isAgentSurfaceSourcePath,
   isPrunedAgentSurfacePath,
   lintNumericPrecision,
+  lintSetterHiddenReads,
   ManifestAdapter,
   mergeAgentSurfaces,
   OxcScanner,
   parseSource,
   scanSvelteAgentSurface,
   sourceMayContainNumericPrecisionIssue,
+  sourceMayContainSetterHiddenRead,
   sourceMayDeclareAgentSurface,
 } from '@happyvertical/smrt-scanner';
 import {
@@ -936,6 +938,9 @@ export async function checkKnowledgeFreshnessFromIndex(
   issues.push(...findStalePatternIssues(index.rootDir, changedFiles));
   issues.push(
     ...findNumericPrecisionIssues(index, authoredPackages, changedFiles),
+  );
+  issues.push(
+    ...findSetterHiddenReadIssues(index, authoredPackages, changedFiles),
   );
 
   const effectiveIssues = issues.map((issue) =>
@@ -3456,6 +3461,60 @@ function findNumericPrecisionIssues(
         issues.push({
           severity,
           code: `numeric-precision-${finding.kind}`,
+          message: `${finding.message} ${finding.remedy}`,
+          file: `${relative(index.rootDir, filePath)}${location}`,
+          packageName: pkg.name,
+        });
+      }
+    }
+  }
+
+  return issues;
+}
+
+/**
+ * Flag a setter that reads a field some callers cannot read (#5603): a
+ * `@field({ sensitive: true })` or `@field({ readPermission })` field.
+ *
+ * The write rule refuses a protected field the caller cannot read whatever its
+ * value, but a setter that branches on the hidden value lets an updater
+ * confirm it by the accepted-versus-refused answer. The engine does not proxy
+ * reads inside accessors (a documented known limit), so the rule is checked
+ * here, in source, where field protection is declared. A hard `error` for
+ * every package: the check is syntactic and exact (a flagged read is a real
+ * read of a field the author marked hidden), unlike the name heuristics above.
+ */
+function findSetterHiddenReadIssues(
+  index: SmrtKnowledgeIndex,
+  authoredPackages: KnowledgePackage[],
+  changedFiles?: string[],
+): KnowledgeIssue[] {
+  const changedAbsolutePaths = changedFiles
+    ? new Set(changedFiles.map((file) => resolve(index.rootDir, file)))
+    : undefined;
+  const issues: KnowledgeIssue[] = [];
+
+  for (const pkg of authoredPackages) {
+    if (pkg.kind === 'sdk') continue;
+    const srcDir = join(pkg.directory, 'src');
+    if (!existsSync(srcDir)) continue;
+
+    for (const filePath of walkFiles(srcDir)) {
+      if (!isLintableModelSource(filePath)) continue;
+      if (changedAbsolutePaths && !changedAbsolutePaths.has(filePath)) continue;
+      let sourceText: string;
+      try {
+        sourceText = readFileSync(filePath, 'utf8');
+      } catch {
+        continue;
+      }
+      if (!sourceMayContainSetterHiddenRead(sourceText)) continue;
+
+      for (const finding of lintSetterHiddenReads(sourceText, filePath)) {
+        const location = finding.line > 0 ? `:${finding.line}` : '';
+        issues.push({
+          severity: 'error',
+          code: 'setter-reads-hidden-field',
           message: `${finding.message} ${finding.remedy}`,
           file: `${relative(index.rootDir, filePath)}${location}`,
           packageName: pkg.name,

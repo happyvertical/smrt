@@ -64,6 +64,11 @@ export {
   sourceMayDeclareRecipe,
 } from './recipes.js';
 export { OxcScanner } from './scanner.js';
+export {
+  lintSetterHiddenReads,
+  type SetterHiddenReadFinding,
+  sourceMayContainSetterHiddenRead,
+} from './setter-hidden-read-lint.js';
 export * from './types.js';
 export { parseUiSelectorsFile } from './ui-selectors.js';
 export {
