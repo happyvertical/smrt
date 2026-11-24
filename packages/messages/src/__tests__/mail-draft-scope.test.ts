@@ -369,6 +369,37 @@ describe('draft scope on message writes (#5616)', () => {
       expect(stored.sendStatus).toBe('draft');
     });
 
+    it('refuses an edit to any field carried by a failed send of a draft', async () => {
+      const id = await seedDraft(ownedId);
+      await withTenant({ tenantId }, () =>
+        runWithMailSystemAccess(async () => {
+          const { EmailAccountCollection } = await import(
+            '../collections/EmailAccountCollection.js'
+          );
+          const account = await (
+            await EmailAccountCollection.create(options)
+          ).get({ id: ownedId });
+          if (!account) throw new Error('no account');
+          account.isActive = false;
+          await account.save();
+        }),
+      );
+      const result = await as(
+        principal(drafter, { scopes: ['read'] }),
+        async () => {
+          const draft = await load(id);
+          draft.replyToAddress = 'elsewhere@example.com';
+          draft.isFlagged = true;
+          return draft.send();
+        },
+      ).catch((error) => error);
+      expect(result).toBeInstanceOf(MailAccessError);
+      const stored = await load(id);
+      expect(stored.replyToAddress).toBe('');
+      expect(stored.isFlagged).toBe(false);
+      expect(stored.sendStatus).toBe('draft');
+    });
+
     it('does not let a held send carry an edit', async () => {
       const id = await withTenant({ tenantId }, () =>
         runWithMailSystemAccess(async () => {

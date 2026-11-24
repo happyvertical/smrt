@@ -345,24 +345,6 @@ export function assertApprovedAttachments(
   }
 }
 
-/** The stored fields that make up what a send would deliver. */
-export const MAIL_CONTENT_FIELDS = [
-  'accountId',
-  'fromAddress',
-  'fromName',
-  'toAddresses',
-  'ccAddresses',
-  'bccAddresses',
-  'subject',
-  'body',
-  'textBody',
-  'htmlBody',
-  'inReplyTo',
-  'inReplyToMessageId',
-  'threadId',
-  'headers',
-] as const;
-
 /**
  * Hash of everything a send transmits for `message`, from the given
  * instance's fields plus the stored attachment rows. Compare it only between
@@ -372,10 +354,22 @@ export async function mailSendBindingHash(
   message: Message,
   snapshot?: { attachments?: unknown[][] },
 ): Promise<string> {
-  const fields = MAIL_CONTENT_FIELDS.map((name) => [
-    name,
-    readField(message, name),
-  ]);
+  const fields = [
+    'accountId',
+    'fromAddress',
+    'fromName',
+    'toAddresses',
+    'ccAddresses',
+    'bccAddresses',
+    'subject',
+    'body',
+    'textBody',
+    'htmlBody',
+    'inReplyTo',
+    'inReplyToMessageId',
+    'threadId',
+    'headers',
+  ].map((name) => [name, readField(message, name)]);
   const attachments = message.id
     ? await runWithMailSystemAccess(async () => {
         const { AttachmentCollection } = await import(

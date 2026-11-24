@@ -40,7 +40,6 @@ import {
   approvedDraftChanged,
   auditMailAction,
   holdAgentSend,
-  MAIL_CONTENT_FIELDS,
   stampHandledBy,
 } from '../send-approval.js';
 import type {
@@ -117,6 +116,25 @@ async function saveHeld(message: Message): Promise<void> {
 }
 
 const TRUTHY_STORED = new Set([true, 1, '1', 'true']);
+
+/**
+ * Everything but the send lifecycle, the handled-by stamp and timestamps: the
+ * fields a send-path save of a draft must leave exactly as stored.
+ */
+const SEND_PATH_FREE_FIELDS = new Set([
+  'sendStatus',
+  'sentAt',
+  'sendError',
+  'retryCount',
+  'maxRetries',
+  'scheduledSendAt',
+  'handledById',
+  'handledByKind',
+  'handledAt',
+  'createdAt',
+  'updatedAt',
+  'date',
+]);
 
 const DRAFT_CARRIED_FIELDS = new Set(['tenantId', 'metadata', 'correlationId']);
 
@@ -362,7 +380,7 @@ export class Message extends SmrtObject {
    *
    * `lifecycle` is the send path's own save (status changes, a held send moved
    * back to draft): it passes only while the stored row still has exactly the
-   * content and account it is saved with, so it cannot carry an edit.
+   * fields (content, account, flags, metadata) it is saved with, so it cannot carry an edit.
    */
   private async assertDraftScope(lifecycle: boolean): Promise<void> {
     if (inMailSystemAccess()) return;
@@ -381,16 +399,15 @@ export class Message extends SmrtObject {
       if (stored) {
         const norm = (value: unknown) =>
           value === undefined || value === null ? '' : String(value);
-        unchanged =
-          flagged(stored.is_draft) ===
-            ((this as { isDraft?: unknown }).isDraft === true) &&
-          MAIL_CONTENT_FIELDS.every(
-            (name) =>
-              norm((this as Record<string, unknown>)[name]) ===
-              norm(
-                stored[name.replace(/[A-Z]/g, (c) => `_${c.toLowerCase()}`)],
-              ),
-          );
+        const row = this as Record<string, unknown>;
+        unchanged = DRAFT_RESET_FIELDS.every((name) => {
+          if (SEND_PATH_FREE_FIELDS.has(name)) return true;
+          const kept =
+            stored[name.replace(/[A-Z]/g, (c) => `_${c.toLowerCase()}`)];
+          return typeof row[name] === 'boolean'
+            ? row[name] === flagged(kept)
+            : norm(row[name]) === norm(kept);
+        });
       }
     }
     if (lifecycle && unchanged) return;
