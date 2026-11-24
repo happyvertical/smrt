@@ -632,6 +632,7 @@ export class AppHost extends EventEmitter {
       release: claim ? () => claim.release() : undefined,
       claim,
     };
+    let made: AppHost | undefined;
     try {
       const host = new AppHost(
         dataDir,
@@ -639,12 +640,15 @@ export class AppHost extends EventEmitter {
         database,
         marker ? opts.claim : undefined,
       );
+      made = host;
       await host.boot();
       const recovered = host.recoveredEvent;
       host.recoveredEvent = null;
       if (recovered) setImmediate(() => host.emit('changed', recovered));
       return host;
     } catch (e) {
+      // A draft that never opened must not stay subscribed to the lent claim.
+      made?.unlisten?.();
       await claim?.release();
       throw e;
     }

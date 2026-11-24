@@ -833,6 +833,36 @@ describe.each(backends)('the version store in the swap (%s)', (backend) => {
         expect(active).toBe(0);
       });
 
+      it('a draft whose boot fails leaves no listener on the lent claim', async () => {
+        const live = await hooked();
+        const d = await fork(live);
+        const claim = live.host.lendableClaim as AppClaim;
+        const real = claim.onLost.bind(claim);
+        let active = 0;
+        vi.spyOn(claim, 'onLost').mockImplementation((fn) => {
+          active++;
+          const off = real(fn);
+          return () => {
+            active--;
+            off();
+          };
+        });
+        await d.draft.close();
+        hosts.splice(hosts.indexOf(d.draft), 1);
+        await expect(
+          AppHost.open(d.draft.dataDir, {
+            store: new DraftVersionStore(shell as never, d.id),
+            database: config(live.schema),
+            claim,
+            workerUrl: new URL('file:///nonexistent/worker.js'),
+            claimOptions: { heartbeatMs: 0 },
+          }),
+        ).rejects.toThrow();
+        expect(active).toBe(0);
+        // The lent claim is still the live host's: it keeps working.
+        await run(live.host, rename);
+      });
+
       it('never releases the lent claim: closing the draft leaves live changing', async () => {
         const live = await hooked();
         const d = await fork(live);
