@@ -10,11 +10,19 @@ import '../__smrt-register__.js';
 import {
   foreignKey,
   importOptionalDependency,
+  ObjectRegistry,
   SmrtObject,
+  type SmrtSaveOptions,
   smrt,
 } from '@happyvertical/smrt-core';
 import { TenantScoped, tenantId } from '@happyvertical/smrt-tenancy/decorators';
-import { assertHydratedMailAccess } from '../access.js';
+import {
+  assertHydratedMailAccess,
+  assertMailDraftWrite,
+  inMailSystemAccess,
+  isUnsentDraft,
+  learnMailAccessOptions,
+} from '../access.js';
 import type { AttachmentOptions } from '../types';
 
 /**
@@ -99,6 +107,77 @@ export class Attachment extends SmrtObject {
   override async loadFromSlug() {
     await super.loadFromSlug();
     await assertHydratedMailAccess(this);
+  }
+
+  /**
+   * An attachment is part of what its message will send, so writing one on an
+   * unsent email draft of an owned account needs the same `draft` scope as
+   * writing the draft (see `Message.save()`), whichever route the write takes.
+   * Both the parent it is saved onto and the parent it is stored on count, so
+   * an attachment cannot be moved on or off a draft without the scope.
+   */
+  override async save(options?: SmrtSaveOptions): Promise<this> {
+    await this.assertDraftParentWrite();
+    return super.save(options);
+  }
+
+  override async delete(
+    options: { expectedUpdatedAt?: Date | string } = {},
+  ): Promise<void> {
+    await this.assertDraftParentWrite();
+    return super.delete(options);
+  }
+
+  /**
+   * Trusted system work and non-draft parents pass. Unlike the message check
+   * this runs before the write, not inside its transaction: the attachment
+   * save interceptor builds collections from the instance's options, and
+   * inside a transaction those would register the transaction's handle as a
+   * policy database.
+   */
+  private async assertDraftParentWrite(): Promise<void> {
+    learnMailAccessOptions(this.options);
+    if (inMailSystemAccess()) return;
+    const parentIds = new Set<string>();
+    if (this.messageId) parentIds.add(this.messageId);
+    if (this.id) {
+      const stored = await this.getCanonicalPersistedRow({ id: this.id });
+      if (typeof stored?.message_id === 'string' && stored.message_id) {
+        parentIds.add(stored.message_id);
+      }
+    }
+    // A new attachment with an explicit slug is written over the stored row
+    // with that slug: that row's parent is the one it changes.
+    if (!this.isPersisted && this.slug) {
+      const columns = ObjectRegistry.getConflictColumns(
+        this.getResolvedQualifiedName(),
+      );
+      if (columns.includes('slug')) {
+        for (const keyed of await this.getCanonicalPersistedRows({
+          slug: this.slug,
+        })) {
+          if (typeof keyed.message_id === 'string' && keyed.message_id) {
+            parentIds.add(keyed.message_id);
+          }
+        }
+      }
+    }
+    if (!parentIds.size) return;
+    const { MessageCollection } = await import(
+      '../collections/MessageCollection.js'
+    );
+    const messages = await MessageCollection.create(this.options as never);
+    const accountIds: Array<string | null> = [];
+    for (const id of parentIds) {
+      const parent = (await this.db.get(messages.tableName, { id })) as Record<
+        string,
+        unknown
+      > | null;
+      if (parent && isUnsentDraft(parent.send_status, parent.is_draft)) {
+        accountIds.push((parent.account_id as string | null) ?? null);
+      }
+    }
+    await assertMailDraftWrite(accountIds, this.options);
   }
 
   /**

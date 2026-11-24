@@ -1,4 +1,7 @@
-import type { SmrtSaveOptions } from '@happyvertical/smrt-core';
+import type {
+  SmrtClassOptions,
+  SmrtSaveOptions,
+} from '@happyvertical/smrt-core';
 import {
   assertProtectedNotificationDelete,
   assertProtectedNotificationRetry,
@@ -31,9 +34,13 @@ import { TenantScoped, tenantId } from '@happyvertical/smrt-tenancy/decorators';
 import {
   assertHydratedMailAccess,
   assertMailDraftWrite,
+  assertMailScopeOn,
   decideMailAccess,
   inMailSystemAccess,
+  isUnsentDraft,
+  learnMailAccessOptions,
   type MailPrincipal,
+  mailFlag,
   resolveMailPrincipal,
 } from '../access.js';
 import {
@@ -115,26 +122,47 @@ async function saveHeld(message: Message): Promise<void> {
   }
 }
 
-const TRUTHY_STORED = new Set([true, 1, '1', 'true']);
-
 /**
- * Everything but the send lifecycle, the handled-by stamp and timestamps: the
- * fields a send-path save of a draft must leave exactly as stored.
+ * The only fields a send-path save of a draft may change: the send lifecycle,
+ * the handled-by stamp and the revision. Everything else, including fields the
+ * package does not know (tenant, slug, context, subclass fields), must equal
+ * the stored row.
  */
-const SEND_PATH_FREE_FIELDS = new Set([
+const SEND_PATH_MAY_CHANGE = new Set([
   'sendStatus',
   'sentAt',
   'sendError',
   'retryCount',
-  'maxRetries',
-  'scheduledSendAt',
   'handledById',
   'handledByKind',
   'handledAt',
-  'createdAt',
   'updatedAt',
-  'date',
 ]);
+
+const DATE_LIKE = /^\d{4}-\d{2}-\d{2}[T ]/;
+
+/** One comparable form of a field value, whether instance or stored row. */
+function canonValue(value: unknown): string {
+  if (value === undefined || value === null) return '';
+  if (value instanceof Date) {
+    return Number.isNaN(value.getTime()) ? '' : value.toISOString();
+  }
+  if (typeof value === 'object') return JSON.stringify(value);
+  if (typeof value === 'string') {
+    if (DATE_LIKE.test(value)) {
+      const time = Date.parse(value);
+      if (!Number.isNaN(time)) return new Date(time).toISOString();
+    }
+    if (value.startsWith('[') || value.startsWith('{')) {
+      try {
+        return JSON.stringify(JSON.parse(value));
+      } catch {
+        return value;
+      }
+    }
+  }
+  return String(value);
+}
 
 const DRAFT_CARRIED_FIELDS = new Set(['tenantId', 'metadata', 'correlationId']);
 
@@ -343,8 +371,14 @@ export class Message extends SmrtObject {
     lifecycleSaves.delete(this);
     const authorized =
       signature !== undefined && signature === lifecycleSignature(this);
-    await this.assertDraftScope(authorized || heldSaves.has(this));
+    const lifecycle = authorized || heldSaves.has(this);
+    // Captured before the transaction rebinds `this.options` to its handle.
+    const rootOptions = { ...this.options };
+    learnMailAccessOptions(rootOptions);
     return this.withTransaction(async () => {
+      // Inside the write, so the stored row and the account owner it decides
+      // on are the ones this save replaces.
+      await this.assertDraftScope(lifecycle, rootOptions);
       await assertProtectedNotificationSave(this, options, authorized);
       if (signature !== undefined && signature !== lifecycleSignature(this))
         throw new Error('Message lifecycle changed during its guarded save.');
@@ -363,81 +397,120 @@ export class Message extends SmrtObject {
   override async delete(
     options: { expectedUpdatedAt?: Date | string } = {},
   ): Promise<void> {
-    await this.assertDraftScope(false);
-    await assertProtectedNotificationDelete(this);
-    return super.delete(options);
+    const rootOptions = { ...this.options };
+    learnMailAccessOptions(rootOptions);
+    return this.withTransaction(async () => {
+      await this.assertDraftScope(false, rootOptions);
+      await assertProtectedNotificationDelete(this);
+      return super.delete(options);
+    });
   }
 
   /**
    * Creating, changing or deleting a draft on an owned account needs the
-   * `draft` scope, whichever route the write takes. Both the new and the
-   * stored state count, so a draft cannot be edited by first relabelling it,
-   * and both accounts count when a draft is moved. A draft is an unsent email
-   * (`isDraft` with `draft` status); received mail carries the default `draft`
-   * status and is not one, and classes without `isDraft` are not covered.
-   * Trusted system work, unowned accounts and rows that are not drafts are
-   * unaffected.
+   * `draft` scope, whichever route the write takes. A draft is an email
+   * flagged `isDraft` that has not been sent (any send status but `sent`), in
+   * whatever form the flag is stored; received mail is not flagged and classes
+   * without `isDraft` are not covered. Both the new and the stored state
+   * count, so a draft cannot be edited by first relabelling it, and both
+   * accounts count when a draft moves. Trusted system work, unowned accounts
+   * and rows that are not drafts are unaffected.
    *
-   * `lifecycle` is the send path's own save (status changes, a held send moved
-   * back to draft): it passes only while the stored row still has exactly the
-   * fields (content, account, flags, metadata) it is saved with, so it cannot carry an edit.
+   * Runs inside the write transaction. `lifecycle` is the send path's own save
+   * (status changes, a held send moved back to draft): it passes only while
+   * every field outside {@link SEND_PATH_MAY_CHANGE} still equals the stored
+   * row, so it cannot carry an edit. A row the send path itself creates (an
+   * unsaved message being sent) needs the `send` scope instead.
    */
-  private async assertDraftScope(lifecycle: boolean): Promise<void> {
+  private async assertDraftScope(
+    lifecycle: boolean,
+    rootOptions: SmrtClassOptions,
+  ): Promise<void> {
     if (inMailSystemAccess()) return;
     if (!('isDraft' in this)) return;
-    const flagged = (value: unknown) => TRUTHY_STORED.has(value as never);
-    const draftNow =
-      this.sendStatus === 'draft' &&
-      (this as { isDraft?: unknown }).isDraft === true;
+    const row = this as unknown as Record<string, unknown>;
+    const draftNow = isUnsentDraft(row.sendStatus, row.isDraft);
     const priorAccountIds: Array<string | null> = [];
+    let stored: Record<string, unknown> | null = null;
     let unchanged = false;
     if (this.id) {
-      const stored = await this.getCanonicalPersistedRow({ id: this.id });
-      if (stored?.send_status === 'draft' && flagged(stored.is_draft)) {
-        priorAccountIds.push((stored.account_id as string | null) ?? null);
-      }
+      stored = await this.getCanonicalPersistedRow({ id: this.id });
       if (stored) {
-        const norm = (value: unknown) =>
-          value === undefined || value === null ? '' : String(value);
-        const row = this as Record<string, unknown>;
-        unchanged = DRAFT_RESET_FIELDS.every((name) => {
-          if (SEND_PATH_FREE_FIELDS.has(name)) return true;
-          const kept =
-            stored[name.replace(/[A-Z]/g, (c) => `_${c.toLowerCase()}`)];
-          return typeof row[name] === 'boolean'
-            ? row[name] === flagged(kept)
-            : norm(row[name]) === norm(kept);
-        });
+        if (isUnsentDraft(stored.send_status, stored.is_draft)) {
+          priorAccountIds.push((stored.account_id as string | null) ?? null);
+        }
+        unchanged = this.matchesStoredBeyondSendPath(stored);
       }
     }
     // A new object that carries an explicit natural key (a slug) is written
     // over the stored row with that key, whatever its own id: that row, not
     // the id, is what the save changes.
+    let takesOver = false;
     if (!this.isPersisted) {
       const columns = ObjectRegistry.getConflictColumns(
         this.getResolvedQualifiedName(),
       );
-      const slug = (this as { slug?: unknown }).slug;
+      const slug = row.slug;
       if (columns.includes('slug') && typeof slug === 'string' && slug) {
         // Match on the slug alone: the tenant is filled in during the save,
         // after this check, so any narrower filter could miss the row the save
         // takes over. It can only over-match, which means an extra check.
-        const filter: Record<string, unknown> = { slug };
-        for (const keyed of await this.getCanonicalPersistedRows(filter)) {
+        for (const keyed of await this.getCanonicalPersistedRows({ slug })) {
           if (keyed.id === this.id) continue;
+          takesOver = true;
           unchanged = false;
-          if (keyed.send_status === 'draft' && flagged(keyed.is_draft)) {
+          if (isUnsentDraft(keyed.send_status, keyed.is_draft)) {
             priorAccountIds.push((keyed.account_id as string | null) ?? null);
           }
         }
       }
     }
-    if (lifecycle && unchanged) return;
+    if (lifecycle) {
+      if (stored && unchanged) return;
+      if (!stored && !takesOver) {
+        // The send path creating its own row: the send decision it already
+        // holds (or is about to be refused for) is the gate.
+        await assertMailScopeOn(
+          [this.accountId],
+          'send',
+          this.options,
+          this.db,
+        );
+        return;
+      }
+    }
     if (!draftNow && !priorAccountIds.length) return;
     await assertMailDraftWrite(
       [draftNow ? this.accountId : null, ...priorAccountIds],
-      this.options,
+      rootOptions,
+      this.db,
     );
+  }
+
+  /** Whether every field outside {@link SEND_PATH_MAY_CHANGE} equals `stored`. */
+  private matchesStoredBeyondSendPath(
+    stored: Record<string, unknown>,
+  ): boolean {
+    const row = this as unknown as Record<string, unknown>;
+    const names = new Set([
+      ...this.draftFieldNames(),
+      'tenantId',
+      'slug',
+      'context',
+    ]);
+    for (const name of names) {
+      if (SEND_PATH_MAY_CHANGE.has(name)) continue;
+      const column = name.replace(/[A-Z]/g, (c) => `_${c.toLowerCase()}`);
+      // A property with no column cannot be stored, so it cannot carry an edit.
+      if (!(column in stored)) continue;
+      const mine = row[name];
+      const same =
+        typeof mine === 'boolean'
+          ? mine === mailFlag(stored[column])
+          : canonValue(mine) === canonValue(stored[column]);
+      if (!same) return false;
+    }
+    return true;
   }
 
   private async finalizeSendLifecycle(

@@ -40,6 +40,7 @@ import {
 } from '../access.js';
 import '../index.js';
 import { MailDraftService } from '../mail-drafts.js';
+import { Attachment } from '../models/Attachment';
 import { Email } from '../models/Email';
 import { EmailAccount } from '../models/EmailAccount';
 import {
@@ -173,6 +174,39 @@ describe('draft scope on message writes (#5616)', () => {
       }),
     );
   }
+
+  /** A stored received email (isDraft false), written by trusted code. */
+  async function seedReceived(accountId: string) {
+    return withTenant({ tenantId }, () =>
+      runWithMailSystemAccess(async () => {
+        const email = new Email({
+          ...options,
+          tenantId,
+          accountId,
+          subject: `received-${randomUUID()}`,
+        });
+        await email.initialize();
+        await email.save();
+        return email.id as string;
+      }),
+    );
+  }
+
+  const countBySubject = async (subject: string) =>
+    withTenant({ tenantId }, () =>
+      runWithMailSystemAccess(async () => {
+        const { EmailCollection } = await import(
+          '../collections/EmailCollection.js'
+        );
+        return (
+          await (
+            await EmailCollection.create(options)
+          ).list({
+            where: { subject },
+          })
+        ).length;
+      }),
+    );
 
   const load = async (id: string) =>
     withTenant({ tenantId }, () =>
@@ -662,6 +696,461 @@ describe('draft scope on message writes (#5616)', () => {
     });
   });
 
+  describe('draft flag in any stored form', () => {
+    const FORMS: Array<[string, unknown]> = [
+      ['1', 1],
+      ["'1'", '1'],
+      ["'true'", 'true'],
+    ];
+
+    const collection = async () =>
+      (
+        await import('../collections/EmailCollection.js')
+      ).EmailCollection.create(options);
+
+    it.each(FORMS)('refuses to create a draft flagged %s', async (_l, flag) => {
+      const subject = `flag-${randomUUID()}`;
+      await expect(
+        as(principal(stranger), async () => {
+          const created = await (await collection()).create({
+            tenantId,
+            accountId: ownedId,
+            subject,
+            isDraft: flag as never,
+            sendStatus: 'draft',
+          });
+          return created.save();
+        }),
+      ).rejects.toBeInstanceOf(MailAccessError);
+      expect(await countBySubject(subject)).toBe(0);
+    });
+
+    it.each(
+      FORMS,
+    )('refuses an upsert of a draft flagged %s', async (_l, flag) => {
+      const subject = `upsert-${randomUUID()}`;
+      await expect(
+        as(principal(stranger), async () =>
+          (await collection()).getOrUpsert({
+            tenantId,
+            accountId: ownedId,
+            slug: subject,
+            subject,
+            isDraft: flag as never,
+            sendStatus: 'draft',
+          }),
+        ),
+      ).rejects.toBeInstanceOf(MailAccessError);
+      expect(await countBySubject(subject)).toBe(0);
+    });
+
+    it.each(
+      FORMS,
+    )('refuses to turn stored mail into a draft flagged %s', async (_l, flag) => {
+      const id = await seedReceived(ownedId);
+      await expect(
+        as(principal(stranger), async () => {
+          const email = await load(id);
+          email.isDraft = flag as never;
+          email.sendStatus = 'draft';
+          return email.save();
+        }),
+      ).rejects.toBeInstanceOf(MailAccessError);
+      expect((await load(id)).isDraft).toBe(false);
+    });
+
+    it.each(
+      FORMS,
+    )('lets the owner write a draft flagged %s', async (_l, flag) => {
+      await as(principal(owner), async () => {
+        const created = await (await collection()).create({
+          tenantId,
+          accountId: ownedId,
+          subject: 'owner-flag',
+          isDraft: flag as never,
+          sendStatus: 'draft',
+        });
+        await created.save();
+      });
+    });
+  });
+
+  describe('unsent mail flagged as a draft', () => {
+    const UNSENT = ['failed', 'pending', 'scheduled'] as const;
+
+    const seedFlagged = (sendStatus: string, accountId = ownedId) =>
+      withTenant({ tenantId }, () =>
+        runWithMailSystemAccess(async () => {
+          const email = await newDraft(accountId, `flagged-${sendStatus}`);
+          email.sendStatus = sendStatus as never;
+          await email.save();
+          return email.id as string;
+        }),
+      );
+
+    it.each(
+      UNSENT,
+    )('refuses to create, edit or delete a %s draft', async (status) => {
+      await expect(
+        as(principal(stranger), async () => {
+          const email = await newDraft(ownedId);
+          email.sendStatus = status;
+          return email.save();
+        }),
+      ).rejects.toBeInstanceOf(MailAccessError);
+      const id = await seedFlagged(status);
+      await expect(
+        as(principal(stranger), async () => {
+          const email = await load(id);
+          email.subject = 'rewritten';
+          return email.save();
+        }),
+      ).rejects.toBeInstanceOf(MailAccessError);
+      await expect(
+        as(principal(stranger), async () => (await load(id)).delete()),
+      ).rejects.toBeInstanceOf(MailAccessError);
+      expect((await load(id)).subject).toBe(`flagged-${status}`);
+    });
+
+    it.each(
+      UNSENT,
+    )('refuses to turn a %s draft into a plain draft', async (status) => {
+      const id = await seedFlagged(status);
+      await expect(
+        as(principal(stranger), async () => {
+          const email = await load(id);
+          email.sendStatus = 'draft';
+          return email.save();
+        }),
+      ).rejects.toBeInstanceOf(MailAccessError);
+      expect((await load(id)).sendStatus).toBe(status);
+    });
+
+    it.each(UNSENT)('lets a draft grantee edit a %s draft', async (status) => {
+      const id = await seedFlagged(status);
+      await as(principal(drafter), async () => {
+        const email = await load(id);
+        email.subject = 'edited';
+        await email.save();
+      });
+      expect((await load(id)).subject).toBe('edited');
+    });
+
+    it('leaves sent mail and unflagged queued mail alone', async () => {
+      const sent = await seedFlagged('sent');
+      await as(principal(stranger), async () => {
+        const email = await load(sent);
+        email.isRead = true;
+        await email.save();
+      });
+    });
+
+    it('lets a held send move a queued draft back to draft', async () => {
+      const id = await seedFlagged('pending');
+      await withTenant({ tenantId }, () =>
+        runWithMailSystemAccess(async () => {
+          const email = await load(id);
+          email.fromAddress = 'owned@example.com';
+          await email.save();
+        }),
+      );
+      const held = await as(
+        principal(sender, { kind: 'agent', id: 'agent-credential' }),
+        async () => (await load(id)).send(),
+      );
+      expect(held.pendingApproval?.created).toBe(true);
+      expect((await load(id)).sendStatus).toBe('draft');
+    });
+  });
+
+  describe('the send path carries nothing else', () => {
+    it.each([
+      ['tenantId', (e: Email) => (e.tenantId = null)],
+      [
+        'context',
+        (e: Email) => ((e as never as { context: string }).context = 'other'),
+      ],
+      ['slug', (e: Email) => (e.slug = 'renamed')],
+    ])('refuses a changed %s on a failed send of a draft', async (_name, edit) => {
+      const id = await seedDraft(ownedId);
+      await withTenant({ tenantId }, () =>
+        runWithMailSystemAccess(async () => {
+          const { EmailAccountCollection } = await import(
+            '../collections/EmailAccountCollection.js'
+          );
+          const account = await (
+            await EmailAccountCollection.create(options)
+          ).get({ id: ownedId });
+          if (!account) throw new Error('no account');
+          account.isActive = false;
+          await account.save();
+        }),
+      );
+      const before = await load(id);
+      const result = await as(
+        principal(drafter, { scopes: ['read'] }),
+        async () => {
+          const draft = await load(id);
+          edit(draft);
+          return draft.send();
+        },
+      ).catch((error) => error);
+      expect(result).toBeInstanceOf(MailAccessError);
+      const stored = await load(id);
+      expect(stored.sendStatus).toBe('draft');
+      expect(stored.slug).toBe(before.slug);
+      expect(stored.tenantId).toBe(before.tenantId);
+    });
+  });
+
+  describe('attachments of a draft', () => {
+    const attachments = async () =>
+      (
+        await import('../collections/AttachmentCollection.js')
+      ).AttachmentCollection.create(options);
+
+    const seedAttachment = (messageId: string, filename = 'seed.txt') =>
+      withTenant({ tenantId }, () =>
+        runWithMailSystemAccess(async () => {
+          const row = new Attachment({
+            ...options,
+            tenantId,
+            messageId,
+            filename,
+          });
+          await row.initialize();
+          await row.save();
+          return row.id as string;
+        }),
+      );
+
+    const loadAttachment = (id: string) =>
+      withTenant({ tenantId }, () =>
+        runWithMailSystemAccess(async () => (await attachments()).get({ id })),
+      );
+
+    const addAttachment = async (messageId: string, filename = 'new.txt') => {
+      const row = await (await attachments()).create({
+        tenantId,
+        messageId,
+        filename,
+      });
+      return row.save();
+    };
+
+    describe('without the draft scope', () => {
+      it.each([
+        ['a stranger', () => principal(stranger)],
+        ['a sender without draft', () => principal(sender)],
+        ['no principal', () => null],
+        [
+          'a drafter capped below draft',
+          () => principal(drafter, { scopes: ['read'] }),
+        ],
+      ])('refuses to add, change or delete one as %s', async (_l, who) => {
+        const draftId = await seedDraft(ownedId);
+        const existing = await seedAttachment(draftId);
+        await expect(
+          as(who(), () => addAttachment(draftId)),
+        ).rejects.toBeInstanceOf(MailAccessError);
+        await expect(
+          as(who(), async () => {
+            const row = await (await attachments()).get({ id: existing });
+            if (!row) throw new MailAccessError('draft', 'denied');
+            row.filename = 'changed.txt';
+            return row.save();
+          }),
+        ).rejects.toBeInstanceOf(MailAccessError);
+        await expect(
+          as(who(), async () => {
+            const row = await (await attachments()).get({ id: existing });
+            if (!row) throw new MailAccessError('draft', 'denied');
+            return row.delete();
+          }),
+        ).rejects.toBeInstanceOf(MailAccessError);
+        const stored = await loadAttachment(existing);
+        expect(stored?.filename).toBe('seed.txt');
+        expect(
+          (
+            await withTenant({ tenantId }, () =>
+              runWithMailSystemAccess(async () =>
+                (await attachments()).list({ where: { messageId: draftId } }),
+              ),
+            )
+          ).length,
+        ).toBe(1);
+      });
+
+      it('refuses the collection delete by id', async () => {
+        const draftId = await seedDraft(ownedId);
+        const existing = await seedAttachment(draftId);
+        await expect(
+          as(principal(drafter, { scopes: ['read'] }), async () =>
+            (await attachments()).delete(existing),
+          ),
+        ).rejects.toBeInstanceOf(MailAccessError);
+        expect(await loadAttachment(existing)).toBeTruthy();
+      });
+
+      it('refuses to move an attachment onto or off a draft', async () => {
+        const draftId = await seedDraft(ownedId);
+        const openDraft = await seedDraft(openId);
+        const onto = await seedAttachment(openDraft);
+        const off = await seedAttachment(draftId);
+        await expect(
+          as(principal(stranger), async () => {
+            const row = await (await attachments()).get({ id: onto });
+            if (!row) throw new Error('open attachment should be visible');
+            row.messageId = draftId;
+            return row.save();
+          }),
+        ).rejects.toBeInstanceOf(MailAccessError);
+        await expect(
+          as(principal(drafter, { scopes: ['read'] }), async () => {
+            const row = await (await attachments()).get({ id: off });
+            if (!row) throw new Error('reader should see the attachment');
+            row.messageId = openDraft;
+            return row.save();
+          }),
+        ).rejects.toBeInstanceOf(MailAccessError);
+        expect((await loadAttachment(onto))?.messageId).toBe(openDraft);
+        expect((await loadAttachment(off))?.messageId).toBe(draftId);
+      });
+
+      it('refuses a new attachment that takes over the key of a stored one', async () => {
+        const draftId = await seedDraft(ownedId);
+        const openDraft = await seedDraft(openId);
+        const existing = await withTenant({ tenantId }, () =>
+          runWithMailSystemAccess(async () => {
+            const row = new Attachment({
+              ...options,
+              tenantId,
+              messageId: draftId,
+              filename: 'keyed.txt',
+            });
+            row.slug = 'keyed-attachment';
+            await row.initialize();
+            await row.save();
+            return row.id as string;
+          }),
+        );
+        await expect(
+          as(principal(stranger), async () => {
+            const row = new Attachment({
+              ...options,
+              tenantId,
+              messageId: openDraft,
+              filename: 'taken.txt',
+            });
+            row.slug = 'keyed-attachment';
+            await row.initialize();
+            return row.save();
+          }),
+        ).rejects.toBeInstanceOf(MailAccessError);
+        expect((await loadAttachment(existing))?.messageId).toBe(draftId);
+      });
+    });
+
+    describe('with the draft scope', () => {
+      it.each([
+        ['the owner', () => principal(owner)],
+        ['a draft grantee', () => principal(drafter)],
+      ])('lets %s add, change and delete one', async (_l, who) => {
+        const draftId = await seedDraft(ownedId);
+        await as(who(), async () => {
+          const row = await addAttachment(draftId);
+          row.filename = 'renamed.txt';
+          await row.save();
+          expect(row.accountId).toBe(ownedId);
+          await row.delete();
+        });
+      });
+    });
+
+    describe('unchanged behaviour', () => {
+      it('leaves attachments of unowned drafts, sent and received mail alone', async () => {
+        const openDraft = await seedDraft(openId);
+        const received = await seedReceived(ownedId);
+        const sent = await withTenant({ tenantId }, () =>
+          runWithMailSystemAccess(async () => {
+            const email = await newDraft(ownedId, 'sent');
+            email.sendStatus = 'sent';
+            await email.save();
+            return email.id as string;
+          }),
+        );
+        await as(principal(stranger), async () => {
+          for (const messageId of [openDraft, received, sent]) {
+            const row = await addAttachment(messageId);
+            await row.delete();
+          }
+        });
+      });
+
+      it('lets trusted sync and ingest write attachments with no principal', async () => {
+        const draftId = await seedDraft(ownedId);
+        const id = await seedAttachment(draftId);
+        await withTenant({ tenantId }, () =>
+          runWithMailSystemAccess(async () => {
+            const row = await (await attachments()).get({ id });
+            if (!row) throw new Error('missing');
+            row.filename = 'synced.txt';
+            await row.save();
+            await row.delete();
+          }),
+        );
+        expect(await loadAttachment(id)).toBeNull();
+      });
+
+      it('lets a sender send a draft that has attachments', async () => {
+        const draftId = await seedDraft(ownedId);
+        await seedAttachment(draftId);
+        const result = await as(
+          principal(sender, { kind: 'person' }),
+          async () =>
+            (await load(draftId)).send({
+              attachments: [
+                {
+                  filename: 'late.txt',
+                  content: new Uint8Array([1, 2, 3]),
+                  contentType: 'text/plain',
+                },
+              ],
+            } as never),
+        );
+        expect(result.success).toBe(true);
+        expect((await load(draftId)).sendStatus).toBe('sent');
+      });
+    });
+  });
+
+  describe('the scope check runs inside the write', () => {
+    it('reads the stored row through the transaction handle', async () => {
+      const id = await seedDraft(ownedId);
+      const seen: boolean[] = [];
+      const original = (
+        Email.prototype as unknown as {
+          getCanonicalPersistedRow: (f: unknown) => Promise<unknown>;
+        }
+      ).getCanonicalPersistedRow;
+      vi.spyOn(
+        Email.prototype as never,
+        'getCanonicalPersistedRow' as never,
+      ).mockImplementation(async function (this: Email, filter: unknown) {
+        seen.push(this.db !== db);
+        return original.call(this, filter);
+      } as never);
+      await as(principal(drafter), async () => {
+        const email = await load(id);
+        seen.length = 0;
+        email.subject = 'in tx';
+        await email.save();
+      });
+      expect(seen.length).toBeGreaterThan(0);
+      expect(seen[0]).toBe(true);
+    });
+  });
+
   it('leaves messages of classes without a draft flag alone', async () => {
     const { Tweet } = await import('../models/Tweet');
     await as(principal(stranger), async () => {
@@ -748,6 +1237,41 @@ describe('draft scope on message writes (#5616)', () => {
       expect(result.success).toBe(true);
       expect(providerSend).toHaveBeenCalledTimes(1);
       expect((await load(id)).sendStatus).toBe('sent');
+    });
+
+    it('lets a sender send a reply that was never saved', async () => {
+      const result = await as(
+        principal(sender, { kind: 'person' }),
+        async () => {
+          const reply = new Email({
+            ...options,
+            tenantId,
+            accountId: ownedId,
+            subject: 'hello',
+            fromAddress: 'ada@example.com',
+          }).createReply();
+          await reply.initialize();
+          reply.fromAddress = 'owned@example.com';
+          return reply.send();
+        },
+      );
+      expect(result.success).toBe(true);
+      expect(providerSend).toHaveBeenCalledTimes(1);
+    });
+
+    it('refuses to send a reply that was never saved without the send scope', async () => {
+      const result = await as(principal(drafter), async () => {
+        const reply = new Email({
+          ...options,
+          tenantId,
+          accountId: ownedId,
+          subject: 'hello',
+        }).createReply();
+        await reply.initialize();
+        return reply.send();
+      });
+      expect(result.success).toBe(false);
+      expect(providerSend).not.toHaveBeenCalled();
     });
 
     it('holds an agent send for approval without needing the draft scope', async () => {

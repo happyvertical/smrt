@@ -29,6 +29,7 @@
  */
 
 import type { SmrtClassOptions } from '@happyvertical/smrt-core';
+import type { DatabaseInterface } from '@happyvertical/sql';
 import { createHandoffContext, getCurrentTenant } from './host.js';
 import {
   DRAFT_MAIL_PERMISSION,
@@ -478,18 +479,58 @@ export async function accountReadable(
   ).allowed;
 }
 
+const FALSE_FLAGS = new Set(['', '0', 'false']);
+
+/**
+ * One reading of a stored or caller-supplied boolean flag (`true`, `1`, `'1'`,
+ * `'true'`, whatever a column or a generated route hands over). Anything that
+ * is not plainly false counts as set, so an unusual form fails closed.
+ */
+export function mailFlag(value: unknown): boolean {
+  if (value === undefined || value === null || value === false) return false;
+  if (value === 0) return false;
+  if (typeof value === 'string') {
+    return !FALSE_FLAGS.has(value.trim().toLowerCase());
+  }
+  return true;
+}
+
+/**
+ * Draft content: an email flagged `isDraft` that has not been sent. Every send
+ * status but `sent` counts (`draft`, `pending`, `scheduled`, `sending`,
+ * `failed`), so relabelling the status never takes a draft out of the gate.
+ * Received mail is not flagged, whatever status it carries.
+ */
+export function isUnsentDraft(sendStatus: unknown, isDraft: unknown): boolean {
+  return mailFlag(isDraft) && sendStatus !== 'sent';
+}
+
 /**
  * Gate for writes that create, change or delete a draft: the principal needs
  * the `draft` scope on every listed account. Trusted system work
  * ({@link runWithMailSystemAccess}) and unowned accounts pass; an account that
- * cannot be found fails closed, like {@link accountReadable}.
+ * cannot be found fails closed, like {@link accountReadable}. Pass the
+ * transaction handle as `db` to read the account inside the write.
  */
-export async function assertMailDraftWrite(
+export function assertMailDraftWrite(
   accountIds: ReadonlyArray<string | null | undefined>,
   options: SmrtClassOptions | undefined,
+  db?: DatabaseInterface,
+): Promise<void> {
+  return assertMailScopeOn(accountIds, 'draft', options, db);
+}
+
+/** {@link assertMailDraftWrite} for any scope. */
+export async function assertMailScopeOn(
+  accountIds: ReadonlyArray<string | null | undefined>,
+  scope: MailScope,
+  options: SmrtClassOptions | undefined,
+  db?: DatabaseInterface,
 ): Promise<void> {
   if (inMailSystemAccess()) return;
-  learnMailAccessOptions(options);
+  // Inside a write, `options` carries the transaction's handle: the caller
+  // learned the database before the transaction began, and it must not outlive it.
+  if (!db) learnMailAccessOptions(options);
   const ids = [...new Set(accountIds.filter((id): id is string => !!id))];
   if (!ids.length) return;
   const config = getEffectiveMailAccessConfig();
@@ -497,18 +538,40 @@ export async function assertMailDraftWrite(
   const { AccountCollection } = await import(
     './collections/AccountCollection.js'
   );
+  // The collection is built on the configured database, never on `db`: a
+  // collection created inside a transaction would register the transaction's
+  // handle as the policy database, and that handle ends with the write.
+  const accounts = await AccountCollection.create(config.options);
   for (const id of ids) {
-    const account = await runWithMailSystemAccess(async () =>
-      (await AccountCollection.create(config.options)).get({ id }),
-    );
-    if (!account) throw new MailAccessError('draft', 'denied');
+    let account: {
+      id?: string | null;
+      tenantId?: string | null;
+      ownerUserId?: string | null;
+    } | null;
+    if (db) {
+      // Read through the caller's transaction handle, inside the write.
+      const row = (await db.get(accounts.tableName, { id })) as Record<
+        string,
+        unknown
+      > | null;
+      account = row
+        ? {
+            id: row.id as string,
+            tenantId: (row.tenant_id as string | null) ?? null,
+            ownerUserId: (row.owner_user_id as string | null) ?? null,
+          }
+        : null;
+    } else {
+      account = await runWithMailSystemAccess(async () => accounts.get({ id }));
+    }
+    if (!account) throw new MailAccessError(scope, 'denied');
     await assertMailAccess(
       {
         id: account.id,
         tenantId: account.tenantId,
         ownerUserId: account.ownerUserId,
       },
-      'draft',
+      scope,
     );
   }
 }
