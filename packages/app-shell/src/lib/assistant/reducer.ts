@@ -2,6 +2,7 @@
 // tool-call chips and approval cards. No DOM, no fetch.
 
 import {
+  plainStep,
   type SummaryDefinition,
   versionSummary,
 } from '../ui/command-summary.ts';
@@ -580,6 +581,8 @@ export interface ReportView {
   id: string;
   report?: ToolItem['report'];
   href?: string;
+  /** The owner's request this report answers: it names the columns they want. */
+  asked?: string;
 }
 
 export type TurnView = Exclude<Item, { kind: 'tool' }> | StepsView | ReportView;
@@ -637,16 +640,6 @@ function recordWrite(name: string, def: StepDefinition) {
   };
 }
 
-const PAST: Record<string, string> = {
-  Add: 'Added',
-  Remove: 'Removed',
-  Change: 'Changed',
-  Hide: 'Hid',
-  Rename: 'Renamed',
-  Load: 'Loaded',
-  Merge: 'Merged',
-};
-
 /**
  * A structural step ("add Order.priority", "enable profiles") in the changes
  * cards' words (versionSummary / commandSummary), in the past tense. Anything
@@ -655,17 +648,7 @@ const PAST: Record<string, string> = {
 function structuralPhrase(summary: string, def: StepDefinition): string {
   const card = versionSummary(summary, def, def);
   if (card === 'Change your app') return summary;
-  let m = /^Add field: (.+) in (.+)$/.exec(card);
-  if (m) return `Added a ${m[1]} field to ${lowerFirst(m[2])}`;
-  m = /^(Remove|Hide) field: (.+) in (.+)$/.exec(card);
-  if (m) return `${PAST[m[1]]} the ${m[2]} field in ${lowerFirst(m[3])}`;
-  m = /^Enable recipe: (.+)$/.exec(card);
-  if (m) return `Set up ${lowerFirst(m[1])}`;
-  m = /^Add model: (.+)$/.exec(card);
-  if (m) return `Added ${lowerFirst(m[1])}`;
-  m = /^(Add|Remove|Change|Hide|Rename|Load|Merge) (.+)$/.exec(card);
-  if (m) return `${PAST[m[1]]} ${lowerFirst(m[2])}`;
-  return card;
+  return plainStep(card, 'past');
 }
 
 function stepRow(
@@ -805,6 +788,7 @@ export function groupTurns(
               kind: 'report' as const,
               id: `${t.id}:report`,
               ...(t.report ? { report: t.report } : {}),
+              ...(asked ? { asked } : {}),
               ...(t.reportHref ? { href: t.reportHref } : {}),
             },
           ]

@@ -220,6 +220,21 @@ describe('planReplyBlock (#5395)', () => {
       applyNow: false,
     });
   });
+  it("reads the items in the steps line's plain words, present tense (#5608)", () => {
+    const summaries = [
+      'Enable recipe: Profiles',
+      'Add model: Orders',
+      'Add field: Priority in Orders',
+    ];
+    const block = planReplyBlock(
+      changes({ cards: summaries.map((summary) => card({ summary })) }),
+    );
+    expect(block?.lines).toEqual([
+      'Set up profiles',
+      'Add orders',
+      'Add a Priority field to orders',
+    ]);
+  });
   it('offers Apply now for a small addition with nothing to answer', () => {
     expect(
       planReplyBlock(changes({ cards: [card()], applyNow: true })),

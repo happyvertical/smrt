@@ -41,23 +41,60 @@ export function reportCell(
 /** Columns the chat shows: a 400px column fits three without scrolling. */
 export const CHAT_KEY_COLUMNS = 3;
 
+const words = (text: string) => text.toLowerCase().match(/[a-z0-9]+/g) ?? [];
+
+/** Does the owner's request name this column (its label or id, as whole words)? */
+function isAsked(
+  column: AppReportResult['columns'][number],
+  asked: string[],
+): boolean {
+  if (asked.length === 0) return false;
+  const named = (text: string) => {
+    const w = words(text);
+    return (
+      w.length > 0 &&
+      w.every(
+        (x) =>
+          asked.includes(x) ||
+          asked.includes(`${x}s`) ||
+          asked.includes(x.replace(/s$/, '')),
+      ) &&
+      !(w.length === 1 && w[0].length < 3)
+    );
+  };
+  return named(column.label ?? '') || named(column.id);
+}
+
 /**
- * The report's key columns for the chat: the ones the report itself charts
- * (its category and measures), else the first few, up to `max`, in result
- * order. Rows stay whole (a reference column's label lives in a row key);
- * only what the table shows is trimmed. `hidden` counts the rest.
+ * The report's key columns for the chat, `max` of them (in result order): the
+ * first column, then the ones the owner asked for (named in their request),
+ * then the ones the report itself charts (its category and measures), then
+ * the rest. Rows stay whole (a reference column's label lives in a row key);
+ * only what the table shows is trimmed. `hidden` counts every column left
+ * out, so an asked-for column is always shown or counted (#5608).
  */
 export function keyColumns(
   result: AppReportResult,
   max = CHAT_KEY_COLUMNS,
+  asked = '',
 ): { result: AppReportResult; hidden: number } {
   const picked = new Set(
     [result.chart.x, ...(result.chart.y ?? [])].filter(
       (id): id is string => typeof id === 'string',
     ),
   );
-  const wanted = result.columns.filter((c) => picked.has(c.id));
-  const key = (wanted.length > 0 ? wanted : result.columns).slice(0, max);
+  const request = words(asked);
+  const [first, ...others] = result.columns;
+  const order = first
+    ? [
+        first,
+        ...others.filter((c) => isAsked(c, request)),
+        ...others.filter((c) => !isAsked(c, request) && picked.has(c.id)),
+        ...others.filter((c) => !isAsked(c, request) && !picked.has(c.id)),
+      ]
+    : [];
+  const shown = new Set(order.slice(0, max));
+  const key = result.columns.filter((c) => shown.has(c));
   return {
     result: { ...result, columns: key, chart: { type: 'table' } },
     hidden: result.columns.length - key.length,

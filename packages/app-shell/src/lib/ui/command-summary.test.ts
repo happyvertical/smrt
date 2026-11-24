@@ -1,5 +1,5 @@
-import { expect, it } from 'vitest';
-import { versionSummary } from './command-summary.ts';
+import { describe, expect, it } from 'vitest';
+import { plainStep, versionSummary } from './command-summary.ts';
 
 const definition = {
   models: {
@@ -80,4 +80,19 @@ it.each([
   const actual = versionSummary(raw, definition, definition);
   expect(actual).toBe(expected);
   expect(actual).not.toMatch(/InternalOrders|raw[A-Z]|private-record-id/);
+});
+
+describe('plainStep (#5608)', () => {
+  it('says a card heading in plain words, present or past', () => {
+    expect(plainStep('Remove field: Priority in Orders')).toBe(
+      'Remove the Priority field in orders',
+    );
+    expect(plainStep('Hide field: Priority in Orders', 'past')).toBe(
+      'Hid the Priority field in orders',
+    );
+    expect(plainStep('Load 4 records into Orders', 'past')).toBe(
+      'Loaded 4 records into Orders',
+    );
+    expect(plainStep('Clean up older changes')).toBe('Clean up older changes');
+  });
 });

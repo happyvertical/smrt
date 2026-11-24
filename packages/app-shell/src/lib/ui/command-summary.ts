@@ -223,3 +223,41 @@ export function versionSummary(
   if (summary.includes('published ')) return 'Publish draft';
   return 'Change your app';
 }
+
+const PAST: Record<string, string> = {
+  Add: 'Added',
+  Remove: 'Removed',
+  Change: 'Changed',
+  Hide: 'Hid',
+  Rename: 'Renamed',
+  Load: 'Loaded',
+  Merge: 'Merged',
+};
+const lowerFirst = (text: string) =>
+  /^[A-Z][a-z]/.test(text)
+    ? text.charAt(0).toLowerCase() + text.slice(1)
+    : text;
+
+/**
+ * A changes-card heading ("Add field: Priority in Orders", "Enable recipe:
+ * Profiles") in plain words, present (the changes-waiting block: "Add a
+ * Priority field to orders") or past (the steps line: "Added a Priority field
+ * to orders"). Anything that is not card grammar is returned unchanged.
+ */
+export function plainStep(
+  card: string,
+  tense: 'present' | 'past' = 'present',
+): string {
+  const verb = (v: string) => (tense === 'past' ? PAST[v] : v);
+  let m = /^Add field: (.+) in (.+)$/.exec(card);
+  if (m) return `${verb('Add')} a ${m[1]} field to ${lowerFirst(m[2])}`;
+  m = /^(Remove|Hide) field: (.+) in (.+)$/.exec(card);
+  if (m) return `${verb(m[1])} the ${m[2]} field in ${lowerFirst(m[3])}`;
+  m = /^Enable recipe: (.+)$/.exec(card);
+  if (m) return `Set up ${lowerFirst(m[1])}`;
+  m = /^Add model: (.+)$/.exec(card);
+  if (m) return `${verb('Add')} ${lowerFirst(m[1])}`;
+  m = /^(Add|Remove|Change|Hide|Rename|Load|Merge) (.+)$/.exec(card);
+  if (m) return `${verb(m[1])} ${lowerFirst(m[2])}`;
+  return card;
+}

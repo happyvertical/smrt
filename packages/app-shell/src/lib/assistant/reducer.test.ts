@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'vitest';
+import { result } from '../../test/report-fixtures.ts';
 import type { TurnEvent } from './events.ts';
 import {
   type Action,
@@ -454,6 +455,25 @@ describe('quiet steps per turn (#5395)', () => {
       live: true,
       failed: false,
       line: 'Looking at your app…',
+    });
+  });
+  it("a report view carries the owner's request, so the table can show the columns asked for (#5608)", () => {
+    const s = run([
+      { type: 'send', text: 'Top customers, with their email' },
+      ev({ type: 'tool_call', id: 'r', name: 'app_runreport', args: '{}' }),
+      ev({
+        type: 'tool_result',
+        id: 'r',
+        name: 'app_runreport',
+        ok: true,
+        summary: 'Ran Sales',
+        report: { result, href: '/reports/sales' },
+      }),
+      ev({ type: 'text', delta: 'Here.' }),
+      ev({ type: 'done', stop: 'complete' }),
+    ]);
+    expect(groupTurns(s).find((i) => i.kind === 'report')).toMatchObject({
+      asked: 'Top customers, with their email',
     });
   });
   it('unknown tools show no internal name', () => {
