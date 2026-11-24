@@ -30,6 +30,7 @@ import {
 import { TenantScoped, tenantId } from '@happyvertical/smrt-tenancy/decorators';
 import {
   assertHydratedMailAccess,
+  assertMailDraftWrite,
   decideMailAccess,
   inMailSystemAccess,
   type MailPrincipal,
@@ -101,6 +102,20 @@ async function saveSendLifecycle(message: Message): Promise<void> {
     lifecycleSaves.delete(message);
   }
 }
+
+// Internal saves that already hold the `send` decision and may move a message
+// back to draft (a held send); they skip the draft-scope check.
+const heldSaves = new WeakSet<Message>();
+async function saveHeld(message: Message): Promise<void> {
+  heldSaves.add(message);
+  try {
+    await message.save();
+  } finally {
+    heldSaves.delete(message);
+  }
+}
+
+const TRUTHY_STORED = new Set([true, 1, '1', 'true']);
 
 const DRAFT_CARRIED_FIELDS = new Set(['tenantId', 'metadata', 'correlationId']);
 
@@ -307,9 +322,10 @@ export class Message extends SmrtObject {
   override async save(options?: SmrtSaveOptions): Promise<this> {
     const signature = lifecycleSaves.get(this);
     lifecycleSaves.delete(this);
+    const authorized =
+      signature !== undefined && signature === lifecycleSignature(this);
+    if (!authorized && !heldSaves.has(this)) await this.assertDraftScope();
     return this.withTransaction(async () => {
-      const authorized =
-        signature !== undefined && signature === lifecycleSignature(this);
       await assertProtectedNotificationSave(this, options, authorized);
       if (signature !== undefined && signature !== lifecycleSignature(this))
         throw new Error('Message lifecycle changed during its guarded save.');
@@ -328,8 +344,41 @@ export class Message extends SmrtObject {
   override async delete(
     options: { expectedUpdatedAt?: Date | string } = {},
   ): Promise<void> {
+    await this.assertDraftScope();
     await assertProtectedNotificationDelete(this);
     return super.delete(options);
+  }
+
+  /**
+   * Creating, changing or deleting a draft on an owned account needs the
+   * `draft` scope, whichever route the write takes. Both the new and the
+   * stored state count, so a draft cannot be edited by first relabelling it,
+   * and both accounts count when a draft is moved. A draft is an unsent row
+   * (`isDraft` too, where the class has it); received mail carries the default
+   * `draft` status and is not one. Trusted system work, unowned accounts and
+   * rows that are not drafts are unaffected.
+   */
+  private async assertDraftScope(): Promise<void> {
+    if (inMailSystemAccess()) return;
+    const hasFlag = 'isDraft' in this;
+    const draftNow =
+      this.sendStatus === 'draft' &&
+      (!hasFlag || (this as { isDraft?: unknown }).isDraft === true);
+    let priorAccountId: string | null = null;
+    if (this.id) {
+      const stored = await this.getCanonicalPersistedRow({ id: this.id });
+      if (
+        stored?.send_status === 'draft' &&
+        (!hasFlag || TRUTHY_STORED.has(stored.is_draft as never))
+      ) {
+        priorAccountId = (stored.account_id as string | null) ?? null;
+      }
+    }
+    if (!draftNow && !priorAccountId) return;
+    await assertMailDraftWrite(
+      [draftNow ? this.accountId : null, priorAccountId],
+      this.options,
+    );
   }
 
   private async finalizeSendLifecycle(
@@ -656,7 +705,7 @@ export class Message extends SmrtObject {
         held.pendingApproval !== undefined && this.sendStatus !== 'draft';
       if (toDraft) this.sendStatus = 'draft';
       if (held.pendingApproval?.created) stampHandledBy(this, actor);
-      if (toDraft || held.pendingApproval?.created) await this.save();
+      if (toDraft || held.pendingApproval?.created) await saveHeld(this);
       // A refused send of a queued message fails definitely (nothing left),
       // so it does not linger as `pending` for a later drain.
       if (

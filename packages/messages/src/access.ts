@@ -479,6 +479,41 @@ export async function accountReadable(
 }
 
 /**
+ * Gate for writes that create, change or delete a draft: the principal needs
+ * the `draft` scope on every listed account. Trusted system work
+ * ({@link runWithMailSystemAccess}) and unowned accounts pass; an account that
+ * cannot be found fails closed, like {@link accountReadable}.
+ */
+export async function assertMailDraftWrite(
+  accountIds: ReadonlyArray<string | null | undefined>,
+  options: SmrtClassOptions | undefined,
+): Promise<void> {
+  if (inMailSystemAccess()) return;
+  learnMailAccessOptions(options);
+  const ids = [...new Set(accountIds.filter((id): id is string => !!id))];
+  if (!ids.length) return;
+  const config = getEffectiveMailAccessConfig();
+  if (!config) return;
+  const { AccountCollection } = await import(
+    './collections/AccountCollection.js'
+  );
+  for (const id of ids) {
+    const account = await runWithMailSystemAccess(async () =>
+      (await AccountCollection.create(config.options)).get({ id }),
+    );
+    if (!account) throw new MailAccessError('draft', 'denied');
+    await assertMailAccess(
+      {
+        id: account.id,
+        tenantId: account.tenantId,
+        ownerUserId: account.ownerUserId,
+      },
+      'draft',
+    );
+  }
+}
+
+/**
  * Gate for direct hydration (`new Email({ id }).initialize()`,
  * `loadRelated('messageId')`), which bypasses collection read hooks: throws
  * when the loaded row belongs to an account closed to the principal.
