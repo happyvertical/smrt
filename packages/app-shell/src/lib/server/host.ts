@@ -855,6 +855,7 @@ async function openLive(holder: Holder): Promise<AppHost> {
   } catch (e) {
     // Never serve live thawed when we could not tell whether a draft is
     // open: fail the open; the next call retries.
+    await holder.slotRef?.host?.close().catch(() => {});
     holder.slotRef = null;
     await host.close().catch(() => {});
     throw e;
