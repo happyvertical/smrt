@@ -217,7 +217,17 @@ describe('test home isolation', () => {
     }
   });
 
-  it('isolates a real Vitest worker and its child before test imports, then removes the home', () => {
+  it.each([
+    { configured: undefined, cli: undefined, expected: 10000 },
+    { configured: 60000, cli: undefined, expected: 60000 },
+    { configured: 120000, cli: undefined, expected: 120000 },
+    { configured: 30000, cli: 60000, expected: 60000 },
+    { configured: 0, cli: undefined, expected: 0 },
+  ])('isolates a real worker and child, forwards the resolved hook budget ($expected), then removes the home', ({
+    configured,
+    cli,
+    expected,
+  }) => {
     const root = mkdtempSync(join(tmpdir(), 'smrt-home-consumer-'));
     const setup = fileURLToPath(
       new URL('../test-home.global-setup.ts', import.meta.url),
@@ -228,28 +238,46 @@ describe('test home isolation', () => {
     try {
       writeFileSync(
         join(root, 'vitest.config.mjs'),
-        `export default { test: { globalSetup: [${JSON.stringify(setup)}], pool: 'forks', maxWorkers: 1 } };`,
+        `export default ${JSON.stringify({
+          test: {
+            globalSetup: [setup],
+            pool: 'forks',
+            maxWorkers: 1,
+            hookTimeout: configured,
+          },
+        })};`,
       );
       // Import vitest by absolute path because the temporary consumer has no node_modules.
       writeFileSync(
         join(root, 'home.test.mjs'),
         `
-        import { it, expect } from ${JSON.stringify(fileURLToPath(new URL('../../node_modules/vitest/dist/index.js', import.meta.url)))};
+        import { it, expect, inject } from ${JSON.stringify(fileURLToPath(new URL('../../node_modules/vitest/dist/index.js', import.meta.url)))};
         import { homedir, userInfo } from 'node:os';
         import { writeFileSync } from 'node:fs';
         import { execFileSync } from 'node:child_process';
         const home = homedir();
         writeFileSync(${JSON.stringify(join(root, 'home.txt'))}, home);
         it('inherits isolated home before evaluation', () => {
+          expect(inject('__smrtVitestManifestHookTimeout')).toBe(${expected});
           expect(home).not.toBe(userInfo().homedir);
           expect(execFileSync(process.execPath, ['-p', 'require("node:os").homedir()'], { encoding: 'utf8', env: { ...process.env, NODE_ENV: 'production' } }).trim()).toBe(home);
         });
       `,
       );
-      execFileSync(process.execPath, [vitest, 'run', '--root', root], {
-        encoding: 'utf8',
-        timeout: 60_000,
-      });
+      execFileSync(
+        process.execPath,
+        [
+          vitest,
+          'run',
+          '--root',
+          root,
+          ...(cli === undefined ? [] : [`--hookTimeout=${cli}`]),
+        ],
+        {
+          encoding: 'utf8',
+          timeout: 60_000,
+        },
+      );
       const home = readFileSync(join(root, 'home.txt'), 'utf8');
       expect(existsSync(home)).toBe(false);
     } finally {
