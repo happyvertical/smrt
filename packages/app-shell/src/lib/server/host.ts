@@ -844,13 +844,24 @@ async function openLive(holder: Holder): Promise<AppHost> {
     // the persisted outcome, until a later open settles it.
     const recovered = host.recoveredChange;
     if (recovered?.request) {
-      const { settleRecoveredChange } = await import('./approvals.ts');
-      await settleRecoveredChange({
-        request: recovered.request,
-        outcome: recovered.outcome,
-        partial: recovered.partial,
-      });
-      await host.acknowledgeRecovery(recovered.id);
+      const approvals = await import('./approvals.ts');
+      try {
+        await approvals.settleRecoveredChange({
+          request: recovered.request,
+          outcome: recovered.outcome,
+          partial: recovered.partial,
+        });
+        await host.acknowledgeRecovery(recovered.id);
+      } catch (e) {
+        const summary = await approvals
+          .getApprovalView(recovered.request)
+          .then((v) => v?.summary)
+          .catch(() => undefined);
+        throw new EngineError(
+          `the app cannot open yet: the approval ${recovered.request}${summary ? ` ("${summary}")` : ''} has an unsettled outcome from an interrupted change and could not be settled (${e instanceof Error ? e.message : String(e)}). Try again; nothing is lost.`,
+          'refused',
+        );
+      }
     }
   } catch (e) {
     // Never serve live thawed when we could not tell whether a draft is
