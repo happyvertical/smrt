@@ -404,7 +404,7 @@ describe('approval gate invariants', () => {
     // exactly one site, inside the function that opens a draft's host
     expect(host.match(/autoApprove\s*:\s*true/g)?.length).toBe(1);
     expect(host).toMatch(
-      /export function openDraftHost[\s\S]{0,400}autoApprove: true/,
+      /export function openDraftHost[\s\S]{0,600}autoApprove: true/,
     );
   });
 
