@@ -531,16 +531,18 @@ later replay the draft's changes onto live. Rules and failure behaviour are in
 
 ```ts
 const live = await AppHost.open(dir, { store });
-const draft = await live.forkDraft(draftDir, { store: emptyDraftStore }); // autoApprove on
+// `owner`: enginePrincipal({ kind: 'user', tenantId: live.tenantId, userId,
+//   permissions: [OWNER_SLUG, ...appPermissionSlugs(live.def)] }); every entry point refuses anyone else
+const draft = await live.forkDraft(owner, draftDir, { store: emptyDraftStore }); // autoApprove on
 live.setFrozen(true); // live keeps serving records; structural commands are refused
-// ...build in `draft` (draft.execute / draft.create ...)...
+// ...build in `draft` (draft.execute(owner, ...) / draft.create ...)...
 const preview = await live.previewPublish(draft); // diff, archives, all method code, digest
-await live.publishDraft(draft, {
+await live.publishDraft(owner, draft, {
   author, approved: true, expect: preview.digest, draftName: 'Spring cleanup',
 }); // N ordinary live versions; any failure leaves live's app.db untouched
 live.setFrozen(false);
 await draft.discard(); // closes it and deletes only the directory fork made
-await live.execute({ type: 'undoTo', version: base, from: live.version }, { author });
+await live.execute(owner, { type: 'undoTo', version: base, from: live.version }, { author });
 ```
 
 `AppHost.open(dir, { store, autoApprove: true })` only works on a directory the

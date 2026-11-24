@@ -15,12 +15,14 @@ import {
 } from './change-engine.ts';
 import {
   AppHost,
+  appPermissionSlugs,
   type Command,
   DESKTOP_TENANT,
   EMPTY_APP,
   enginePrincipal,
   MemoryVersionStore,
   OWNER_SLUG,
+  PermissionDeniedError,
 } from './index.ts';
 
 const root = mkdtempSync(join(tmpdir(), 'engine-change-'));
@@ -379,5 +381,44 @@ describe('checkBatch review digest and plain blockers', () => {
     expect(third.reviewDigest).not.toBe(first.reviewDigest);
     await r.draft.close();
     await w.live.close();
+  });
+});
+
+describe('only the owner changes the app (#5609)', () => {
+  it('refuses a same-tenant member on every ChangeEngine method', async () => {
+    const w = await world();
+    const member = enginePrincipal({
+      kind: 'user',
+      tenantId: DESKTOP_TENANT,
+      userId: 'member',
+      permissions: appPermissionSlugs(w.live.def),
+    });
+    const r = await w.rebuild([]);
+    const refused = async (call: () => unknown) => {
+      // some methods refuse synchronously, others by rejection
+      await expect(async () => call()).rejects.toBeInstanceOf(
+        PermissionDeniedError,
+      );
+    };
+    await refused(() =>
+      engine.rebuild(member, w.live, {
+        draftDir: join(w.dir, 'member-draft'),
+        store: new MemoryVersionStore(),
+        commands: [],
+        author: 'tester',
+      }),
+    );
+    await refused(() => engine.checkBatch(member, w.live, r.draft));
+    await refused(() => engine.previewPublish(member, w.live, r.draft));
+    await refused(() =>
+      engine.publishDraft(member, w.live, r.draft, {
+        ...AUTHOR,
+        expect: 'digest',
+      }),
+    );
+    await refused(() =>
+      engine.undoTo(member, w.live, 1, { author: 'tester', from: 1 }),
+    );
+    expect(existsSync(join(w.dir, 'member-draft'))).toBe(false);
   });
 });

@@ -1089,7 +1089,8 @@ preserves the workbook's explicit display field.
 `SqliteChangeEngine` (`createSqliteChangeEngine()`) over `forkDraft` /
 `previewPublish` / `publishDraft` / `undoTo`. Every method takes a `principal`
 (an `EnginePrincipal`, #5188: refused unless it was built by `enginePrincipal()`
-for the live host's tenant, and never a guest) and an optional `fence` (#5190),
+for the live host's tenant, never a guest, and holding `OWNER_SLUG`: `asCaller` is
+`requireOwnerPrincipal`, so `previewPublish`/`checkBatch` refuse a member too) and an optional `fence` (#5190),
 unused on SQLite. Hosts are passed in.
 
 - `rebuild(principal, live, { draftDir, store, commands: {key, command}[], author, signal? })`:
