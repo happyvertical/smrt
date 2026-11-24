@@ -389,12 +389,12 @@ export class Message extends SmrtObject {
     const draftNow =
       this.sendStatus === 'draft' &&
       (this as { isDraft?: unknown }).isDraft === true;
-    let priorAccountId: string | null = null;
+    const priorAccountIds: Array<string | null> = [];
     let unchanged = false;
     if (this.id) {
       const stored = await this.getCanonicalPersistedRow({ id: this.id });
       if (stored?.send_status === 'draft' && flagged(stored.is_draft)) {
-        priorAccountId = (stored.account_id as string | null) ?? null;
+        priorAccountIds.push((stored.account_id as string | null) ?? null);
       }
       if (stored) {
         const norm = (value: unknown) =>
@@ -410,10 +410,34 @@ export class Message extends SmrtObject {
         });
       }
     }
+    // A new object that carries an explicit natural key (a slug) is written
+    // over the stored row with that key, whatever its own id: that row, not
+    // the id, is what the save changes.
+    if (!this.isPersisted) {
+      const columns = ObjectRegistry.getConflictColumns(
+        this.getResolvedQualifiedName(),
+      );
+      const slug = (this as { slug?: unknown }).slug;
+      if (columns.includes('slug') && typeof slug === 'string' && slug) {
+        // Match on the owner and slug alone: wider than the exact key, so a
+        // row the save might adopt is never missed (it can only over-match).
+        const filter: Record<string, unknown> = { slug };
+        if (columns.includes('tenant_id')) {
+          filter.tenant_id = this.tenantId || null;
+        }
+        for (const keyed of await this.getCanonicalPersistedRows(filter)) {
+          if (keyed.id === this.id) continue;
+          unchanged = false;
+          if (keyed.send_status === 'draft' && flagged(keyed.is_draft)) {
+            priorAccountIds.push((keyed.account_id as string | null) ?? null);
+          }
+        }
+      }
+    }
     if (lifecycle && unchanged) return;
-    if (!draftNow && !priorAccountId) return;
+    if (!draftNow && !priorAccountIds.length) return;
     await assertMailDraftWrite(
-      [draftNow ? this.accountId : null, priorAccountId],
+      [draftNow ? this.accountId : null, ...priorAccountIds],
       this.options,
     );
   }

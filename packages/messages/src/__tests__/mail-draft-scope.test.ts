@@ -343,6 +343,76 @@ describe('draft scope on message writes (#5616)', () => {
       ).rejects.toBeInstanceOf(MailAccessError);
     });
 
+    it.each([
+      ['an owned account', () => ownedId],
+      ['an unowned account', () => openId],
+    ])('refuses a fresh email whose natural key matches a stored draft (%s)', async (_label, target) => {
+      const id = await withTenant({ tenantId }, () =>
+        runWithMailSystemAccess(async () => {
+          const draft = await newDraft(ownedId, 'seeded');
+          draft.slug = 'keyed-draft';
+          await draft.save();
+          return draft.id as string;
+        }),
+      );
+      await expect(
+        as(principal(stranger), async () => {
+          const fresh = new Email({
+            ...options,
+            tenantId,
+            accountId: target(),
+            subject: 'overwritten',
+            isDraft: false,
+          });
+          await fresh.initialize();
+          fresh.slug = 'keyed-draft';
+          return fresh.save();
+        }),
+      ).rejects.toBeInstanceOf(MailAccessError);
+      const stored = await load(id);
+      expect(stored.subject).toBe('seeded');
+      expect(stored.accountId).toBe(ownedId);
+      expect(stored.isDraft).toBe(true);
+    });
+
+    it('refuses a collection upsert on the key of a stored draft', async () => {
+      const id = await withTenant({ tenantId }, () =>
+        runWithMailSystemAccess(async () => {
+          const draft = await newDraft(ownedId, 'seeded');
+          draft.slug = 'upsert-draft';
+          await draft.save();
+          return draft.id as string;
+        }),
+      );
+      await expect(
+        as(principal(stranger), async () => {
+          const { EmailCollection } = await import(
+            '../collections/EmailCollection.js'
+          );
+          return (await EmailCollection.create(options)).getOrUpsert({
+            tenantId,
+            accountId: openId,
+            slug: 'upsert-draft',
+            subject: 'overwritten',
+          });
+        }),
+      ).rejects.toBeInstanceOf(MailAccessError);
+      expect((await load(id)).subject).toBe('seeded');
+    });
+
+    it('refuses the collection delete of a draft', async () => {
+      const id = await seedDraft(ownedId);
+      await expect(
+        as(principal(drafter, { scopes: ['read'] }), async () => {
+          const { EmailCollection } = await import(
+            '../collections/EmailCollection.js'
+          );
+          return (await EmailCollection.create(options)).delete(id);
+        }),
+      ).rejects.toBeInstanceOf(MailAccessError);
+      expect(await exists(id)).toBe(true);
+    });
+
     it('refuses to delete a draft and keeps it', async () => {
       const id = await seedDraft(ownedId);
       await expect(
@@ -526,6 +596,32 @@ describe('draft scope on message writes (#5616)', () => {
         await as(who, async () => (await load(id)).delete());
         expect(await exists(id)).toBe(false);
       }
+    });
+
+    it('applies a principal ceiling to draft writes on an unowned account, as for read and send', async () => {
+      const capped = principal(stranger, { scopes: ['read', 'send'] });
+      await expect(
+        as(capped, async () => (await newDraft(openId)).save()),
+      ).rejects.toBeInstanceOf(MailAccessError);
+      // The same ceiling already closes the other scopes on that account.
+      const account = { id: openId, tenantId, ownerUserId: null };
+      current = capped;
+      const { decideMailAccess } = await import('../access.js');
+      expect((await decideMailAccess(account, 'read')).allowed).toBe(true);
+      expect((await decideMailAccess(account, 'draft')).reason).toBe('ceiling');
+      const noRead = principal(stranger, { scopes: ['send'] });
+      current = noRead;
+      expect((await decideMailAccess(account, 'read')).reason).toBe('ceiling');
+      // Within the ceiling it stays open.
+      const id = await as(
+        principal(stranger, { scopes: ['draft'] }),
+        async () => {
+          const draft = await newDraft(openId);
+          await draft.save();
+          return draft.id as string;
+        },
+      );
+      expect(await exists(id)).toBe(true);
     });
 
     it('does not treat received mail or non-draft writes as draft writes', async () => {
