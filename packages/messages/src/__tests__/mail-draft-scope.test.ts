@@ -346,7 +346,10 @@ describe('draft scope on message writes (#5616)', () => {
     it.each([
       ['an owned account', () => ownedId],
       ['an unowned account', () => openId],
-    ])('refuses a fresh email whose natural key matches a stored draft (%s)', async (_label, target) => {
+      ['an unowned account, no explicit tenant', () => openId, false],
+    ] as Array<
+      [string, () => string, boolean?]
+    >)('refuses a fresh email whose natural key matches a stored draft (%s)', async (_label, target, explicitTenant = true) => {
       const id = await withTenant({ tenantId }, () =>
         runWithMailSystemAccess(async () => {
           const draft = await newDraft(ownedId, 'seeded');
@@ -359,7 +362,7 @@ describe('draft scope on message writes (#5616)', () => {
         as(principal(stranger), async () => {
           const fresh = new Email({
             ...options,
-            tenantId,
+            ...(explicitTenant ? { tenantId } : {}),
             accountId: target(),
             subject: 'overwritten',
             isDraft: false,

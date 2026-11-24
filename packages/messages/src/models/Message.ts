@@ -419,12 +419,10 @@ export class Message extends SmrtObject {
       );
       const slug = (this as { slug?: unknown }).slug;
       if (columns.includes('slug') && typeof slug === 'string' && slug) {
-        // Match on the owner and slug alone: wider than the exact key, so a
-        // row the save might adopt is never missed (it can only over-match).
+        // Match on the slug alone: the tenant is filled in during the save,
+        // after this check, so any narrower filter could miss the row the save
+        // takes over. It can only over-match, which means an extra check.
         const filter: Record<string, unknown> = { slug };
-        if (columns.includes('tenant_id')) {
-          filter.tenant_id = this.tenantId || null;
-        }
         for (const keyed of await this.getCanonicalPersistedRows(filter)) {
           if (keyed.id === this.id) continue;
           unchanged = false;
