@@ -231,6 +231,9 @@ describe('code that is not reached through a run', () => {
     await w.host.create(owner, 'Order', { title: 'a', qty: 1 });
     const rows = await w.host.list(owner, 'Order');
     await w.host.get(owner, 'Order', String(rows[0].id));
+    // No tool exists for it either: it would call the framework member.
+    const tools = (await w.host.appTools(owner)).map((t) => t.name);
+    expect(tools).not.toContain('order_initialize');
     expect((await w.host.list(owner, 'Order')).map((r) => r.title)).toEqual([
       'a',
     ]);

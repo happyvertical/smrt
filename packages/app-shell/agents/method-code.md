@@ -37,8 +37,9 @@ shell `src/lib/server/method-code.ts` (`installMethodCodeGate`,
 - **Hook-named methods.** A method named like a member the framework calls
   itself (`initialize`, `validateBeforeSave`, any `SmrtObject` or recipe-parent
   member) is not installed on the model prototype (`AppRuntime.register`), so it
-  never runs on a record load or save; it stays runnable through `runMethod`
-  (and is gated there). Otherwise stored code could run on ordinary record ops
+  never runs on a record load or save, and gets no generated tool or route (they
+  would call the framework member); it stays runnable through `runMethod` (and
+  is gated there). Otherwise stored code could run on ordinary record ops
   with no run-time check.
 - **Undo.** `analyseUndo` applies the same rule as a change: an undo that
   brings back code the current definition lacks needs the key.

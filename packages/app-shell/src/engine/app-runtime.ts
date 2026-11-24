@@ -448,14 +448,17 @@ export class AppRuntime {
           methods[name] = function (this: { id?: string }, params?: Row) {
             return rt.runMethod(model, name, this.id ?? null, params ?? {});
           };
-      registerRuntimeModel(
-        toRuntimeModel(model, md, {
-          tenantScoped: this.database.kind !== 'sqlite',
-        }),
-        {
-          methods: methods as never,
-        },
-      );
+      const runtimeModel = toRuntimeModel(model, md, {
+        tenantScoped: this.database.kind !== 'sqlite',
+      });
+      // Such a method also gets no generated tool or route: the dispatcher
+      // would call the framework member of that name with the caller's
+      // arguments instead of the app's code.
+      for (const name of Object.keys(runtimeModel.methods ?? {}))
+        if (inherited(name)) delete runtimeModel.methods?.[name];
+      registerRuntimeModel(runtimeModel, {
+        methods: methods as never,
+      });
       // The app uses only its subclass: close the shipped parent's generated
       // surfaces so its tools do not duplicate the subclass's.
       const parent = recipeModelFor(model, md)?.parent;
