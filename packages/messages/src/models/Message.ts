@@ -33,13 +33,14 @@ import {
 import { TenantScoped, tenantId } from '@happyvertical/smrt-tenancy/decorators';
 import {
   assertHydratedMailAccess,
-  assertMailDraftWrite,
   assertMailScopeOn,
   decideMailAccess,
   inMailSystemAccess,
   isUnsentDraft,
   learnMailAccessOptions,
+  MailAccessError,
   type MailPrincipal,
+  type MailScope,
   mailFlag,
   resolveMailPrincipal,
 } from '../access.js';
@@ -139,7 +140,8 @@ const SEND_PATH_MAY_CHANGE = new Set([
   'updatedAt',
 ]);
 
-const DATE_LIKE = /^\d{4}-\d{2}-\d{2}[T ]/;
+const DATE_LIKE =
+  /^\d{4}-\d{2}-\d{2}[T ]\d{2}:\d{2}(:\d{2}(\.\d+)?)?(Z|[+-]\d{2}:?\d{2})?$/;
 
 /** One comparable form of a field value, whether instance or stored row. */
 function canonValue(value: unknown): string {
@@ -372,13 +374,11 @@ export class Message extends SmrtObject {
     const authorized =
       signature !== undefined && signature === lifecycleSignature(this);
     const lifecycle = authorized || heldSaves.has(this);
-    // Captured before the transaction rebinds `this.options` to its handle.
-    const rootOptions = { ...this.options };
-    learnMailAccessOptions(rootOptions);
+    const required = await this.enforceDraftScope(lifecycle);
     return this.withTransaction(async () => {
-      // Inside the write, so the stored row and the account owner it decides
-      // on are the ones this save replaces.
-      await this.assertDraftScope(lifecycle, rootOptions);
+      // The decision above used the stored row as it was then; inside the
+      // write, the row this save replaces must still need nothing more.
+      await this.assertDraftScopeStillHolds(lifecycle, required);
       await assertProtectedNotificationSave(this, options, authorized);
       if (signature !== undefined && signature !== lifecycleSignature(this))
         throw new Error('Message lifecycle changed during its guarded save.');
@@ -397,10 +397,9 @@ export class Message extends SmrtObject {
   override async delete(
     options: { expectedUpdatedAt?: Date | string } = {},
   ): Promise<void> {
-    const rootOptions = { ...this.options };
-    learnMailAccessOptions(rootOptions);
+    const required = await this.enforceDraftScope(false);
     return this.withTransaction(async () => {
-      await this.assertDraftScope(false, rootOptions);
+      await this.assertDraftScopeStillHolds(false, required);
       await assertProtectedNotificationDelete(this);
       return super.delete(options);
     });
@@ -410,81 +409,117 @@ export class Message extends SmrtObject {
    * Creating, changing or deleting a draft on an owned account needs the
    * `draft` scope, whichever route the write takes. A draft is an email
    * flagged `isDraft` that has not been sent (any send status but `sent`), in
-   * whatever form the flag is stored; received mail is not flagged and classes
-   * without `isDraft` are not covered. Both the new and the stored state
-   * count, so a draft cannot be edited by first relabelling it, and both
-   * accounts count when a draft moves. Trusted system work, unowned accounts
-   * and rows that are not drafts are unaffected.
+   * whatever form the flag is stored; received mail is not flagged. The stored
+   * row decides, whatever class this instance is, so a base `Message` handle
+   * on a stored draft is covered. Both the new and the stored state count, so
+   * a draft cannot be edited by first relabelling it, and both accounts count
+   * when a draft moves. Trusted system work, unowned accounts and rows that
+   * are not drafts are unaffected.
    *
-   * Runs inside the write transaction. `lifecycle` is the send path's own save
-   * (status changes, a held send moved back to draft): it passes only while
+   * `lifecycle` is the send path's own save (status changes, a held send moved
+   * back to draft): it needs the `send` scope instead, and passes only while
    * every field outside {@link SEND_PATH_MAY_CHANGE} still equals the stored
    * row, so it cannot carry an edit. A row the send path itself creates (an
-   * unsaved message being sent) needs the `send` scope instead.
+   * unsaved message being sent) needs `send` too.
+   *
+   * Returns the requirements it enforced (empty for system work).
    */
-  private async assertDraftScope(
+  private async enforceDraftScope(lifecycle: boolean): Promise<Set<string>> {
+    if (inMailSystemAccess()) return new Set();
+    const rootOptions = { ...this.options } as SmrtClassOptions;
+    learnMailAccessOptions(rootOptions);
+    const required = await this.draftScopeRequirements(lifecycle);
+    for (const key of required) {
+      const at = key.indexOf(':');
+      await assertMailScopeOn(
+        [key.slice(at + 1)],
+        key.slice(0, at) as MailScope,
+        rootOptions,
+      );
+    }
+    return required;
+  }
+
+  /**
+   * The same decision re-read inside the write transaction. The policy lookups
+   * (grants, account owner) use the configured database handle, which a
+   * single-connection engine cannot serve while a transaction is open, so they
+   * stay outside; what the write re-checks is the stored row. A row that now
+   * needs more than was enforced is refused, and the caller retries.
+   */
+  private async assertDraftScopeStillHolds(
     lifecycle: boolean,
-    rootOptions: SmrtClassOptions,
+    enforced: Set<string>,
   ): Promise<void> {
     if (inMailSystemAccess()) return;
-    if (!('isDraft' in this)) return;
+    for (const key of await this.draftScopeRequirements(lifecycle)) {
+      if (!enforced.has(key)) {
+        throw new MailAccessError(
+          key.slice(0, key.indexOf(':')) as MailScope,
+          'denied',
+        );
+      }
+    }
+  }
+
+  /** The `scope:accountId` pairs this write needs, read through `this.db`. */
+  private async draftScopeRequirements(
+    lifecycle: boolean,
+  ): Promise<Set<string>> {
+    const needed = new Set<string>();
     const row = this as unknown as Record<string, unknown>;
-    const draftNow = isUnsentDraft(row.sendStatus, row.isDraft);
-    const priorAccountIds: Array<string | null> = [];
+    const draftNow =
+      'isDraft' in this && isUnsentDraft(row.sendStatus, row.isDraft);
+    const priorAccountIds: string[] = [];
     let stored: Record<string, unknown> | null = null;
     let unchanged = false;
     if (this.id) {
       stored = await this.getCanonicalPersistedRow({ id: this.id });
       if (stored) {
         if (isUnsentDraft(stored.send_status, stored.is_draft)) {
-          priorAccountIds.push((stored.account_id as string | null) ?? null);
+          priorAccountIds.push(String(stored.account_id ?? ''));
         }
         unchanged = this.matchesStoredBeyondSendPath(stored);
       }
     }
-    // A new object that carries an explicit natural key (a slug) is written
-    // over the stored row with that key, whatever its own id: that row, not
-    // the id, is what the save changes.
+    // A new object is written over the stored row that carries its natural
+    // key (the slug it has, or the one the save derives from its id), whatever
+    // its own id: that row, not the id, is what the save changes.
     let takesOver = false;
     if (!this.isPersisted) {
       const columns = ObjectRegistry.getConflictColumns(
         this.getResolvedQualifiedName(),
       );
-      const slug = row.slug;
-      if (columns.includes('slug') && typeof slug === 'string' && slug) {
-        // Match on the slug alone: the tenant is filled in during the save,
-        // after this check, so any narrower filter could miss the row the save
-        // takes over. It can only over-match, which means an extra check.
-        for (const keyed of await this.getCanonicalPersistedRows({ slug })) {
-          if (keyed.id === this.id) continue;
-          takesOver = true;
-          unchanged = false;
-          if (isUnsentDraft(keyed.send_status, keyed.is_draft)) {
-            priorAccountIds.push((keyed.account_id as string | null) ?? null);
+      if (columns.includes('slug')) {
+        const slug =
+          typeof row.slug === 'string' && row.slug
+            ? row.slug
+            : await this.getSlug();
+        if (typeof slug === 'string' && slug) {
+          // Match on the slug alone: the tenant is filled in during the save,
+          // after this check, so any narrower filter could miss the row the
+          // save takes over. It can only over-match, which means an extra
+          // check.
+          for (const keyed of await this.getCanonicalPersistedRows({ slug })) {
+            if (keyed.id === this.id) continue;
+            takesOver = true;
+            unchanged = false;
+            if (isUnsentDraft(keyed.send_status, keyed.is_draft)) {
+              priorAccountIds.push(String(keyed.account_id ?? ''));
+            }
           }
         }
       }
     }
-    if (lifecycle) {
-      if (stored && unchanged) return;
-      if (!stored && !takesOver) {
-        // The send path creating its own row: the send decision it already
-        // holds (or is about to be refused for) is the gate.
-        await assertMailScopeOn(
-          [this.accountId],
-          'send',
-          this.options,
-          this.db,
-        );
-        return;
-      }
+    if (!draftNow && !priorAccountIds.length) return needed;
+    const scope: MailScope =
+      lifecycle && ((stored && unchanged) || (!stored && !takesOver))
+        ? 'send'
+        : 'draft';
+    for (const id of [draftNow ? this.accountId : '', ...priorAccountIds]) {
+      if (id) needed.add(`${scope}:${id}`);
     }
-    if (!draftNow && !priorAccountIds.length) return;
-    await assertMailDraftWrite(
-      [draftNow ? this.accountId : null, ...priorAccountIds],
-      rootOptions,
-      this.db,
-    );
+    return needed;
   }
 
   /** Whether every field outside {@link SEND_PATH_MAY_CHANGE} equals `stored`. */

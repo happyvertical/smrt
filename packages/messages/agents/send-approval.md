@@ -103,24 +103,27 @@ same authority as sending directly from it.
 ## Draft writes
 
 The `draft` scope is needed: `Message.save()` and `Message.delete()`
-check it (`assertMailDraftWrite`, `access.ts`) for an email that is draft
+check it (`assertMailScopeOn`, `access.ts`) for an email that is draft
 content now or was when stored, by id or by the slug a new object would take
-over, and for both accounts when a draft moves. Draft content is an email
-flagged `isDraft` (any stored form: `true`, `1`, `'1'`, `'true'`) whose
-`sendStatus` is not `sent`, so `failed`, `pending`, `scheduled` and `sending`
-rows are covered too. Received mail is not flagged and classes without
-`isDraft` are not covered. The check runs inside the write transaction.
+over (its own or the one derived from its id), and for both accounts when a
+draft moves. Draft content is an email flagged `isDraft` (any stored form:
+`true`, `1`, `'1'`, `'true'`) whose `sendStatus` is not `sent`, so `failed`,
+`pending`, `scheduled` and `sending` rows are covered too. The stored row
+decides, whatever class the handle is. Received mail is not flagged. The
+grants and account owner are read before the write (a single-connection
+engine cannot serve the policy handle inside a transaction); the write then
+re-reads the stored row and refuses a save that now needs more.
 `Attachment.save()`/`delete()` need the same scope when the message they
 belong to (or are moved from) is draft content on an owned account; that
 check runs just before the write, not inside it.
 That covers generated routes, collection `delete`/`getOrUpsert`,
 `createReply`/`createForward` + `save()` and `MailDraftService`. Trusted work
 (`runWithMailSystemAccess`: sync, outbox, triage write-back, approval edits)
-skips it. So do the send lifecycle's own saves and a held send's move back to
-draft, but only while every stored field outside the lifecycle fields
-(`sendStatus`, `sentAt`, `sendError`, `retryCount`, handled-by, `updatedAt`)
-is unchanged, tenant, slug, context and subclass fields included. A row the
-send path itself creates (an unsaved message being sent) needs `send`, not
-`draft`. As for read, triage and send, a principal's scope and account
+skips it. The send lifecycle's own saves and a held send's move back to draft
+need `send` instead, and only while every stored field outside the lifecycle
+fields (`sendStatus`, `sentAt`, `sendError`, `retryCount`, handled-by,
+`updatedAt`) is unchanged, tenant, slug, context and subclass fields included.
+A row the send path itself creates (an unsaved message being sent) needs
+`send` too. As for read, triage and send, a principal's scope and account
 ceilings apply to unowned accounts too; with no principal an owned account is
 closed and an unowned one is open.

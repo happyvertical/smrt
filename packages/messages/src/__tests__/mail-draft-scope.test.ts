@@ -43,6 +43,7 @@ import { MailDraftService } from '../mail-drafts.js';
 import { Attachment } from '../models/Attachment';
 import { Email } from '../models/Email';
 import { EmailAccount } from '../models/EmailAccount';
+import { Message } from '../models/Message';
 import {
   configureMailSendApprovals,
   resetMailSendApprovals,
@@ -903,6 +904,91 @@ describe('draft scope on message writes (#5616)', () => {
     });
   });
 
+  describe('natural-key takeover and other handles', () => {
+    it('refuses a new email whose id-derived slug is a stored draft', async () => {
+      const id = await seedDraft(ownedId);
+      const stored = await load(id);
+      await expect(
+        as(principal(drafter, { scopes: ['read'] }), async () => {
+          const email = new Email({
+            ...options,
+            id: id.toUpperCase(),
+            tenantId,
+            accountId: openId,
+            isDraft: false,
+            subject: 'taken',
+          });
+          await email.initialize();
+          return email.save();
+        }),
+      ).rejects.toBeInstanceOf(MailAccessError);
+      const after = await load(id);
+      expect(after.subject).toBe(stored.subject);
+      expect(after.accountId).toBe(ownedId);
+      expect(after.isDraft).toBe(true);
+    });
+
+    it('refuses to delete a stored draft through a base Message handle', async () => {
+      const id = await seedDraft(ownedId);
+      await expect(
+        as(null, async () => {
+          const handle = new Message({
+            ...options,
+            id,
+            _skipLoad: true,
+          } as never);
+          await handle.initialize();
+          return handle.delete();
+        }),
+      ).rejects.toBeInstanceOf(MailAccessError);
+      expect(await exists(id)).toBe(true);
+    });
+
+    it('refuses a read-only principal marking a stored draft failed or retrying it', async () => {
+      const id = await seedDraft(ownedId);
+      const reader = principal(drafter, { scopes: ['read'] });
+      await expect(
+        as(reader, async () => {
+          const draft = await load(id);
+          draft.sendStatus = 'failed';
+          return draft.retrySend();
+        }),
+      ).rejects.toBeInstanceOf(MailAccessError);
+      const stored = await load(id);
+      expect(stored.sendStatus).toBe('draft');
+      expect(stored.retryCount).toBe(0);
+    });
+
+    it('refuses a subject edit hidden behind a date-like prefix on a failed send', async () => {
+      const id = await withTenant({ tenantId }, () =>
+        runWithMailSystemAccess(async () => {
+          const draft = await newDraft(ownedId, '2026-01-01 10:00 (pay alice)');
+          await draft.save();
+          const { EmailAccountCollection } = await import(
+            '../collections/EmailAccountCollection.js'
+          );
+          const account = await (
+            await EmailAccountCollection.create(options)
+          ).get({ id: ownedId });
+          if (!account) throw new Error('no account');
+          account.isActive = false;
+          await account.save();
+          return draft.id as string;
+        }),
+      );
+      const result = await as(
+        principal(drafter, { scopes: ['read'] }),
+        async () => {
+          const draft = await load(id);
+          draft.subject = '2026-01-01 10:00 (pay mallory)';
+          return draft.send();
+        },
+      ).catch((error) => error);
+      expect(result).toBeInstanceOf(MailAccessError);
+      expect((await load(id)).subject).toBe('2026-01-01 10:00 (pay alice)');
+    });
+  });
+
   describe('attachments of a draft', () => {
     const attachments = async () =>
       (
@@ -1049,6 +1135,26 @@ describe('draft scope on message writes (#5616)', () => {
         ).rejects.toBeInstanceOf(MailAccessError);
         expect((await loadAttachment(existing))?.messageId).toBe(draftId);
       });
+
+      it('refuses a new attachment whose id-derived slug is a stored one', async () => {
+        const draftId = await seedDraft(ownedId);
+        const received = await seedReceived(ownedId);
+        const existing = await seedAttachment(draftId);
+        await expect(
+          as(principal(drafter, { scopes: ['read'] }), async () => {
+            const row = new Attachment({
+              ...options,
+              id: existing.toUpperCase(),
+              tenantId,
+              messageId: received,
+              filename: 'taken.txt',
+            });
+            await row.initialize();
+            return row.save();
+          }),
+        ).rejects.toBeInstanceOf(MailAccessError);
+        expect((await loadAttachment(existing))?.messageId).toBe(draftId);
+      });
     });
 
     describe('with the draft scope', () => {
@@ -1146,8 +1252,10 @@ describe('draft scope on message writes (#5616)', () => {
         email.subject = 'in tx';
         await email.save();
       });
-      expect(seen.length).toBeGreaterThan(0);
-      expect(seen[0]).toBe(true);
+      // Read once for the decision on the root handle, once more inside the
+      // write on the transaction's handle.
+      expect(seen[0]).toBe(false);
+      expect(seen.at(-1)).toBe(true);
     });
   });
 

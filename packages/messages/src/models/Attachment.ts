@@ -146,15 +146,17 @@ export class Attachment extends SmrtObject {
         parentIds.add(stored.message_id);
       }
     }
-    // A new attachment with an explicit slug is written over the stored row
-    // with that slug: that row's parent is the one it changes.
-    if (!this.isPersisted && this.slug) {
+    // A new attachment is written over the stored row that carries its slug
+    // (its own, or the one the save derives from its id): that row's parent is
+    // the one it changes.
+    const slug = this.isPersisted ? '' : this.slug || (await this.getSlug());
+    if (slug) {
       const columns = ObjectRegistry.getConflictColumns(
         this.getResolvedQualifiedName(),
       );
       if (columns.includes('slug')) {
         for (const keyed of await this.getCanonicalPersistedRows({
-          slug: this.slug,
+          slug,
         })) {
           if (typeof keyed.message_id === 'string' && keyed.message_id) {
             parentIds.add(keyed.message_id);
