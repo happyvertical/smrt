@@ -30,7 +30,7 @@ beforeAll(async () => {
         name: 'Customer',
         fields: { name: { type: 'text' } },
       },
-      h.owner.id,
+      h.owner,
       'live',
     );
     await runCommand(
@@ -42,7 +42,7 @@ beforeAll(async () => {
           amount: { type: 'money' },
         },
       },
-      h.owner.id,
+      h.owner,
       'live',
     );
   });
@@ -59,7 +59,7 @@ beforeAll(async () => {
         name: 'sales',
         definition: { label: 'Sales', spec },
       } as never,
-      h.owner.id,
+      h.owner,
       'live',
     ),
   );

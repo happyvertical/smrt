@@ -15,7 +15,7 @@ async function fixture() {
   const dir = mkdtempSync(join(tmpdir(), 'safety-round4-'));
   const host = await AppHost.open(dir, { store: new MemoryVersionStore() });
   const run = (cmd: Command) =>
-    host.execute(cmd, { author: 't', approved: true });
+    host.execute(hostOwner(host), cmd, { author: 't', approved: true });
   await run({
     type: 'defineModel',
     name: 'Sale',
@@ -100,7 +100,7 @@ it.each([
     const definition = structuredClone(f.host.def);
     let error: unknown;
     try {
-      await f.host.execute(cmd, {
+      await f.host.execute(hostOwner(f.host), cmd, {
         author: 't',
         approved: true,
         reviewedPreview: reviewed.preview,
@@ -116,7 +116,7 @@ it.each([
     expect(f.host.version).toBe(version);
     expect(f.host.def).toEqual(definition);
     const fresh = await f.host.plan(cmd);
-    await f.host.execute(cmd, {
+    await f.host.execute(hostOwner(f.host), cmd, {
       author: 't',
       approved: true,
       reviewedPreview: fresh.preview,

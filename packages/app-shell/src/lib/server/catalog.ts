@@ -368,7 +368,12 @@ async function dispatchInner(
       }),
     );
   }
-  const out = await runAppTool(tool.name, args, principal.id, scope.records);
+  const out = await runAppTool(
+    tool.name,
+    args,
+    { id: principal.id, tenantId: principal.tenantId ?? '' },
+    scope.records,
+  );
   if (
     out &&
     typeof out === 'object' &&

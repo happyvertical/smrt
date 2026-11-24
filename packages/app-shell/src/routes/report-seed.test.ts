@@ -26,7 +26,7 @@ async function importSeed(
   await runAs(h.owner, async () => {
     const waiting = await runCommand(
       { type: 'importTemplate', data } as never,
-      h.owner.id,
+      h.owner,
     );
     expect(waiting).toMatchObject({ status: 'change_waiting' });
     await changesState();

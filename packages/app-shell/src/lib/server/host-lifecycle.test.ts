@@ -398,7 +398,7 @@ describe('a workflow keeps its app open', () => {
     const starting = runAs(a, () =>
       startDraftWith(
         async ({ dir, store, live }) => {
-          const draft = await live.forkDraft(dir, { store });
+          const draft = await live.forkDraft(hostOwner(live), dir, { store });
           forked();
           await gate; // the slow step after the fork
           return draft;
@@ -584,7 +584,8 @@ describe('a wake that finds no connections for its draft (#5464)', () => {
     const { a } = await twoOwners();
     await runAs(a, () =>
       startDraftWith(
-        async ({ dir, store, live }) => live.forkDraft(dir, { store }),
+        async ({ dir, store, live }) =>
+          live.forkDraft(hostOwner(live), dir, { store }),
         'kept',
         a.id,
       ),

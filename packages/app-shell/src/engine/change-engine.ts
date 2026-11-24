@@ -14,7 +14,7 @@
 import { createHash } from 'node:crypto';
 import type { Command } from './commands.ts';
 import { type AppDefinition, type Step, validate } from './definition.ts';
-import { CapacityError, EngineError, PermissionDeniedError } from './errors.ts';
+import { CapacityError, EngineError } from './errors.ts';
 import type {
   AppHost,
   ChangeResult,
@@ -25,18 +25,15 @@ import type {
   PublishPreview,
   PublishResult,
 } from './host.ts';
-import { type EnginePrincipal, requirePrincipal } from './principal.ts';
+import { type EnginePrincipal, requireOwnerPrincipal } from './principal.ts';
 import { canonical, chainDigest, type DraftChain } from './publish.ts';
 
 /** Who is asking: a principal built by `enginePrincipal()` for the live host's tenant (#5188). */
 export type ChangePrincipal = EnginePrincipal;
 
-/** The caller of a change-engine method, or a refusal. Guests never change an app. */
+/** The caller of a change-engine method, or a refusal: only the app's owner changes it. */
 function asCaller(principal: ChangePrincipal, live: AppHost): ChangePrincipal {
-  const p = requirePrincipal(principal, live.tenantId);
-  if (p.kind === 'guest')
-    throw new PermissionDeniedError('a guest cannot change the app');
-  return p;
+  return requireOwnerPrincipal(principal, live.tenantId);
 }
 
 /** Generation fence (#5190): a hosted engine refuses work from a stale generation. Unused on SQLite. */
@@ -336,7 +333,7 @@ export class SqliteChangeEngine implements ChangeEngine {
     _fence?: ChangeFence,
   ) {
     asCaller(principal, live);
-    return live.forkDraft(draftDir, opts);
+    return live.forkDraft(principal, draftDir, opts);
   }
 
   previewPublish(
@@ -357,7 +354,7 @@ export class SqliteChangeEngine implements ChangeEngine {
     _fence?: ChangeFence,
   ) {
     asCaller(principal, live);
-    return live.publishDraft(draft, opts);
+    return live.publishDraft(principal, draft, opts);
   }
 
   undoTo(
@@ -369,6 +366,7 @@ export class SqliteChangeEngine implements ChangeEngine {
   ) {
     asCaller(principal, live);
     return live.execute(
+      principal,
       { type: 'undoTo', version, from: opts.from },
       { author: opts.author, approved: true },
     );
@@ -397,7 +395,7 @@ export class SqliteChangeEngine implements ChangeEngine {
         try {
           // The working copy approves its own risky changes (`autoApprove`,
           // draft hosts only), so no `approved` flag is passed here.
-          const r = (await draft.execute(command, {
+          const r = (await draft.execute(principal, command, {
             author: input.author,
           })) as ChangeResult;
           applied.push({ key, version: r.version });

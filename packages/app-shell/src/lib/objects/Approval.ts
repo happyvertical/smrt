@@ -85,7 +85,7 @@ export class Approval extends SmrtObject {
    */
   async decide(approve: boolean): Promise<ApprovalOutcome> {
     const owner = await assertOwner();
-    return decideApproval(this.id as string, approve === true, owner.id);
+    return decideApproval(this.id as string, approve === true, owner);
   }
 
   /** The approvals waiting for the owner. */

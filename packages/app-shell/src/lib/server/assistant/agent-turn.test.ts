@@ -260,7 +260,7 @@ describe.each(['claude-code', 'codex'] as const)('%s engine', (tool) => {
     ).toBe(true);
     expect((await getApprovalView(ask.approvalId))?.status).toBe('pending');
     // only the owner's decision applies it
-    const outcome = await decideApproval(ask.approvalId, true, h.owner.id);
+    const outcome = await decideApproval(ask.approvalId, true, h.owner);
     expect(outcome.status).toBe('approved');
     expect(
       (await host.list(hostOwner(host), 'Chore')).some((r) => r.id === id),

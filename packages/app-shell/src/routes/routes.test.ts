@@ -424,6 +424,7 @@ describe('owner flows', () => {
     await applyWaiting(h.owner);
     const row = await host.create(hostOwner(host), 'Gauge', { reading: '5' });
     await host.execute(
+      hostOwner(host),
       {
         type: 'changeFieldType',
         model: 'Gauge',

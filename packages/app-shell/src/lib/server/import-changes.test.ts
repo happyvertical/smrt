@@ -37,7 +37,7 @@ const settle = async () => {
 
 /** What the workflow does: hold a copy, load through the hook, prove, seal, release the hold. */
 async function runAnImport() {
-  await startDraft('Workbook import', h.owner.id, undefined, 'being checked');
+  await startDraft('Workbook import', h.owner, undefined, 'being checked');
   const slot = (await getDraftSlot())!;
   const host = slot.host!;
   const target = createEngineImportTarget(
@@ -98,7 +98,7 @@ describe('an import becomes cards grouped by table', () => {
   });
 
   it('refuses a command from anything that does not hold the copy', async () => {
-    await startDraft('Not an import', h.owner.id);
+    await startDraft('Not an import', h.owner);
     const slot = (await getDraftSlot())!;
     await expect(
       recordImportCommand(h.owner, {
@@ -218,7 +218,7 @@ describe('a template with records', () => {
             ],
           }),
         },
-        h.owner.id,
+        h.owner,
       ),
     );
     expect(waiting).toMatchObject({ status: 'change_waiting' });

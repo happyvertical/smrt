@@ -575,10 +575,11 @@ it('holds edits and publishing during a partial load; a repeated check discards 
     'execute',
   ).mockImplementation(async function (
     this: import('../../engine/host.ts').AppHost,
+    principal,
     command,
     options,
   ) {
-    const result = await original.call(this, command, options);
+    const result = await original.call(this, principal, command, options);
     if (once && command.type === 'loadRecords') {
       once = false;
       await hold();
@@ -726,7 +727,7 @@ it('refuses nonowners, invalid uploads, occupied draft and simultaneous imports'
       }),
     ),
   ).rejects.toMatchObject({ status: 415 });
-  await startDraft('My draft', h.owner.id);
+  await startDraft('My draft', h.owner);
   await runAs(h.owner, () =>
     runCommand(
       {
@@ -734,7 +735,7 @@ it('refuses nonowners, invalid uploads, occupied draft and simultaneous imports'
         name: 'Scratch',
         fields: { note: { type: 'text' } },
       },
-      h.owner.id,
+      h.owner,
       'draft',
     ),
   );
@@ -755,7 +756,7 @@ it('refuses nonowners, invalid uploads, occupied draft and simultaneous imports'
   expect(await service.current(h.member).catch(() => null)).toBeNull();
 });
 it('reuses an open draft that has no changes', async () => {
-  const unused = await startDraft('Never used', h.owner.id);
+  const unused = await startDraft('Never used', h.owner);
   await service.start(h.owner, await request());
   expect(
     (await (await AppDraftCollection.create({ db: h.db })).get(unused.id))
@@ -763,7 +764,7 @@ it('reuses an open draft that has no changes', async () => {
   ).toBe('discarded');
 });
 it('keeps a draft whose edit lands as the unused discard begins (#5122)', async () => {
-  await startDraft('Edited during discard', h.owner.id);
+  await startDraft('Edited during discard', h.owner);
   const host = await hostFor('draft');
   let edit: Promise<string> | undefined;
   // The edit is issued the moment the discard starts, after the caller's own
@@ -771,6 +772,7 @@ it('keeps a draft whose edit lands as the unused discard begins (#5122)', async 
   const landEdit = () => {
     edit ??= host
       .execute(
+        hostOwner(host),
         {
           type: 'defineModel',
           name: 'Pets',
@@ -1025,7 +1027,7 @@ it('repairs a crash between job admission and saving the import run id with idem
 });
 it('never discards an unrelated draft if it opens while an import job is still pending', async () => {
   await service.start(h.owner, await request());
-  const other = await startDraft('Other draft', h.owner.id);
+  const other = await startDraft('Other draft', h.owner);
   await worker();
   expect((await end()).state).toBe('failed');
   expect((await getDraftSlot())?.id).toBe(other.id);

@@ -7,6 +7,7 @@ import { mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
+import { hostOwner } from '../test/engine-principal.ts';
 import { harnessDatabase } from './db/harness.ts';
 import { appRoles, provisionAppRoles } from './db/roles.ts';
 import type { PGliteClient } from './db/types.ts';
@@ -110,7 +111,10 @@ beforeAll(async () => {
       },
     },
   ])
-    await host.execute(command, { author: 't', approved: true });
+    await host.execute(hostOwner(host), command, {
+      author: 't',
+      approved: true,
+    });
 });
 afterAll(async () => {
   await host.close();

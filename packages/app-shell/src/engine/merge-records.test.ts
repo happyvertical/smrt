@@ -15,7 +15,7 @@ const dir = mkdtempSync(join(tmpdir(), 'merge-4916-'));
 const store = new MemoryVersionStore();
 let host: AppHost;
 const run = (cmd: Command) =>
-  host.execute(cmd, { author: 't', approved: true });
+  host.execute(hostOwner(host), cmd, { author: 't', approved: true });
 let keep = '';
 let other = '';
 const raw = () => {
@@ -85,9 +85,9 @@ it('always gates merges; previews every reference, chooses values and undoes raw
     removed: 1,
     references: { Note: 2, Task: 2 },
   });
-  await expect(host.execute(command(), { author: 't' })).rejects.toBeInstanceOf(
-    ApprovalRequiredError,
-  );
+  await expect(
+    host.execute(hostOwner(host), command(), { author: 't' }),
+  ).rejects.toBeInstanceOf(ApprovalRequiredError);
   await run(command());
   expect(await host.list(hostOwner(host), 'Customer')).toHaveLength(1);
   expect((await host.get(hostOwner(host), 'Customer', keep)).email).toBe(
@@ -127,17 +127,17 @@ it('refuses invalid ids and selectors; rolls back partial reference changes', as
 });
 
 it('publishes a draft merge against current live references and undoes them', async () => {
-  const draft = await host.forkDraft(`${dir}-draft`, {
+  const draft = await host.forkDraft(hostOwner(host), `${dir}-draft`, {
     store: new MemoryVersionStore(),
   });
   try {
-    await draft.execute(command(), { author: 't' });
+    await draft.execute(hostOwner(draft), command(), { author: 't' });
     const late = await host.create(hostOwner(host), 'Note', {
       customer: other,
     });
     const before = raw();
     const p = await host.previewPublish(draft);
-    await host.publishDraft(draft, {
+    await host.publishDraft(hostOwner(host), draft, {
       author: 't',
       approved: true,
       expect: p.digest,

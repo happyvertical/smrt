@@ -47,7 +47,7 @@ const colType = async (table: string, column: string) =>
     )
   )[0]?.data_type;
 const run = (cmd: Command, approved = true) =>
-  host.execute(cmd, { author: 'test', approved });
+  host.execute(hostOwner(host), cmd, { author: 'test', approved });
 const open = () =>
   AppHost.open(dir, { store, database: pg.config, workerLimits: undefined });
 
@@ -217,7 +217,8 @@ describe('migrations on PostgreSQL (sequential, one app)', () => {
   });
 
   it('undo walks back through every kind of step', async () => {
-    const undo = () => host.execute({ type: 'undo' }, { author: 'test' });
+    const undo = () =>
+      host.execute(hostOwner(host), { type: 'undo' }, { author: 'test' });
     await undo(); // remove model Errand
     expect((await host.list(hostOwner(host), 'Errand'))[0].what).toBe(
       'post office',
@@ -266,9 +267,9 @@ describe('migrations on PostgreSQL (sequential, one app)', () => {
         await raw(`SELECT count(*)::int AS n FROM _archive WHERE col = 'notes'`)
       )[0].n,
     ).toBe(0);
-    await host.execute({ type: 'undo' }, { author: 'test' });
+    await host.execute(hostOwner(host), { type: 'undo' }, { author: 'test' });
     await expect(
-      host.execute({ type: 'undo' }, { author: 'test' }),
+      host.execute(hostOwner(host), { type: 'undo' }, { author: 'test' }),
     ).rejects.toThrow(/cleaned up/);
   });
 });

@@ -10,7 +10,7 @@ const dir = mkdtempSync(join(tmpdir(), 'calc-4916-'));
 const store = new MemoryVersionStore();
 let host: AppHost;
 const run = (cmd: Command) =>
-  host.execute(cmd, { author: 't', approved: true });
+  host.execute(hostOwner(host), cmd, { author: 't', approved: true });
 const expression = {
   op: 'mul',
   left: { col: 'qty' },
@@ -172,11 +172,13 @@ it('validates SDK expressions before applying anything', async () => {
 
 it('clears and restores an expression and replays changes from a draft on current live data', async () => {
   const draft = await host.forkDraft(
+    hostOwner(host),
     join(dir, '..', `${dir.split('/').pop()}-draft`),
     { store: new MemoryVersionStore() },
   );
   try {
     await draft.execute(
+      hostOwner(draft),
       {
         type: 'setCalculation',
         model: 'Sale',
@@ -185,8 +187,9 @@ it('clears and restores an expression and replays changes from a draft on curren
       },
       { author: 't' },
     );
-    await draft.execute({ type: 'undo' }, { author: 't' });
+    await draft.execute(hostOwner(draft), { type: 'undo' }, { author: 't' });
     await draft.execute(
+      hostOwner(draft),
       {
         type: 'setCalculation',
         model: 'Sale',
@@ -200,7 +203,7 @@ it('clears and restores an expression and replays changes from a draft on curren
       price: 10,
     });
     const p = await host.previewPublish(draft);
-    await host.publishDraft(draft, {
+    await host.publishDraft(hostOwner(host), draft, {
       author: 't',
       approved: true,
       expect: p.digest,
@@ -299,7 +302,7 @@ it('materializes a cleared calculation and refuses undo that would discard later
   expect(plan.risky).toBe(true);
   expect(Number(plan.preview?.replaced)).toBeGreaterThanOrEqual(1);
   await expect(
-    host.execute({ type: 'undo' }, { author: 't' }),
+    host.execute(hostOwner(host), { type: 'undo' }, { author: 't' }),
   ).rejects.toMatchObject({ code: 'approval_required' });
   const version = host.version;
   await expect(run({ type: 'undo' })).rejects.toThrow(
@@ -332,7 +335,7 @@ it('changes a calculated field type directly and undoes without a value archive'
     row.total,
   );
   expect((await host.plan({ type: 'undo' })).risky).toBe(false);
-  await host.execute({ type: 'undo' }, { author: 't' });
+  await host.execute(hostOwner(host), { type: 'undo' }, { author: 't' });
   expect(host.def).toEqual(before);
 });
 

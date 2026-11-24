@@ -230,6 +230,7 @@ describe('sandbox through the host', () => {
   const snapshots = () => readdirSync(join(dir, 'snapshots')).length;
   const add = (name: string, code: string) =>
     host.execute(
+      hostOwner(host),
       {
         type: 'addMethod',
         model: 'Chore',
@@ -242,6 +243,7 @@ describe('sandbox through the host', () => {
   beforeAll(async () => {
     host = await AppHost.open(dir, { store: new MemoryVersionStore() });
     await host.execute(
+      hostOwner(host),
       {
         type: 'defineModel',
         name: 'Chore',

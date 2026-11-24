@@ -13,7 +13,7 @@ it('accepts every portable node through addField and setCalculation, with date-o
   const store = new MemoryVersionStore();
   let host = await AppHost.open(dir, { store });
   const run = (cmd: Command) =>
-    host.execute(cmd, { author: 'test', approved: true });
+    host.execute(hostOwner(host), cmd, { author: 'test', approved: true });
   try {
     await run({
       type: 'defineModel',

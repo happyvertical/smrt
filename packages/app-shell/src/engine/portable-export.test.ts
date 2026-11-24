@@ -29,6 +29,7 @@ async function build() {
   const dataDir = dir();
   const host = await AppHost.open(dataDir, { store });
   await host.execute(
+    hostOwner(host),
     {
       type: 'defineModel',
       name: 'Chore',
@@ -51,10 +52,12 @@ async function build() {
     secret: 's-b',
   });
   await host.execute(
+    hostOwner(host),
     { type: 'hideField', model: 'Chore', field: 'secret' },
     AUTHOR,
   );
   await host.execute(
+    hostOwner(host),
     { type: 'removeField', model: 'Chore', field: 'notes' },
     OK,
   );
@@ -117,7 +120,7 @@ describe('portable user app', () => {
     const host2 = await AppHost.open(target, { store: store2 });
     const before = await host2.list(hostOwner(host2), 'Chore');
     expect(before).toHaveLength(2);
-    const undone = await host2.execute({ type: 'undo' }, OK);
+    const undone = await host2.execute(hostOwner(host2), { type: 'undo' }, OK);
     expect(undone).toBeTruthy();
     const after = await host2.list(hostOwner(host2), 'Chore');
     expect(after.map((r: any) => r.notes).sort()).toEqual(['note a', 'note b']);

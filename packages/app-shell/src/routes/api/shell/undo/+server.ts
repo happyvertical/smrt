@@ -17,7 +17,7 @@ export const POST: RequestHandler = guarded(async (event) => {
   const owner = await ownerOf(event);
   const target = 'live';
   const out = await runAs(owner, () =>
-    runCommand({ type: 'undo' }, owner.id, target, 'owner'),
+    runCommand({ type: 'undo' }, owner, target, 'owner'),
   );
   return isPending(out) ? json(out, 202) : json(out);
 });

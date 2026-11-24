@@ -16,7 +16,7 @@ const host = await AppHost.open(dir, { store: new MemoryVersionStore() });
 const owner = () => hostOwner(host);
 const cards: unknown[] = [];
 const execute = (command: Command) =>
-  host.execute(command, { author: 'owner', approved: true });
+  host.execute(hostOwner(host), command, { author: 'owner', approved: true });
 function files() {
   return readdirSync(dir,{recursive:true}).map(String).sort().filter((file)=>statSync(join(dir,file)).isFile()).map((file)=>[file,createHash('sha256').update(readFileSync(join(dir,file))).digest('hex')]);
 }

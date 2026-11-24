@@ -54,6 +54,7 @@ describe.skipIf(!bundle)('bundled worker (#5213)', () => {
     try {
       for (const name of ['Chore', 'Chorus'])
         await host.execute(
+          hostOwner(host),
           { type: 'defineModel', name, fields: { title: { type: 'text' } } },
           { author: 't' },
         );
@@ -86,6 +87,7 @@ describe.skipIf(!bundle)('bundled worker (#5213)', () => {
       const url = (host as unknown as { workerUrl: URL }).workerUrl;
       expect(fileURLToPath(url)).toBe(fileURLToPath(bundle as URL));
       await host.execute(
+        hostOwner(host),
         {
           type: 'defineModel',
           name: 'Chore',

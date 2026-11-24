@@ -20,6 +20,7 @@ import {
   EMPTY_APP,
   enginePrincipal,
   MemoryVersionStore,
+  OWNER_SLUG,
 } from './index.ts';
 
 const root = mkdtempSync(join(tmpdir(), 'engine-change-'));
@@ -31,6 +32,7 @@ const me = enginePrincipal({
   kind: 'user',
   tenantId: DESKTOP_TENANT,
   userId: 'owner',
+  permissions: [OWNER_SLUG],
 });
 const AUTHOR = { author: 'tester', approved: true };
 const sha = (p: string) =>
@@ -42,6 +44,7 @@ async function world() {
   const liveDir = join(dir, 'user-app');
   const live = await AppHost.open(liveDir, { store: new MemoryVersionStore() });
   await live.execute(
+    hostOwner(live),
     {
       type: 'defineModel',
       name: 'Chore',
@@ -241,7 +244,7 @@ describe('checkBatch', () => {
     const w = await world();
     const r = await w.rebuild([]);
     expect((await engine.checkBatch(me, w.live, r.draft)).ok).toBe(true);
-    await w.live.execute(defineTag, AUTHOR); // live structure moves on
+    await w.live.execute(hostOwner(w.live), defineTag, AUTHOR); // live structure moves on
     const moved = await engine.checkBatch(me, w.live, r.draft);
     expect(moved.blockers.map((b) => b.code)).toEqual(['base_moved']);
     await r.draft.close();

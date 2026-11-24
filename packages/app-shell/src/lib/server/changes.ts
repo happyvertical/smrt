@@ -1324,7 +1324,7 @@ export function addChangeCard(
       try {
         for (const command of input.commands) {
           const prior = structuredClone(host.def);
-          last = (await host.execute(command, {
+          last = (await host.execute(principalFor(owner, host.def), command, {
             author: author ?? owner.id,
           })) as ChangeResult;
           madeVersions.push(last.version);
