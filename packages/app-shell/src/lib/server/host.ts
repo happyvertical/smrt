@@ -838,6 +838,20 @@ async function openLive(holder: Holder): Promise<AppHost> {
   try {
     await adoptDraft(holder, db, host, dirs.draft, database);
     await freezeForWaitingChanges(db, host);
+    // The change an earlier host of this app left unfinished (#5486) was
+    // decided by the open: settle the approval that asked for it. A failure
+    // fails the open (below), so nothing is served, and no change can overwrite
+    // the persisted outcome, until a later open settles it.
+    const recovered = host.recoveredChange;
+    if (recovered?.request) {
+      const { settleRecoveredChange } = await import('./approvals.ts');
+      await settleRecoveredChange({
+        request: recovered.request,
+        outcome: recovered.outcome,
+        partial: recovered.partial,
+      });
+      await host.acknowledgeRecovery(recovered.id);
+    }
   } catch (e) {
     // Never serve live thawed when we could not tell whether a draft is
     // open: fail the open; the next call retries.
@@ -852,27 +866,6 @@ async function openLive(holder: Holder): Promise<AppHost> {
   holder.storeRef = store;
   holder.hostRef = host;
   if (host.lostClaim) void dropLostHost(holder, host);
-  // The change an earlier host of this app left unfinished (#5486) was decided
-  // by the open: settle the approval that asked for it.
-  const recovered = host.recoveredChange;
-  if (recovered?.request) {
-    try {
-      const { settleRecoveredChange } = await import('./approvals.ts');
-      await settleRecoveredChange({
-        request: recovered.request,
-        outcome: recovered.outcome,
-        partial: recovered.partial,
-      });
-      // Settled (or nothing left to settle): the engine may drop its journal.
-      // Until then the outcome is persisted, so a failure here, or a stop
-      // before it, is retried at the next open.
-      await host.acknowledgeRecovery(recovered.id);
-    } catch (e) {
-      host.notices.push(
-        `An approval could not be settled after a reopen (${e instanceof Error ? e.message : String(e)}); it still reads "Outcome unknown".`,
-      );
-    }
-  }
   return host;
 }
 

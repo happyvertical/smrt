@@ -318,7 +318,8 @@ for the one operation on the host thread; a PGlite uses the host's client).
   either way (a fork or a snapshot copies them), except that a decided change
   that names an approval keeps `change` (marked `decided`) until the shell
   settles the approval and calls `acknowledgeRecovery`, so a failed open or a
-  stopped process in between cannot lose the outcome. The first version (seed) is
+  stopped process in between cannot lose the outcome. The shell fails the open
+  when settling fails, and a change refuses to start while such a key stands. The first version (seed) is
   also a claim transaction. `host.recoveredChange` names the approval
   (`ExecuteOptions.request`) of a decided change; the shell settles it only
   if it is still `executing` (`settleRecoveredChange`). The claim session sets

@@ -1053,6 +1053,19 @@ export class AppHost extends EventEmitter {
     };
     await claim.transaction(async (tx) => {
       await holdFence(tx, schema, this.fence as number);
+      // A decided outcome nobody has acknowledged yet must not be overwritten.
+      const prior = (await readMeta(tx, schema, [CHANGE_KEY]))[CHANGE_KEY];
+      let pending = false;
+      try {
+        pending = !!prior && !!(JSON.parse(prior) as ChangeKey).decided;
+      } catch {
+        /* an unreadable journal is overwritten as before */
+      }
+      if (pending)
+        throw new EngineError(
+          'an earlier interrupted change has not been settled yet; reopen the app',
+          'refused',
+        );
       await store.commitIn?.(tx, [], from, from);
       await writeMeta(tx, schema, CHANGE_KEY, JSON.stringify(change));
     });

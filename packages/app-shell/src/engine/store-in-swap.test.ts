@@ -669,6 +669,39 @@ describe.each(backends)('the version store in the swap (%s)', (backend) => {
       });
     });
 
+    it('a change is refused while a decided outcome is unacknowledged, and goes through after', async () => {
+      const live = await hooked();
+      live.store.after = (n) => {
+        if (n === 1) (live.claim as ReturnType<typeof killable>).kill();
+      };
+      await live.host
+        .execute(hostOwner(live.host), rename, { ...OK, request: 'appr-6' })
+        .catch(() => {});
+      const b = await reopen(live);
+      const recovered = b.host.recoveredChange as { id: string };
+      expect(recovered).toBeTruthy();
+      // The shell did not settle: the host serves, but a change must not erase the outcome.
+      const refused = await run(b.host, {
+        type: 'addField',
+        model: 'Chore',
+        field: 'later',
+        definition: { type: 'boolean' },
+      }).catch((e) => e);
+      expect(String(refused.message)).toMatch(/not been settled/);
+      expect(JSON.parse((await meta(live.schema)).change)).toMatchObject({
+        id: recovered.id,
+        decided: 'applied',
+      });
+      await b.host.acknowledgeRecovery(recovered.id);
+      await run(b.host, {
+        type: 'addField',
+        model: 'Chore',
+        field: 'later',
+        definition: { type: 'boolean' },
+      });
+      expect(await columns(b.host)).toContain('later');
+    });
+
     it('a settled change leaves nothing for the next open to do', async () => {
       const live = await hooked();
       await run(live.host, rename);
