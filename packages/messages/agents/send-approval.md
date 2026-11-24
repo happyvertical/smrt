@@ -99,3 +99,19 @@ same authority as sending directly from it.
   narrow window.
 - A crash between consume and send leaves a consumed approval and an unsent
   draft; the agent resubmits for a new approval.
+
+## Draft writes
+
+The `draft` scope is needed: `Message.save()` and `Message.delete()`
+check it (`assertMailDraftWrite`, `access.ts`) for an email that is a draft
+now (`isDraft` with `draft` status) or was one when stored, by id or by the
+slug a new object would take over, and for both accounts when a draft moves.
+Received mail carries the default `draft` status and is not a draft; classes
+without `isDraft` are not covered. That covers generated routes, collection
+`delete`/`getOrUpsert`, `createReply`/`createForward` + `save()` and
+`MailDraftService`. Trusted work (`runWithMailSystemAccess`: sync, outbox,
+triage write-back, approval edits) skips it, as do the send lifecycle's own
+saves and a held send's move back to draft while every other stored field is
+unchanged. As for read, triage and send, a principal's scope and account
+ceilings apply to unowned accounts too; with no principal an owned account is
+closed and an unowned one is open.

@@ -68,19 +68,9 @@ owners and call `configureMailAccess({ options, resolvePrincipal })` at startup
   on purpose (`available` means outbound transport; JMAP is receive and sync
   only), and `connectMailbox` still connects it. Policy lookups use the
   configured db handle, not a caller's transaction.
-- Draft writes need the `draft` scope: `Message.save()` and `Message.delete()`
-  check it (`assertMailDraftWrite`, `access.ts`) for an email that is a draft
-  now (`isDraft` with `draft` status) or was one when stored, by id or by the
-  slug a new object would take over, and for both accounts when a draft moves.
-  Received mail carries the default `draft` status and is not a draft; classes
-  without `isDraft` are not covered. That covers generated routes, collection
-  `delete`/`getOrUpsert`, `createReply`/`createForward` + `save()` and
-  `MailDraftService`. Trusted work (`runWithMailSystemAccess`: sync, outbox,
-  triage write-back, approval edits) skips it, as do the send lifecycle's own
-  saves and a held send's move back to draft while every other stored field is
-  unchanged. As for read, triage and send, a principal's scope and account
-  ceilings apply to unowned accounts too; with no principal an owned account is
-  closed and an unowned one is open.
+- Draft writes need the `draft` scope on an owned account, checked in
+  `Message.save()`/`delete()`; rules and bypasses:
+  [agents/send-approval.md](agents/send-approval.md#draft-writes).
 - `Message.send()` needs the `send` scope on an owned account. Agent sends
   (principal `kind` other than `person`/`human`) on a mail account are held
   for a person's approval unless the owner opted in to `auto_send`;
