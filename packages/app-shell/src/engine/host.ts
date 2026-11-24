@@ -44,6 +44,7 @@ import {
 } from './db/index.ts';
 import {
   acquireOwnership,
+  awaitFenceHolders,
   DEFAULT_LOCK_TIMEOUT_MS,
   deleteMeta,
   dropSchema,
@@ -433,6 +434,7 @@ const isObj = (v: unknown): v is Row =>
 /** `_app_meta` keys of a claimed host's change journal (#5486). */
 const CHANGE_KEY = 'change';
 const APPLIED_KEY = 'applied';
+const REVERSED_KEY = 'reversed';
 
 /**
  * What a claimed host writes before it changes the app (#5486): which change
@@ -447,6 +449,8 @@ interface ChangeKey {
   record: VersionRecord | null;
   /** The approval that asked for it, when it ran under one. */
   request: string | null;
+  /** Step `index` of `of` when the change is one step of an `undoTo`. */
+  part?: { index: number; of: number };
   committed?: boolean;
 }
 
@@ -455,6 +459,8 @@ export interface RecoveredChange {
   id: string;
   request: string | null;
   outcome: 'applied' | 'not-applied';
+  /** One step of a longer undo: the outcome says nothing about the whole of it. */
+  partial: boolean;
 }
 
 const UNKNOWN_CHANGE =
@@ -487,6 +493,8 @@ export class AppHost extends EventEmitter {
   private claimLost: Error | null = null;
   /** The approval a running command was asked under (the queue runs one at a time; #5486). */
   private currentRequest: string | null = null;
+  /** The step of an `undoTo` that is running (journaled with its change). */
+  private currentPart: { index: number; of: number } | null = null;
   /** What boot decided about a change an earlier host left in flight; the shell settles its approval. */
   recoveredChange: RecoveredChange | null = null;
   /** `changed`, emitted once the host is open and its owner can listen (a rolled-forward change). */
@@ -728,11 +736,11 @@ export class AppHost extends EventEmitter {
       const meta = await readMeta(tx, schema, [
         CHANGE_KEY,
         APPLIED_KEY,
+        REVERSED_KEY,
         'version',
       ]);
       if (meta[CHANGE_KEY] === undefined) {
-        if (meta[APPLIED_KEY] !== undefined)
-          await deleteMeta(tx, schema, [APPLIED_KEY]);
+        await deleteMeta(tx, schema, [APPLIED_KEY, REVERSED_KEY]);
         return;
       }
       try {
@@ -743,6 +751,7 @@ export class AppHost extends EventEmitter {
       const data = meta.version === undefined ? null : Number(meta.version);
       if (!found) outcome = 'undecided';
       else if (found.committed) outcome = 'applied';
+      else if (meta[REVERSED_KEY] === found.id) outcome = 'not-applied';
       else if (
         meta[APPLIED_KEY] === found.id &&
         found.from === cur &&
@@ -764,7 +773,7 @@ export class AppHost extends EventEmitter {
       )
         outcome = 'not-applied';
       else outcome = 'undecided';
-      await deleteMeta(tx, schema, [CHANGE_KEY, APPLIED_KEY]);
+      await deleteMeta(tx, schema, [CHANGE_KEY, APPLIED_KEY, REVERSED_KEY]);
     });
     if (outcome === 'undecided')
       this.notices.push(
@@ -776,6 +785,11 @@ export class AppHost extends EventEmitter {
         id: f.id,
         request: f.request,
         outcome,
+        // The last step landing, or the first not landing, decides the whole undo.
+        partial:
+          !!f.part &&
+          !(outcome === 'applied' && f.part.index === f.part.of - 1) &&
+          !(outcome === 'not-applied' && f.part.index === 0),
       };
     if (forward && f)
       this.recoveredEvent = {
@@ -902,6 +916,11 @@ export class AppHost extends EventEmitter {
             await this.app.ready.catch(() => {});
             this.app.settleBudget();
           }
+        } else if (flight?.change && !this.claimLost) {
+          // No steps: the old worker never stopped, so no bump. But the new
+          // worker's boot may have committed with its reply lost: wait for it
+          // to end and read what it left.
+          unknown = !(await this.notCommitted(flight.change));
         }
       } finally {
         this.releaseSpare();
@@ -990,6 +1009,7 @@ export class AppHost extends EventEmitter {
       to: nextVersion,
       record: records[0] ?? null,
       request: this.currentRequest,
+      ...(this.currentPart ? { part: this.currentPart } : {}),
     };
     await claim.transaction(async (tx) => {
       await holdFence(tx, schema, this.fence as number);
@@ -997,10 +1017,18 @@ export class AppHost extends EventEmitter {
       await writeMeta(tx, schema, CHANGE_KEY, JSON.stringify(change));
     });
     const migrating = !!migration?.steps.length;
+    // Every claimed change journals `applied` in its worker's boot transaction
+    // (one with the migration's steps and the version), steps or not.
     const swapped = await this.swap(
       next,
       nextVersion,
-      migrating ? { ...migration, intent: change.id } : migration,
+      {
+        steps: [],
+        direction: 'up',
+        version: nextVersion,
+        ...migration,
+        intent: change.id,
+      },
       { change: change.id },
     );
     let done = false;
@@ -1024,16 +1052,13 @@ export class AppHost extends EventEmitter {
       const proven = !claim.lost;
       if (!proven || (done && !serverAnswered(e)))
         throw await this.abandonChange(e);
-      const back: Migration | undefined = migrating
-        ? {
-            steps: (migration as Migration).steps,
-            direction:
-              (migration as Migration).direction === 'up' ? 'down' : 'up',
-            version: (migration as Migration).version,
-            intent: change.id,
-            reverse: true,
-          }
-        : undefined;
+      const back: Migration = {
+        steps: migration?.steps ?? [],
+        direction: migration?.direction === 'up' ? 'down' : 'up',
+        version: migration?.version ?? nextVersion,
+        intent: change.id,
+        reverse: true,
+      };
       await this.swap(this.def, this.version, back, { reverse: true });
       throw e;
     }
@@ -1066,6 +1091,21 @@ export class AppHost extends EventEmitter {
       );
       this.database = { ...this.database, fence } as DatabaseConfig;
       return !applied;
+    } catch {
+      return false;
+    }
+  }
+
+  /** A swap with no steps failed: did its boot commit anyway? True only for a definite "no". */
+  private async notCommitted(id: string): Promise<boolean> {
+    const claim = this.claim;
+    if (!claim) return false;
+    try {
+      const schema = schemaOf(this.database);
+      return await claim.transaction(async (tx) => {
+        await awaitFenceHolders(tx, schema);
+        return (await readMeta(tx, schema, [APPLIED_KEY]))[APPLIED_KEY] !== id;
+      });
     } catch {
       return false;
     }
@@ -2069,6 +2109,7 @@ export class AppHost extends EventEmitter {
         let skipped = 0;
         for (const [i, r] of undone.entries()) {
           try {
+            this.currentPart = { index: i, of: undone.length };
             const step = await (await this.analyseUndo(r.version)).apply('');
             const c = step as ChangeResult;
             statements.push(...c.statements);
@@ -2081,6 +2122,7 @@ export class AppHost extends EventEmitter {
                 `undid ${i} of ${undone.length} changes; the outcome of the next one is unknown; reopen the app and check before repeating it.`,
                 { outcome: 'unknown' },
               );
+            this.currentPart = null;
             const code = e instanceof EngineError ? e.code : 'migration_failed';
             throw new EngineError(
               `undid ${i} of ${undone.length} changes; the app is now at version ${this.version}: ${(e as Error).message}`,
@@ -2088,6 +2130,7 @@ export class AppHost extends EventEmitter {
             );
           }
         }
+        this.currentPart = null;
         return {
           version: target,
           summary:

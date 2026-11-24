@@ -862,6 +862,7 @@ async function openLive(holder: Holder): Promise<AppHost> {
       await settleRecoveredChange({
         request: recovered.request,
         outcome: recovered.outcome,
+        partial: recovered.partial,
       });
     } catch (e) {
       host.notices.push(

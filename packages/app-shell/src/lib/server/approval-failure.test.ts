@@ -332,6 +332,81 @@ describe('an approval whose change has an unknown outcome (#5486)', () => {
     expect((await getApprovalView(id))?.status).toBe('approved');
   });
 
+  it('an approval this process is applying reads approved, not unknown', async () => {
+    const { getApprovalView } = await import('./approvals.ts');
+    await runAs(h.owner, async () => {
+      await callTool(h.owner, 'app_definemodel', {
+        name: 'Slow',
+        fields: { title: { type: 'text' } },
+      });
+    });
+    await applyWaiting(h.owner);
+    const host = await getHost();
+    const rec = (await host.create(hostOwner(host), 'Slow', {
+      title: 'x',
+    })) as { id: string };
+    const pending = await callTool(h.owner, 'slow_delete', { id: rec.id });
+    const raw = JSON.parse((pending.content as { text: string }[])[0].text);
+    const id = (raw.result ?? raw).approvalId as string;
+    let release!: () => void;
+    const gate = new Promise<void>((r) => {
+      release = r;
+    });
+    const real = host.callAppTool.bind(host);
+    const spy = vi
+      .spyOn(host, 'callAppTool')
+      .mockImplementationOnce(async (...a: Parameters<typeof real>) => {
+        await gate;
+        return real(...a);
+      });
+    const deciding = decideApproval(id, true, h.owner);
+    let seen: string | undefined;
+    for (let i = 0; i < 100 && seen !== 'approved'; i++) {
+      await new Promise((r) => setTimeout(r, 20));
+      seen = (await getApprovalView(id))?.status;
+    }
+    expect(seen).toBe('approved');
+    release();
+    expect((await deciding).status).toBe('approved');
+    spy.mockRestore();
+  });
+
+  it('a recovered step of a longer undo settles as failed with its own words', async () => {
+    const { getApprovalView, settleRecoveredChange } = await import(
+      './approvals.ts'
+    );
+    const { ClaimLostError } = await import('../../engine/index.ts');
+    await runAs(h.owner, async () => {
+      await callTool(h.owner, 'app_definemodel', {
+        name: 'Steps',
+        fields: { title: { type: 'text' } },
+      });
+    });
+    await applyWaiting(h.owner);
+    const host = await getHost();
+    const rec = (await host.create(hostOwner(host), 'Steps', {
+      title: 'x',
+    })) as { id: string };
+    const pending = await callTool(h.owner, 'steps_delete', { id: rec.id });
+    const raw = JSON.parse((pending.content as { text: string }[])[0].text);
+    const id = (raw.result ?? raw).approvalId as string;
+    const spy = vi
+      .spyOn(host, 'callAppTool')
+      .mockRejectedValueOnce(
+        new ClaimLostError('unknown', { outcome: 'unknown' }),
+      );
+    expect((await decideApproval(id, true, h.owner)).status).toBe('unknown');
+    spy.mockRestore();
+    await settleRecoveredChange({
+      request: id,
+      outcome: 'applied',
+      partial: true,
+    });
+    const view = await getApprovalView(id);
+    expect(view?.status).toBe('failed');
+    expect(JSON.stringify(view?.result)).toMatch(/Part of this undo/);
+  });
+
   it('an error that is not marked unknown still completes as failed', async () => {
     const { ClaimLostError } = await import('../../engine/index.ts');
     await runAs(h.owner, async () => {

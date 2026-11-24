@@ -720,7 +720,7 @@ export interface Migration {
    * write never landed can be rolled forward at the next open.
    */
   intent?: string;
-  /** With `intent`: this is the change's own reverse; it clears `applied` and `change` instead. */
+  /** With `intent`: this is the change's own reverse; it records `reversed` and clears `applied` instead. */
   reverse?: boolean;
 }
 

@@ -285,14 +285,17 @@ for the one operation on the host thread; a PGlite uses the host's client).
   fence `FOR SHARE` = g, `commitIn(tx, [], p, p)` as a compare, and the
   `change` key `{id, from, to, record, request}` in the live `_app_meta`);
   **M**, the worker's migration, whose boot operation also writes `applied` =
-  the change id when it has steps (`Migration.intent`; it is one transaction
-  with the steps and D, committed before `ready`); **T_c**, a claim
+  the change id (`Migration.intent`, steps or not; it is one transaction with
+  the steps and D, committed before `ready`); **T_c**, a claim
   transaction (proof, fence, `commitIn(tx, records, v, expected p)`, and
-  `change.committed = true`). A change with no steps writes no `applied`.
+  `change.committed = true`). `applied` stays (the last change's id) until the
+  next open removes it.
   Outcome of T_c: *refused* (callback did not finish) or *answered* (the
   server returned a SQLSTATE that is not class 08/57P) with the claim still
   proven, so the migration is reversed under the same claim (a flagged boot of
-  the down steps that deletes `applied` and `change`) and the error is
+  the down steps, or a step-less boot of the old definition; it deletes
+  `applied` and records `reversed` = the id, so a reverse whose COMMIT reply
+  is lost still reopens as "never landed") and the error is
   returned as today; *unknown* (the claim lost, or an error with no SQLSTATE
   after the callback finished, such as the SDK's "rolled back the transaction
   at commit") never reverses and never respawns an old worker: the host stops
@@ -302,21 +305,29 @@ for the one operation on the host thread; a PGlite uses the host's client).
   proven and the swap migrates, `notApplied` takes ownership (the bump waits
   for any open migration transaction) and reads `applied` in that same
   transaction: only "no" respawns the old worker, on the new generation. A
+  step-less swap never stopped the old worker, so it does not bump: it waits
+  for the failed boot's transaction (`awaitFenceHolders`) and reads `applied`;
+  anything but a definite "no" is unknown. A
   claim lost while the new worker boots stops it instead of installing it.
   **Boot** then settles what an earlier host left, in one claim transaction
   after the publish reconcile (`reconcileChange`): `committed` -> applied;
-  `applied` = the id with S = from and D = to -> roll the store forward
-  (`commitIn`), emitting `changed` once the host is open; no `applied` with D
-  = S = from -> never landed; anything else -> a notice. Both keys are removed
+  `reversed` = the id -> never landed; `applied` = the id with S = from and D
+  = to -> roll the store forward (`commitIn`), emitting `changed` once the host
+  is open; no `applied` with D = S = from -> never landed; anything else -> a
+  notice. Both keys are removed
   either way (a fork or a snapshot copies them). The first version (seed) is
   also a claim transaction. `host.recoveredChange` names the approval
   (`ExecuteOptions.request`) of a decided change; the shell settles it only
   if it is still `executing` (`settleRecoveredChange`). The claim session sets
   `idle_session_timeout` = max(30 s, 6 x heartbeat) (0 with no heartbeat), so
   a frozen host's session cannot hold a half-answered COMMIT forever.
-  The shell shows an `executing` approval as `unknown` ("Outcome unknown", a
-  view status only; nothing stores it); `decideApproval` leaves it
-  `executing` on an unknown outcome and returns `{status: 'unknown', error}`.
+  Each step of an `undoTo` journals `part` {index, of}; a recovered step
+  settles its approval as approved only when it is the last step that landed,
+  and otherwise as failed ("part of this undo took effect"). The shell shows
+  an `executing` approval as `unknown` ("Outcome unknown", a view status only;
+  nothing stores it) unless this process is applying it right now, which still
+  reads `approved` as before; `decideApproval` leaves it `executing` on an
+  unknown outcome and returns `{status: 'unknown', error}`.
   Residual: a change interrupted before P0 leaves nothing; a part-1 host that
   opens after an interrupted change boots the old version on the new tables
   (drain part-1 hosts before this ships); the `ready`-rejects-after-commit

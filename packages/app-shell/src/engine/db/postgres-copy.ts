@@ -697,6 +697,22 @@ export async function holdFence(
     );
 }
 
+/**
+ * Inside the caller's transaction: wait for every transaction that holds the
+ * generation row `FOR SHARE` (a worker's boot or operation) to end, without
+ * changing the generation. After it, a read of `_app_meta` sees whatever that
+ * transaction committed (#5486).
+ */
+export async function awaitFenceHolders(
+  tx: SqlRunner,
+  schema: string,
+): Promise<void> {
+  assertSchemaName(schema);
+  await tx.query(
+    `SELECT value FROM ${qi(schema)}._app_meta WHERE key = ${lit(FENCE_KEY)} FOR NO KEY UPDATE`,
+  );
+}
+
 /** Inside the caller's transaction: the values of these `_app_meta` keys (absent ones are missing). */
 export async function readMeta(
   tx: SqlRunner,

@@ -392,11 +392,11 @@ describe.each(backends)('the version store in the swap (%s)', (backend) => {
       // Nothing of this change was journaled: the key left is the last landed one.
       const m = await meta(live.schema);
       expect(JSON.parse(m.change)).toMatchObject({ to: v, committed: true });
-      expect(m.applied).toBeUndefined();
+      expect(m.applied).toBe(JSON.parse(m.change).id);
       expect(await live.store.current()).toBe(moved);
     });
 
-    it('a version write refused after the migration is reversed under the same claim', async () => {
+    it('a version write refused after the migration is reversed under the same claim, and says so in the journal', async () => {
       const live = await hooked();
       const v = live.host.version;
       live.store.before = (n) => {
@@ -409,15 +409,15 @@ describe.each(backends)('the version store in the swap (%s)', (backend) => {
       expect(await columns(live.host)).toContain('points');
       const m = await meta(live.schema);
       expect(Number(m.version)).toBe(v);
-      expect(m.change).toBeUndefined();
       expect(m.applied).toBeUndefined();
+      expect(m.reversed).toBe(JSON.parse(m.change).id);
       // The host still serves and still changes.
       live.store.before = undefined;
       await run(live.host, rename);
       expect(await columns(live.host)).toContain('score');
     });
 
-    it('the same refusal of a change with no migration steps leaves no applied key', async () => {
+    it('the same refusal of a change with no migration steps is reversed and reopens as never landed', async () => {
       const live = await hooked();
       const v = live.host.version;
       live.store.before = (n) => {
@@ -433,6 +433,7 @@ describe.each(backends)('the version store in the swap (%s)', (backend) => {
       expect(live.host.version).toBe(v);
       const m = await meta(live.schema);
       expect(m.applied).toBeUndefined();
+      expect(m.reversed).toBe(JSON.parse(m.change).id);
       // Reopened, it never landed: nothing rolls forward.
       const b = await reopen(live);
       expect(b.host.version).toBe(v);
@@ -530,11 +531,103 @@ describe.each(backends)('the version store in the swap (%s)', (backend) => {
       expect(live.host.lostClaim).toBeNull();
       expect(Number((await meta(live.schema)).fence)).toBe(before + 1);
       expect(await columns(live.host)).toContain('points');
-      expect((await meta(live.schema)).applied).toBeUndefined();
+      // `applied` is still the last change that landed, not the failed one.
+      const after = await meta(live.schema);
+      expect(after.applied).not.toBe(JSON.parse(after.change).id);
       await shell.query(`DROP TRIGGER boom ON "${live.schema}"._archive`);
       // The respawned worker holds the new generation: a change goes through.
       await run(live.host, rename);
       expect(await columns(live.host)).toContain('score');
+    });
+
+    it('a change with no migration steps lost after its boot is rolled forward at the reopen', async () => {
+      const live = await hooked();
+      const v = live.host.version;
+      live.store.after = (n) => {
+        if (n === 1) (live.claim as ReturnType<typeof killable>).kill();
+      };
+      const err = await live.host
+        .execute(
+          hostOwner(live.host),
+          {
+            type: 'addField',
+            model: 'Chore',
+            field: 'done',
+            definition: { type: 'boolean' },
+          },
+          { ...OK, request: 'appr-2' },
+        )
+        .catch((e) => e);
+      expect(isUnknownOutcome(err)).toBe(true);
+      expect(await live.store.current()).toBe(v);
+      const b = await reopen(live);
+      expect(b.host.version).toBe(v + 1);
+      expect(await b.store.current()).toBe(v + 1);
+      expect(await columns(b.host)).toContain('done');
+      expect(b.host.recoveredChange).toMatchObject({
+        request: 'appr-2',
+        outcome: 'applied',
+        partial: false,
+      });
+    });
+
+    it('a reverse whose reply was lost reopens as never landed', async () => {
+      const live = await hooked();
+      await live.host.close();
+      hosts.splice(hosts.indexOf(live.host), 1);
+      const v = live.host.version;
+      await shell.query(
+        `INSERT INTO "${live.schema}"._app_meta (key, value) VALUES ('change', ?), ('reversed', 'c1') ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value`,
+        [
+          JSON.stringify({
+            id: 'c1',
+            from: v,
+            to: v + 1,
+            record: null,
+            request: 'appr-3',
+          }),
+        ],
+      );
+      const b = await openOn(live.dir, live.schema);
+      expect(b.host.recoveredChange).toMatchObject({
+        request: 'appr-3',
+        outcome: 'not-applied',
+      });
+      expect(b.host.notices).toEqual([]);
+      const m = await meta(live.schema);
+      expect(m.change).toBeUndefined();
+      expect(m.reversed).toBeUndefined();
+    });
+
+    it('one step of a longer undo that is lost reopens as partial', async () => {
+      const live = await hooked();
+      const base = live.host.version;
+      for (const field of ['a', 'b'])
+        await run(live.host, {
+          type: 'addField',
+          model: 'Chore',
+          field,
+          definition: { type: 'boolean' },
+        });
+      live.store.calls = 0;
+      live.store.after = (n) => {
+        if (n === 1) (live.claim as ReturnType<typeof killable>).kill();
+      };
+      const err = await live.host
+        .execute(
+          hostOwner(live.host),
+          { type: 'undoTo', version: base },
+          { ...OK, request: 'appr-4' },
+        )
+        .catch((e) => e);
+      expect(isUnknownOutcome(err)).toBe(true);
+      const b = await reopen(live);
+      // The first of two steps landed: the approval must not read as the whole undo.
+      expect(b.host.recoveredChange).toMatchObject({
+        request: 'appr-4',
+        outcome: 'applied',
+        partial: true,
+      });
     });
 
     it('a settled change leaves nothing for the next open to do', async () => {

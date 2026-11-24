@@ -131,10 +131,21 @@ function iso(value: unknown): string {
   return value instanceof Date ? value.toISOString() : String(value ?? '');
 }
 
-/** `accepted` reads approved; `executing` is running or interrupted, and reads unknown (#5486). */
-function viewStatus(status: Approval['status']): ApprovalViewStatus {
-  if (status === 'accepted') return 'approved';
-  return status === 'executing' ? 'unknown' : status;
+/**
+ * Approvals this process is applying right now. An `executing` row that is NOT
+ * in it was interrupted (an unknown outcome, or a restart): it reads `unknown`
+ * (#5486). One running here reads `approved`, as before, so the assistant's
+ * hold and the chat engine never see a normal apply as unknown. (Another
+ * replica's running apply reads `unknown` for its short window.)
+ */
+const applying = new Set<string>();
+
+/** `accepted` reads approved; an `executing` row reads approved while this process applies it, else unknown. */
+function viewStatus(row: Pick<Approval, 'id' | 'status'>): ApprovalViewStatus {
+  if (row.status === 'accepted') return 'approved';
+  if (row.status === 'executing')
+    return applying.has(row.id as string) ? 'approved' : 'unknown';
+  return row.status;
 }
 
 async function view(row: Approval): Promise<ApprovalView> {
@@ -164,7 +175,7 @@ async function view(row: Approval): Promise<ApprovalView> {
   }
   return {
     id: row.id as string,
-    status: viewStatus(row.status),
+    status: viewStatus(row),
     summary: row.summary,
     preview,
     action: parseJson(row.command) as ApprovalAction | null,
@@ -269,7 +280,7 @@ export async function approvalStatuses(
       limit: chunk.length,
     });
     for (const row of rows) {
-      out.set(row.id as string, viewStatus(row.status));
+      out.set(row.id as string, viewStatus(row));
     }
   }
   return out;
@@ -385,6 +396,7 @@ export async function decideApproval(
     if (!isAction(action)) throw new Error('the stored action is invalid');
     await authority.decide({ id: decidedBy, tenantId }, id, true);
     await authority.consume(tenantId, id);
+    applying.add(id);
     let result: unknown;
     let error: string | undefined;
     try {
@@ -456,6 +468,7 @@ export async function decideApproval(
       result = ownerRestFailure(ownerResult(result, 'approval'), 'approval');
       if (error === undefined) error = returnedFailure(action.kind, result);
     } catch (e) {
+      applying.delete(id);
       if (isUnknownOutcome(e)) {
         // The engine could not tell whether the change landed (#5486). The row
         // stays `executing` (it refuses another apply); the app's next open
@@ -493,6 +506,7 @@ export async function decideApproval(
           'approval',
         );
     }
+    applying.delete(id);
     row.status = error === undefined ? 'approved' : 'failed';
     await authority.complete(
       tenantId,
@@ -528,18 +542,24 @@ export async function decideApproval(
 export async function settleRecoveredChange(change: {
   request: string;
   outcome: 'applied' | 'not-applied';
+  /** One step of a longer undo: some of it may have taken effect either way. */
+  partial?: boolean;
 }): Promise<boolean> {
   const row = await (await approvals()).get(change.request);
   if (!row || row.status !== 'executing') return false;
   const { authority, tenantId } = await shellApprovalAuthority();
-  const ok = change.outcome === 'applied';
+  const ok = change.outcome === 'applied' && !change.partial;
   await authority.complete(
     tenantId,
     change.request,
     ok,
     ok
       ? { recovered: 'applied' }
-      : { error: 'The change did not take effect; nothing was changed.' },
+      : {
+          error: change.partial
+            ? 'Part of this undo took effect before the app stopped. Check the history before asking again.'
+            : 'The change did not take effect; nothing was changed.',
+        },
   );
   publish({
     type: 'approval',
