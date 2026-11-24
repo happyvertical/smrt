@@ -353,22 +353,32 @@ describe.each(backends)('the version store in the swap (%s)', (backend) => {
       (
         await rows(`SELECT pid FROM pg_locks WHERE ${appLockMatch(schema)}`)
       ).map((r) => Number(r.pid));
+    /** The claim dies now: the stand-in's proof fails from here, or the server ends its session. */
+    const loseClaimNow = async (live: { claim?: unknown; schema: string }) => {
+      if (backend === 'pglite')
+        (live.claim as ReturnType<typeof killable>).kill();
+      else
+        for (const pid of await holders(live.schema))
+          await shell.query(`SELECT pg_terminate_backend(?)`, [pid]);
+    };
     /**
      * Make the claim die in the middle of the next change: right after its P0
      * (the stand-in claim's proof fails from then on), or, on a real server,
      * by terminating the claim's own session as its version write starts.
      */
-    const loseClaimMidChange = (live: {
-      store: Hooked;
-      claim?: unknown;
-      schema: string;
-    }) => {
+    const loseClaimMidChange = (
+      live: { claim?: unknown; schema: string },
+      store: {
+        before?: (n: number) => void | Promise<void>;
+        after?: (n: number) => void | Promise<void>;
+      },
+    ) => {
       if (backend === 'pglite')
-        live.store.after = (n) => {
+        store.after = (n) => {
           if (n === 1) (live.claim as ReturnType<typeof killable>).kill();
         };
       else
-        live.store.before = async (n) => {
+        store.before = async (n) => {
           if (n === 2)
             for (const pid of await holders(live.schema))
               await shell.query(`SELECT pg_terminate_backend(?)`, [pid]);
@@ -470,7 +480,7 @@ describe.each(backends)('the version store in the swap (%s)', (backend) => {
     it('a claim lost between the migration and the store write stops the host; the reopen rolls the store forward', async () => {
       const live = await hooked();
       const v = live.host.version;
-      loseClaimMidChange(live);
+      loseClaimMidChange(live, live.store);
       const err = await run(live.host, rename).catch((e) => e);
       expect(err).toBeInstanceOf(ClaimLostError);
       expect(isUnknownOutcome(err)).toBe(true);
@@ -502,7 +512,7 @@ describe.each(backends)('the version store in the swap (%s)', (backend) => {
       await run(live.host, rename);
       const changed = live.host.version;
       live.store.calls = 0;
-      loseClaimMidChange(live);
+      loseClaimMidChange(live, live.store);
       const err = await run(live.host, { type: 'undo' } as Command).catch(
         (e) => e,
       );
@@ -567,7 +577,7 @@ describe.each(backends)('the version store in the swap (%s)', (backend) => {
     it('a change with no migration steps lost after its boot is rolled forward at the reopen', async () => {
       const live = await hooked();
       const v = live.host.version;
-      loseClaimMidChange(live);
+      loseClaimMidChange(live, live.store);
       const err = await live.host
         .execute(
           hostOwner(live.host),
@@ -628,7 +638,7 @@ describe.each(backends)('the version store in the swap (%s)', (backend) => {
     it('a recovered outcome survives an open that fails or stops before it is settled', async () => {
       const live = await hooked();
       const v = live.host.version;
-      loseClaimMidChange(live);
+      loseClaimMidChange(live, live.store);
       const err = await live.host
         .execute(hostOwner(live.host), rename, { ...OK, request: 'appr-5' })
         .catch((e) => e);
@@ -669,7 +679,7 @@ describe.each(backends)('the version store in the swap (%s)', (backend) => {
           definition: { type: 'boolean' },
         });
       live.store.calls = 0;
-      loseClaimMidChange(live);
+      loseClaimMidChange(live, live.store);
       const err = await live.host
         .execute(
           hostOwner(live.host),
@@ -689,7 +699,7 @@ describe.each(backends)('the version store in the swap (%s)', (backend) => {
 
     it('a change is refused while a decided outcome is unacknowledged, and goes through after', async () => {
       const live = await hooked();
-      loseClaimMidChange(live);
+      loseClaimMidChange(live, live.store);
       await live.host
         .execute(hostOwner(live.host), rename, { ...OK, request: 'appr-6' })
         .catch(() => {});
@@ -724,7 +734,7 @@ describe.each(backends)('the version store in the swap (%s)', (backend) => {
       await live.host.claimTransaction(async () => {
         ran.push('before');
       });
-      (live.claim as ReturnType<typeof killable>).kill();
+      await loseClaimNow(live);
       const err = await live.host
         .claimTransaction(async () => {
           ran.push('after');
@@ -737,9 +747,11 @@ describe.each(backends)('the version store in the swap (%s)', (backend) => {
     describe("a draft on the live host's lent claim", () => {
       class HookedDraft extends DraftVersionStore {
         calls = 0;
+        before?: (n: number) => void | Promise<void>;
         after?: (n: number) => void | Promise<void>;
         async commitIn(...a: Parameters<DraftVersionStore['commitIn']>) {
           const n = ++this.calls;
+          await this.before?.(n);
           const r = await super.commitIn(...a);
           await this.after?.(n);
           return r;
@@ -892,7 +904,7 @@ describe.each(backends)('the version store in the swap (%s)', (backend) => {
       it('a lost claim stops the draft: it changes nothing, and says so', async () => {
         const live = await hooked();
         const d = await fork(live);
-        (live.claim as ReturnType<typeof killable>).kill();
+        await loseClaimNow(live);
         const err = await run(d.draft, {
           type: 'addField',
           model: 'Chore',
@@ -908,9 +920,7 @@ describe.each(backends)('the version store in the swap (%s)', (backend) => {
         const d = await fork(live);
         const v = d.draft.version;
         d.store.calls = 0;
-        d.store.after = (n) => {
-          if (n === 1) (live.claim as ReturnType<typeof killable>).kill();
-        };
+        loseClaimMidChange(live, d.store);
         const err = await run(d.draft, {
           type: 'addField',
           model: 'Chore',
@@ -972,7 +982,7 @@ describe.each(backends)('the version store in the swap (%s)', (backend) => {
 
     it('the reopen reports the approval a recovered change ran under', async () => {
       const live = await hooked();
-      loseClaimMidChange(live);
+      loseClaimMidChange(live, live.store);
       const err = await live.host
         .execute(hostOwner(live.host), rename, { ...OK, request: 'appr-1' })
         .catch((e) => e);
