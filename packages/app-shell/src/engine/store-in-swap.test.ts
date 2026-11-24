@@ -35,12 +35,13 @@ import {
 import { hostOwner } from '../test/engine-principal.ts';
 import { createClaim } from './db/claim.ts';
 import type { AppClaim, DatabaseConfig, PGliteClient } from './db/index.ts';
-import { withSchemaAdmin } from './db/index.ts';
+import { claimAppDatabase, withSchemaAdmin } from './db/index.ts';
 import { appLockMatch, dumpSchema, readPublished } from './db/postgres-copy.ts';
 import {
   AppHost,
   ClaimLostError,
   type Command,
+  isUnknownOutcome,
   MemoryVersionStore,
   type PublishStage,
   StaleStoreError,
@@ -82,8 +83,16 @@ function killable(db: Sql) {
     async () => {},
     async () => !dead,
   );
-  const transaction = <T>(cb: (tx: any) => Promise<T>) =>
-    broken ? Promise.reject(broken) : inner.transaction(cb);
+  let reply: { at: number; error: Error } | null = null;
+  let count = 0;
+  const transaction = async <T>(cb: (tx: any) => Promise<T>) => {
+    if (broken) throw broken;
+    const n = ++count;
+    const out = await inner.transaction(cb);
+    // The COMMIT landed but its reply never came back (#5486).
+    if (reply && reply.at === n) throw reply.error;
+    return out;
+  };
   return new Proxy(inner, {
     get(target, prop) {
       if (prop === 'transaction') return transaction;
@@ -92,13 +101,22 @@ function killable(db: Sql) {
         return () => {
           dead = true;
         };
+      if (prop === 'loseReply')
+        return (error: Error, nth = 1) => {
+          count = 0;
+          reply = { at: nth, error };
+        };
       if (prop === 'breakWith')
         return (e: Error) => {
           broken = e;
         };
       return Reflect.get(target, prop);
     },
-  }) as AppClaim & { kill(): void; breakWith(e: Error): void };
+  }) as AppClaim & {
+    kill(): void;
+    breakWith(e: Error): void;
+    loseReply(e: Error, nth?: number): void;
+  };
 }
 
 describe.each(backends)('the version store in the swap (%s)', (backend) => {
@@ -310,6 +328,266 @@ describe.each(backends)('the version store in the swap (%s)', (backend) => {
       { transaction: (cb: any) => shell.transaction(cb) },
       live.schema,
     );
+
+  describe('change and undo store writes on the claim (#5486)', () => {
+    /** Counts the store's compare-and-set writes (a change makes two: the intent, then the version) and lets a test act around one. */
+    class Hooked extends ShellVersionStore {
+      calls = 0;
+      before?: (n: number) => void | Promise<void>;
+      after?: (n: number) => void | Promise<void>;
+      async commitIn(...a: Parameters<ShellVersionStore['commitIn']>) {
+        const n = ++this.calls;
+        await this.before?.(n);
+        const r = await super.commitIn(...a);
+        await this.after?.(n);
+        return r;
+      }
+    }
+    const meta = async (schema: string) =>
+      Object.fromEntries(
+        (await rows(`SELECT key, value FROM "${schema}"._app_meta`)).map(
+          (r) => [r.key as string, r.value as string],
+        ),
+      ) as Record<string, string>;
+    const hooked = async () => {
+      const store = new Hooked(shell as never);
+      const schema = await newSchema();
+      const live = await openOn(tmp(), schema, { store });
+      await run(live.host, {
+        type: 'defineModel',
+        name: 'Chore',
+        fields: {
+          title: { type: 'text', required: true },
+          points: { type: 'integer' },
+        },
+      });
+      for (const [title, points] of [
+        ['Bins', 3],
+        ['Dishes', 5],
+      ] as const)
+        await live.host.create(hostOwner(live.host), 'Chore', {
+          title,
+          points,
+        });
+      store.calls = 0;
+      return { ...live, store };
+    };
+    const rename: Command = {
+      type: 'renameField',
+      model: 'Chore',
+      from: 'points',
+      to: 'score',
+    };
+    const columns = async (host: AppHost) =>
+      Object.keys((await host.list(hostOwner(host), 'Chore'))[0]);
+
+    it('a change whose store moved first is refused before anything runs', async () => {
+      const live = await hooked();
+      const v = live.host.version;
+      const moved = await moveStore(live.store);
+      const err = await run(live.host, rename).catch((e) => e);
+      expect(err).toBeInstanceOf(StaleStoreError);
+      expect(live.host.version).toBe(v);
+      expect(await columns(live.host)).toContain('points');
+      // Nothing of this change was journaled: the key left is the last landed one.
+      const m = await meta(live.schema);
+      expect(JSON.parse(m.change)).toMatchObject({ to: v, committed: true });
+      expect(m.applied).toBeUndefined();
+      expect(await live.store.current()).toBe(moved);
+    });
+
+    it('a version write refused after the migration is reversed under the same claim', async () => {
+      const live = await hooked();
+      const v = live.host.version;
+      live.store.before = (n) => {
+        if (n === 2) throw new StaleStoreError('the store moved', {});
+      };
+      const err = await run(live.host, rename).catch((e) => e);
+      expect(err).toBeInstanceOf(StaleStoreError);
+      expect(live.host.version).toBe(v);
+      // The data is back at the old version, and both journal keys went with it.
+      expect(await columns(live.host)).toContain('points');
+      const m = await meta(live.schema);
+      expect(Number(m.version)).toBe(v);
+      expect(m.change).toBeUndefined();
+      expect(m.applied).toBeUndefined();
+      // The host still serves and still changes.
+      live.store.before = undefined;
+      await run(live.host, rename);
+      expect(await columns(live.host)).toContain('score');
+    });
+
+    it('the same refusal of a change with no migration steps leaves no applied key', async () => {
+      const live = await hooked();
+      const v = live.host.version;
+      live.store.before = (n) => {
+        if (n === 2) throw new StaleStoreError('the store moved', {});
+      };
+      const err = await run(live.host, {
+        type: 'addField',
+        model: 'Chore',
+        field: 'done',
+        definition: { type: 'boolean' },
+      }).catch((e) => e);
+      expect(err).toBeInstanceOf(StaleStoreError);
+      expect(live.host.version).toBe(v);
+      const m = await meta(live.schema);
+      expect(m.applied).toBeUndefined();
+      // Reopened, it never landed: nothing rolls forward.
+      const b = await reopen(live);
+      expect(b.host.version).toBe(v);
+      expect(await b.store.current()).toBe(v);
+      expect(b.host.recoveredChange).toBeNull();
+      expect(b.host.notices).toEqual([]);
+    });
+
+    it('a claim lost between the migration and the store write stops the host; the reopen rolls the store forward', async () => {
+      const live = await hooked();
+      const v = live.host.version;
+      live.store.after = (n) => {
+        if (n === 1) (live.claim as ReturnType<typeof killable>).kill();
+      };
+      const err = await run(live.host, rename).catch((e) => e);
+      expect(err).toBeInstanceOf(ClaimLostError);
+      expect(isUnknownOutcome(err)).toBe(true);
+      expect(String(err.message)).toMatch(/unknown/);
+      expect(live.host.lostClaim).not.toBeNull();
+      expect(live.host.appAlive).toBe(false);
+      // The data is at the new version; the store is not.
+      expect((await meta(live.schema)).applied).toBeTruthy();
+      expect(await live.store.current()).toBe(v);
+      const b = await reopen(live);
+      const events: number[] = [];
+      b.host.on('changed', (e: { version: number }) => events.push(e.version));
+      expect(await b.store.current()).toBe(v + 1);
+      expect(b.host.version).toBe(v + 1);
+      expect(await columns(b.host)).toContain('score');
+      expect(await b.store.maxVersion()).toBe(v + 1);
+      const m = await meta(live.schema);
+      expect(m.change).toBeUndefined();
+      expect(m.applied).toBeUndefined();
+      await new Promise((r) => setImmediate(r));
+      expect(events).toEqual([v + 1]);
+      // History is unique and undo works on the recovered version.
+      await run(b.host, { type: 'undo' } as Command);
+      expect(await columns(b.host)).toContain('points');
+    });
+
+    it('an undo step lost the same way is rolled forward at the reopen', async () => {
+      const live = await hooked();
+      await run(live.host, rename);
+      const changed = live.host.version;
+      live.store.calls = 0;
+      live.store.after = (n) => {
+        if (n === 1) (live.claim as ReturnType<typeof killable>).kill();
+      };
+      const err = await run(live.host, { type: 'undo' } as Command).catch(
+        (e) => e,
+      );
+      expect(isUnknownOutcome(err)).toBe(true);
+      const b = await reopen(live);
+      expect(b.host.version).toBe(changed - 1);
+      expect(await b.store.current()).toBe(changed - 1);
+      expect(await columns(b.host)).toContain('points');
+    });
+
+    it('a COMMIT whose reply never came is unknown: no reverse, the host stops, the reopen finds it applied', async () => {
+      const live = await hooked();
+      const v = live.host.version;
+      (live.claim as ReturnType<typeof killable>).loseReply(
+        new Error('PostgreSQL rolled back the transaction at commit'),
+        2,
+      );
+      const err = await run(live.host, rename).catch((e) => e);
+      expect(isUnknownOutcome(err)).toBe(true);
+      expect(live.host.appAlive).toBe(false);
+      // It did commit, and nothing reversed it.
+      expect(await live.store.current()).toBe(v + 1);
+      const b = await reopen(live);
+      expect(b.host.version).toBe(v + 1);
+      expect(await columns(b.host)).toContain('score');
+      expect(b.host.notices).toEqual([]);
+    });
+
+    it('a migration that fails with the claim proven is not applied: the generation moves, the old app serves again', async () => {
+      const live = await hooked();
+      const v = live.host.version;
+      const before = Number((await meta(live.schema)).fence);
+      await shell.query(
+        `CREATE OR REPLACE FUNCTION "${live.schema}".boom() RETURNS trigger LANGUAGE plpgsql AS $$ BEGIN RAISE EXCEPTION 'injected'; END $$`,
+      );
+      await shell.query(
+        `CREATE TRIGGER boom BEFORE INSERT ON "${live.schema}"._archive FOR EACH ROW EXECUTE FUNCTION "${live.schema}".boom()`,
+      );
+      const err = await run(live.host, {
+        type: 'removeField',
+        model: 'Chore',
+        field: 'points',
+      }).catch((e) => e);
+      expect(String(err.message)).toMatch(/not applied/);
+      expect(isUnknownOutcome(err)).toBe(false);
+      expect(live.host.version).toBe(v);
+      expect(live.host.lostClaim).toBeNull();
+      expect(Number((await meta(live.schema)).fence)).toBe(before + 1);
+      expect(await columns(live.host)).toContain('points');
+      expect((await meta(live.schema)).applied).toBeUndefined();
+      await shell.query(`DROP TRIGGER boom ON "${live.schema}"._archive`);
+      // The respawned worker holds the new generation: a change goes through.
+      await run(live.host, rename);
+      expect(await columns(live.host)).toContain('score');
+    });
+
+    it('a settled change leaves nothing for the next open to do', async () => {
+      const live = await hooked();
+      await run(live.host, rename);
+      const b = await reopen(live);
+      expect(b.host.recoveredChange).toBeNull();
+      expect(b.host.notices).toEqual([]);
+      const m = await meta(live.schema);
+      expect(m.change).toBeUndefined();
+      expect(m.applied).toBeUndefined();
+    });
+
+    it('a copied journal key that matches nothing is dropped with a notice', async () => {
+      const live = await hooked();
+      await live.host.close();
+      hosts.splice(hosts.indexOf(live.host), 1);
+      await shell.query(
+        `INSERT INTO "${live.schema}"._app_meta (key, value) VALUES ('change', ?), ('applied', 'someone-else') ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value`,
+        [
+          JSON.stringify({
+            id: 'x',
+            from: 0,
+            to: 9,
+            record: null,
+            request: 'a1',
+          }),
+        ],
+      );
+      const b = await openOn(live.dir, live.schema);
+      expect(b.host.notices.join(' ')).toMatch(/could not be settled/);
+      expect(b.host.recoveredChange).toBeNull();
+      const m = await meta(live.schema);
+      expect(m.change).toBeUndefined();
+      expect(m.applied).toBeUndefined();
+    });
+
+    it('the reopen reports the approval a recovered change ran under', async () => {
+      const live = await hooked();
+      live.store.after = (n) => {
+        if (n === 1) (live.claim as ReturnType<typeof killable>).kill();
+      };
+      const err = await live.host
+        .execute(hostOwner(live.host), rename, { ...OK, request: 'appr-1' })
+        .catch((e) => e);
+      expect(isUnknownOutcome(err)).toBe(true);
+      const b = await reopen(live);
+      expect(b.host.recoveredChange).toMatchObject({
+        request: 'appr-1',
+        outcome: 'applied',
+      });
+    });
+  });
 
   it('1. a publish whose store moved first is refused; live, the aside and the store are untouched', async () => {
     const live = await seeded();
@@ -844,6 +1122,71 @@ describe.each(backends)('the version store in the swap (%s)', (backend) => {
       await waitFree(live.schema);
       const b = await openOn(tmp(), live.schema);
       expect(await titles(b.host)).toEqual(['Bins', 'Dishes', 'Garage']);
+    });
+
+    it('15. a takeover after the migration: the other host rolls the change forward and the first writes nothing more (#5486)', async () => {
+      const g = gate();
+      class Pausing extends ShellVersionStore {
+        calls = 0;
+        async commitIn(...a: Parameters<ShellVersionStore['commitIn']>) {
+          if (++this.calls === 2) await g.promise;
+          return super.commitIn(...a);
+        }
+      }
+      const store = new Pausing(shell as never);
+      const live = await openOn(tmp(), await newSchema(), {
+        store,
+        claimOptions: { heartbeatMs: 0, idleInTransactionMs: 1000 },
+      });
+      await run(live.host, {
+        type: 'defineModel',
+        name: 'Chore',
+        fields: { title: { type: 'text' }, points: { type: 'integer' } },
+      });
+      store.calls = 0;
+      const v = live.host.version;
+      const result = run(live.host, {
+        type: 'renameField',
+        model: 'Chore',
+        from: 'points',
+        to: 'score',
+      }).catch((e) => e);
+      // Wait for the migration to commit (the data is at v + 1), then end A's session.
+      for (let i = 0; i < 200; i++) {
+        const m = await rows(
+          `SELECT value FROM "${live.schema}"._app_meta WHERE key = 'applied'`,
+        );
+        if (m.length) break;
+        await new Promise((r) => setTimeout(r, 50));
+      }
+      await terminateClaim(live.schema);
+      await waitFree(live.schema);
+      const b = await openOn(tmp(), live.schema);
+      g.open();
+      expect(isUnknownOutcome(await result)).toBe(true);
+      expect(b.host.version).toBe(v + 1);
+      expect(await b.store.current()).toBe(v + 1);
+      expect(await b.store.maxVersion()).toBe(v + 1);
+    });
+
+    it('16. the claim session ends when it goes quiet: 30 s floor, off when there is no heartbeat (#5486)', async () => {
+      const idle = async (heartbeatMs: number) => {
+        const claim = (await claimAppDatabase(config(await newSchema()), {
+          heartbeatMs,
+        })) as AppClaim;
+        try {
+          return await claim.transaction(
+            async (tx: any) =>
+              (await tx.query(`SHOW idle_session_timeout`)).rows[0]
+                .idle_session_timeout,
+          );
+        } finally {
+          await claim.release();
+        }
+      };
+      expect(await idle(100)).toBe('30s');
+      expect(await idle(10_000)).toBe('1min');
+      expect(await idle(0)).toBe('0');
     });
   });
 });

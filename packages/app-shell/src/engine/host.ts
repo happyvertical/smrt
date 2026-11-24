@@ -489,6 +489,8 @@ export class AppHost extends EventEmitter {
   private currentRequest: string | null = null;
   /** What boot decided about a change an earlier host left in flight; the shell settles its approval. */
   recoveredChange: RecoveredChange | null = null;
+  /** `changed`, emitted once the host is open and its owner can listen (a rolled-forward change). */
+  private recoveredEvent: { version: number; summary: string } | null = null;
   private readonly allowUnfencedStore: boolean;
   /**
    * What the chosen database cannot do yet, said plainly, for the shell to
@@ -611,6 +613,9 @@ export class AppHost extends EventEmitter {
     try {
       const host = new AppHost(dataDir, opts, database);
       await host.boot();
+      const recovered = host.recoveredEvent;
+      host.recoveredEvent = null;
+      if (recovered) setImmediate(() => host.emit('changed', recovered));
       return host;
     } catch (e) {
       await claim?.release();
@@ -766,19 +771,17 @@ export class AppHost extends EventEmitter {
         'A change was running when this app last stopped and could not be settled either way; check the version history.',
       );
     const f = found as ChangeKey | null;
-    if (f && f.request && (outcome === 'applied' || outcome === 'not-applied'))
+    if (f?.request && (outcome === 'applied' || outcome === 'not-applied'))
       this.recoveredChange = {
         id: f.id,
         request: f.request,
         outcome,
       };
     if (forward && f)
-      setImmediate(() =>
-        this.emit('changed', {
-          version: f.to,
-          summary: f.record?.summary ?? 'recovered change',
-        }),
-      );
+      this.recoveredEvent = {
+        version: f.to,
+        summary: f.record?.summary ?? 'recovered change',
+      };
     return current;
   }
 

@@ -1,5 +1,5 @@
 import { writeFileSync } from 'node:fs';
-import { afterAll, beforeAll, describe, expect, it } from 'vitest';
+import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
 import { hostOwner } from '../../test/engine-principal.ts';
 import { decideApproval, returnedFailure } from './approvals.ts';
 import { getHost } from './host.ts';
@@ -287,4 +287,72 @@ it('refuses a known undo conflict before storage through HTTP and the assistant,
   expect(
     (await host.get(hostOwner(host), 'Order', String(row.id)))?.amount,
   ).toBe(1);
+});
+
+describe('an approval whose change has an unknown outcome (#5486)', () => {
+  it('stays executing, reads unknown, refuses a replay, and is settled once by the reopen', async () => {
+    const { ClaimLostError } = await import('../../engine/index.ts');
+    const { approvalStatuses, getApprovalView, settleRecoveredChange } =
+      await import('./approvals.ts');
+    await runAs(h.owner, async () => {
+      await callTool(h.owner, 'app_definemodel', {
+        name: 'Unsure',
+        fields: { title: { type: 'text' } },
+      });
+    });
+    await applyWaiting(h.owner);
+    const host = await getHost();
+    const rec = (await host.create(hostOwner(host), 'Unsure', {
+      title: 'maybe',
+    })) as { id: string };
+    const pending = await callTool(h.owner, 'unsure_delete', { id: rec.id });
+    const raw = JSON.parse((pending.content as { text: string }[])[0].text);
+    const id = (raw.result ?? raw).approvalId as string;
+    const remove = vi.spyOn(host, 'callAppTool').mockRejectedValueOnce(
+      new ClaimLostError('whether the change took effect is unknown', {
+        outcome: 'unknown',
+      }),
+    );
+    const outcome = await decideApproval(id, true, h.owner);
+    remove.mockRestore();
+    expect(outcome.status).toBe('unknown');
+    expect(outcome.error).toMatch(/unknown/);
+    expect((await getApprovalView(id))?.status).toBe('unknown');
+    expect((await approvalStatuses([id])).get(id)).toBe('unknown');
+    // A retry cannot replay it.
+    await expect(decideApproval(id, true, h.owner)).rejects.toThrow(/already/);
+    // The reopen decided it: settle once.
+    expect(
+      await settleRecoveredChange({ request: id, outcome: 'applied' }),
+    ).toBe(true);
+    expect((await getApprovalView(id))?.status).toBe('approved');
+    expect(
+      await settleRecoveredChange({ request: id, outcome: 'not-applied' }),
+    ).toBe(false);
+    expect((await getApprovalView(id))?.status).toBe('approved');
+  });
+
+  it('an error that is not marked unknown still completes as failed', async () => {
+    const { ClaimLostError } = await import('../../engine/index.ts');
+    await runAs(h.owner, async () => {
+      await callTool(h.owner, 'app_definemodel', {
+        name: 'Unmarked',
+        fields: { title: { type: 'text' } },
+      });
+    });
+    await applyWaiting(h.owner);
+    const host = await getHost();
+    const rec = (await host.create(hostOwner(host), 'Unmarked', {
+      title: 'x',
+    })) as { id: string };
+    const pending = await callTool(h.owner, 'unmarked_delete', { id: rec.id });
+    const raw = JSON.parse((pending.content as { text: string }[])[0].text);
+    const id = (raw.result ?? raw).approvalId as string;
+    const remove = vi
+      .spyOn(host, 'callAppTool')
+      .mockRejectedValueOnce(new ClaimLostError('this call wrote nothing'));
+    const outcome = await decideApproval(id, true, h.owner);
+    remove.mockRestore();
+    expect(outcome.status).toBe('failed');
+  });
 });
