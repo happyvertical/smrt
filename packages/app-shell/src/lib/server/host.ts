@@ -852,6 +852,23 @@ async function openLive(holder: Holder): Promise<AppHost> {
   holder.storeRef = store;
   holder.hostRef = host;
   if (host.lostClaim) void dropLostHost(holder, host);
+  // The change an earlier host of this app left unfinished (#5486) was decided
+  // by the open: settle the approval that asked for it.
+  const recovered = host.recoveredChange;
+  if (recovered?.request) {
+    host.recoveredChange = null;
+    try {
+      const { settleRecoveredChange } = await import('./approvals.ts');
+      await settleRecoveredChange({
+        request: recovered.request,
+        outcome: recovered.outcome,
+      });
+    } catch (e) {
+      host.notices.push(
+        `An approval could not be settled after a reopen (${e instanceof Error ? e.message : String(e)}); it still reads "Outcome unknown".`,
+      );
+    }
+  }
   return host;
 }
 

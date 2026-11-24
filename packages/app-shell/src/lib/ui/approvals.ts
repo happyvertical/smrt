@@ -376,6 +376,7 @@ const OUTCOME: Record<string, string> = {
   approved: 'Approved',
   denied: 'Denied',
   failed: 'Failed',
+  unknown: 'Outcome unknown',
   pending: 'Waiting',
 };
 
@@ -385,6 +386,8 @@ export function statusLabel(status: string): string {
 
 /** The error text of a failed approval, if its result carries one. */
 export function failureText(view: ApprovalView): string | null {
+  if (view.status === 'unknown')
+    return 'Whether this was applied is not known yet. Reopen the app and check before asking again.';
   if (view.status !== 'failed') return null;
   const r = obj(view.result);
   return typeof r.error === 'string' ? r.error : null;

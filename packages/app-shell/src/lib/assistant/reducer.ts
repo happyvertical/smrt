@@ -24,6 +24,7 @@ export type ApprovalState =
   | 'approved'
   | 'denied'
   | 'failed'
+  | 'unknown'
   | 'timeout';
 
 export type Item =

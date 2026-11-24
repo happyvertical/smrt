@@ -266,7 +266,7 @@ async function decide(
       approvalId: item.approvalId,
       state: out.status,
       message:
-        out.status === 'failed'
+        out.status === 'failed' || out.status === 'unknown'
           ? (out.error ?? 'It could not be applied.')
           : '',
     });
