@@ -807,6 +807,32 @@ describe.each(backends)('the version store in the swap (%s)', (backend) => {
         expect(await columns(d.draft)).not.toContain('done');
       });
 
+      it('a draft stops listening to the lent claim when it is closed or discarded', async () => {
+        const live = await hooked();
+        const claim = live.host.lendableClaim as AppClaim;
+        const real = claim.onLost.bind(claim);
+        let active = 0;
+        vi.spyOn(claim, 'onLost').mockImplementation((fn) => {
+          active++;
+          const off = real(fn);
+          return () => {
+            active--;
+            off();
+          };
+        });
+        const a = await fork(live);
+        expect(active).toBe(1);
+        expect(await a.draft.discardIfEmpty()).toBe(true);
+        expect(active).toBe(0);
+        const b = await fork(live);
+        expect(active).toBe(1);
+        await b.draft.discard();
+        expect(active).toBe(0);
+        const c = await fork(live);
+        await c.draft.close();
+        expect(active).toBe(0);
+      });
+
       it('never releases the lent claim: closing the draft leaves live changing', async () => {
         const live = await hooked();
         const d = await fork(live);

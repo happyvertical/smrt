@@ -3156,6 +3156,7 @@ export class AppHost extends EventEmitter {
       if (at !== 0) return false; // changes since the base, or unreadable
       await this.drainInflight();
       this.closed = true;
+      this.unlisten?.();
       await this.app.terminate();
       if (draft.schema)
         await this.dropSideSchema(draft.schema, true, this.fence);
