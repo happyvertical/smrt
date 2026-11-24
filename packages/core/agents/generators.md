@@ -70,6 +70,16 @@ data, stored?)` (`src/request-input.ts`, over `resolveWriteBody` in
   unless the model's `api.writable` names the accessor; otherwise set it
   server-side. Without `read` options for the request none is held, so
   every `readPermission` field counts as hidden here.
+  **Known limit (#5603): a setter that reads a hidden field.** The engine does
+  not proxy reads inside accessors, so `set label(v) { if (this.secretHash !==
+  v) this.secretHash = v; }` still lets an updater confirm the hidden value by
+  the accepted-versus-refused answer. Rule for model authors: a setter must
+  not read a field some callers cannot read (`@field({ sensitive: true })` or
+  `readPermission`); assign it unconditionally, or branch in a method no
+  caller-writable key reaches. `pnpm knowledge:check` enforces it as the
+  `setter-reads-hidden-field` error (scanner `lintSetterHiddenReads`):
+  syntactic, direct `this.f` reads only; aliases, dynamic keys, helper calls,
+  and parents in other files are not followed.
   Tests: `__tests__/protected-field-alias.test.ts`,
   `commerce/src/__tests__/tax-accessor-writes.test.ts`.
 - The refusal is `FieldNotWritableError`: code
