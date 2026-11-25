@@ -43,7 +43,7 @@ import {
   runWithMailSystemAccess,
   withoutListBounds,
 } from './access.js';
-import { AttachmentStorageError } from './attachment-storage.js';
+import { isAttachmentStorageError } from './attachment-storage.js';
 import { notificationSha256, withTenant } from './host.js';
 import type { Account } from './models/Account.js';
 import type { Message } from './models/Message.js';
@@ -321,7 +321,7 @@ async function readBoundContent(row: {
   try {
     return await row.readContent();
   } catch (error) {
-    if (error instanceof AttachmentStorageError) return null;
+    if (isAttachmentStorageError(error)) return null;
     throw error;
   }
 }

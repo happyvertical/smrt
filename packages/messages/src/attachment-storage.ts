@@ -28,6 +28,13 @@ export class AttachmentStorageError extends Error {
   }
 }
 
+/** By name, so a copy of this module loaded twice still recognises it. */
+export function isAttachmentStorageError(
+  error: unknown,
+): error is AttachmentStorageError {
+  return error instanceof Error && error.name === 'AttachmentStorageError';
+}
+
 interface AttachmentStorageState {
   /** Real path of the configured root. */
   root: string | null;

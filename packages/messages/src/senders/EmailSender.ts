@@ -8,7 +8,7 @@ import {
  */
 
 import type { Attachment, EmailClient } from '@happyvertical/email';
-import { AttachmentStorageError } from '../attachment-storage.js';
+import { isAttachmentStorageError } from '../attachment-storage.js';
 import type { Email } from '../models/Email';
 import type { EmailAccount } from '../models/EmailAccount';
 import { assertApprovedAttachments } from '../send-approval.js';
@@ -149,7 +149,7 @@ export class EmailSender implements MessageSenderInterface {
       try {
         content = await attachment.readContent();
       } catch (error) {
-        if (error instanceof AttachmentStorageError) {
+        if (isAttachmentStorageError(error)) {
           throw new Error(
             `Attachment "${attachment.filename}" was not sent: ${error.message}`,
           );
