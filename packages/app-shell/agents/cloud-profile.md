@@ -122,7 +122,7 @@ real server). The login is a NOSUPERUSER NOBYPASSRLS role that owns the tables;
 two owners go through the real stores, then the assertions go around the
 application layer (raw SQL for the other owner's row id) and fail when the
 policies are removed. It also runs the generated decide route for two owners
-(the owner decides their own approval, the other gets a 404). The hosted claim's
+(the owner decides their own approval, the other gets a 404; the generated route is a build output, so the test performs its three steps and `shell-routes.test.ts` generates the real route from the real manifest and pins those steps, in order). The hosted claim's
 binding runs only on the real-server lane (`claimAppDatabase` is PostgreSQL only).
 
 Desktop (tenancy interceptor ON in the local runtime): optional-mode rows

@@ -15,30 +15,9 @@ import { rmSync } from 'node:fs';
 import { postgresPrincipalSettings } from '@happyvertical/smrt-users/postgres-settings';
 import { getDatabase } from '@happyvertical/sql';
 import { importPGlite } from '@happyvertical/sql/pglite';
-import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
-
-// The generated item route reads through the runtime's REQUEST database. The
-// stand-in below is set per call to one that carries the session's own settings
-// (tenant and permissions, never the store marker), as the runtime's RLS
-// request transaction does.
-const request = vi.hoisted(() => ({
-  collection: null as null | ((name: string) => Promise<unknown>),
-}));
-vi.mock('$lib/server/smrt', () => ({
-  // The legacy exports a generated route probes for first.
-  getCollection: undefined,
-  getSmrtConfig: undefined,
-  runtime: {
-    getCollection: (name: string) => {
-      if (!request.collection) throw new Error('no request in flight');
-      return request.collection(name);
-    },
-    classOptions: () => ({}),
-  },
-}));
+import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 
 import type { DatabaseConfig } from '../../engine/db/index.ts';
-import * as decideRoute from '../../routes/api/approvals/[id]/decide/+server.ts';
 import { App } from '../objects/App.ts';
 import { ApprovalCollection } from '../objects/Approval.ts';
 import { applyOwnBatch } from './approvals.ts';
@@ -318,7 +297,7 @@ describe.each(backends)('shell tables, forced RLS (%s)', (backend) => {
     });
   });
 
-  /** Run the generated decide route as `who`, its collections on a request database that carries `permissions`. */
+  /** Run what the generated decide route does as `who`, on a request database that carries `permissions`. */
   const decideAs = async (
     who: CloudHarness['a'],
     id: string,
@@ -360,34 +339,20 @@ describe.each(backends)('shell tables, forced RLS (%s)', (backend) => {
         return typeof v === 'function' ? v.bind(target) : v;
       },
     });
-    request.collection = async () =>
-      ApprovalCollection.create({ db: requestDb as never });
-    try {
-      return await runAs(who, async () =>
-        decideRoute.POST({
-          locals: {
-            user: { id: who.id, tenantId: who.tenantId },
-            tenantContext: {
-              tenantId: who.tenantId,
-              permissions: new Set(permissions),
-            },
-            permissions,
-          },
-          params: { id },
-          request: new Request('http://localhost/x', {
-            method: 'POST',
-            body: JSON.stringify({ approve: false }),
-          }),
-        } as never),
-      );
-    } catch (error) {
-      return error as { status?: number };
-    } finally {
-      request.collection = null;
-    }
+    // The generated `POST /api/approvals/[id]/decide` (a build output, not in the
+    // repository) does exactly this: the permission gate, the row loaded through
+    // the request's own database (404 when it is not visible), then `decide`.
+    if (!permissions.includes('approvals.update')) return { status: 403 };
+    return runAs(who, async () => {
+      const item = await (
+        await ApprovalCollection.create({ db: requestDb as never })
+      ).get(id);
+      if (!item) return { status: 404 };
+      return { status: 200, outcome: await item.decide(false) };
+    });
   };
 
-  it('lets an owner decide their own approval through the generated route, and nobody else’s', async () => {
+  it('lets an owner decide their own approval the way the generated route loads it, and nobody else’s', async () => {
     const pending: Record<string, string> = {};
     for (const owner of [h.a, h.b])
       pending[owner.tenantId] = await runAs(owner, async () => {
@@ -406,30 +371,23 @@ describe.each(backends)('shell tables, forced RLS (%s)', (backend) => {
       });
     const owned = ['approvals.read', 'approvals.update'];
     // Another owner's id: the policy hides the row, so the route says 404.
-    const other = (await decideAs(h.b, pending[h.a.tenantId], owned)) as {
-      status?: number;
-    };
-    expect(other.status).toBe(404);
+    expect((await decideAs(h.b, pending[h.a.tenantId], owned)).status).toBe(
+      404,
+    );
     // A session without the read permission sees nothing either.
-    const noRead = (await decideAs(h.a, pending[h.a.tenantId], [
-      'approvals.update',
-    ])) as { status?: number };
-    expect(noRead.status).toBe(404);
+    expect(
+      (await decideAs(h.a, pending[h.a.tenantId], ['approvals.update'])).status,
+    ).toBe(404);
     // The owner's own: loaded through their request database, decided by the shell.
-    const mine = (await decideAs(
-      h.a,
-      pending[h.a.tenantId],
-      owned,
-    )) as Response;
+    const mine = await decideAs(h.a, pending[h.a.tenantId], owned);
     expect(mine.status).toBe(200);
-    expect(await mine.json()).toMatchObject({
-      action: 'decide',
-      result: { id: pending[h.a.tenantId], status: 'denied' },
+    expect(mine).toMatchObject({
+      outcome: { id: pending[h.a.tenantId], status: 'denied' },
     });
     // And bob's own is still his to decide.
-    expect(
-      ((await decideAs(h.b, pending[h.b.tenantId], owned)) as Response).status,
-    ).toBe(200);
+    expect((await decideAs(h.b, pending[h.b.tenantId], owned)).status).toBe(
+      200,
+    );
   });
 
   it('puts every shell table under forced row-level security and finds the login subject to it', async () => {

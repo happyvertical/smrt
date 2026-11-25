@@ -4,7 +4,13 @@
 // never the store marker, so each one is a place the policy must admit on
 // purpose (`shellPolicySlugs`). Pin the set: a new instance action or CRUD on
 // a shell model fails here until its policy has been thought through.
-import { ObjectRegistry } from '@happyvertical/smrt-core';
+import { mkdtempSync, readFileSync, rmSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
+import {
+  findManifestEntryByQualifiedName,
+  ObjectRegistry,
+} from '@happyvertical/smrt-core';
 import { describe, expect, it } from 'vitest';
 import '../objects/index.ts';
 import { SHELL_TENANT_MODELS, shellPolicySlugs } from './shell-tenancy.ts';
@@ -57,5 +63,62 @@ describe('generated routes that load a shell row by id', () => {
       expect(shellPolicySlugs('Approval')[action]).toEqual([
         'smrt-app-shell.store',
       ]);
+  });
+});
+
+// The RLS suite replays what the generated `POST /api/approvals/[id]/decide`
+// does (the route file is a build output, not in the repository). Generate the
+// real one from the real manifest and pin the three steps the replay relies on,
+// so a generator change cannot drift from it unseen.
+describe('the generated approvals decide route', () => {
+  it('still checks the update permission, loads the row through the request-scoped collection, then calls decide', async () => {
+    const { generateSvelteKitRoutes } = await import(
+      '../../../../core/src/vite-plugin/sveltekit-generator.ts'
+    );
+    const entry = findManifestEntryByQualifiedName(
+      '@happyvertical/smrt-app-shell:Approval',
+    );
+    expect(entry).toBeDefined();
+    const root = mkdtempSync(join(tmpdir(), 'decide-route-'));
+    try {
+      await generateSvelteKitRoutes(
+        root,
+        {
+          packageName: '@happyvertical/smrt-app-shell',
+          objects: { Approval: entry },
+        } as never,
+        {
+          enabled: true,
+          routesDir: 'src/routes/api',
+          objectsDir: 'src/lib/objects',
+          configPath: 'src/lib/server',
+          configFileName: 'smrt.ts',
+        },
+      );
+      const source = readFileSync(
+        join(root, 'src/routes/api/approvals/[id]/decide/+server.ts'),
+        'utf8',
+      );
+      const at = (needle: string) => {
+        const i = source.indexOf(needle);
+        expect(i, needle).toBeGreaterThan(-1);
+        return i;
+      };
+      // In this order: permission gate, request-scoped load, 404, decide.
+      const order = [
+        at('requireRoutePermission(locals, "update")'),
+        at('await getCollection<Approval>('),
+        at('collection.get(params.id)'),
+        at('item.decide('),
+      ];
+      expect(order).toEqual([...order].sort((a, b) => a - b));
+      // An invisible row is a 404 before decide is reached.
+      const missing = source.indexOf('throw error(404', order[2]);
+      expect(missing).toBeGreaterThan(order[2]);
+      expect(missing).toBeLessThan(order[3]);
+      expect(source).toContain('createGeneratedCollectionAccess(');
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
   });
 });

@@ -118,7 +118,14 @@ function readAmbientAiUsageTenant(): string | undefined {
  * Returns the user id of the current async scope's principal, or
  * `null`/`undefined` when there is none (jobs, service principals).
  */
-export type AiUsageUserResolver = () => string | null | undefined;
+export type AiUsageUserResolver = (
+  /**
+   * The tenant the row is billed to, when known. A resolver that knows its
+   * principal's tenant must answer no user for another tenant: a user is
+   * never metered against a tenant they do not act in.
+   */
+  tenantId?: string | null,
+) => string | null | undefined;
 
 /** The usage tag that names the acting user (#4760 per-user spend). */
 export const AI_USAGE_USER_TAG = 'userId';
@@ -148,11 +155,11 @@ export function getAiUsageUserResolver(): AiUsageUserResolver | undefined {
   return globalThis.__smrtAiUsageUserResolver;
 }
 
-function readAmbientAiUsageUser(): string | undefined {
+function readAmbientAiUsageUser(tenantId?: string | null): string | undefined {
   const resolver = globalThis.__smrtAiUsageUserResolver;
   if (!resolver) return undefined;
   try {
-    return nonEmptyString(resolver());
+    return nonEmptyString(resolver(tenantId));
   } catch {
     // A misbehaving resolver never breaks usage recording; attribute nothing.
     return undefined;
@@ -322,7 +329,7 @@ export function normalizeAiUsageEvent(
     attribution.tags[AI_USAGE_USER_TAG] !== ''
       ? attribution.tags[AI_USAGE_USER_TAG]
       : undefined;
-  const user = attributedUser ?? readAmbientAiUsageUser();
+  const user = attributedUser ?? readAmbientAiUsageUser(attribution.tenantId);
   const { [AI_USAGE_USER_TAG]: _callerUser, ...callTags } = eventTags ?? {};
   const tags =
     attribution.tags || eventTags || user
