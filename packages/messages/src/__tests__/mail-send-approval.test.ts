@@ -9,7 +9,7 @@
  */
 
 import { randomUUID } from 'node:crypto';
-import { mkdtemp, rm, writeFile } from 'node:fs/promises';
+import { mkdir, mkdtemp, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import {
@@ -633,18 +633,21 @@ describe('agent send policy and held sends (#5141)', () => {
 
     it('binds attachment bytes, not just the file path', async () => {
       const dir = await mkdtemp(join(tmpdir(), 'smrt-held-send-'));
-      const file = join(dir, 'invoice.pdf');
-      await writeFile(file, 'original bytes');
+      let file = '';
       configureAttachmentStorage({ root: dir });
       try {
         const draft = await draftAsAgent();
+        const acct = String(draft.accountId);
+        await mkdir(join(dir, acct));
+        file = join(dir, acct, 'invoice.pdf');
+        await writeFile(file, 'original bytes');
         await as(asAgent(), async () => {
           const attachment = new Attachment({
             ...options,
             tenantId: tenantA,
             messageId: draft.id as string,
             filename: 'invoice.pdf',
-            filePath: 'invoice.pdf',
+            filePath: `${acct}/invoice.pdf`,
           });
           await attachment.initialize();
           await attachment.save();
@@ -664,17 +667,21 @@ describe('agent send policy and held sends (#5141)', () => {
 
     it('binds a refused attachment path like an unreadable file and sends nothing', async () => {
       const dir = await mkdtemp(join(tmpdir(), 'smrt-held-send-'));
-      await writeFile(join(dir, 'invoice.pdf'), 'original bytes');
+      let file = '';
       configureAttachmentStorage({ root: dir });
       try {
         const draft = await draftAsAgent();
+        const acct = String(draft.accountId);
+        await mkdir(join(dir, acct));
+        file = join(dir, acct, 'invoice.pdf');
+        await writeFile(file, 'original bytes');
         await as(asAgent(), async () => {
           const attachment = new Attachment({
             ...options,
             tenantId: tenantA,
             messageId: draft.id as string,
             filename: 'invoice.pdf',
-            filePath: 'invoice.pdf',
+            filePath: `${acct}/invoice.pdf`,
           });
           await attachment.initialize();
           await attachment.save();
@@ -682,7 +689,7 @@ describe('agent send policy and held sends (#5141)', () => {
           await db.update(
             attachment.tableName,
             { id: attachment.id },
-            { file_path: join(dir, 'invoice.pdf') },
+            { file_path: file },
           );
         });
         const id = await pendingId(draft);
@@ -709,18 +716,21 @@ describe('agent send policy and held sends (#5141)', () => {
 
     it('checks the exact attachment bytes the sender hands over', async () => {
       const dir = await mkdtemp(join(tmpdir(), 'smrt-held-send-'));
-      const file = join(dir, 'invoice.pdf');
-      await writeFile(file, 'original bytes');
+      let file = '';
       configureAttachmentStorage({ root: dir });
       try {
         const draft = await draftAsAgent();
+        const acct = String(draft.accountId);
+        await mkdir(join(dir, acct));
+        file = join(dir, acct, 'invoice.pdf');
+        await writeFile(file, 'original bytes');
         await as(asAgent(), async () => {
           const attachment = new Attachment({
             ...options,
             tenantId: tenantA,
             messageId: draft.id as string,
             filename: 'invoice.pdf',
-            filePath: 'invoice.pdf',
+            filePath: `${acct}/invoice.pdf`,
           });
           await attachment.initialize();
           await attachment.save();

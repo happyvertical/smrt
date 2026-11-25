@@ -158,7 +158,7 @@ export class EmailSender implements MessageSenderInterface {
       }
       if (!content) {
         throw new Error(
-          `Attachment "${attachment.filename}" could not be read from "${attachment.filePath}": ` +
+          `Attachment "${attachment.filename}" could not be read: ` +
             'the file is missing or unreadable (see Attachment.readContent()).',
         );
       }

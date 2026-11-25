@@ -113,7 +113,7 @@ Both fail closed. Details: [agents/mail-search.md](agents/mail-search.md).
 
 ## Attachment storage root (#5645)
 
-`Attachment.filePath` is relative to the root set once at startup with
+`Attachment.filePath` is `<accountId>/...` relative to the root set once at startup with
 `configureAttachmentStorage({ root })` (beside `configureMailAccess`). Without
 it stored files are never read (fail closed). Rules, send behaviour and the
 upgrade step: [agents/attachment-storage.md](agents/attachment-storage.md).

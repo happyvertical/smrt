@@ -23,8 +23,8 @@ import {
   learnMailAccessOptions,
 } from '../access.js';
 import {
-  normalizeAttachmentPath,
   readStoredAttachmentFile,
+  scopeAttachmentPath,
 } from '../attachment-storage.js';
 import type { AttachmentOptions } from '../types';
 
@@ -101,9 +101,15 @@ export class Attachment extends SmrtObject {
    * an attachment cannot be moved on or off a draft without the scope.
    */
   override async save(options?: SmrtSaveOptions): Promise<this> {
-    // A stored path is relative to the attachment storage root: refuse
-    // anything else before it is written, and keep the normalised form.
-    if (this.filePath) this.filePath = normalizeAttachmentPath(this.filePath);
+    // A stored path is relative to the attachment storage root and under the
+    // message account's directory: refuse anything else before it is written,
+    // and keep the normalised form.
+    if (this.filePath) {
+      this.filePath = scopeAttachmentPath(
+        this.filePath,
+        await this.currentAccountId(),
+      );
+    }
     await this.assertDraftParentWrite();
     return super.save(options);
   }
@@ -113,6 +119,26 @@ export class Attachment extends SmrtObject {
   ): Promise<void> {
     await this.assertDraftParentWrite();
     return super.delete(options);
+  }
+
+  /**
+   * The account of the message this row is stored on now, read from the
+   * stored message (never from the row's own `accountId`), or null.
+   */
+  private async currentAccountId(): Promise<string | null> {
+    if (!this.messageId) return null;
+    try {
+      const { MessageCollection } = await import(
+        '../collections/MessageCollection.js'
+      );
+      const messages = await MessageCollection.create(this.options as never);
+      const parent = (await this.db.get(messages.tableName, {
+        id: this.messageId,
+      })) as Record<string, unknown> | null;
+      return (parent?.account_id as string | null) || null;
+    } catch {
+      return null;
+    }
   }
 
   /**
@@ -240,14 +266,18 @@ export class Attachment extends SmrtObject {
    * Read the stored file's bytes, or null when the row has no file or the
    * file is missing or unreadable.
    *
-   * `filePath` is relative to the root set with `configureAttachmentStorage`.
+   * `filePath` is relative to the root set with `configureAttachmentStorage`
+   * and must lie under `<accountId>/` of the message's current account.
    * Throws `AttachmentStorageError` when no root is configured, or when the
-   * stored path (or a symlink under it) leaves the root; this includes rows
-   * stored before the root existed with an absolute path. The bytes are read
+   * stored path (or a symlink under it) leaves the root or the account's
+   * directory; this includes rows stored before the root existed. The bytes are read
    * raw: decoding a PDF as UTF-8 corrupts it (#3808).
    */
   async readContent(): Promise<Buffer | null> {
     if (!this.filePath) return null;
-    return readStoredAttachmentFile(this.filePath);
+    return readStoredAttachmentFile(
+      this.filePath,
+      await this.currentAccountId(),
+    );
   }
 }

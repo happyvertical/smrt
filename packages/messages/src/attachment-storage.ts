@@ -109,12 +109,30 @@ export function normalizeAttachmentPath(filePath: unknown): string {
 }
 
 /**
+ * The normalised path of an attachment owned by `accountId`: it must lie under
+ * `<accountId>/` (account ids are unique across tenants, so this scopes both
+ * tenant and account) and name a file below that directory.
+ */
+export function scopeAttachmentPath(
+  filePath: unknown,
+  accountId: string | null | undefined,
+): string {
+  const normalized = normalizeAttachmentPath(filePath);
+  if (!accountId || !normalized.startsWith(`${accountId}/`)) {
+    refuse('it is not under the message account directory');
+  }
+  return normalized;
+}
+
+/**
  * Read a stored attachment file: `null` when it is missing or unreadable, an
- * {@link AttachmentStorageError} when no root is configured or the path (or
- * where a symlink leads) is outside the root.
+ * {@link AttachmentStorageError} when no root is configured, the path is not
+ * under `accountId`'s directory, or the path (or where a symlink leads) is
+ * outside the root.
  */
 export async function readStoredAttachmentFile(
   filePath: string,
+  accountId: string | null | undefined,
 ): Promise<Buffer | null> {
   const root = state().root;
   if (!root) {
@@ -123,7 +141,7 @@ export async function readStoredAttachmentFile(
       500,
     );
   }
-  const segments = normalizeAttachmentPath(filePath).split('/');
+  const segments = scopeAttachmentPath(filePath, accountId).split('/');
   const read = await readAttachmentFileUnderRoot(root, segments);
   if (read.status === 'outside') {
     throw new AttachmentStorageError(

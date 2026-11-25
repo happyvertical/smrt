@@ -164,6 +164,8 @@ describe('EmailSender send-time attachments', () => {
 describe('Email.send with stored attachments', () => {
   let db: DatabaseInterface;
   let dir: string;
+  let acctId: string;
+  let base: string;
   let client: ReturnType<typeof makeClient>;
 
   beforeEach(async () => {
@@ -171,6 +173,18 @@ describe('Email.send with stored attachments', () => {
     await prepareMessageParents(db);
     dir = mkdtempSync(join(tmpdir(), 'smrt-email-attachments-'));
     configureAttachmentStorage({ root: dir });
+    const owner = new EmailAccount({
+      db,
+      name: 'Shop',
+      email: 'shop@example.com',
+      providerType: 'smtp',
+      isActive: true,
+    });
+    await owner.initialize();
+    await owner.save();
+    acctId = owner.id ?? '';
+    base = join(dir, acctId);
+    mkdirSync(base);
     client = makeClient();
     vi.spyOn(EmailAccount.prototype, 'createClient').mockResolvedValue(
       client as any,
@@ -184,19 +198,10 @@ describe('Email.send with stored attachments', () => {
     if (db && typeof db.close === 'function') await db.close();
   });
 
-  async function makeEmail() {
-    const account = new EmailAccount({
-      db,
-      name: 'Shop',
-      email: 'shop@example.com',
-      providerType: 'smtp',
-      isActive: true,
-    });
-    await account.initialize();
-    await account.save();
+  async function makeEmail(accountId = acctId) {
     const emails = await EmailCollection.create({ db });
     const email = await emails.create({
-      accountId: account.id ?? '',
+      accountId,
       subject: 'Purchase order PO-1042',
       textBody: 'Please find our purchase order attached.',
       toAddresses: JSON.stringify([{ address: 'orders@vendor.example' }]),
@@ -209,8 +214,13 @@ describe('Email.send with stored attachments', () => {
   async function storeAttachment(
     messageId: string,
     overrides: Record<string, unknown> = {},
+    rawPath = false,
   ) {
     const attachments = await AttachmentCollection.create({ db });
+    // Stored files live under the message account's directory.
+    if (typeof overrides.filePath === 'string' && !rawPath) {
+      overrides = { ...overrides, filePath: `${acctId}/${overrides.filePath}` };
+    }
     return attachments.create({
       messageId,
       filename: 'PO-1042.pdf',
@@ -229,7 +239,7 @@ describe('Email.send with stored attachments', () => {
   }
 
   it('reads the stored file and sends it as an attachment', async () => {
-    writeFileSync(join(dir, 'PO-1042.pdf'), PDF_BYTES);
+    writeFileSync(join(base, 'PO-1042.pdf'), PDF_BYTES);
     const email = await makeEmail();
     await storeAttachment(email.id ?? '', { filePath: 'PO-1042.pdf' });
 
@@ -257,14 +267,14 @@ describe('Email.send with stored attachments', () => {
   });
 
   it('reads a stored file below a subdirectory and normalises the stored path', async () => {
-    mkdirSync(join(dir, 'po'));
-    writeFileSync(join(dir, 'po', 'PO-1042.pdf'), PDF_BYTES);
+    mkdirSync(join(base, 'po'));
+    writeFileSync(join(base, 'po', 'PO-1042.pdf'), PDF_BYTES);
     const email = await makeEmail();
     const row = await storeAttachment(email.id ?? '', {
       filePath: './po//PO-1042.pdf',
     });
 
-    expect(row.filePath).toBe('po/PO-1042.pdf');
+    expect(row.filePath).toBe(`${acctId}/po/PO-1042.pdf`);
     const result = await email.send();
 
     expect(result.error).toBeUndefined();
@@ -284,9 +294,9 @@ describe('Email.send with stored attachments', () => {
     ['a drive path', 'C:/x.pdf'],
   ])('refuses to store %s', async (_name, filePath) => {
     const email = await makeEmail();
-    await expect(storeAttachment(email.id ?? '', { filePath })).rejects.toThrow(
-      /Attachment filePath refused/,
-    );
+    await expect(
+      storeAttachment(email.id ?? '', { filePath }, true),
+    ).rejects.toThrow(/Attachment filePath refused/);
     const rows = await (await AttachmentCollection.create({ db })).list({
       where: { messageId: email.id },
     });
@@ -355,8 +365,101 @@ describe('Email.send with stored attachments', () => {
     expect(stored?.filePath).toBe('/legacy/PO-1042.pdf');
   });
 
+  async function otherAccount() {
+    const other = new EmailAccount({
+      db,
+      name: 'Other',
+      email: 'other@example.com',
+      providerType: 'smtp',
+      isActive: true,
+    });
+    await other.initialize();
+    await other.save();
+    mkdirSync(join(dir, other.id ?? ''));
+    return other.id ?? '';
+  }
+
+  it("refuses to store a path under another account's directory", async () => {
+    const otherId = await otherAccount();
+    writeFileSync(join(dir, otherId, 'PO-1042.pdf'), PDF_BYTES);
+    const email = await makeEmail();
+    for (const filePath of [
+      `${otherId}/PO-1042.pdf`,
+      'PO-1042.pdf',
+      `${acctId}`,
+      `${acctId}x/PO-1042.pdf`,
+    ]) {
+      await expect(
+        storeAttachment(email.id ?? '', { filePath }, true),
+      ).rejects.toThrow(/message account directory/);
+    }
+  });
+
+  it("refuses to send another account's file stored past the write check", async () => {
+    const otherId = await otherAccount();
+    writeFileSync(join(dir, otherId, 'PO-1042.pdf'), PDF_BYTES);
+    const email = await makeEmail();
+    const row = await storeAttachment(email.id ?? '', {
+      filePath: 'PO-1042.pdf',
+    });
+    const table = (await AttachmentCollection.create({ db })).tableName;
+    await db.update(
+      table,
+      { id: row.id },
+      { file_path: `${otherId}/PO-1042.pdf` },
+    );
+
+    const result = await email.send();
+
+    expect(result.success).toBe(false);
+    expect(result.error).toContain('message account directory');
+    expect(result.error).not.toContain(otherId);
+    expect(client.send).not.toHaveBeenCalled();
+  });
+
+  it('refuses a legacy path outside any account directory', async () => {
+    writeFileSync(join(dir, 'loose.pdf'), PDF_BYTES);
+    const email = await makeEmail();
+    const row = await storeAttachment(email.id ?? '', {
+      filePath: 'PO-1042.pdf',
+    });
+    const table = (await AttachmentCollection.create({ db })).tableName;
+    await db.update(table, { id: row.id }, { file_path: 'loose.pdf' });
+
+    const result = await email.send();
+
+    expect(result.success).toBe(false);
+    expect(client.send).not.toHaveBeenCalled();
+  });
+
+  it('re-checks the account when a row moves to another account message', async () => {
+    writeFileSync(join(base, 'PO-1042.pdf'), PDF_BYTES);
+    const email = await makeEmail();
+    const row = await storeAttachment(email.id ?? '', {
+      filePath: 'PO-1042.pdf',
+    });
+    const otherId = await otherAccount();
+    const foreign = await makeEmail(otherId);
+    const table = (await AttachmentCollection.create({ db })).tableName;
+
+    // Moved by a raw write: the file does not follow it across.
+    await db.update(table, { id: row.id }, { message_id: foreign.id });
+    const result = await foreign.send();
+    expect(result.success).toBe(false);
+    expect(result.error).toContain('message account directory');
+    expect(client.send).not.toHaveBeenCalled();
+
+    // Moved through save(): refused at write.
+    const moved = await (await AttachmentCollection.create({ db })).get({
+      id: row.id,
+    });
+    if (!moved) throw new Error('row missing');
+    moved.messageId = foreign.id ?? '';
+    await expect(moved.save()).rejects.toThrow(/message account directory/);
+  });
+
   it('fails the send closed when no storage root is configured', async () => {
-    writeFileSync(join(dir, 'PO-1042.pdf'), PDF_BYTES);
+    writeFileSync(join(base, 'PO-1042.pdf'), PDF_BYTES);
     const email = await makeEmail();
     await storeAttachment(email.id ?? '', { filePath: 'PO-1042.pdf' });
     resetAttachmentStorage();
@@ -374,10 +477,10 @@ describe('Email.send with stored attachments', () => {
       const outside = mkdtempSync(join(tmpdir(), 'smrt-outside-'));
       try {
         writeFileSync(join(outside, 'secret.txt'), 'secret');
-        symlinkSync(join(outside, 'secret.txt'), join(dir, 'escape.pdf'));
-        symlinkSync(outside, join(dir, 'escape-dir'));
-        writeFileSync(join(dir, 'PO-1042.pdf'), PDF_BYTES);
-        symlinkSync(join(dir, 'PO-1042.pdf'), join(dir, 'alias.pdf'));
+        symlinkSync(join(outside, 'secret.txt'), join(base, 'escape.pdf'));
+        symlinkSync(outside, join(base, 'escape-dir'));
+        writeFileSync(join(base, 'PO-1042.pdf'), PDF_BYTES);
+        symlinkSync(join(base, 'PO-1042.pdf'), join(base, 'alias.pdf'));
 
         const email = await makeEmail();
         await storeAttachment(email.id ?? '', { filePath: 'escape.pdf' });
@@ -410,7 +513,7 @@ describe('Email.send with stored attachments', () => {
   it.skipIf(process.platform === 'win32')(
     'works when the root itself is a symlink',
     async () => {
-      writeFileSync(join(dir, 'PO-1042.pdf'), PDF_BYTES);
+      writeFileSync(join(base, 'PO-1042.pdf'), PDF_BYTES);
       const holder = mkdtempSync(join(tmpdir(), 'smrt-root-link-'));
       try {
         const link = join(holder, 'root');
@@ -432,7 +535,7 @@ describe('Email.send with stored attachments', () => {
   );
 
   it('sends stored rows first, then the send-time attachments', async () => {
-    writeFileSync(join(dir, 'PO-1042.pdf'), PDF_BYTES);
+    writeFileSync(join(base, 'PO-1042.pdf'), PDF_BYTES);
     const email = await makeEmail();
     email.hasAttachments = false;
     await email.save();
@@ -487,7 +590,7 @@ describe('Email.send with stored attachments', () => {
     expect(result.error).toContain(
       'Attachment "PO-1042.pdf" could not be read',
     );
-    expect(result.error).toContain(filePath);
+    expect(result.error).not.toContain(filePath);
     expect(client.send).not.toHaveBeenCalled();
     // Recorded on the message exactly like a transport failure.
     expect(await reload(email.id ?? '')).toMatchObject({

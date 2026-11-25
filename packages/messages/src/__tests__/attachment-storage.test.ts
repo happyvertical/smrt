@@ -1,6 +1,6 @@
 /**
  * Attachment storage root: configuration, path rules and reads (#5645).
- * Real temp directories; no database is needed to read a row's file.
+ * Real temp directories; no database is needed for the file layer.
  */
 
 import {
@@ -17,14 +17,22 @@ import {
   AttachmentStorageError,
   configureAttachmentStorage,
   normalizeAttachmentPath,
+  readStoredAttachmentFile,
   resetAttachmentStorage,
+  scopeAttachmentPath,
 } from '../attachment-storage.js';
-import { Attachment } from '../models/Attachment.js';
+
+const ACCT = 'acct-1';
+const read = (filePath: string, account: string | null = ACCT) =>
+  readStoredAttachmentFile(filePath, account);
 
 describe('configureAttachmentStorage', () => {
   let dir: string;
+  let base: string;
   beforeEach(() => {
     dir = mkdtempSync(join(tmpdir(), 'smrt-attachment-root-'));
+    base = join(dir, ACCT);
+    mkdirSync(base);
   });
   afterEach(() => {
     resetAttachmentStorage();
@@ -46,25 +54,39 @@ describe('configureAttachmentStorage', () => {
   });
 
   it('reads nothing until a root is configured', async () => {
-    writeFileSync(join(dir, 'a.txt'), 'a');
-    const row = new Attachment({ filePath: 'a.txt' });
-    await expect(row.readContent()).rejects.toThrow(
+    writeFileSync(join(base, 'a.txt'), 'a');
+    await expect(read(`${ACCT}/a.txt`)).rejects.toThrow(
       /configureAttachmentStorage/,
     );
     configureAttachmentStorage({ root: dir });
-    expect((await row.readContent())?.toString()).toBe('a');
+    expect((await read(`${ACCT}/a.txt`))?.toString()).toBe('a');
     resetAttachmentStorage();
-    await expect(row.readContent()).rejects.toThrow(AttachmentStorageError);
+    await expect(read(`${ACCT}/a.txt`)).rejects.toThrow(AttachmentStorageError);
   });
 
-  it('returns null for a row without a file or a missing file', async () => {
+  it('returns null for a missing file or a directory', async () => {
     configureAttachmentStorage({ root: dir });
-    expect(await new Attachment({}).readContent()).toBeNull();
-    expect(await new Attachment({ filePath: 'nope.txt' }).readContent()).toBe(
-      null,
+    expect(await read(`${ACCT}/nope.txt`)).toBeNull();
+    mkdirSync(join(base, 'sub'));
+    expect(await read(`${ACCT}/sub`)).toBeNull();
+  });
+
+  it("refuses another account's directory, loose files and no account", async () => {
+    mkdirSync(join(dir, 'acct-2'));
+    writeFileSync(join(dir, 'acct-2', 'a.txt'), 'other');
+    writeFileSync(join(dir, 'loose.txt'), 'loose');
+    configureAttachmentStorage({ root: dir });
+    for (const filePath of [
+      'acct-2/a.txt',
+      'loose.txt',
+      ACCT,
+      'acct-10/a.txt',
+    ]) {
+      await expect(read(filePath)).rejects.toThrow(/account directory/);
+    }
+    await expect(read(`${ACCT}/a.txt`, null)).rejects.toThrow(
+      /account directory/,
     );
-    mkdirSync(join(dir, 'sub'));
-    expect(await new Attachment({ filePath: 'sub' }).readContent()).toBeNull();
   });
 
   it('refuses stored absolute and escaping paths on read', async () => {
@@ -75,12 +97,10 @@ describe('configureAttachmentStorage', () => {
       for (const filePath of [
         join(outside, 'secret.txt'),
         '../secret.txt',
-        `../${outside.split('/').pop()}/secret.txt`,
-        'a\\b',
+        `${ACCT}/../../secret.txt`,
+        `${ACCT}\\b`,
       ]) {
-        await expect(
-          new Attachment({ filePath }).readContent(),
-        ).rejects.toThrow(AttachmentStorageError);
+        await expect(read(filePath)).rejects.toThrow(AttachmentStorageError);
       }
     } finally {
       rmSync(outside, { recursive: true, force: true });
@@ -93,28 +113,43 @@ describe('configureAttachmentStorage', () => {
       const outside = mkdtempSync(join(tmpdir(), 'smrt-attachment-outside-'));
       try {
         writeFileSync(join(outside, 'secret.txt'), 'secret');
-        writeFileSync(join(dir, 'real.txt'), 'real');
-        symlinkSync(join(outside, 'secret.txt'), join(dir, 'out.txt'));
-        symlinkSync(outside, join(dir, 'outdir'));
-        symlinkSync(join(dir, 'real.txt'), join(dir, 'in.txt'));
+        writeFileSync(join(base, 'real.txt'), 'real');
+        symlinkSync(join(outside, 'secret.txt'), join(base, 'out.txt'));
+        symlinkSync(outside, join(base, 'outdir'));
+        symlinkSync(join(base, 'real.txt'), join(base, 'in.txt'));
         configureAttachmentStorage({ root: dir });
 
-        await expect(
-          new Attachment({ filePath: 'out.txt' }).readContent(),
-        ).rejects.toThrow(/outside the attachment storage root/);
-        await expect(
-          new Attachment({ filePath: 'outdir/secret.txt' }).readContent(),
-        ).rejects.toThrow(/outside/);
-        expect(
-          (
-            await new Attachment({ filePath: 'in.txt' }).readContent()
-          )?.toString(),
-        ).toBe('real');
+        await expect(read(`${ACCT}/out.txt`)).rejects.toThrow(
+          /outside the attachment storage root/,
+        );
+        await expect(read(`${ACCT}/outdir/secret.txt`)).rejects.toThrow(
+          /outside/,
+        );
+        expect((await read(`${ACCT}/in.txt`))?.toString()).toBe('real');
       } finally {
         rmSync(outside, { recursive: true, force: true });
       }
     },
   );
+});
+
+describe('scopeAttachmentPath', () => {
+  it('needs a file below the account directory', () => {
+    expect(scopeAttachmentPath('a1/x.pdf', 'a1')).toBe('a1/x.pdf');
+    expect(scopeAttachmentPath('./a1//d/x.pdf', 'a1')).toBe('a1/d/x.pdf');
+    for (const [path, account] of [
+      ['a1/x.pdf', 'a2'],
+      ['a1', 'a1'],
+      ['x.pdf', 'a1'],
+      ['a10/x.pdf', 'a1'],
+      ['a1/x.pdf', null],
+      ['a1/x.pdf', ''],
+    ] as const) {
+      expect(() => scopeAttachmentPath(path, account)).toThrow(
+        AttachmentStorageError,
+      );
+    }
+  });
 });
 
 describe('normalizeAttachmentPath', () => {
