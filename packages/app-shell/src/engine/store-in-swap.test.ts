@@ -1334,14 +1334,23 @@ describe.each(backends)('the version store in the swap (%s)', (backend) => {
         from: 'points',
         to: 'score',
       }).catch((e) => e);
-      // Wait for the migration to commit (the data is at v + 1), then end A's session.
-      for (let i = 0; i < 200; i++) {
+      // Wait for THIS change's migration to commit (`applied` names the change
+      // `change` journals; an earlier change leaves its own id there), then end
+      // A's session while its version write is paused.
+      let landed = false;
+      for (let i = 0; i < 200 && !landed; i++) {
         const m = await rows(
-          `SELECT value FROM "${live.schema}"._app_meta WHERE key = 'applied'`,
+          `SELECT key, value FROM "${live.schema}"._app_meta WHERE key IN ('applied', 'change')`,
         );
-        if (m.length) break;
-        await new Promise((r) => setTimeout(r, 50));
+        const by = Object.fromEntries(m.map((r) => [r.key, r.value]));
+        landed =
+          !!by.change &&
+          !!by.applied &&
+          JSON.parse(by.change).to === v + 1 &&
+          JSON.parse(by.change).id === by.applied;
+        if (!landed) await new Promise((r) => setTimeout(r, 50));
       }
+      expect(landed).toBe(true);
       await terminateClaim(live.schema);
       await waitFree(live.schema);
       const b = await openOn(tmp(), live.schema);
