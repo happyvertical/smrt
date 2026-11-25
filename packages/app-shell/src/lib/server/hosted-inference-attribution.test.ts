@@ -286,7 +286,8 @@ describe('no gate registered in cloud', () => {
       entitlement: { policy: 'gate-error' },
     });
     const rows = await usageRows();
-    expect(rows.every((r) => r.operation === 'blocked')).toBe(true);
+    expect(rows).toHaveLength(1);
+    expect(rows[0]?.operation).toBe('blocked');
   });
 
   it('a failed startup leaves the process closed, not open', async () => {

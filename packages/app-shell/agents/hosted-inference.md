@@ -27,7 +27,7 @@ features/subscriptions/gate on SQLite, fake resolver), `hooks.server.test.ts`.
 - **Whose calls are metered to whom (engine, MCP, jobs).** One rule everywhere:
   the gate and the usage recorder read the acting user from the ambient
   principal (tenancy context, then users session), and only for the tenant the
-  call bills. MCP tool dispatch (`dispatchTool`), every import-workflow step
+  call bills. Shell-side MCP tool dispatch (`dispatchTool`), every import-workflow step
   (`runAs` on the stored owner row) and the assistant run inside `runAs`, so
   their calls are metered to the user and held to the per-user cap; a call that
   names a tenant and has no principal (a scheduled job) is metered to the
