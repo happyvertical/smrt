@@ -206,6 +206,7 @@ test('the shell copy takes sources and config, never tests or generated files', 
   // svelte.config.js copies these into build/ (the desktop sidecar's entry).
   assert.equal(shellFileWanted('tools/start-entry.js'), true);
   assert.equal(shellFileWanted('tools/embed-entry.js'), true);
+  assert.equal(shellFileWanted('tools/operator-entry.js'), true);
   assert.equal(shellFileWanted('src/routes/routes.test.ts'), false);
   assert.equal(shellFileWanted('src/lib/server/smrt-register.ts'), false);
   assert.equal(shellFileWanted('src/routes/api/apps/addField/+server.ts'), false);

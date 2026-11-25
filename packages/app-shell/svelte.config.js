@@ -1,5 +1,6 @@
 import adapter from '@sveltejs/adapter-node';
 import { readFile, rename, writeFile } from 'node:fs/promises';
+import { fileURLToPath } from 'node:url';
 import { IMPORT_MAX_BYTES } from './src/lib/import-limits.ts';
 
 const nodeAdapter = adapter();
@@ -28,7 +29,11 @@ export default {
           ['tools/embed-entry.js', 'build/embed.js'],
           ['tools/operator-entry.js', 'build/operator.js'],
         ]) {
-          const text = await readFile(from, 'utf8');
+          // Beside this config, whatever the build's working directory is.
+          const text = await readFile(
+            fileURLToPath(new URL(`./${from}`, import.meta.url)),
+            'utf8',
+          );
           await writeFile(to, text.replaceAll('__IMPORT_MAX_BYTES__', limit));
         }
       },
