@@ -123,6 +123,16 @@ export class SupportCase extends SmrtObject {
   @field({ type: 'text', nullable: true })
   projectId: string | null = null;
 
+  /**
+   * Opaque external requester key (e.g. `<productKey>:<userId>`) composed by
+   * the consuming app to attribute a case to an external user or guest.
+   * smrt never interprets it; indexed so per-requester listing is cheap and
+   * {@link SupportCaseService.reassignRequester} can re-home cases atomically.
+   * Nullable, no backfill.
+   */
+  @field({ type: 'text', nullable: true, indexed: true })
+  requesterKey: string | null = null;
+
   /** Channel binding that created this case, when intake-created. */
   @foreignKey('SupportChannelBinding')
   bindingId: string | null = null;

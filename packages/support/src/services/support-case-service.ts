@@ -48,11 +48,31 @@ export interface OpenCaseInput {
   clientProfileId?: string | null;
   openedByProfileId?: string | null;
   projectId?: string | null;
+  /** Opaque app-composed external requester key; persisted, never interpreted. */
+  requesterKey?: string | null;
   bindingId?: string | null;
   threadKey?: string;
   planId?: string | null;
   preferredSpecialistId?: string | null;
   metadata?: Record<string, unknown>;
+}
+
+export interface ListByRequesterOptions {
+  /** Tenant scope; `null` = tenant-less cases. Required (explicit, never ambient). */
+  tenantId: string | null;
+  /** Only cases created at or after this instant. */
+  since?: Date;
+  limit?: number;
+  offset?: number;
+}
+
+export interface ReassignRequesterInput {
+  /** Tenant scope; `null` = tenant-less cases. Required. */
+  tenantId: string | null;
+  fromKey: string;
+  toKey: string;
+  /** Restrict the move to these case ids (still must currently hold `fromKey`). */
+  caseIds?: string[];
 }
 
 export interface RecordInteractionInput {
@@ -133,6 +153,67 @@ export class SupportCaseService {
     return found;
   }
 
+  /**
+   * List a requester's cases in a stable order (`created_at DESC, id DESC`),
+   * scoped to `tenantId`. Plain read; opens no transaction.
+   */
+  async listByRequester(
+    requesterKey: string,
+    options: ListByRequesterOptions,
+  ): Promise<SupportCase[]> {
+    if (!requesterKey) throw new Error('requesterKey is required');
+    const where: Record<string, unknown> = {
+      requesterKey,
+      tenantId: options.tenantId,
+    };
+    if (options.since) where['created_at >='] = options.since;
+    return this.cases.list({
+      where,
+      orderBy: 'created_at DESC, id DESC',
+      limit: options.limit ?? 50,
+      offset: options.offset ?? 0,
+    });
+  }
+
+  /**
+   * Atomically move cases from `fromKey` to `toKey` within a tenant with ONE
+   * conditional UPDATE, returning the moved case ids. Idempotent: once moved,
+   * a repeat call matches nothing and returns `[]`. Other keys and other
+   * tenants are never touched.
+   *
+   * Transaction contract: this method never opens its own transaction (a
+   * nested `transaction()` takes a new pooled connection, not a savepoint).
+   * To run it inside a caller's transaction (e.g. holding advisory locks),
+   * construct the service on the tx-bound database
+   * (`SupportCaseService.create({ db: tx })`); it then runs on that connection.
+   * It bypasses model save hooks (a bulk column update, no per-case events).
+   */
+  async reassignRequester(input: ReassignRequesterInput): Promise<string[]> {
+    const { fromKey, toKey, tenantId, caseIds } = input;
+    if (!fromKey || !toKey) {
+      throw new Error('fromKey and toKey are required');
+    }
+    if (fromKey === toKey) return [];
+    if (caseIds && caseIds.length === 0) return [];
+    const params: unknown[] = [toKey, new Date().toISOString(), fromKey];
+    let sql = `UPDATE ${this.cases.tableName} SET requester_key = ?, updated_at = ? WHERE requester_key = ?`;
+    if (tenantId === null) {
+      sql += ' AND tenant_id IS NULL';
+    } else {
+      sql += ' AND tenant_id = ?';
+      params.push(tenantId);
+    }
+    if (caseIds) {
+      sql += ` AND id IN (${caseIds.map(() => '?').join(', ')})`;
+      params.push(...caseIds);
+    }
+    sql += ' RETURNING id';
+    const result = await this.cases.db.query(sql, ...params);
+    return (result.rows as Array<Record<string, unknown>>).map((row) =>
+      String(row.id),
+    );
+  }
+
   /** The persisted id of a saved case (all facade entry points save first). */
   private caseIdOf(supportCase: SupportCase): string {
     if (!supportCase.id) {
@@ -174,6 +255,7 @@ export class SupportCaseService {
       clientProfileId: input.clientProfileId ?? null,
       openedByProfileId: input.openedByProfileId ?? null,
       projectId: input.projectId ?? null,
+      requesterKey: input.requesterKey ?? null,
       bindingId: input.bindingId ?? null,
       threadKey: input.threadKey ?? '',
       planId: null,

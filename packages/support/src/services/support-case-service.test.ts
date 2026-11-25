@@ -355,4 +355,120 @@ describe('SupportCaseService', () => {
     expect(timeline.some((item) => item.kind === 'interaction')).toBe(true);
     expect(timeline.some((item) => item.kind === 'event')).toBe(true);
   });
+
+  describe('requesterKey', () => {
+    it('persists the key on open and defaults to null', async () => {
+      const keyed = await service.openCase({
+        subject: 'keyed',
+        requesterKey: 'prod:user-1',
+      });
+      const plain = await service.openCase({ subject: 'plain' });
+      expect((await service.getCase(keyed.id ?? '')).requesterKey).toBe(
+        'prod:user-1',
+      );
+      expect((await service.getCase(plain.id ?? '')).requesterKey).toBeNull();
+    });
+
+    it('lists by requester, tenant-scoped, newest first, with limit/offset', async () => {
+      const a1 = await service.openCase({
+        subject: 'a1',
+        tenantId: 't-a',
+        requesterKey: 'p:u1',
+      });
+      const a2 = await service.openCase({
+        subject: 'a2',
+        tenantId: 't-a',
+        requesterKey: 'p:u1',
+      });
+      await service.openCase({
+        subject: 'other key',
+        tenantId: 't-a',
+        requesterKey: 'p:u2',
+      });
+      await service.openCase({
+        subject: 'other tenant',
+        tenantId: 't-b',
+        requesterKey: 'p:u1',
+      });
+      const ids = (await service.listByRequester('p:u1', { tenantId: 't-a' }))
+        .map((c) => c.id)
+        .sort();
+      expect(ids).toEqual([a1.id, a2.id].sort());
+
+      const ordered = await service.listByRequester('p:u1', {
+        tenantId: 't-a',
+      });
+      const stamps = ordered.map((c) => String(c.created_at));
+      expect([...stamps].sort().reverse()).toEqual(stamps);
+
+      const page = await service.listByRequester('p:u1', {
+        tenantId: 't-a',
+        limit: 1,
+        offset: 1,
+      });
+      expect(page).toHaveLength(1);
+      expect(page[0]?.id).toBe(ordered[1]?.id);
+
+      const future = await service.listByRequester('p:u1', {
+        tenantId: 't-a',
+        since: new Date(Date.now() + 3_600_000),
+      });
+      expect(future).toHaveLength(0);
+    });
+
+    it('reassigns within a tenant, idempotently, leaving others untouched', async () => {
+      const mine = await service.openCase({
+        subject: 'm1',
+        tenantId: 't-a',
+        requesterKey: 'p:guest',
+      });
+      const mine2 = await service.openCase({
+        subject: 'm2',
+        tenantId: 't-a',
+        requesterKey: 'p:guest',
+      });
+      const otherKey = await service.openCase({
+        subject: 'ok',
+        tenantId: 't-a',
+        requesterKey: 'p:someone',
+      });
+      const otherTenant = await service.openCase({
+        subject: 'ot',
+        tenantId: 't-b',
+        requesterKey: 'p:guest',
+      });
+
+      const subset = await service.reassignRequester({
+        tenantId: 't-a',
+        fromKey: 'p:guest',
+        toKey: 'p:user',
+        caseIds: [mine.id ?? ''],
+      });
+      expect(subset).toEqual([mine.id]);
+
+      const moved = await service.reassignRequester({
+        tenantId: 't-a',
+        fromKey: 'p:guest',
+        toKey: 'p:user',
+      });
+      expect(moved).toEqual([mine2.id]);
+      expect(
+        await service.reassignRequester({
+          tenantId: 't-a',
+          fromKey: 'p:guest',
+          toKey: 'p:user',
+        }),
+      ).toEqual([]);
+
+      expect((await service.getCase(mine.id ?? '')).requesterKey).toBe(
+        'p:user',
+      );
+      expect((await service.getCase(otherKey.id ?? '')).requesterKey).toBe(
+        'p:someone',
+      );
+      expect((await service.getCase(otherTenant.id ?? '')).requesterKey).toBe(
+        'p:guest',
+      );
+    });
+  });
 });
