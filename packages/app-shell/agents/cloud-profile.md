@@ -142,7 +142,8 @@ case in `inference-settings.test.ts`.
 `hideDeploymentRows(page)` (`inference-hosted-view.ts`): the operator's tier
 targets, aliases, fusions and the app-wide transcript setting are removed (the
 owner's interim decision: hide, not show read-only); what stays is the tenant's
-own tier overrides and default tier, key state and usage. The panel runs with
+own tier overrides and default tier, its allow-list (what THIS tenant may choose;
+the panel enables its choices from it), key state and usage. The panel runs with
 `scope="tenant"` and no app edit controls. Test: `cloud-inference.test.ts` ("the
 operator's deployment-wide rows are not shown").
 

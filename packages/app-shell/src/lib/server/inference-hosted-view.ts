@@ -31,9 +31,12 @@ export function hideDeploymentRows(
         supplyingLevel: own ? row.supplyingLevel : undefined,
         // The tenant's own stored value (it is theirs, blocked or not).
         tenantTarget: row.tenantTarget ?? null,
-        // The allow-list itself is the operator's policy and stays hidden; the
-        // server still refuses a choice outside it.
+        // What THIS tenant may choose: the panel's Model option and tier
+        // choices are enabled from it (`isRefAllowed`), so without it an owner
+        // could not pick an override the server would accept. It describes the
+        // tenant's choices, not the operator's own values.
         tenantBlocked: row.tenantBlocked,
+        tenantAllowList: row.tenantAllowList,
         appTarget: null,
         inheritedLabel: null,
       };
@@ -44,6 +47,8 @@ export function hideDeploymentRows(
       ? {
           effectiveTier: data.defaultTier.effectiveTier,
           tenantTier: data.defaultTier.tenantTier ?? null,
+          tenantBlocked: data.defaultTier.tenantBlocked,
+          tenantAllowList: data.defaultTier.tenantAllowList,
           appTier: null,
           inheritedTier: null,
         }

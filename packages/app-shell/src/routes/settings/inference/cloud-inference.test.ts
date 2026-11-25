@@ -223,7 +223,26 @@ describe('cloud: the operator’s deployment-wide rows are not shown', () => {
     });
     const ann = (await loadAs(h.a)).tiers.find((t) => t.tier === 'good');
     expect(JSON.stringify(ann?.tenantTarget)).toContain('gpt-4.1');
-    expect(JSON.stringify(await loadAs(h.b))).not.toContain('gpt-4.1');
+    // Bob has no override of his own; Ann's is not on his page.
+    const bobRow = (await loadAs(h.b)).tiers.find((t) => t.tier === 'good');
+    expect(bobRow?.tenantTarget).toBeNull();
+    expect(JSON.stringify(bobRow?.tenantTarget)).not.toContain('gpt-4.1');
+  });
+});
+
+describe('cloud: the tenant may choose what its allow-list names', () => {
+  it('carries the allow-list, so the panel enables the allowed override and not the disallowed one', async () => {
+    const page = await loadAs(h.a);
+    const row = page.tiers.find((t) => t.tier === 'good') as unknown as {
+      tenantAllowList?: string[] | null;
+    };
+    expect(row.tenantAllowList).toEqual(['model:openai/gpt-4.1']);
+    // The operator's own tier target is still not on the page.
+    expect(JSON.stringify(page)).not.toContain('gpt-4o-mini');
+    const d = (
+      page as unknown as { defaultTier: { tenantAllowList?: unknown } }
+    ).defaultTier;
+    expect(d && 'tenantAllowList' in d).toBe(true);
   });
 });
 
