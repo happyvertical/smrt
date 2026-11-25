@@ -58,12 +58,13 @@ export async function ownerOf(event: EventLike): Promise<Principal> {
 
 export async function readJson(
   request: Request,
+  maxBytes = MAX_BODY_BYTES,
 ): Promise<Record<string, unknown>> {
   const type = request.headers.get('content-type') ?? '';
   if (!/^application\/json\b/i.test(type))
     throw new HttpError(415, 'send application/json');
   const text = await request.text();
-  if (text.length > MAX_BODY_BYTES) throw new HttpError(413, 'body too large');
+  if (text.length > maxBytes) throw new HttpError(413, 'body too large');
   let value: unknown;
   try {
     value = JSON.parse(text);

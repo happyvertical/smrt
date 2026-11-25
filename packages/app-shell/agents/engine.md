@@ -633,9 +633,9 @@ one bundle (`format: 2`), so a desktop app moves to a hosted one and back.
   written by import: it rides in the caller's own tables, and the engine reads it
   from the store when the app starts.
 - **Hosted placement.** `importUserApp({ database })` installs into the schema the
-  host chose for ONE tenant's app.
-  Receiving a bundle over the network and mapping it to a tenant is not wired
-  here; the operator command `smrt-app-shell migrate-to-postgres` (cloud-profile.md)
+  host chose for ONE tenant's app (the engine's own untouched first start counts
+  as empty). The shell's receiver (`receive-user-app.ts`, cloud-profile.md
+  "Receiving a desktop app") maps a bundle to the verified owner's tenant; the operator command `smrt-app-shell migrate-to-postgres` (cloud-profile.md)
   triggers the in-place SQLite-to-PostgreSQL move. The CLI's use is in
   `packages/cli/agents/app-commands.md`.
 - Tests: `portable-export.test.ts` (SQLite) and

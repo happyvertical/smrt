@@ -43,6 +43,7 @@ import {
   type PortableColumn,
   type PortableDb,
 } from './db/portable.ts';
+import { DEFAULT_LOCK_TIMEOUT_MS, dropSchema } from './db/postgres-copy.ts';
 import {
   lockSchemaForRead,
   postgresPortable,
@@ -430,6 +431,58 @@ export async function readAppMetaValue(options: {
       `could not read the app's database to check its migration record; try again (${e instanceof Error ? e.name : 'error'})`,
       { cause: e },
     );
+  }
+}
+
+/**
+ * Refuse unless no host runs the app on `database` right now: takes the app's
+ * claim and lets it go at once (PostgreSQL server only; nothing to claim on
+ * PGlite or SQLite). A check before staging anything, not a lock held: the
+ * import takes its own claim for the rows.
+ */
+export async function assertAppUnclaimed(
+  database: DatabaseConfig,
+): Promise<void> {
+  const claim = await claimAppDatabase(database);
+  await claim?.release();
+}
+
+/**
+ * Throw away an import that never committed a row (#5193): drop the app's
+ * schema, with the half-built tables the engine's own start made in it. Done
+ * under the app's claim (refused while another host holds the app), and only
+ * when the schema holds neither the completion fact `key` (the rows' own
+ * transaction records it, so with it the rows are in) nor a single user row;
+ * anything else is left exactly as it is. Returns whether it dropped. PostgreSQL
+ * only. A database that cannot be read throws.
+ */
+export async function discardUnfilledImport(options: {
+  dataDir: string;
+  database: DatabaseConfig;
+  key: string;
+}): Promise<boolean> {
+  const { database } = options;
+  if (database.kind === 'sqlite')
+    throw new EngineError('this discards a PostgreSQL app', 'refused');
+  const claim = await claimAppDatabase(database);
+  try {
+    const { fact, rows } = await inDatabase(
+      options.dataDir,
+      database,
+      'read',
+      async (db) => {
+        let n = 0;
+        for (const name of await db.tables()) n += await db.count(name);
+        return { fact: await db.metaValue(options.key), rows: n };
+      },
+    );
+    if (fact !== null || rows > 0) return false;
+    await withSchemaAdmin(database, (db) =>
+      dropSchema(db, database.schema, DEFAULT_LOCK_TIMEOUT_MS),
+    );
+    return true;
+  } finally {
+    await claim?.release();
   }
 }
 
@@ -908,8 +961,15 @@ async function importPostgres(
     refuse(
       'The target already holds a different user app database; nothing was overwritten.',
     );
+  // The engine's own first start (version 0, no model, no row anywhere) is an
+  // untouched app, not a different one: the bundle's history starts from it.
+  const untouched =
+    !!state.meta &&
+    state.meta.version === 0 &&
+    Object.keys(state.meta.definition.models ?? {}).length === 0;
   if (
     state.meta &&
+    !untouched &&
     (state.meta.version !== bundle.version ||
       stableJson(state.meta.definition) !== stableJson(bundle.definition))
   )

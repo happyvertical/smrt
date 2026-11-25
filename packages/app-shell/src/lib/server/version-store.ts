@@ -330,6 +330,33 @@ export class ShellVersionStore implements VersionStore {
     });
   }
 
+  /**
+   * Take back versions this caller has just appended (a receive whose import
+   * then refused, #5193): delete exactly `versions` and point back at
+   * `restore` (`null`: no version yet), in ONE transaction.
+   */
+  unstage(versions: number[], restore: number | null): Promise<void> {
+    return this.scoped(async () => {
+      const db = this.db;
+      if (typeof db.transaction !== 'function')
+        throw new Error('the shell database cannot run transactions');
+      await db.transaction(async (tx) => {
+        const txDb = tx as unknown as DatabaseInterface;
+        for (const v of versions)
+          await txDb.query(
+            `DELETE FROM app_versions WHERE version = ?${this.tenantClause}`,
+            [v, ...this.tenantParam],
+          );
+        if (restore !== null) return this.point(restore, txDb);
+        const app = await this.appRow(txDb);
+        await txDb.query(
+          `UPDATE apps SET current_version = -1, definition = '' WHERE id = ?${this.tenantClause}`,
+          [app.id, ...this.tenantParam],
+        );
+      });
+    });
+  }
+
   reachable(tx: unknown): Promise<boolean> {
     return this.scoped(async () => {
       const id = this.appId ?? ((await this.appRow()).id as string);
