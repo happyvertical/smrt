@@ -9,7 +9,7 @@
 // change of plan applies at once. No gate injected (the desktop, any other
 // profile, every test that does not choose) means no check and no lookup.
 import type { AppDefinition } from './definition.ts';
-import { routeFor } from './definition.ts';
+import { CRUD_ACTIONS, routeFor } from './definition.ts';
 import { toolTarget } from './permissions.ts';
 
 /**
@@ -61,7 +61,10 @@ export function methodCodeTarget(
   }
   if (op === 'callTool') {
     const t = typeof args[0] === 'string' ? toolTarget(def, args[0]) : null;
-    return t && hasCode(def, t.model, t.action)
+    // `<model>_list` is the CRUD list even when a stored method has that name.
+    return t &&
+      !CRUD_ACTIONS.includes(t.action) &&
+      hasCode(def, t.model, t.action)
       ? { model: t.model, method: t.action }
       : null;
   }
@@ -82,7 +85,12 @@ export function methodCodeTarget(
       ([m, md]) => routeFor(m, md) === parts[1],
     );
     const action = parts[2];
-    if (hit && action !== undefined && hasCode(def, hit[0], action))
+    if (
+      hit &&
+      action !== undefined &&
+      !CRUD_ACTIONS.includes(action) &&
+      hasCode(def, hit[0], action)
+    )
       return { model: hit[0], method: action };
   }
   return null;

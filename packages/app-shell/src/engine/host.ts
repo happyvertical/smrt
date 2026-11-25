@@ -642,7 +642,7 @@ export class AppHost extends EventEmitter {
         `version ${cur} is missing from the store`,
         'not_found',
       );
-    const errs = validate(rec.definition);
+    const errs = validate(rec.definition, rec.definition);
     if (errs.length)
       throw new EngineError(
         `the stored definition is invalid: ${errs.join('; ')}`,
@@ -814,7 +814,7 @@ export class AppHost extends EventEmitter {
     converting = new Set<string>(),
   ): Promise<ChangeResult> {
     const errs = [
-      ...validate(next),
+      ...validate(next, this.def),
       ...refuseChanges(this.def, next, converting, (t) =>
         this.dialect.columnType(t),
       ),
@@ -1585,7 +1585,7 @@ export class AppHost extends EventEmitter {
   }
 
   private assertValid(d: AppDefinition) {
-    const errs = validate(d);
+    const errs = validate(d, this.def);
     if (errs.length) throw new EngineError(errs.join('\n'));
   }
 
@@ -2360,7 +2360,7 @@ export class AppHost extends EventEmitter {
     let worker: AppWorker | undefined;
     try {
       const rec = await this.store.get(version);
-      if (!rec || validate(rec.definition).length) return false;
+      if (!rec || validate(rec.definition, rec.definition).length) return false;
       worker = this.spawn(rec.definition, version);
       await worker.ready;
       return true;
@@ -2848,7 +2848,7 @@ export class AppHost extends EventEmitter {
     try {
       for (let i = 0; i < chain.versions.length; i++) {
         const rec = chain.versions[i];
-        const errs = validate(rec.definition);
+        const errs = validate(rec.definition, rec.definition);
         if (errs.length)
           throw new EngineError(
             `"${rec.summary}" from the draft is invalid: ${errs.join('; ')}`,
