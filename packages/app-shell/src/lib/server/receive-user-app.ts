@@ -14,9 +14,11 @@ import { existsSync } from 'node:fs';
 import type { DatabaseInterface } from '@happyvertical/sql';
 import {
   checkUserAppBundle,
+  countUserAppRows,
   EngineError,
   importUserApp,
   type PortableUserApp,
+  readAppMetaValue,
   type VersionRecord,
   verifyUserApp,
 } from '../../engine/index.ts';
@@ -70,6 +72,8 @@ function isEmptyStart(existing: VersionRecord[]): boolean {
  */
 export async function receiveOwnUserApp(
   bundle: PortableUserApp,
+  /** Test seam: runs right after the engine's import, inside the failure handling; throwing simulates a failure after the rows committed. */
+  seam: { afterImport?: () => void | Promise<void> } = {},
 ): Promise<ReceiveUserAppResult> {
   await requireCloudProfile('Receiving a user app');
   const owner = await assertOwner();
@@ -145,10 +149,33 @@ export async function receiveOwnUserApp(
         }),
       },
     });
+    await seam.afterImport?.();
   } catch (error) {
-    // The engine refused or failed before committing any row: the history this
-    // call wrote goes back, so a refusal leaves the tenant as it was found.
-    if (added.length) await store.unstage(added, before).catch(() => {});
+    // What the failure left decides what goes back. The completion fact is
+    // written in the transaction that inserts the rows: if it is there the rows
+    // are in and a rerun converges (history stays); if it is not and the schema
+    // holds a row, the schema is someone else's (only the history goes back);
+    // if it is not and the schema is empty, this call's own half-built tables
+    // go too (the engine builds them before its row transaction). A state that
+    // cannot be read is left exactly as it is.
+    try {
+      const database = provider.config(schema);
+      const committed = await readAppMetaValue({
+        dataDir: live,
+        database,
+        key: RECEIVE_COMPLETION_KEY,
+      });
+      if (committed === null) {
+        if ((await countUserAppRows({ dataDir: live, database })) === 0)
+          await provider.drop?.(schema);
+        if (added.length) await store.unstage(added, before);
+      }
+    } catch {
+      throw new EngineError(
+        `${error instanceof Error ? error.message : String(error)}; the tenant's app could not be reset afterwards, ask the operator`,
+        'refused',
+      );
+    }
     throw error;
   }
 

@@ -433,6 +433,24 @@ export async function readAppMetaValue(options: {
   }
 }
 
+/**
+ * How many rows the user tables of an app on PostgreSQL hold (the same count
+ * the import's own "is the target empty" check makes). A schema or meta that
+ * does not exist holds none. A database that could not be read throws.
+ */
+export async function countUserAppRows(options: {
+  dataDir: string;
+  database: DatabaseConfig;
+}): Promise<number> {
+  if (options.database.kind === 'sqlite')
+    throw new EngineError('this reads a PostgreSQL app', 'refused');
+  return inDatabase(options.dataDir, options.database, 'read', async (db) => {
+    let n = 0;
+    for (const name of await db.tables()) n += await db.count(name);
+    return n;
+  });
+}
+
 /** True when the directory holds an app.db the engine has started. */
 export function hasUserAppDatabase(dataDir: string): boolean {
   return existsSync(join(dataDir, 'app.db'));

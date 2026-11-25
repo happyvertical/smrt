@@ -95,6 +95,13 @@ export function cloudAppDatabase(options: CloudAppDatabaseOptions): Provider {
       env: 'SMRT_APP_SHELL_RUNTIME_DATABASE_URL',
     });
   return {
+    drop: async (schema) => {
+      if (!/^app_[0-9a-f]{32}$/.test(schema))
+        throw new Error('not an app schema name');
+      await (await options.admin()).query(
+        `DROP SCHEMA IF EXISTS "${schema}" CASCADE`,
+      );
+    },
     config: (schema): DatabaseConfig => ({
       kind: 'postgres',
       schema,

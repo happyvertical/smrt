@@ -37,11 +37,35 @@ import { ShellVersionStore } from './version-store.ts';
 let h: CloudHarness;
 let pg: PGliteClient;
 
+// Inserts into user tables fail while set: a row PostgreSQL would refuse.
+let failInserts = false;
+const flaky = (target: unknown): unknown =>
+  new Proxy(target as object, {
+    get(t, prop) {
+      const v = Reflect.get(t, prop, t);
+      if (typeof v !== 'function') return v;
+      if (prop === 'query' || prop === 'exec')
+        return (sql: unknown, ...rest: unknown[]) => {
+          if (failInserts && /INSERT INTO\s+"?u_/i.test(String(sql)))
+            return Promise.reject(new Error('injected: row refused'));
+          return (v as (...a: unknown[]) => unknown).call(t, sql, ...rest);
+        };
+      if (prop === 'transaction')
+        return (fn: (tx: unknown) => unknown) =>
+          (v as (f: unknown) => unknown).call(t, (tx: unknown) =>
+            fn(flaky(tx)),
+          );
+      return v.bind(t);
+    },
+  });
 const provider = {
+  drop: async (schema: string) => {
+    await pg.exec(`DROP SCHEMA IF EXISTS "${schema}" CASCADE`);
+  },
   config: (schema: string): DatabaseConfig => ({
     kind: 'pglite',
     schema,
-    client: pg,
+    client: flaky(pg) as PGliteClient,
   }),
   provision: async (schema: string) => {
     await pg.exec(`CREATE SCHEMA IF NOT EXISTS "${schema}"`);
@@ -350,11 +374,69 @@ describe('what the receiver refuses', () => {
       /different/,
     );
     expect(await history()).toEqual([]);
+    // The rows in that schema are not this call's: the schema stays.
+    expect(await schemas()).toContain(schema);
     expect(
       await runAs(who, async () =>
         new ShellVersionStore(await getShellDb(), who.tenantId).current(),
       ),
     ).toBeNull();
+  });
+
+  it('a failure inside the rows leaves no half-built schema and no history, and a rerun succeeds', async () => {
+    const bundle = await desktopBundle('desk10@example.test');
+    const who = await tenantOf('inject@example.test');
+    await useShell(true);
+    const appId = await appIdOf(who);
+    const schema = appSchemaName(who.tenantId, appId);
+    failInserts = true;
+    try {
+      await expect(runAs(who, () => receiveOwnUserApp(bundle))).rejects.toThrow(
+        /injected/,
+      );
+    } finally {
+      failInserts = false;
+    }
+    expect(await schemas()).not.toContain(schema);
+    expect(
+      await runAs(who, async () =>
+        new ShellVersionStore(await getShellDb(), who.tenantId).current(),
+      ),
+    ).toBeNull();
+    const done = await runAs(who, () => receiveOwnUserApp(bundle));
+    expect(done).toMatchObject({ status: 'received', verified: true });
+    expect(await schemas()).toContain(schema);
+  });
+
+  it('a failure after the rows committed keeps everything, and the rerun converges', async () => {
+    const bundle = await desktopBundle('desk11@example.test');
+    const who = await tenantOf('after@example.test');
+    await useShell(true);
+    const schema = appSchemaName(who.tenantId, await appIdOf(who));
+    await expect(
+      runAs(who, () =>
+        receiveOwnUserApp(bundle, {
+          afterImport: () => {
+            throw new Error('injected: connection lost after commit');
+          },
+        }),
+      ),
+    ).rejects.toThrow(/connection lost/);
+    expect(await schemas()).toContain(schema);
+    expect(
+      (
+        await runAs(who, async () =>
+          new ShellVersionStore(await getShellDb(), who.tenantId).list(),
+        )
+      ).length,
+    ).toBe(bundle.versions.length);
+    await closeHost();
+    const done = await runAs(who, () => receiveOwnUserApp(bundle));
+    expect(done).toMatchObject({ status: 'already-received', verified: true });
+    const rows = await runAs(who, async () =>
+      (await getHost()).list(hostOwner(await getHost()), 'Chore'),
+    );
+    expect(rows.length).toBe(2);
   });
 
   it('a bundle that does not match its own digests, a non-owner, and the desktop profile', async () => {
