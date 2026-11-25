@@ -724,6 +724,41 @@ async function liveDatabase(
 }
 
 /**
+ * Refuse while the tenant has an open draft (working copy), waiting changes or
+ * an unsettled approval, none of which a move carries (#5193); each is named so
+ * the owner knows what to settle. `moving` completes "before ...".
+ */
+export async function assertNothingPending(
+  db: DatabaseInterface,
+  tenant: string,
+  draft: string,
+  moving: 'migrating' | 'receiving an app',
+): Promise<void> {
+  if (existsSync(draft))
+    throw new EngineError(
+      `an open draft (working copy) exists; apply or discard it before ${moving}`,
+      'refused',
+    );
+  const pending = await withTenant(
+    { tenantId: tenant, permissions: new Set<string>() },
+    async () => ({
+      changes: await hasWaitingChanges(db),
+      approvals: await hasUnsettledApprovals(db),
+    }),
+  );
+  if (pending.changes)
+    throw new EngineError(
+      `changes are waiting; apply or discard them before ${moving}`,
+      'refused',
+    );
+  if (pending.approvals)
+    throw new EngineError(
+      `an approval is unsettled (pending, accepted, executing, or approved with no result, i.e. a crashed execution); decide it before ${moving}`,
+      'refused',
+    );
+}
+
+/**
  * Migrate one tenant's SQLite app into its PostgreSQL schema (#5193), so the
  * refusal above clears. Idempotent and safe to rerun after any crash; the
  * SQLite file is only read and stays as the backup. Refuses (nothing written)
@@ -751,29 +786,7 @@ export async function migrateOwnAppToPostgres(): Promise<MigrateToPostgresResult
     tenant,
     app.id as string,
   );
-  // None of these is carried across; each is named so the owner knows what to settle.
-  if (existsSync(draft))
-    throw new EngineError(
-      'an open draft (working copy) exists; apply or discard it before migrating',
-      'refused',
-    );
-  const pending = await withTenant(
-    { tenantId: tenant, permissions: new Set<string>() },
-    async () => ({
-      changes: await hasWaitingChanges(db),
-      approvals: await hasUnsettledApprovals(db),
-    }),
-  );
-  if (pending.changes)
-    throw new EngineError(
-      'changes are waiting; apply or discard them before migrating',
-      'refused',
-    );
-  if (pending.approvals)
-    throw new EngineError(
-      'an approval is unsettled (pending, accepted, executing, or approved with no result, i.e. a crashed execution); decide it before migrating',
-      'refused',
-    );
+  await assertNothingPending(db, tenant, draft, 'migrating');
   const schema = appSchemaName(tenant, app.id as string);
   return migrateUserAppToPostgres({
     dataDir: live,

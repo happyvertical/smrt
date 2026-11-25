@@ -309,12 +309,18 @@ is not a caller here yet). v1:
   SQLite file or an open draft is refused with nothing written (409); the
   engine treats its own untouched first start (version 0, no model, no row) as
   empty (`importPostgres`).
-- **Resumable and idempotent**: the rows go in one transaction with a completion
-  fact (`user-app-received`) and a verification before the commit (engine);
-  the version history and the pointer follow in one shell transaction, skipping
-  versions already stored. A crash between them converges on rerun; the same
-  bundle again is `already-received`. The tenant's open app is closed first
-  (refused while a call is inside it); do not use the app during a receive.
+- **Resumable and idempotent**: the version history and the pointer go in first
+  (one shell transaction; versions already stored are skipped), then the rows in
+  one transaction with a completion fact (`user-app-received`) and a verification
+  before the commit (engine). A crash between them converges on rerun; an app
+  opened in the gap boots at the bundle's version on empty tables (the engine's
+  own migration) and the rerun still fills it, but rows written there first make
+  the rerun refuse (nothing is lost: the desktop file is kept). The same bundle
+  again is `already-received`. The tenant's open app is closed first (refused
+  while a call is inside it); do not use the app during a receive.
+- **Refuses** (named, nothing written) while the tenant has an open draft,
+  waiting changes or an unsettled approval, as the SQLite migration does
+  (`assertNothingPending`).
 - **Verification pass** (`verified: true` in the answer): per-table counts and
   digests, the recorded version and definition, and the version history
   (number, parent, definition, migration) against the bundle, after the commit.

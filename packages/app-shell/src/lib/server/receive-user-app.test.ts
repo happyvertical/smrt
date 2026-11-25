@@ -1,6 +1,7 @@
 // The hosted receiver (#5193): a desktop user app bundle (SQLite) installed as
 // ONE tenant's app in the shared PostgreSQL, in that tenant's own schema.
 // PGlite stands in for the server; a real one is CI's `test:postgres` lane.
+import { rmSync } from 'node:fs';
 import { importPGlite } from '@happyvertical/sql/pglite';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import type { DatabaseConfig, PGliteClient } from '../../engine/db/index.ts';
@@ -12,9 +13,10 @@ import {
 import { POST } from '../../routes/api/shell/app/receive/+server.ts';
 import { hostOwner } from '../../test/engine-principal.ts';
 import { App } from '../objects/App.ts';
+import { ApprovalCollection } from '../objects/Approval.ts';
 import { ownerTenantFor } from './accounts.ts';
 import { applyOwnBatch } from './approvals.ts';
-import { changesState, flushChecks } from './changes.ts';
+import { addChangeCard, changesState, flushChecks } from './changes.ts';
 import {
   CLOUD_MASTER_KEY,
   type CloudHarness,
@@ -225,6 +227,33 @@ describe('receiving a desktop app into the shared PostgreSQL', () => {
   });
 });
 
+describe('the window between the history and the rows', () => {
+  it('an app opened in it boots on empty tables and the rerun still fills it', async () => {
+    const bundle = await desktopBundle('desk6@example.test');
+    const who = await tenantOf('window@example.test');
+    await useShell(true);
+    // The history is in; the process died before the rows.
+    await runAs(who, async () =>
+      new ShellVersionStore(await getShellDb(), who.tenantId).commit(
+        bundle.versions,
+        bundle.version,
+      ),
+    );
+    // The owner reloads the page: the app opens at the bundle's version, empty.
+    await runAs(who, async () => {
+      const host = await getHost();
+      expect(await host.list(hostOwner(host), 'Chore')).toEqual([]);
+    });
+    await closeHost();
+    const done = await runAs(who, () => receiveOwnUserApp(bundle));
+    expect(done).toMatchObject({ verified: true, status: 'received' });
+    const rows = await runAs(who, async () =>
+      (await getHost()).list(hostOwner(await getHost()), 'Chore'),
+    );
+    expect(rows.map((r) => r.title).sort()).toEqual(['dry', 'wash']);
+  });
+});
+
 describe('what the receiver refuses', () => {
   it('a tenant whose app already has content, leaving it untouched', async () => {
     const bundle = await desktopBundle('desk3@example.test');
@@ -251,6 +280,50 @@ describe('what the receiver refuses', () => {
       (await getHost()).list(hostOwner(await getHost()), 'Mine'),
     );
     expect(kept.map((r) => r.title)).toEqual(['keep']);
+  });
+
+  it('waiting changes and an unsettled approval, each named, with nothing written', async () => {
+    const bundle = await desktopBundle('desk7@example.test');
+    const who = await tenantOf('pending@example.test');
+    await useShell(true);
+    await runAs(who, () =>
+      addChangeCard({
+        commands: [{ type: 'defineModel', name: 'Later', fields: {} } as never],
+        source: 'api',
+      }),
+    );
+    await flushChecks();
+    const before = await schemas();
+    await expect(runAs(who, () => receiveOwnUserApp(bundle))).rejects.toThrow(
+      /open draft|changes are waiting/,
+    );
+    // Waiting changes with no working copy on disk are named as changes.
+    await closeHost();
+    rmSync(tenantAppDirs(h.dir, who.tenantId, await appIdOf(who)).draft, {
+      recursive: true,
+      force: true,
+    });
+    await useShell(true);
+    await expect(runAs(who, () => receiveOwnUserApp(bundle))).rejects.toThrow(
+      /changes are waiting/,
+    );
+    expect(await schemas()).toEqual(before);
+    const other = await tenantOf('pending2@example.test');
+    await runAs(other, async () =>
+      (await ApprovalCollection.create({ db: h.db })).create({
+        command: '{}',
+        actionKey: 'rk',
+        summary: 's',
+        preview: '{}',
+        status: 'pending',
+        result: '',
+        requestedBy: other.id,
+      } as never),
+    );
+    await expect(runAs(other, () => receiveOwnUserApp(bundle))).rejects.toThrow(
+      /approval is unsettled/,
+    );
+    expect(await schemas()).toEqual(before);
   });
 
   it('a bundle that does not match its own digests, a non-owner, and the desktop profile', async () => {

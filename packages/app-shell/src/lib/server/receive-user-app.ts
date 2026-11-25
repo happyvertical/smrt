@@ -22,6 +22,7 @@ import {
 } from '../../engine/index.ts';
 import {
   appSchemaName,
+  assertNothingPending,
   closeOwnApp,
   dataRoot,
   getShellDb,
@@ -93,11 +94,7 @@ export async function receiveOwnUserApp(
       'this app lives in a SQLite file; migrate it instead of receiving another',
       'refused',
     );
-  if (existsSync(draft))
-    throw new EngineError(
-      'an open draft exists; discard it before receiving an app',
-      'refused',
-    );
+  await assertNothingPending(db, tenant, draft, 'receiving an app');
 
   const existing = await store.list();
   const incoming = bundle.versions;
@@ -119,6 +116,19 @@ export async function receiveOwnUserApp(
   await closeOwnApp();
   const schema = appSchemaName(tenant, app.id as string);
   await provider.provision(schema);
+  // The history first, in one shell transaction with the pointer (versions
+  // already stored, a rerun or the empty start, are skipped). If the app is
+  // opened before the rows are in, it boots at the bundle's version on empty
+  // tables (the engine's own migration), and the rows still go in; the other
+  // order would let that open rewrite the schema's record to the empty app and
+  // refuse every rerun.
+  if (!placed) {
+    const have = new Set(existing.map((v) => v.version));
+    await store.commit(
+      incoming.filter((v) => !have.has(v.version)),
+      bundle.version,
+    );
+  }
   const imported = await importUserApp({
     dataDir: live,
     database: provider.config(schema),
@@ -129,15 +139,6 @@ export async function receiveOwnUserApp(
       value: JSON.stringify({ digest: bundle.digest, version: bundle.version }),
     },
   });
-  // The history rides in the shell's own tables, in one transaction with the
-  // pointer; versions already stored (a rerun, the empty start) are skipped.
-  if (!placed) {
-    const have = new Set(existing.map((v) => v.version));
-    await store.commit(
-      incoming.filter((v) => !have.has(v.version)),
-      bundle.version,
-    );
-  }
 
   // The verification pass: tables (counts and digests), meta, then the history.
   const found = await verifyUserApp({
