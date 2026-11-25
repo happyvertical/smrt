@@ -82,12 +82,17 @@ import recovery among them).
   only generated route or tool of a shell model that loads a row by id (App's
   methods are static, every other model is closed), so each new one has to be
   thought through. The apply reads the catalog first and runs no DDL when the
-  policies and the slugs they must admit are present (a removed slug or a
-  changed predicate is not detected: isolation never depends on the slug test, and
-  an ordered policy-version stamp is the follow-up for the first release that
-  changes policy text); otherwise it is one transaction under
-  an advisory lock with a lock timeout, so replicas starting together never
-  interleave DROP/CREATE POLICY and no reader sees a table between them. A
+  policies are exactly what it would write: each table's comment carries a stamp
+  (`smrt-app-shell:rls:<digest of the generated policy set>:<digest of the
+  catalog>`), and the catalog digest covers the RLS flags, EVERY policy on the
+  table (name, command, roles, normalized USING / WITH CHECK) and the helper
+  function bodies. A changed predicate, a removed slug, a dropped or extra
+  policy, a rewritten helper or a release that changes the expected set is not
+  current, so the policies are re-applied (extra policies dropped) and
+  re-stamped; an old replica restarting after a new release re-applies the old
+  set (last start wins). The apply is one transaction under an advisory lock
+  with a lock timeout, so replicas starting together never interleave
+  DROP/CREATE POLICY and no reader sees a table between them. A
   missing table says to run `smrt db:migrate`; every failure's reason goes to
   stderr (`app-shell.database.rls-incomplete`) because the runtime reports a
   failed start generically. A table that cannot be

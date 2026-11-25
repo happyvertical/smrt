@@ -52,6 +52,7 @@ import {
   bindShellScope,
   protectShellTables,
   SHELL_TENANT_MODELS,
+  shellPoliciesCurrent,
   shellRlsState,
 } from './shell-tenancy.ts';
 
@@ -223,6 +224,71 @@ describe.each(backends)('shell tables, forced RLS (%s)', (backend) => {
     expect(
       statements.filter((q) => /\b(CREATE|DROP|ALTER)\b/i.test(q)),
     ).toEqual([]);
+  });
+
+  describe('the policies are compared in full, not by count', () => {
+    /** Every policy and helper body, as the catalog holds them. */
+    const catalog = async () =>
+      JSON.stringify([
+        rowsOf(
+          await db.query(
+            `SELECT c.relname AS t, p.polname AS n, p.polcmd AS cmd, pg_get_expr(p.polqual, p.polrelid) AS q, pg_get_expr(p.polwithcheck, p.polrelid) AS w
+               FROM pg_policy p JOIN pg_class c ON c.oid = p.polrelid
+              WHERE c.relnamespace = to_regnamespace('${schema}') ORDER BY 1, 2`,
+          ),
+        ),
+        rowsOf(
+          await db.query(
+            `SELECT proname AS n, prosrc AS src FROM pg_proc WHERE pronamespace = to_regnamespace('${schema}') AND proname LIKE 'smrt\\_%' ORDER BY 1`,
+          ),
+        ),
+      ]);
+    const selectPolicy = async () =>
+      String(
+        rowsOf(
+          await db.query(
+            `SELECT p.polname AS n FROM pg_policy p WHERE p.polrelid = to_regclass('"${schema}"."apps"') AND p.polcmd = 'r'`,
+          ),
+        )[0]?.n,
+      );
+    const restores = async (tamper: () => Promise<void>) => {
+      const original = await catalog();
+      expect(await shellPoliciesCurrent(db as never)).toBe(true);
+      await tamper();
+      expect(await catalog()).not.toBe(original);
+      // The check says so, whatever the tampering kept the same (a count, a name).
+      expect(await shellPoliciesCurrent(db as never)).toBe(false);
+      await applyShellRls(db as never);
+      expect(await catalog()).toBe(original);
+      expect(await shellPoliciesCurrent(db as never)).toBe(true);
+    };
+
+    it('a weakened predicate is stale and re-applied', async () => {
+      await restores(async () => {
+        await db.query(
+          `ALTER POLICY "${await selectPolicy()}" ON "${schema}"."apps" USING (true)`,
+        );
+      });
+    });
+
+    it('a dropped policy plus a bogus one (same count) is stale and re-applied', async () => {
+      await restores(async () => {
+        await db.query(
+          `DROP POLICY "${await selectPolicy()}" ON "${schema}"."apps"`,
+        );
+        await db.query(
+          `CREATE POLICY bogus_open ON "${schema}"."apps" FOR SELECT USING (true)`,
+        );
+      });
+    });
+
+    it('a helper function rewritten behind the policies is stale and re-applied', async () => {
+      await restores(async () => {
+        await db.query(
+          `CREATE OR REPLACE FUNCTION "${schema}".smrt_has_permission(required_permission text) RETURNS boolean LANGUAGE sql STABLE AS 'SELECT true'`,
+        );
+      });
+    });
   });
 
   it('refuses to start on a login that bypasses row-level security, unless told loudly', async () => {

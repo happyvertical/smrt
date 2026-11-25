@@ -22,6 +22,7 @@
 // tenants (a restart adopts one holder's draft inside that tenant), so a
 // future one has to be added here, named and reviewed, not worked around.
 import { AsyncLocalStorage } from 'node:async_hooks';
+import { createHash } from 'node:crypto';
 import { ObjectRegistry } from '@happyvertical/smrt-core';
 import { getCurrentTenant } from '@happyvertical/smrt-tenancy';
 import { postgresPrincipalSettings } from '@happyvertical/smrt-users/postgres-settings';
@@ -314,49 +315,133 @@ export function shellPolicySlugs(
   };
 }
 
-/**
- * Whether every shell table already has row-level security enabled and forced
- * and, for each command, a policy that names the slugs it should admit (read
- * back from the catalog, so a release that ADDS a slug re-applies). It does not
- * detect a removed slug or a changed predicate or helper body: the tenant match
- * is ANDed outside the permission test, so isolation never depends on it, and a
- * policy-version stamp (ordered, so a rolling deploy does not flip-flop) is the
- * follow-up for the first release that changes policy text.
- */
-async function policiesCurrent(db: Queryable): Promise<boolean> {
-  const schema = await currentSchema(db);
-  const tables = shellTables();
-  const state = new Map((await shellRlsState(db)).map((s) => [s.table, s]));
-  for (const table of tables.keys()) {
-    const s = state.get(table);
-    if (!s?.rls || !s.forced || s.policies !== 4) return false;
-  }
-  const defs = rowsOf(
-    await db.query(
-      `SELECT c.relname AS name, p.polcmd AS cmd,
-              coalesce(pg_get_expr(p.polqual, p.polrelid), '') || ' ' || coalesce(pg_get_expr(p.polwithcheck, p.polrelid), '') AS body
-         FROM pg_policy p JOIN pg_class c ON c.oid = p.polrelid
-        WHERE c.relnamespace = to_regnamespace(${quote(schema)})
-          AND c.relname IN (${[...tables.keys()].map(quote).join(', ')})`,
-    ),
+const POLICY_HELPERS = [
+  'smrt_rls_bypass',
+  'smrt_current_tenant_id',
+  'smrt_has_permission',
+];
+
+/** The policy scope the generator is run with, for a schema. */
+function policyScope(schemaName: string) {
+  return {
+    schemaName,
+    includeClass: (c: { className: string; qualifiedName?: string }) =>
+      c.qualifiedName?.startsWith(SHELL_PACKAGE) === true &&
+      (SHELL_TENANT_MODELS as readonly string[]).includes(c.className),
+    permissionsFor: (c: { className: string }) => shellPolicySlugs(c.className),
+  };
+}
+
+const digest = (value: unknown) =>
+  createHash('sha256').update(JSON.stringify(value)).digest('hex');
+
+/** The digest of what the generator would run: the code's whole expected policy set. */
+async function expectedDigest(schemaName: string): Promise<string> {
+  const { generatePostgresPermissionSql } = await import(
+    '@happyvertical/smrt-users/postgres-policies'
   );
-  const cmd = { SELECT: 'r', INSERT: 'a', UPDATE: 'w', DELETE: 'd' } as const;
-  for (const [table, model] of tables) {
-    const wanted = shellPolicySlugs(model);
-    for (const action of Object.keys(cmd) as Array<keyof typeof cmd>) {
-      const body = defs
-        .filter((d) => d.name === table && d.cmd === cmd[action])
-        .map((d) => String(d.body))
-        .join(' ');
-      if (!wanted[action].every((slug) => body.includes(`'${slug}'`)))
-        return false;
-    }
+  return digest(
+    generatePostgresPermissionSql({}, policyScope(schemaName)).statements,
+  );
+}
+
+const qualified = (schema: string, table: string) =>
+  `"${schema.replace(/"/g, '""')}"."${table.replace(/"/g, '""')}"`;
+
+/**
+ * The digest of what the catalog holds for one table right now: row-level
+ * security flags, EVERY policy on it (name, command, permissive, roles, the
+ * normalized USING and WITH CHECK expressions) and the bodies of the helper
+ * functions the policies call. An extra, missing or edited policy, or a helper
+ * rewritten behind the policies' back, changes it.
+ */
+async function liveDigest(
+  db: Queryable,
+  schema: string,
+  table: string,
+): Promise<string> {
+  const row = rowsOf(
+    await db.query(
+      `SELECT c.relrowsecurity AS rls, c.relforcerowsecurity AS forced,
+              (SELECT coalesce(json_agg(json_build_array(p.polname, p.polcmd, p.polpermissive, p.polroles::text, pg_get_expr(p.polqual, p.polrelid), pg_get_expr(p.polwithcheck, p.polrelid)) ORDER BY p.polname), '[]'::json)::text
+                 FROM pg_policy p WHERE p.polrelid = c.oid) AS policies,
+              (SELECT coalesce(json_agg(json_build_array(f.proname, f.prosrc) ORDER BY f.proname), '[]'::json)::text
+                 FROM pg_proc f WHERE f.pronamespace = to_regnamespace(${quote(schema)})
+                  AND f.proname IN (${POLICY_HELPERS.map(quote).join(', ')})) AS helpers
+         FROM pg_class c WHERE c.oid = to_regclass(${quote(qualified(schema, table))})`,
+    ),
+  )[0];
+  return digest([row?.rls, row?.forced, row?.policies, row?.helpers]);
+}
+
+const STAMP_PREFIX = 'smrt-app-shell:rls:';
+
+/**
+ * Whether every shell table is exactly what applying the policies would leave:
+ * the table's stamp (written with the policies, in the same transaction) names
+ * the digest of the expected policy set AND the digest of what the catalog
+ * held when it was written, and the catalog still digests the same. Any
+ * difference (a changed predicate, a removed slug, an extra or missing policy,
+ * a rewritten helper, a changed release's expected set) is not current, so the
+ * policies are re-applied. A release that changes the policies makes a start
+ * of the new code re-apply them; an old replica that restarts afterwards
+ * re-applies the old set (last start wins).
+ */
+export async function shellPoliciesCurrent(db: Queryable): Promise<boolean> {
+  const schema = await currentSchema(db);
+  const expected = await expectedDigest(schema);
+  for (const table of shellTables().keys()) {
+    const stamp = String(
+      rowsOf(
+        await db.query(
+          `SELECT obj_description(to_regclass(${quote(qualified(schema, table))}), 'pg_class') AS stamp`,
+        ),
+      )[0]?.stamp ?? '',
+    );
+    const live = await liveDigest(db, schema, table);
+    if (stamp !== `${STAMP_PREFIX}${expected}:${live}`) return false;
   }
   return true;
 }
 
+/** Write the stamp of the policies just applied (inside the same transaction). */
+async function stampPolicies(db: Queryable, schema: string): Promise<void> {
+  const expected = await expectedDigest(schema);
+  for (const table of shellTables().keys()) {
+    const live = await liveDigest(db, schema, table);
+    await db.query(
+      `COMMENT ON TABLE ${qualified(schema, table)} IS ${quote(`${STAMP_PREFIX}${expected}:${live}`)}`,
+    );
+  }
+}
+
 /** Take the apply's lock, so two starting replicas never interleave their DDL. */
 const APPLY_LOCK = "hashtext('smrt-app-shell:shell-rls')";
+
+/** Drop any policy on a shell table that the expected statements do not create. */
+async function dropUnexpectedPolicies(
+  db: Queryable,
+  schema: string,
+  statements: string[],
+): Promise<void> {
+  const expected = new Set(
+    statements
+      .map((sql) => /^CREATE POLICY "([^"]+)" ON/.exec(sql)?.[1])
+      .filter((name): name is string => name !== undefined),
+  );
+  for (const table of shellTables().keys()) {
+    const found = rowsOf(
+      await db.query(
+        `SELECT p.polname AS name FROM pg_policy p WHERE p.polrelid = to_regclass(${quote(qualified(schema, table))})`,
+      ),
+    );
+    for (const { name } of found)
+      if (!expected.has(String(name)))
+        await db.query(
+          `DROP POLICY "${String(name).replace(/"/g, '""')}" ON ${qualified(schema, table)}`,
+        );
+  }
+}
 
 /**
  * Enable and force row-level security on every shell table and (re)create the
@@ -388,17 +473,11 @@ export async function applyShellRls(db: Queryable): Promise<string[]> {
   const { applyScopedPostgresPermissionPolicies } = await import(
     '@happyvertical/smrt-users/postgres-policies'
   );
-  const scope = {
-    schemaName,
-    includeClass: (c: { className: string; qualifiedName?: string }) =>
-      c.qualifiedName?.startsWith(SHELL_PACKAGE) === true &&
-      (SHELL_TENANT_MODELS as readonly string[]).includes(c.className),
-    permissionsFor: (c: { className: string }) => shellPolicySlugs(c.className),
-  };
+  const scope = policyScope(schemaName);
   let result:
     | Awaited<ReturnType<typeof applyScopedPostgresPermissionPolicies>>
     | undefined;
-  if (!(await policiesCurrent(db))) {
+  if (!(await shellPoliciesCurrent(db))) {
     const transaction = (
       db as {
         transaction?: <T>(fn: (tx: Queryable) => Promise<T>) => Promise<T>;
@@ -408,8 +487,13 @@ export async function applyShellRls(db: Queryable): Promise<string[]> {
       await tx.query("SELECT set_config('lock_timeout', '10s', true)");
       await tx.query(`SELECT pg_advisory_xact_lock(${APPLY_LOCK})`);
       // Another replica may have applied while this one waited.
-      if (await policiesCurrent(tx)) return undefined;
-      return applyScopedPostgresPermissionPolicies(tx, scope);
+      if (await shellPoliciesCurrent(tx)) return undefined;
+      const applied = await applyScopedPostgresPermissionPolicies(tx, scope);
+      // Policies not in the expected set (an extra one) are dropped: the stamp
+      // is only true of a table that holds exactly the expected policies.
+      await dropUnexpectedPolicies(tx, schemaName, applied.statements);
+      await stampPolicies(tx, schemaName);
+      return applied;
     };
     result = (
       transaction ? await transaction.call(db, apply) : await apply(db)
