@@ -40,7 +40,7 @@ it.each([
   const dir = mkdtempSync(join(tmpdir(), 'journal-limit-'));
   const host = await AppHost.open(dir, { store: new MemoryVersionStore() });
   const run = (cmd: Command) =>
-    host.execute(cmd, { author: 't', approved: true });
+    host.execute(hostOwner(host), cmd, { author: 't', approved: true });
   try {
     await run({
       type: 'defineModel',

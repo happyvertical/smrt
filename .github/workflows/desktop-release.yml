@@ -255,8 +255,8 @@ jobs:
           node-version: ${{ env.NODE_VERSION }}
 
       # Reads the environment through the API with the job's read-only token
-      # (no secret) and refuses unless it has required reviewers with
-      # self-review prevented, no admin bypass and a deployment rule of exactly
+      # (no secret) and refuses unless it has required reviewers (self-review
+      # is allowed: single-owner repository), no admin bypass and a deployment rule of exactly
       # the branch main. A workflow naming a missing environment creates it
       # unprotected, so the secrets check below cannot tell. This catches the
       # owner's mistake, not an attacker; the environment's branch rule is the

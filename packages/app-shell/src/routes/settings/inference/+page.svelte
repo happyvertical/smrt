@@ -68,8 +68,8 @@ async function discover(): Promise<void> {
     fusions={data.fusions}
     usage={data.usage}
     transcripts={data.transcripts}
-    appEditable={data.canEdit}
-    scope="app"
+    appEditable={data.canEdit && !data.hosted}
+    scope={data.hosted ? 'tenant' : 'app'}
     contextKey={data.tenantId}
     {busy}
     {message}

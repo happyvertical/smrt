@@ -81,7 +81,10 @@ export async function answerApproval(
   id: string,
   approve: boolean,
   doFetch: Fetch = fetch,
-): Promise<{ status: 'approved' | 'denied' | 'failed'; error?: string }> {
+): Promise<{
+  status: 'approved' | 'denied' | 'failed' | 'unknown';
+  error?: string;
+}> {
   let response: Response;
   try {
     response = await doFetch(
@@ -96,7 +99,7 @@ export async function answerApproval(
     throw new AssistantRequestError(0, 'Could not reach the app.');
   }
   const body = (await response.json().catch(() => null)) as {
-    status?: 'approved' | 'denied' | 'failed';
+    status?: 'approved' | 'denied' | 'failed' | 'unknown';
     error?: string;
   } | null;
   if (!response.ok || !body?.status)

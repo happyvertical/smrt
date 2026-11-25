@@ -55,6 +55,7 @@ import {
   type ModelDef,
   RECIPES,
   recipeModelFor,
+  reservedMethodReason,
   restRouteAllowed,
   routeFor,
   type Step,
@@ -326,6 +327,18 @@ export class AppRuntime {
     ])
       await this.db
         .execute`INSERT INTO _app_meta (key, value) VALUES (${k}, ${v}) ON CONFLICT(key) DO UPDATE SET value = excluded.value`;
+    // #5486: on a claimed host this is the boot operation's own transaction
+    // (the migration's steps and the version above ride in it), so `applied`
+    // commits with them or not at all.
+    if (migration?.intent) {
+      if (migration.reverse) {
+        await this.db.execute`DELETE FROM _app_meta WHERE key = 'applied'`;
+        await this.db
+          .execute`INSERT INTO _app_meta (key, value) VALUES ('reversed', ${migration.intent}) ON CONFLICT(key) DO UPDATE SET value = excluded.value`;
+      } else
+        await this.db
+          .execute`INSERT INTO _app_meta (key, value) VALUES ('applied', ${migration.intent}) ON CONFLICT(key) DO UPDATE SET value = excluded.value`;
+    }
     await this.warmCollections();
     return {
       statements,
@@ -428,18 +441,30 @@ export class AppRuntime {
         string,
         (this: { id?: string }, p?: Row) => unknown
       > = {};
+      // A method named like a member the framework itself calls (`initialize`,
+      // `validateBeforeSave`, ...) would replace it and run sandbox code on
+      // every record load or save, outside any run-time entitlement check
+      // (#5194). A CRUD action name (`list`, ...) is the same: it must not take
+      // over the model's own tool. It stays runnable through `runMethod`.
+      const parentClass = recipeModelFor(model, md)?.parent;
+      const inherited = (name: string) =>
+        reservedMethodReason(name, parentClass) !== null;
       for (const name of Object.keys(md.methods ?? {}))
-        methods[name] = function (this: { id?: string }, params?: Row) {
-          return rt.runMethod(model, name, this.id ?? null, params ?? {});
-        };
-      registerRuntimeModel(
-        toRuntimeModel(model, md, {
-          tenantScoped: this.database.kind !== 'sqlite',
-        }),
-        {
-          methods: methods as never,
-        },
-      );
+        if (!inherited(name))
+          methods[name] = function (this: { id?: string }, params?: Row) {
+            return rt.runMethod(model, name, this.id ?? null, params ?? {});
+          };
+      const runtimeModel = toRuntimeModel(model, md, {
+        tenantScoped: this.database.kind !== 'sqlite',
+      });
+      // Such a method also gets no generated tool or route: the dispatcher
+      // would call the framework member of that name with the caller's
+      // arguments instead of the app's code.
+      for (const name of Object.keys(runtimeModel.methods ?? {}))
+        if (inherited(name)) delete runtimeModel.methods?.[name];
+      registerRuntimeModel(runtimeModel, {
+        methods: methods as never,
+      });
       // The app uses only its subclass: close the shipped parent's generated
       // surfaces so its tools do not duplicate the subclass's.
       const parent = recipeModelFor(model, md)?.parent;

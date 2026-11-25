@@ -1,5 +1,42 @@
 # @happyvertical/smrt-core
 
+## 0.70.2
+
+### Patch Changes
+
+- ### Features
+  
+  - fence a draft's boot, ownership bump and schema drops on the claim (#5486) (#5631) (app-shell)
+  - fence draft store writes and draft row updates on the claim (#5486) (#5629) (app-shell)
+  - fence change and undo store writes on the claim (#5486) (#5624) (app-shell)
+  - gate app method code on the app.methods entitlement (#5194) (#5623) (app-shell)
+  - flag setters that read a hidden field (#5603) (#5621) (scanner)
+  - carry the owner principal into change-queue entry points (#5609) (#5618) (app-shell)
+  
+  ### Bug Fixes
+  
+  - refuse reserved method names on add or rename (#5194) (#5628) (app-shell)
+  - allow self-review on the desktop-release environment guard (#5619) (#5620) (smrt-desktop)
+- @happyvertical/smrt-config@0.70.2
+  - @happyvertical/smrt-scanner@0.70.2
+  - @happyvertical/smrt-types@0.70.2
+
+## 0.70.1
+
+### Patch Changes
+
+- ### Features
+  
+  - tenant-scoped run-time models with row-level-security policies (#5610) (app-shell)
+  
+  ### Bug Fixes
+  
+  - header at phone width, truthful Auto wording; docs and comment fixes (#5613) (planner)
+  - assistant chat follow-ups from #5601 QA (#5614) (app-shell)
+- @happyvertical/smrt-config@0.70.1
+  - @happyvertical/smrt-scanner@0.70.1
+  - @happyvertical/smrt-types@0.70.1
+
 ## 0.70.0
 
 ### Minor Changes

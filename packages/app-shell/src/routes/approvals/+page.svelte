@@ -19,7 +19,15 @@ async function decide(id: string, summary: string, approve: boolean) {
   status = '';
   try {
     const { data: out } = await decideApproval(id, approve);
-    if (out.status === 'failed') {
+    if (out.status === 'unknown') {
+      messages = {
+        ...messages,
+        [id]:
+          out.error ||
+          'Whether the change was applied is not known yet; reopen the app and check.',
+      };
+      status = `Approved, but the outcome is unknown: ${summary}`;
+    } else if (out.status === 'failed') {
       messages = {
         ...messages,
         [id]: out.error || 'The change was approved but could not be applied.',

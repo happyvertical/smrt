@@ -1,3 +1,8 @@
+<!--
+  ConnectAi: connect an AI engine (a coding-agent CLI, ChatGPT or an API key)
+  and show whether the app can use it. Onboarding and Settings share it; the
+  `variant` prop picks the wording and which engines are shown first.
+-->
 <script lang="ts">
 import { Select } from '@happyvertical/smrt-ui/forms';
 import { useI18n } from '@happyvertical/smrt-ui/i18n';
@@ -81,11 +86,13 @@ let stopped = false;
 let refreshing: Promise<void> | undefined;
 const active = new AbortController();
 const titleId = $props.id();
-const tools = [
+const ALL_OPTIONS = [
   { tool: 'claude-code' as const, key: M['ui.connect_ai.claude'] },
   { tool: 'chatgpt' as const, key: M['ui.connect_ai.chatgpt'] },
   { tool: 'codex' as const, key: M['ui.connect_ai.codex'] },
 ];
+// Hosted: the server has no CLI to find and no browser to sign in with.
+const tools = $derived(info?.hosted ? [] : ALL_OPTIONS);
 
 async function refresh(): Promise<void> {
   if (stopped) return;
@@ -293,6 +300,7 @@ onMount(() => {
       {#each mainTools as tool (tool.tool)}
         {@render toolRow(tool, compactInfo)}
       {/each}
+      {#if !compactInfo.hosted}
       <li class="smrt-connect-ai__tool" id="chatgpt">
         <div class="smrt-connect-ai__what">
           <strong>{t(M['ui.connect_ai.chatgpt'])}</strong>
@@ -327,6 +335,7 @@ onMount(() => {
           {/if}
         </div>
       </li>
+      {/if}
       {#each advancedTools as tool (tool.tool)}
         {@render toolRow(tool, compactInfo)}
       {/each}
@@ -346,10 +355,12 @@ onMount(() => {
       <p class="smrt-connect-ai__api smrt-app-shell__muted">{t(M['ui.connect_ai.not_ready'])}</p>
     {/if}
 
+    {#if !compactInfo.hosted}
     <p class="smrt-app-shell__muted smrt-connect-ai__legal">
       {t(M['ui.connect_ai.compact_legal_before'])}
       <a class="smrt-app-shell__link" href="https://developers.openai.com/siwc/token-sharing-open-source/preview-limitations" target="_blank" rel="noopener noreferrer">{t(M['ui.connect_ai.compact_preview'])}<span class="smrt-app-shell__sr-only"> {t(M['ui.connect_ai.new_tab'])}</span></a>{t(M['ui.connect_ai.compact_legal_after'])}
     </p>
+    {/if}
 
     <p class="smrt-connect-ai__advanced">
       <a class="smrt-app-shell__link" href={safeHref(apiKeyHref) ?? undefined}>{t(M['ui.connect_ai.compact_advanced'])}</a>
@@ -437,8 +448,10 @@ onMount(() => {
       </li>
     </ul>
     <p role="status">{t(engineReady(info) ? M['ui.connect_ai.ready'] : M['ui.connect_ai.not_ready'])}</p>
+    {#if !info.hosted}
     <p>{t(M['ui.connect_ai.legal'])}</p>
     <p><a href="https://developers.openai.com/siwc/token-sharing-open-source/preview-limitations" target="_blank" rel="noopener noreferrer">{t(M['ui.connect_ai.preview'])} {t(M['ui.connect_ai.new_tab'])}</a></p>
+    {/if}
   {/if}
   {#if failed}
     <p role="alert">{t(cancelUnavailable ? M['ui.connect_ai.cancel_unavailable'] : M['ui.connect_ai.error'])}</p>

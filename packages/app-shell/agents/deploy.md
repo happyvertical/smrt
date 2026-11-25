@@ -10,6 +10,7 @@ registry instead of running from a checkout. Cloud-profile behaviour
 | Entry | What |
 |---|---|
 | `smrt-app-shell` (`bin/smrt-app-shell.mjs`) | Starts the server. Same as `node build`. |
+| `smrt-app-shell migrate-to-postgres --tenant <id> --user <owner id>` | One operator command (`build/operator.js`, #5193): moves a tenant's SQLite app into its PostgreSQL schema as the verified owner, then exits (0 done, 1 refused or the shell did not start, 2 usage). Hosted profile only; [cloud profile](cloud-profile.md). |
 | `@happyvertical/smrt-app-shell/start` | `build/index.js`, importable as a start entry (importing it starts listening). |
 | `build/` | The SvelteKit adapter-node output (`build/index.js` raises `BODY_SIZE_LIMIT`, then imports `server-start.js`). Published in `files`; a `turbo.json` output and the release workspace archive carry it (without them the published 0.62.1 to 0.66.1 had `dist/` only: the release job archived `*/dist/*` and prepack reused it). |
 | `@happyvertical/smrt-app-shell/embed` | `build/embed.js`: `handler` (Node request listener, also Express/Connect middleware) and `drain`. Importing it initialises the shell and listens on nothing (below). |
@@ -37,7 +38,10 @@ its state root), `DATABASE_URL` and the provider settings (hosted). Hosted apps
 on PostgreSQL optionally split the credentials: `DATABASE_URL` stays the admin and
 `SMRT_APP_SHELL_RUNTIME_DATABASE_URL` is the unprivileged login user operations
 run as (cloud-profile.md "User apps on PostgreSQL"); the shared pool and the
-operation deadline have their own `SMRT_APP_SHELL_*` variables there. Liveness:
+operation deadline have their own `SMRT_APP_SHELL_*` variables there. Hosted start
+refuses a `DATABASE_URL` login that is a superuser or has BYPASSRLS (it would void
+the shell tables' row-level security; opt-out `SMRT_UNSAFE_ALLOW_RLS_BYPASS=1`,
+tests and local development only; cloud-profile.md). Liveness:
 `GET /api/_runtime/health`.
 
 ## Stopping: SIGTERM and SIGINT

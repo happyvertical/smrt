@@ -13,6 +13,7 @@ export interface ImportExportProps {
   fields?: ImportExportField[];
   /** Use generated fields and the active cookbook policy automatically. */
   definition?: ScreenCollectionDefinition;
+  /** Field policy to apply to `definition`; defaults to the active cookbook's policy. */
   policy?: ScreenPolicy | null;
   /** Heading context, for example the collection's plural label. */
   collectionLabel?: string;

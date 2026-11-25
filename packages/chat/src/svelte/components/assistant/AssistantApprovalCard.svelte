@@ -1,3 +1,8 @@
+<!--
+  AssistantApprovalCard: one assistant action waiting for the owner. It shows
+  the summary and status, polls the server until the hold settles, and sends
+  the owner's approve or deny decision through the transport.
+-->
 <script lang="ts">
 import { useI18n } from '@happyvertical/smrt-ui/i18n';
 import { Button, Card } from '@happyvertical/smrt-ui/ui';

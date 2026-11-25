@@ -4,6 +4,7 @@
 // (`routes/api/shell/changes/**`) are the contract. The server module
 // `lib/server/changes.ts` owns the batch; nothing here decides anything.
 import { api } from './api.ts';
+import { plainStep } from './command-summary.ts';
 import type { ChangeCardView, ChangesState } from './types.ts';
 
 /** The working copy's name: History titles an applied batch from it. */
@@ -376,7 +377,9 @@ export function planReplyBlock(
     c.questions.filter((q) => q.state === 'open'),
   );
   const questions = open.length;
-  const lines = active.slice(0, 4).map((c) => c.summary || 'A change');
+  const lines = active
+    .slice(0, 4)
+    .map((c) => plainStep(c.summary || 'A change'));
   return {
     count: changes.count,
     lines,

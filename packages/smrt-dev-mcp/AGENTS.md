@@ -300,6 +300,8 @@ when `dist` is missing or older, so rebuild `dist` after server edits. Guarded b
   types (REAL→INTEGER is not a whitelisted upgrade) and rescaling stored values
   by 100. Consumer packages always warn. A cheap textual pre-filter keeps the
   check from parsing the whole workspace.
+- `setter-reads-hidden-field` (#5603) is an `error` everywhere: a setter that
+  reads a sensitive/`readPermission` field. Rule: core `agents/generators.md`.
 - **`maxChars` budgets the objects payload, not the whole response**: project
   metadata and diagnostics are always returned in full, because a diagnostic is
   how discovery reports that it found nothing (#2143). Budgeting it away would

@@ -25,6 +25,7 @@ import {
   openCloudShell,
 } from '$lib/server/cloud-test-support';
 import { installShellInference } from '$lib/server/inference';
+import { hideDeploymentRows } from '$lib/server/inference-hosted-view';
 import { runAs } from '$lib/server/owner';
 import { actions, load } from './+page.server';
 
@@ -68,13 +69,15 @@ const overrideRows = async () =>
     (await h.db.query('SELECT * FROM _smrt_inference_overrides')).rows,
   );
 
+let operator: InferenceSettingsService;
+
 beforeAll(async () => {
   vi.stubEnv('OPENAI_API_KEY', OPERATOR_KEY);
   h = await openCloudShell();
   installShellInference();
   // The operator's deployment-wide tier binding: it names a provider and no
   // key, so the provider's conventional variable would supply the key.
-  const operator = await InferenceSettingsService.create(
+  operator = await InferenceSettingsService.create(
     { db: h.db },
     { authorize: () => true },
   );
@@ -85,6 +88,23 @@ beforeAll(async () => {
     target: { provider: 'openai', model: 'gpt-4o-mini' },
   });
   // Tenants bind a tier only to what the operator's allow-list names.
+  await operator.setAlias({
+    name: 'operatorchain',
+    alias: {
+      candidates: [{ provider: 'openai', model: 'operator-secret-model' }],
+    },
+  });
+  await operator.setFusion({
+    name: 'operatorfusion',
+    definition: {
+      mode: 'pair',
+      seats: [
+        { name: 'a', prompt: 'operator.prompt.a', target: 'good' },
+        { name: 'b', prompt: 'operator.prompt.b', target: 'good' },
+        { name: 'c', prompt: 'operator.prompt.c', target: 'great' },
+      ],
+    },
+  });
   await operator.setTenantAllowList({
     binding: 'tier:good',
     allowList: ['model:openai/gpt-4.1'],
@@ -172,6 +192,132 @@ describe('cloud: the assistant runs only on the owner’s own key', () => {
     expect(await resolveAssistantOptions(h.a, config)).toMatchObject({
       apiKey: ANN_KEY,
     });
+  });
+});
+
+describe('cloud: the operator’s deployment-wide rows are not shown', () => {
+  it('shows no app tier target, alias, fusion or transcript setting, only the tenant’s own', async () => {
+    const page = await loadAs(h.a);
+    const text = JSON.stringify(page);
+    for (const secret of [
+      'gpt-4o-mini',
+      'operator-secret-model',
+      'operatorchain',
+      'operatorfusion',
+      'operator.prompt',
+    ])
+      expect(text, secret).not.toContain(secret);
+    expect(page.aliases).toEqual([]);
+    expect((page as unknown as { fusions: unknown[] }).fusions).toEqual([]);
+    expect(
+      (page as unknown as { transcripts: unknown }).transcripts,
+    ).toBeNull();
+    for (const row of page.tiers) expect(row.appTarget).toBeNull();
+    expect((page as unknown as { hosted: boolean }).hosted).toBe(true);
+  });
+
+  it('keeps the tenant’s own override visible and the other tenant’s hidden', async () => {
+    await post('saveTier', h.a, {
+      tier: 'good',
+      scope: 'tenant',
+      target: { provider: 'openai', model: 'gpt-4.1' },
+    });
+    const ann = (await loadAs(h.a)).tiers.find((t) => t.tier === 'good');
+    expect(JSON.stringify(ann?.tenantTarget)).toContain('gpt-4.1');
+    // Bob has no override of his own; Ann's is not on his page.
+    const bobRow = (await loadAs(h.b)).tiers.find((t) => t.tier === 'good');
+    expect(bobRow?.tenantTarget).toBeNull();
+    expect(JSON.stringify(bobRow?.tenantTarget)).not.toContain('gpt-4.1');
+  });
+});
+
+describe('cloud: the tenant may choose what its allow-list names', () => {
+  it('carries the allow-list, so the panel enables the allowed override and not the disallowed one', async () => {
+    const page = await loadAs(h.a);
+    const row = page.tiers.find((t) => t.tier === 'good') as unknown as {
+      tenantAllowList?: string[] | null;
+    };
+    expect(row.tenantAllowList).toEqual(['model:openai/gpt-4.1']);
+    // The operator's own tier target is still not on the page.
+    expect(JSON.stringify(page)).not.toContain('gpt-4o-mini');
+    const d = (
+      page as unknown as { defaultTier: { tenantAllowList?: unknown } }
+    ).defaultTier;
+    expect(d && 'tenantAllowList' in d).toBe(true);
+  });
+});
+
+describe('cloud: alias and fusion choices the allow-list admits', () => {
+  it('lists the admitted names only, with none of their definitions', () => {
+    const base = {
+      tenantId: 't',
+      canEdit: true,
+      canPersonalize: false,
+      defaults: {},
+      providers: [],
+      tiers: [
+        {
+          tier: 'good',
+          effectiveLabel: 'x',
+          tenantAllowList: ['alias:shared', 'fusion:pairA'],
+        },
+      ],
+      defaultTier: null,
+      aliases: [
+        {
+          name: 'shared',
+          source: 'app',
+          candidates: [{ provider: 'openai', model: 'operator-secret-model' }],
+        },
+        { name: 'private', source: 'app', candidates: [{ model: 'other' }] },
+      ],
+      fusions: [
+        { name: 'pairA', source: 'app', definition: { seats: ['sk-seat'] } },
+        { name: 'pairB', source: 'app', definition: { seats: ['x'] } },
+      ],
+      transcripts: null,
+      usage: null,
+    };
+    const page = hideDeploymentRows(base as never);
+    expect(page.aliases.map((a) => a.name)).toEqual(['shared']);
+    expect(page.fusions.map((f) => f.name)).toEqual(['pairA']);
+    const text = JSON.stringify(page);
+    for (const secret of [
+      'operator-secret-model',
+      'sk-seat',
+      'private',
+      'pairB',
+    ])
+      expect(text, secret).not.toContain(secret);
+  });
+});
+
+describe('cloud: a tenant override the operator has since blocked', () => {
+  it('does not fall through to the operator’s value on the page', async () => {
+    await post('saveTier', h.a, {
+      tier: 'good',
+      scope: 'tenant',
+      target: { provider: 'openai', model: 'gpt-4.1' },
+    });
+    await operator.setTenantAllowList({
+      binding: 'tier:good',
+      allowList: ['model:openai/gpt-4.1-nano'],
+    });
+    try {
+      const page = await loadAs(h.a);
+      const row = page.tiers.find((t) => t.tier === 'good') as unknown as {
+        tenantBlocked?: boolean;
+        effectiveLabel: string;
+      };
+      expect(row.tenantBlocked).toBe(true);
+      expect(row.effectiveLabel).toBe('Provided by the platform');
+      expect(JSON.stringify(page)).not.toContain('gpt-4o-mini');
+    } finally {
+      await operator.setTenantAllowList({
+        binding: 'tier:good',
+        allowList: ['model:openai/gpt-4.1'],
+      });
+    }
   });
 });
 

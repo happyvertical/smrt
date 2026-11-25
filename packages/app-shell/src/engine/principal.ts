@@ -164,6 +164,33 @@ export function requirePrincipal(
 }
 
 /**
+ * The one slug that marks an app's owner. It is independent of the app's
+ * definition (which grows as the change queue runs, while a principal is
+ * frozen), and granted only where trusted shell code builds an owner principal
+ * (`principalFor`). `holds()` is true of it for the system.
+ */
+export const OWNER_SLUG = '_engine.owner';
+
+/**
+ * Host side, change-queue entry points (`execute`, `forkDraft`, `publishDraft`,
+ * `restoreSnapshot`): `requirePrincipal`, and the principal must be the app's
+ * owner or the engine itself. A guest or an ordinary member of the tenant is
+ * refused, as is a missing, copied or foreign principal. The work inside runs
+ * as the system principal on the owner lane, as before.
+ */
+export function requireOwnerPrincipal(
+  v: unknown,
+  tenantId: string,
+): EnginePrincipal {
+  const p = requirePrincipal(v, tenantId);
+  if (p.kind === 'guest')
+    throw new PermissionDeniedError('a guest cannot change the app');
+  if (!holds(p, OWNER_SLUG))
+    throw new PermissionDeniedError('only the app owner can change the app');
+  return p;
+}
+
+/**
  * Worker side: read what arrived over the port. Structure and bounds are
  * checked and the tenant must be the app's; the result is a fresh frozen copy.
  */

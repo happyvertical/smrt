@@ -166,7 +166,7 @@ describe('merged catalog and policy', () => {
     ) as (typeof rows)[number];
     const host = await getHost();
     expect((await host.list(hostOwner(host), 'Chore')).length).toBe(1);
-    const approved = await decideApproval(tool.id, true, h.owner.id);
+    const approved = await decideApproval(tool.id, true, h.owner);
     expect(approved.status).toBe('approved');
     expect((await host.list(hostOwner(host), 'Chore')).length).toBe(0);
     // members cannot reach any of it

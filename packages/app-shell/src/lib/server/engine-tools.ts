@@ -208,7 +208,7 @@ export async function runEngineTool(
   }
   const result = await runCommand(
     { ...args, type } as Command,
-    owner.id,
+    owner,
     'live',
     scope.source ?? 'api',
   );

@@ -17,6 +17,7 @@ let host: AppHost;
 beforeAll(async () => {
   host = await AppHost.open(dir, { store });
   await host.execute(
+    hostOwner(host),
     { type: 'defineModel', name: 'Chore', fields: { title: { type: 'text' } } },
     { author: 't' },
   );
@@ -61,6 +62,7 @@ describe('worker robustness', () => {
 
   it('changes still work after a restart and the change queue is not stuck', async () => {
     await host.execute(
+      hostOwner(host),
       {
         type: 'addField',
         model: 'Chore',
@@ -78,6 +80,7 @@ describe('worker robustness', () => {
     const before = host.version;
     // a definition the app cannot start: an existing column of another type
     await host.execute(
+      hostOwner(host),
       {
         type: 'addField',
         model: 'Chore',
@@ -86,9 +89,10 @@ describe('worker robustness', () => {
       },
       { author: 't' },
     );
-    await host.execute({ type: 'undo' }, { author: 't' });
+    await host.execute(hostOwner(host), { type: 'undo' }, { author: 't' });
     await expect(
       host.execute(
+        hostOwner(host),
         {
           type: 'addField',
           model: 'Chore',
@@ -115,7 +119,7 @@ describe('worker robustness', () => {
       EngineError,
     );
     await expect(
-      other.execute({ type: 'undo' }, { author: 't' }),
+      other.execute(hostOwner(other), { type: 'undo' }, { author: 't' }),
     ).rejects.toBeInstanceOf(EngineError);
   });
 

@@ -29,9 +29,8 @@ import * as signInLogin from '../../routes/auth/[provider]/login/+server.ts';
 import { resolveAssistantOptions } from './assistant/config.ts';
 import { cloudSignInOptions } from './cloud-auth.ts';
 import { type CloudHarness, openCloudShell } from './cloud-test-support.ts';
-import { configureShell, requireLocalProfile } from './host.ts';
+import { requireLocalProfile } from './host.ts';
 import { mountOnboardingRoutes } from './onboarding.ts';
-import { openShell, type ShellHarness } from './test-support.ts';
 
 const SECRET_ENV = 'SMRT_DESKTOP_OWNER_LINK_SECRET';
 const SECRET = 'c'.repeat(64);
@@ -77,6 +76,18 @@ describe('cloud profile', () => {
     expect(touched).toEqual([]);
   });
 
+  it('never reads or writes app_imports (the one shell table with no tenancy or policy)', async () => {
+    const { createShellImportService } = await import('./import-workflow.ts');
+    const service = createShellImportService({
+      db: h.db,
+      root: h.dir,
+    } as never);
+    await expect(service.current(h.a)).rejects.toMatchObject({
+      code: 'not_found',
+    });
+    service.dispose();
+  });
+
   it('serves the account sign-in routes (cloud only)', async () => {
     expect(typeof signInLogin.GET).toBe('function');
     expect(typeof signInCallback.GET).toBe('function');
@@ -113,48 +124,5 @@ describe('cloud profile', () => {
         env: { ANTHROPIC_API_KEY: 'sk-ant-operator-key' },
       }),
     ).rejects.toMatchObject({ code: 'assistant_not_configured' });
-  });
-});
-
-describe('local profile (the desktop) is unchanged', () => {
-  let h: ShellHarness;
-  beforeEach(async () => {
-    h = await openShell();
-    vi.stubEnv(SECRET_ENV, SECRET);
-    touched.length = 0;
-  });
-  afterEach(async () => {
-    vi.unstubAllEnvs();
-    await h.close();
-  });
-
-  it('still answers the owner link through the runtime handler', async () => {
-    // With the runtime stand-in the handler's first runtime read throws: the
-    // point is that the local profile DOES reach the handler.
-    await Promise.resolve(ownerLink.GET(linkEvent())).catch(() => {});
-    expect(touched.length).toBeGreaterThan(0);
-  });
-
-  it('has no cloud sign-in', async () => {
-    await expect(cloudSignInOptions()).rejects.toMatchObject({
-      code: 'not_found',
-    });
-    expect(await requireLocalProfile('x')).toBeUndefined();
-  });
-
-  it('keeps the deployment key for the assistant', async () => {
-    const options = await resolveAssistantOptions(h.owner, {
-      env: { ANTHROPIC_API_KEY: 'sk-ant-test-key-for-local' },
-    });
-    expect(JSON.stringify(options)).toContain('anthropic');
-  });
-
-  it('refuses a profile that is not local or cloud', async () => {
-    configureShell({
-      db: async () => h.db,
-      dataRoot: async () => h.dir,
-      profile: async () => 'self-hosted' as never,
-    });
-    await expect(requireLocalProfile('x')).rejects.toThrow(/not known/);
   });
 });

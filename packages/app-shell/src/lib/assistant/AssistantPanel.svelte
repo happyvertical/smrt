@@ -61,6 +61,8 @@ let log: HTMLElement | undefined = $state();
 let field: HTMLTextAreaElement | undefined = $state();
 let controller: AbortController | null = null;
 let loadedOnce = false;
+let loading = false;
+let chatEpoch = 0; // bumped by New chat: a load in flight must not replace it
 
 const send = (action: Action) => {
   dock = reduce(dock, action);
@@ -131,21 +133,45 @@ onMount(() => {
   return () => window.removeEventListener(ASSISTANT_STATUS_EVENT, changed);
 });
 
+/**
+ * Reopen the owner's most recent thread with its history (any tab, any
+ * reload, #5608). Runs once the load succeeds; a failed load tries again at
+ * the next open. A chat the owner already started here is never replaced.
+ */
+async function reopenLatest() {
+  if (loadedOnce || loading) return;
+  loading = true;
+  const epoch = chatEpoch;
+  try {
+    const threads = await fetchThreads();
+    const latest = threads.reduce<(typeof threads)[number] | undefined>(
+      (best, t) => (!best || t.updatedAt > best.updatedAt ? t : best),
+      undefined,
+    );
+    if (latest) {
+      const t = await fetchThread(latest.id);
+      if (
+        epoch === chatEpoch &&
+        dock.threadId === null &&
+        dock.items.length === 0
+      )
+        send({ type: 'loaded', threadId: latest.id, messages: t.messages });
+    }
+    loadedOnce = true;
+  } catch {
+    // an empty dock is fine; the next open tries again
+  } finally {
+    loading = false;
+  }
+  await loadViews();
+  scrollDown();
+}
+
+onMount(() => void reopenLatest());
+
 async function activate(focus: boolean) {
   await refreshStatus();
-  if (!loadedOnce) {
-    loadedOnce = true;
-    try {
-      const [latest] = await fetchThreads();
-      if (latest) {
-        const t = await fetchThread(latest.id);
-        send({ type: 'loaded', threadId: latest.id, messages: t.messages });
-      }
-    } catch {
-      // an empty dock is fine
-    }
-    await loadViews();
-  }
+  await reopenLatest();
   await tick();
   if (focus) field?.focus();
   scrollDown();
@@ -219,6 +245,8 @@ function stop() {
 
 function newChat() {
   stop();
+  chatEpoch += 1;
+  loadedOnce = true; // a new chat is not replaced by the last thread
   send({ type: 'reset' });
   stepsOpen = {};
   unfolded = {};
@@ -238,7 +266,7 @@ async function decide(
       approvalId: item.approvalId,
       state: out.status,
       message:
-        out.status === 'failed'
+        out.status === 'failed' || out.status === 'unknown'
           ? (out.error ?? 'It could not be applied.')
           : '',
     });
@@ -355,7 +383,7 @@ onDestroy(() => controller?.abort());
         {/if}
       {:else if item.kind === 'report'}
         {#if item.report}
-          {@const shown = keyColumns(item.report.result)}
+          {@const shown = keyColumns(item.report.result, undefined, item.asked)}
           <div class="smrt-assistant-panel__result" role="group" aria-label={`Report: ${shown.result.title}`}>
             <p class="smrt-assistant-panel__result-h">{shown.result.title}</p>
             <ReportResult result={shown.result} fit formatCell={reportCell} cellHref={reportCellHref} />

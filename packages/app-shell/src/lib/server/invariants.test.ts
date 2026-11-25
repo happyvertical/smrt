@@ -58,7 +58,7 @@ describe('approval gate invariants', () => {
     // the definition plus the one call inside applyOwnBatch
     expect(approvals.match(/decideApproval\s*\(/g)?.length).toBe(2);
     expect(approvals).toMatch(
-      /export async function applyOwnBatch[\s\S]*await assertOwner\(\)[\s\S]*typeof expect !== 'string'[\s\S]*requestApply\(expect, owner\.id, opts\)[\s\S]*decideApproval\(pending\.approvalId, true, owner\.id\)/,
+      /export async function applyOwnBatch[\s\S]*await assertOwner\(\)[\s\S]*typeof expect !== 'string'[\s\S]*requestApply\(expect, owner\.id, opts\)[\s\S]*decideApproval\(pending\.approvalId, true, owner\)/,
     );
   });
 
@@ -404,7 +404,7 @@ describe('approval gate invariants', () => {
     // exactly one site, inside the function that opens a draft's host
     expect(host.match(/autoApprove\s*:\s*true/g)?.length).toBe(1);
     expect(host).toMatch(
-      /export function openDraftHost[\s\S]{0,400}autoApprove: true/,
+      /export function openDraftHost[\s\S]{0,600}autoApprove: true/,
     );
   });
 

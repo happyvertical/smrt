@@ -15,11 +15,14 @@ import {
 } from './change-engine.ts';
 import {
   AppHost,
+  appPermissionSlugs,
   type Command,
   DESKTOP_TENANT,
   EMPTY_APP,
   enginePrincipal,
   MemoryVersionStore,
+  OWNER_SLUG,
+  PermissionDeniedError,
 } from './index.ts';
 
 const root = mkdtempSync(join(tmpdir(), 'engine-change-'));
@@ -31,6 +34,7 @@ const me = enginePrincipal({
   kind: 'user',
   tenantId: DESKTOP_TENANT,
   userId: 'owner',
+  permissions: [OWNER_SLUG],
 });
 const AUTHOR = { author: 'tester', approved: true };
 const sha = (p: string) =>
@@ -42,6 +46,7 @@ async function world() {
   const liveDir = join(dir, 'user-app');
   const live = await AppHost.open(liveDir, { store: new MemoryVersionStore() });
   await live.execute(
+    hostOwner(live),
     {
       type: 'defineModel',
       name: 'Chore',
@@ -241,7 +246,7 @@ describe('checkBatch', () => {
     const w = await world();
     const r = await w.rebuild([]);
     expect((await engine.checkBatch(me, w.live, r.draft)).ok).toBe(true);
-    await w.live.execute(defineTag, AUTHOR); // live structure moves on
+    await w.live.execute(hostOwner(w.live), defineTag, AUTHOR); // live structure moves on
     const moved = await engine.checkBatch(me, w.live, r.draft);
     expect(moved.blockers.map((b) => b.code)).toEqual(['base_moved']);
     await r.draft.close();
@@ -376,5 +381,53 @@ describe('checkBatch review digest and plain blockers', () => {
     expect(third.reviewDigest).not.toBe(first.reviewDigest);
     await r.draft.close();
     await w.live.close();
+  });
+});
+
+describe('only the owner changes the app (#5609)', () => {
+  it('refuses a same-tenant member on every ChangeEngine method', async () => {
+    const w = await world();
+    const member = enginePrincipal({
+      kind: 'user',
+      tenantId: DESKTOP_TENANT,
+      userId: 'member',
+      permissions: appPermissionSlugs(w.live.def),
+    });
+    const r = await w.rebuild([]);
+    const refused = async (call: () => unknown) => {
+      // some methods refuse synchronously, others by rejection
+      await expect(async () => call()).rejects.toBeInstanceOf(
+        PermissionDeniedError,
+      );
+    };
+    await refused(() =>
+      engine.rebuild(member, w.live, {
+        draftDir: join(w.dir, 'member-draft'),
+        store: new MemoryVersionStore(),
+        commands: [],
+        author: 'tester',
+      }),
+    );
+    await refused(() =>
+      engine.forkDraft(member, w.live, join(w.dir, 'member-fork'), {
+        store: new MemoryVersionStore(),
+      }),
+    );
+    await refused(() =>
+      engine.undoBatch(member, w.live, { versions: [1], author: 'tester' }),
+    );
+    await refused(() => engine.checkBatch(member, w.live, r.draft));
+    await refused(() => engine.previewPublish(member, w.live, r.draft));
+    await refused(() =>
+      engine.publishDraft(member, w.live, r.draft, {
+        ...AUTHOR,
+        expect: 'digest',
+      }),
+    );
+    await refused(() =>
+      engine.undoTo(member, w.live, 1, { author: 'tester', from: 1 }),
+    );
+    expect(existsSync(join(w.dir, 'member-draft'))).toBe(false);
+    expect(existsSync(join(w.dir, 'member-fork'))).toBe(false);
   });
 });

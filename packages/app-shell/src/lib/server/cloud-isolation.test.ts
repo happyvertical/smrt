@@ -5,10 +5,10 @@
 //
 // WHAT THIS PROVES: the shell's own code and models, on the real tenancy
 // interceptor, over one SQLite database, with two tenants in it. WHAT IT DOES
-// NOT: PostgreSQL (dialect, `database-rls` row-level-security policies: the
-// shell tables are not RLS-enforced in this slice), the deployed runtime's
-// startup and its PostgreSQL version probe, a live OIDC provider. Isolation
-// here is APPLICATION-level: tenant context plus tenant-pinned stores.
+// NOT: PostgreSQL (dialect, row-level-security policies: those are
+// `shell-rls.postgres.test.ts`), the deployed runtime's startup and its
+// PostgreSQL version probe, a live OIDC provider. Isolation here is
+// APPLICATION-level: `required` tenancy plus tenant-pinned stores.
 
 import { existsSync, readdirSync } from 'node:fs';
 import { join } from 'node:path';
@@ -166,7 +166,7 @@ describe('two owners in one deployment', () => {
       }),
     );
     const pending = (await runAs(h.a, () =>
-      requestRecordDelete('Chore', record.id as string, h.a.id, 'live'),
+      requestRecordDelete('Chore', record.id as string, h.a, 'live'),
     )) as { status: string; approvalId: string };
     expect(pending.status).toBe('pending_approval');
     expect(await runAs(h.b, () => Approval.pending())).toEqual([]);
@@ -177,7 +177,7 @@ describe('two owners in one deployment', () => {
     ).toEqual([pending.approvalId]);
     // B names A's approval id: refused, and A's model is untouched.
     await expect(
-      runAs(h.b, () => decideApproval(pending.approvalId, true, h.b.id)),
+      runAs(h.b, () => decideApproval(pending.approvalId, true, h.b)),
     ).rejects.toThrow();
     expect(
       await runAs(h.a, async () =>
@@ -200,7 +200,7 @@ describe('two owners in one deployment', () => {
       ),
     ).toEqual([pending.approvalId]);
     // The owner of the approval decides it.
-    await runAs(h.a, () => decideApproval(pending.approvalId, false, h.a.id));
+    await runAs(h.a, () => decideApproval(pending.approvalId, false, h.a));
   });
 
   it('keeps changes waiting apart: batches, cards, freeze, check and apply', async () => {
@@ -254,6 +254,7 @@ describe('two owners in one deployment', () => {
     await expect(
       runAs(h.a, async () =>
         (await getHost()).execute(
+          hostOwner(await getHost()),
           { type: 'defineModel', name: 'Direct', fields: {} },
           { author: h.a.id, approved: true },
         ),

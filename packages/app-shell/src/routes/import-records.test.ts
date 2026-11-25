@@ -71,7 +71,7 @@ it.each([
   ['live', 'host'],
   ['live', 'route'],
 ] as const)('creates and updates imported records on %s through the %s after sealing', async (copy, surface) => {
-  await startDraft('Workbook', h.owner.id);
+  await startDraft('Workbook', h.owner);
   const draft = await hostFor('draft');
   const fixture = businessWorkbook();
   const orders = fixture.plan.tables[0];
@@ -213,10 +213,11 @@ it.each([
 
 it('repairs a persisted pre-release sealed import through a fresh draft and owner publish approval', async () => {
   for (const phase of ['legacy', 'repair']) {
-    await startDraft(phase, h.owner.id);
+    await startDraft(phase, h.owner);
     const draft = await hostFor('draft');
     if (phase === 'legacy') {
       await draft.execute(
+        hostOwner(draft),
         {
           type: 'defineModel',
           name: 'Customers',
@@ -233,6 +234,7 @@ it('repairs a persisted pre-release sealed import through a fresh draft and owne
         { author: h.owner.id },
       );
       await draft.execute(
+        hostOwner(draft),
         {
           type: 'loadRecords',
           model: 'Customers',
@@ -242,12 +244,14 @@ it('repairs a persisted pre-release sealed import through a fresh draft and owne
         { author: h.owner.id },
       );
       await draft.execute(
+        hostOwner(draft),
         { type: 'hideField', model: 'Customers', field: 'workbookLookup' },
         { author: h.owner.id },
       );
     } else {
       // A versioned conversion rebuilds the physical NOT NULL column as nullable.
       await draft.execute(
+        hostOwner(draft),
         {
           type: 'changeFieldType',
           model: 'Customers',
@@ -258,6 +262,7 @@ it('repairs a persisted pre-release sealed import through a fresh draft and owne
       );
     }
     await draft.execute(
+      hostOwner(draft),
       { type: 'hideField', model: 'Customers', field: 'workbookRow' },
       { author: h.owner.id },
     );
@@ -297,7 +302,7 @@ it('repairs a persisted pre-release sealed import through a fresh draft and owne
 });
 
 it('requires real workbook rows on import batches before inserting anything', async () => {
-  await startDraft('Workbook', h.owner.id);
+  await startDraft('Workbook', h.owner);
   const draftHost = await hostFor('draft');
   const target = createEngineImportTarget(draftHost, () =>
     hostOwner(draftHost),

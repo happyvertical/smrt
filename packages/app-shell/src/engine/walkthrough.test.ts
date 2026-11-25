@@ -34,7 +34,7 @@ const store = new MemoryVersionStore();
 const events: string[] = [];
 let host: AppHost;
 const run = (cmd: Command, approved = true) =>
-  host.execute(cmd, { author: 'walk', approved });
+  host.execute(hostOwner(host), cmd, { author: 'walk', approved });
 const toolNames = async () =>
   (await host.appTools(hostOwner(host))).map((t) => t.name);
 const sql = (file: string, q: string) => {
@@ -324,12 +324,14 @@ describe('walk-through', () => {
     // the template carries method code, so importing it needs approval
     await expect(
       other.execute(
+        hostOwner(other),
         { type: 'importTemplate', data: template },
         { author: 'imp' },
       ),
     ).rejects.toBeInstanceOf(ApprovalRequiredError);
     expect(other.version).toBe(0);
     await other.execute(
+      hostOwner(other),
       { type: 'importTemplate', data: template },
       { author: 'imp', approved: true },
     );
@@ -350,6 +352,7 @@ describe('walk-through', () => {
     // a second import is refused: the app is not empty
     await expect(
       other.execute(
+        hostOwner(other),
         { type: 'importTemplate', data: template },
         { author: 'imp', approved: true },
       ),
@@ -363,7 +366,11 @@ describe('walk-through', () => {
     hosts.push(other);
     const bad = { format: 2, definition: {} } as unknown as Template;
     await expect(
-      other.execute({ type: 'importTemplate', data: bad }, { author: 'x' }),
+      other.execute(
+        hostOwner(other),
+        { type: 'importTemplate', data: bad },
+        { author: 'x' },
+      ),
     ).rejects.toThrow(/format/);
     const evil = structuredClone(template);
     (evil.definition as AppDefinition).models.Chore.methods = {
@@ -371,6 +378,7 @@ describe('walk-through', () => {
     };
     await expect(
       other.execute(
+        hostOwner(other),
         { type: 'importTemplate', data: evil },
         { author: 'x', approved: true },
       ),
@@ -382,7 +390,7 @@ describe('walk-through', () => {
     const h = await AppHost.open(tmp(), { store: new MemoryVersionStore() });
     hosts.push(h);
     const go = (cmd: Command) =>
-      h.execute(cmd, { author: 'x', approved: true });
+      h.execute(hostOwner(h), cmd, { author: 'x', approved: true });
     await go({ type: 'enableRecipe', recipe: 'profiles' });
     await go({
       type: 'addField',

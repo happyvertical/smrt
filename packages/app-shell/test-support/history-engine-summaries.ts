@@ -14,7 +14,7 @@ const headings: string[] = [];
 async function run(command: Command) {
   const plan = await host.plan(command);
   headings.push(commandSummary(command, host.def, undefined, plan.preview));
-  return host.execute(command, { author: 'owner', approved: true });
+  return host.execute(hostOwner(host), command, { author: 'owner', approved: true });
 }
 try {
   await run({ type: 'defineModel', name: 'Order', label: 'Orders', fields: {

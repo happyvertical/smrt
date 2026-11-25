@@ -126,10 +126,21 @@ export class StaleFenceError extends EngineError {
 
 /** The host's claim on its app is gone (its session ended); the app must be reopened (#5470). */
 export class ClaimLostError extends StaleFenceError {
-  constructor(message: string) {
-    super(message, { resource: 'claim' });
+  constructor(message: string, details: Record<string, unknown> = {}) {
+    super(message, { resource: 'claim', ...details });
     this.name = 'ClaimLostError';
   }
+}
+
+/**
+ * Did a change of a claimed host end with an outcome nobody could tell (#5486)?
+ * Only an error leaving a change whose journal a reopen will settle carries it.
+ */
+export function isUnknownOutcome(e: unknown): boolean {
+  return (
+    e instanceof ClaimLostError &&
+    (e as ClaimLostError).details?.outcome === 'unknown'
+  );
 }
 
 /** The version store's current version is not what the caller expected; nothing was written (#5470). */

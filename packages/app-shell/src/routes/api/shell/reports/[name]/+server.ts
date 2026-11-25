@@ -45,7 +45,7 @@ export const POST: RequestHandler = guarded(async (event) => {
       await runAs(owner, () =>
         runCommand(
           { type: 'defineReport', name, definition: { ...report, label } },
-          owner.id,
+          owner,
           target,
         ),
       ),
@@ -62,5 +62,5 @@ export const POST: RequestHandler = guarded(async (event) => {
             'report name',
           ),
         };
-  return json(await runAs(owner, () => runCommand(command, owner.id, target)));
+  return json(await runAs(owner, () => runCommand(command, owner, target)));
 });

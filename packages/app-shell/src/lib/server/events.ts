@@ -20,7 +20,7 @@ export type ShellEvent =
   | {
       type: 'approval';
       id: string;
-      status: 'pending' | 'approved' | 'denied' | 'failed';
+      status: 'pending' | 'approved' | 'denied' | 'failed' | 'unknown';
       summary: string;
     }
   | {

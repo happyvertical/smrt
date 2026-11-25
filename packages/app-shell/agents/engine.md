@@ -278,28 +278,98 @@ for the one operation on the host thread; a PGlite uses the host's client).
   server the tests marked [S]: a terminated claim, a delayed commit after a
   takeover, the heartbeat, a claim lost right after it was taken) and
   `claim.test.ts`.
-  **Unfenced in #5470 part 1** (hosted PostgreSQL; follow-up: #5486):
-  - Change and undo store writes (`append`/`setCurrent` after a migration):
-    unconditional, on the store pool, no claim proof. A host that loses its
-    claim after its worker's migration can still record the version after the
-    next host has read the store.
-  - Every `DraftVersionStore` write, and a draft host's boot, ownership bump
-    and schema drops (admin connections, no claim). The draft's own generation
-    still guards its schema.
-  - `adoptDraft`'s draft-row writes (starting/extra open -> discarded).
-  - The publish journal file (local data directory).
-  - `markPurged`; snapshot and rehearsal files.
+  **Change and undo store writes on the claim (#5486 slice 1; same host
+  profile).** A change or an undo step of a claimed host (S = the store's
+  current version, D = the data's `_app_meta.version`, g = the host's
+  generation) runs in three steps: **P0**, a claim transaction (proof, the
+  fence `FOR SHARE` = g, `commitIn(tx, [], p, p)` as a compare, and the
+  `change` key `{id, from, to, record, request}` in the live `_app_meta`);
+  **M**, the worker's migration, whose boot operation also writes `applied` =
+  the change id (`Migration.intent`, steps or not; it is one transaction with
+  the steps and D, committed before `ready`); **T_c**, a claim
+  transaction (proof, fence, `commitIn(tx, records, v, expected p)`, and
+  `change.committed = true`). `applied` stays (the last change's id) until the
+  next open removes it.
+  Outcome of T_c: *refused* (callback did not finish) or *answered* (the
+  server returned a SQLSTATE that is not class 08/57P) with the claim still
+  proven, so the migration is reversed under the same claim (a flagged boot of
+  the down steps, or a step-less boot of the old definition; it deletes
+  `applied` and records `reversed` = the id, so a reverse whose COMMIT reply
+  is lost still reopens as "never landed") and the error is
+  returned as today; *unknown* (the claim lost, or an error with no SQLSTATE
+  after the callback finished, such as the SDK's "rolled back the transaction
+  at commit") never reverses and never respawns an old worker: the host stops
+  its worker, ends its claim session (so nothing of it can still commit) and
+  throws a `ClaimLostError` with `details.outcome = 'unknown'`
+  (`isUnknownOutcome`). When the forward `ready` rejects with the claim
+  proven and the swap migrates, `notApplied` takes ownership (the bump waits
+  for any open migration transaction) and reads `applied` in that same
+  transaction: only "no" respawns the old worker, on the new generation. A
+  step-less swap never stopped the old worker, so it does not bump: it waits
+  for the failed boot's transaction (`awaitFenceHolders`) and reads `applied`;
+  anything but a definite "no" is unknown. A
+  claim lost while the new worker boots stops it instead of installing it.
+  **Boot** then settles what an earlier host left, in one claim transaction
+  after the publish reconcile (`reconcileChange`): `committed` -> applied;
+  `reversed` = the id -> never landed; `applied` = the id with S = from and D
+  = to -> roll the store forward (`commitIn`), emitting `changed` once the host
+  is open; no `applied` with D = S = from -> never landed; anything else -> a
+  notice. The keys are removed
+  either way (a fork or a snapshot copies them), except that a decided change
+  that names an approval keeps `change` (marked `decided`) until the shell
+  settles the approval and calls `acknowledgeRecovery`, so a failed open or a
+  stopped process in between cannot lose the outcome. The shell fails the open
+  when settling fails, and a change refuses to start while such a key stands. The first version (seed) is
+  also a claim transaction. `host.recoveredChange` names the approval
+  (`ExecuteOptions.request`) of a decided change; the shell settles it only
+  if it is still `executing` (`settleRecoveredChange`). The claim session sets
+  `idle_session_timeout` = max(30 s, 6 x heartbeat) (0 with no heartbeat), so
+  a frozen host's session cannot hold a half-answered COMMIT forever.
+  Each step of an `undoTo` journals `part` {index, of}; a recovered step
+  settles its approval as approved only when it is the last step that landed,
+  and otherwise as failed ("part of this undo took effect"). The shell shows
+  an `executing` approval as `unknown` ("Outcome unknown", a view status only;
+  nothing stores it) unless this process is applying it right now, which still
+  reads `approved` as before; `decideApproval` leaves it `executing` on an
+  unknown outcome and returns `{status: 'unknown', error}`.
+  Residual: a change interrupted before P0 leaves nothing; a part-1 host that
+  opens after an interrupted change boots the old version on the new tables
+  (drain part-1 hosts before this ships); the `ready`-rejects-after-commit
+  arm of `notApplied` is covered by reasoning (the boot operation commits
+  before `ready`), not by a test that can force a lost COMMIT reply.
+  **Drafts (#5486 slice 2).** A live host with a fenced store lends its claim
+  to its drafts (`lendableClaim`; `forkDraft` and the shell's `openDraftHost`
+  pass it as `HostOptions.claim`). A draft host never owns or releases it: it
+  is only where the draft's change and undo store writes run, through the same
+  P0 / M / T_c path with the draft schema's own generation and
+  `DraftVersionStore.commitIn` (a compare on `app_drafts.current_version`, and
+  the draft must still be `starting` or `open`). The draft stops when the lent
+  claim is lost. `forkDraft` clears the journal keys the copy inherited. The
+  shell's draft row UPDATES (`adoptDraft`'s discards, a draft's
+  starting -> open, a failed start, `discardNow`) run through `withDraftRows`,
+  one `claimTransaction` on a host with a fenced claim, so a host that lost
+  its claim changes no draft row. The `starting` row's INSERT and `forkDraft`'s
+  seeding of the new draft's own first version stay on the shell's connection
+  (they create rows nobody else holds).
+  **Draft boot and drops (#5486 slice 3).** A draft host's ownership bump
+  (`acquireOwnership`) and every schema drop or swap it makes (`admin()`) are
+  claim transactions on the lent claim, and `discardOrphanDraft` takes the live
+  host's claim too (`discardStaleDraft(dir, live)`), so a host that lost its
+  claim bumps and drops nothing.
+  **Still unfenced** (hosted PostgreSQL):
   - Fork and restore schema creation on admin connections (at worst a leaked
     side schema, removed by the sweep).
+  - The publish journal file (local data directory).
+  - `markPurged`; snapshot and rehearsal files.
   - Portable import's `populate` (claim never proven; unchanged from today).
 - **Fork** (a draft, a publish rehearsal): a live schema beside the app's, in one transaction (a
   failure leaves none). `forkDraft` writes the name in the draft marker
   (`schema`, `liveSchema`); `AppHost.open` on that directory takes the live app's database
   config and uses the marker's schema. `discard` drops it (a failure keeps
-  the marker, so it can be retried); `discardOrphanDraft(dir, database)` does
+  the marker, so it can be retried); `discardOrphanDraft(dir, database, claim?)` does
   the same for a directory no host holds.
 - **Snapshot** (undo points, `.pgdump` in `snapshots/`, same retention as
-  `.db`): restore-only, adds no table. `AppHost.restoreSnapshot(name)` builds
+  `.db`): restore-only, adds no table. `AppHost.restoreSnapshot(principal, name)` builds
   the dump as a side schema, retires the worker, swaps it in and starts a
   new worker; the data it replaces is first kept as its own snapshot
   (`migrate-before-restore`), so a restore can be undone by another. Only a
@@ -432,7 +502,7 @@ stages, refusals, digest and version numbering.
   refuses it unless the directory holds the engine's draft marker
   (`.smrt-draft.json`, written only by `forkDraft`) naming a different live
   directory. A live directory never has a marker.
-- **`live.forkDraft(draftDir, { store })`** (queue, calls drained): worker op
+- **`live.forkDraft(principal, draftDir, { store })`** (queue, calls drained): worker op
   `copyTo(path)` is `VACUUM INTO` (one consistent state, no -wal/-shm needed).
   The call creates `draftDir` (must not exist, must not be/contain/lie inside
   live), copies `app.db`, writes the marker, seeds the EMPTY draft store with
@@ -451,7 +521,7 @@ stages, refusals, digest and version numbering.
   live data (live only waits while the copy is taken); `digest` pins the draft's
   chain and every replayed load/extract/merge count; each version exposes
   `dataSteps` from that sequential rehearsal. A changed count at apply requires
-  a fresh preview before any live swap. `live.publishDraft(draft, { author, approved: true, expect: digest, draftName? })`
+  a fresh preview before any live swap. `live.publishDraft(principal, draft, { author, approved: true, expect: digest, draftName? })`
   refuses without `approved`, without the digest, if the chain or the app it
   started from changed, or if a `.prepublish` file is lying around. Inside the
   queue, calls drained: copy live, replay each draft version in order (one short
@@ -563,9 +633,10 @@ one bundle (`format: 2`), so a desktop app moves to a hosted one and back.
   written by import: it rides in the caller's own tables, and the engine reads it
   from the store when the app starts.
 - **Hosted placement.** `importUserApp({ database })` installs into the schema the
-  host chose for ONE tenant's app.
-  Receiving a bundle over the network and mapping it to a tenant needs the
-  caller hand-off (#5188), so it is not wired here. The CLI's use is in
+  host chose for ONE tenant's app (the engine's own untouched first start counts
+  as empty). The shell's receiver (`receive-user-app.ts`, cloud-profile.md
+  "Receiving a desktop app") maps a bundle to the verified owner's tenant; the operator command `smrt-app-shell migrate-to-postgres` (cloud-profile.md)
+  triggers the in-place SQLite-to-PostgreSQL move. The CLI's use is in
   `packages/cli/agents/app-commands.md`.
 - Tests: `portable-export.test.ts` (SQLite) and
   `portable-export-postgres.test.ts` (registered `test:postgres` suite: SQLite to
@@ -660,9 +731,21 @@ the PostgreSQL half is "The broker" below.
   `onApp` and `AppWorker.call(op, principal, ...args)` throw `NoPrincipalError`
   (401) without a valid one and `PermissionDeniedError` (403) for another
   tenant, before anything is queued or posted. Engine work in the change queue
-  (`callApp`) runs as the host's own system principal. Boot gets the system
-  principal in `workerData.bootPrincipal`; the worker refuses to start
-  without it.
+  (`callApp`) runs as the host's own system principal.
+- Change-queue entry points (#5609): `execute`, `forkDraft`, `publishDraft` and
+  `restoreSnapshot` take the caller first and check it before anything is cloned,
+  queued, created or read (`requireOwnerPrincipal`): minted, same tenant, not a
+  guest, and holding `OWNER_SLUG` (`_engine.owner`, granted only by
+  `principalFor`, held by the system). The slug does not depend on the definition,
+  which grows while a change batch replays. `ChangeEngine` (`asCaller`) checks the
+  same. What runs inside is unchanged: engine work as the system principal on the
+  owner lane, so the caller is gated at the entry, not re-checked per worker op.
+  `authorCaller(owner, host)` builds the principal from the verified shell
+  `Principal`, so a host of another tenant refuses it. `opts.author` stays a
+  History label, not an identity. Tests: `change-principal.test.ts`,
+  `author-caller.test.ts`.
+- Boot gets the system principal in `workerData.bootPrincipal`; the worker
+  refuses to start without it.
 - Worker: `app-worker.ts` re-reads the principal off the wire
   (`readPrincipal`: shape, bounds, the app's tenant, a fresh frozen copy),
   then `authorizeOp` (`authorize.ts`) gates the op, then runs it inside an
@@ -1077,7 +1160,8 @@ preserves the workbook's explicit display field.
 `SqliteChangeEngine` (`createSqliteChangeEngine()`) over `forkDraft` /
 `previewPublish` / `publishDraft` / `undoTo`. Every method takes a `principal`
 (an `EnginePrincipal`, #5188: refused unless it was built by `enginePrincipal()`
-for the live host's tenant, and never a guest) and an optional `fence` (#5190),
+for the live host's tenant, never a guest, and holding `OWNER_SLUG`: `asCaller` is
+`requireOwnerPrincipal`, so `previewPublish`/`checkBatch` refuse a member too) and an optional `fence` (#5190),
 unused on SQLite. Hosts are passed in.
 
 - `rebuild(principal, live, { draftDir, store, commands: {key, command}[], author, signal? })`:

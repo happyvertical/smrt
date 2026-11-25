@@ -116,7 +116,9 @@ export async function runAgentTurn(
       approvals: {
         subscribe: (listener) =>
           subscribe((event) => {
-            if (event.type === 'approval') listener(event);
+            // `unknown` (#5486) is not a decision: the hold keeps waiting.
+            if (event.type === 'approval' && event.status !== 'unknown')
+              listener({ ...event, status: event.status });
           }),
         get: getApprovalView,
       },

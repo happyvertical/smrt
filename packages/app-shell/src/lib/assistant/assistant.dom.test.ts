@@ -806,3 +806,39 @@ it('New chat forgets which replies were unfolded and which steps were opened', a
     expect(container.querySelector('.smrt-assistant-panel__more')).toBeNull(),
   );
 });
+
+it('reopens the most recent thread with its history on load, even before the chat is opened (#5608)', async () => {
+  const fetchMock = vi.fn(async (input: unknown) => {
+    const path = String(input);
+    if (path.includes('/threads/t2'))
+      return new Response(
+        JSON.stringify({
+          messages: [
+            { id: '1', seq: 1, role: 'user', content: 'Earlier question' },
+            { id: '2', seq: 2, role: 'assistant', content: 'Earlier answer' },
+          ],
+        }),
+      );
+    if (/\/threads(\?|$)/.test(path))
+      return new Response(
+        JSON.stringify({
+          threads: [
+            { id: 't1', title: 'old', updatedAt: '2026-01-01T00:00:00.000Z' },
+            { id: 't2', title: 'new', updatedAt: '2026-02-01T00:00:00.000Z' },
+          ],
+        }),
+      );
+    return new Response(
+      JSON.stringify(
+        path.includes('/status') ? { configured: true } : { approvals: [] },
+      ),
+    );
+  });
+  vi.stubGlobal('fetch', fetchMock);
+  await open({ open: false }, /Earlier answer/);
+  expect(container.textContent).toContain('Earlier question');
+  const threadCalls = fetchMock.mock.calls
+    .map(([u]) => String(u))
+    .filter((u) => /\/threads\/t/.test(u));
+  expect(threadCalls).toEqual([expect.stringContaining('/threads/t2')]);
+});

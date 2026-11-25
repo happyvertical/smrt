@@ -205,7 +205,7 @@ describe('approval gating', () => {
     const out = (await runAppTool(
       'chore_delete',
       { id: chore },
-      h.owner.id,
+      h.owner,
       'live',
     )) as { status: string };
     expect(out.status).toBe('pending_approval');
@@ -226,7 +226,7 @@ describe('approval gating', () => {
     const host = await getHost();
     const viaRest = (await runRest(
       { method: 'DELETE', url: `/api/chores/${chore}` },
-      h.owner.id,
+      h.owner,
       'live',
     )) as { status: string; approvalId: string };
     expect(viaRest.status).toBe('pending_approval');
@@ -234,7 +234,7 @@ describe('approval gating', () => {
     const viaRecord = (await requestRecordDelete(
       'Chore',
       chore,
-      h.owner.id,
+      h.owner,
       'live',
     )) as { status: string; approvalId: string };
     expect(viaRecord.status).toBe('pending_approval');
@@ -252,6 +252,7 @@ describe('undo that would overwrite newer data', () => {
   it('App.undo and the assistant/MCP door return a pending approval with the count', async () => {
     const host = await getHost();
     await host.execute(
+      hostOwner(host),
       {
         type: 'defineModel',
         name: 'Dial',
@@ -262,6 +263,7 @@ describe('undo that would overwrite newer data', () => {
     const a = await host.create(hostOwner(host), 'Dial', { level: '1' });
     await host.create(hostOwner(host), 'Dial', { level: '2' });
     await host.execute(
+      hostOwner(host),
       {
         type: 'changeFieldType',
         model: 'Dial',
@@ -275,7 +277,7 @@ describe('undo that would overwrite newer data', () => {
 
     const { runCommand } = await import('./builder.ts');
     const undo = () =>
-      asOwner(() => runCommand({ type: 'undo' }, h.owner.id, 'live', 'owner'));
+      asOwner(() => runCommand({ type: 'undo' }, h.owner, 'live', 'owner'));
     // the assistant/MCP door is refused: undo is the owner's, from History
     await expect(asOwner(() => App.undo())).rejects.toThrow(/History/);
     const out = (await undo()) as unknown as {
@@ -292,7 +294,7 @@ describe('undo that would overwrite newer data', () => {
     expect(host.version).toBe(version);
     // the engine refuses on its own, whatever the caller says
     await expect(
-      host.execute({ type: 'undo' }, { author: 'x' }),
+      host.execute(hostOwner(host), { type: 'undo' }, { author: 'x' }),
     ).rejects.toThrow(/approval required/);
     // an identical request reuses the card
     const again = (await undo()) as unknown as { approvalId: string };
@@ -312,6 +314,7 @@ describe('undo that would overwrite newer data', () => {
 
   it('a plain undo is still immediate', async () => {
     await (await getHost()).execute(
+      hostOwner(await getHost()),
       {
         type: 'addField',
         model: 'Dial',
@@ -322,7 +325,7 @@ describe('undo that would overwrite newer data', () => {
     );
     const { runCommand } = await import('./builder.ts');
     const out = (await asOwner(() =>
-      runCommand({ type: 'undo' }, h.owner.id, 'live', 'owner'),
+      runCommand({ type: 'undo' }, h.owner, 'live', 'owner'),
     )) as { status?: string };
     expect(out.status).toBeUndefined();
   });

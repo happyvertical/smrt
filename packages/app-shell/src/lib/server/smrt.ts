@@ -38,17 +38,24 @@ import {
 } from './host.ts';
 import { lifecycleFromEnv } from './host-lifecycle.ts';
 import { installShellInference } from './inference.ts';
+import { isMethodCodeEntitled } from './method-code.ts';
 import { prepareShellSchema } from './schema.ts';
+import { protectShellTables } from './shell-tenancy.ts';
 
 export const runtime = createSmrtSvelteKitRuntime({
   providerReadiness: createProviderReadinessProbe,
-  backgroundJobs: true,
+  // Not in an operator command (`smrt-app-shell migrate-to-postgres`, #5193):
+  // that one-shot process runs beside the server and must not start a second
+  // job runner.
+  backgroundJobs: process.env.SMRT_APP_SHELL_OPERATOR !== '1',
   // Idempotent; creates the shell's tables (and the users/tenancy/profiles
   // tables) on an empty data directory. See schema.ts for the pending hook.
   prepareDatabase: async (db, context) => {
     // Only the local runtime creates schema. A deployed database is migrated
     // by `smrt db:migrate` and a missing table fails the startup check.
     if (!context || context.profile === 'local') await prepareShellSchema(db);
+    // Cloud: the tables exist (migrated); put them under row-level security.
+    else if (context.profile === 'cloud') await protectShellTables(db);
   },
   classOverrides: {},
 });
@@ -114,6 +121,9 @@ configureShell({
     return cloudLimits.workerLimits;
   },
   appLimits: () => cloudLimits.appLimits(),
+  // Cloud only (a holder with no tenant never asks): app-authored method code
+  // needs the tenant's `app.methods` entitlement (#5194).
+  methodCode: (tenantId) => isMethodCodeEntitled(tenantId),
   // Cloud only (a local owner's app is a file in the data root).
   appDatabase: cloudAppDatabase(),
 });

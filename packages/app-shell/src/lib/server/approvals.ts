@@ -11,6 +11,7 @@ import {
   ApprovalRequiredError,
   type Command,
   EngineError,
+  isUnknownOutcome,
   type Plan,
 } from '../../engine/index.ts';
 import { type Approval, ApprovalCollection } from '../objects/Approval.ts';
@@ -23,7 +24,7 @@ import {
 } from './changes.ts';
 import { publish } from './events.ts';
 import { getHost, getShellDb } from './host.ts';
-import { assertOwner, authorCaller } from './owner.ts';
+import { assertOwner, authorCaller, type Principal } from './owner.ts';
 import { ownerRestFailure, ownerResult, ownerText } from './owner-text.ts';
 import { publicChangeResult } from './results.ts';
 
@@ -71,9 +72,16 @@ export async function collectIssuedApprovals<T>(
   return { value, issued };
 }
 
+/**
+ * What the shell shows: a stored status, or `unknown` for an approval left
+ * `executing` because the engine could not say whether its change landed
+ * (#5486). Only the shell's view; nothing stores it.
+ */
+export type ApprovalViewStatus = Approval['status'] | 'unknown';
+
 export interface ApprovalView {
   id: string;
-  status: Approval['status'];
+  status: ApprovalViewStatus;
   summary: string;
   preview: unknown;
   action: ApprovalAction | null;
@@ -86,7 +94,7 @@ export interface ApprovalView {
 
 export interface ApprovalOutcome {
   id: string;
-  status: Approval['status'];
+  status: ApprovalViewStatus;
   result?: unknown;
   error?: string;
 }
@@ -123,6 +131,23 @@ function iso(value: unknown): string {
   return value instanceof Date ? value.toISOString() : String(value ?? '');
 }
 
+/**
+ * Approvals this process is applying right now. An `executing` row that is NOT
+ * in it was interrupted (an unknown outcome, or a restart): it reads `unknown`
+ * (#5486). One running here reads `approved`, as before, so the assistant's
+ * hold and the chat engine never see a normal apply as unknown. (Another
+ * replica's running apply reads `unknown` for its short window.)
+ */
+const applying = new Set<string>();
+
+/** `accepted` reads approved; an `executing` row reads approved while this process applies it, else unknown. */
+function viewStatus(row: Pick<Approval, 'id' | 'status'>): ApprovalViewStatus {
+  if (row.status === 'accepted') return 'approved';
+  if (row.status === 'executing')
+    return applying.has(row.id as string) ? 'approved' : 'unknown';
+  return row.status;
+}
+
 async function view(row: Approval): Promise<ApprovalView> {
   const preview = parseJson(row.preview) as Record<string, unknown> | null;
   const action = parseJson(row.command) as ApprovalAction | null;
@@ -150,10 +175,7 @@ async function view(row: Approval): Promise<ApprovalView> {
   }
   return {
     id: row.id as string,
-    status:
-      row.status === 'accepted' || row.status === 'executing'
-        ? 'approved'
-        : row.status,
+    status: viewStatus(row),
     summary: row.summary,
     preview,
     action: parseJson(row.command) as ApprovalAction | null,
@@ -247,8 +269,8 @@ const STATUS_LOOKUP_CHUNK = 200;
  */
 export async function approvalStatuses(
   ids: readonly string[],
-): Promise<Map<string, ApprovalView['status']>> {
-  const out = new Map<string, ApprovalView['status']>();
+): Promise<Map<string, ApprovalViewStatus>> {
+  const out = new Map<string, ApprovalViewStatus>();
   if (!ids.length) return out;
   const coll = await approvals();
   for (let at = 0; at < ids.length; at += STATUS_LOOKUP_CHUNK) {
@@ -258,12 +280,7 @@ export async function approvalStatuses(
       limit: chunk.length,
     });
     for (const row of rows) {
-      out.set(
-        row.id as string,
-        row.status === 'accepted' || row.status === 'executing'
-          ? 'approved'
-          : row.status,
-      );
+      out.set(row.id as string, viewStatus(row));
     }
   }
   return out;
@@ -355,8 +372,9 @@ export function returnedFailure(
 export async function decideApproval(
   id: string,
   approve: boolean,
-  decidedBy: string,
+  decider: Principal,
 ): Promise<ApprovalOutcome> {
+  const decidedBy = decider.id;
   const coll = await approvals();
   const row = await coll.get(id);
   if (!row) throw new Error('approval not found');
@@ -378,6 +396,7 @@ export async function decideApproval(
     if (!isAction(action)) throw new Error('the stored action is invalid');
     await authority.decide({ id: decidedBy, tenantId }, id, true);
     await authority.consume(tenantId, id);
+    applying.add(id);
     let result: unknown;
     let error: string | undefined;
     try {
@@ -386,7 +405,7 @@ export async function decideApproval(
       const host = await getHost();
       if (action.kind === 'apply-batch')
         result = await applyApproved(action, (live, draft, o) =>
-          live.publishDraft(draft, {
+          live.publishDraft(authorCaller(decider, live), draft, {
             author: row.requestedBy || decidedBy,
             approved: true,
             expect: o.expect,
@@ -414,9 +433,10 @@ export async function decideApproval(
         );
       else if (action.kind === 'command')
         result = publicChangeResult(
-          await host.execute(action.command, {
+          await host.execute(authorCaller(decider, host), action.command, {
             author: row.requestedBy || decidedBy,
             approved: true,
+            request: id,
             reviewedPreview:
               action.reviewedPreview ??
               (parseJson(row.preview) as Record<string, unknown>),
@@ -424,20 +444,20 @@ export async function decideApproval(
         );
       else if (action.kind === 'tool')
         result = await host.callAppTool(
-          authorCaller(host, decidedBy),
+          authorCaller(decider, host),
           action.name,
           action.args,
           { approved: true },
         );
       else if (action.kind === 'record-delete')
         result = await host.remove(
-          authorCaller(host, decidedBy),
+          authorCaller(decider, host),
           action.model,
           action.id,
         );
       else
         result = await host.rest(
-          authorCaller(host, decidedBy),
+          authorCaller(decider, host),
           { method: action.method, url: action.url, body: action.body },
           { approved: true },
         );
@@ -448,6 +468,23 @@ export async function decideApproval(
       result = ownerRestFailure(ownerResult(result, 'approval'), 'approval');
       if (error === undefined) error = returnedFailure(action.kind, result);
     } catch (e) {
+      applying.delete(id);
+      if (isUnknownOutcome(e)) {
+        // The engine could not tell whether the change landed (#5486). The row
+        // stays `executing` (it refuses another apply); the app's next open
+        // settles it from the change's journal.
+        const unknownError = ownerText(
+          e instanceof Error ? e.message : String(e),
+          'approval',
+        );
+        publish({
+          type: 'approval',
+          id,
+          status: 'unknown',
+          summary: row.summary,
+        });
+        return { id, status: 'unknown', error: unknownError };
+      }
       if (e instanceof ApprovalRequiredError && action.kind === 'command') {
         const pending = await requestApproval(
           { ...action, reviewedPreview: e.plan.preview },
@@ -470,14 +507,19 @@ export async function decideApproval(
         );
     }
     row.status = error === undefined ? 'approved' : 'failed';
-    await authority.complete(
-      tenantId,
-      id,
-      error === undefined,
-      error === undefined
-        ? result
-        : { error, ...(result ? { pending: result } : {}) },
-    );
+    try {
+      await authority.complete(
+        tenantId,
+        id,
+        error === undefined,
+        error === undefined
+          ? result
+          : { error, ...(result ? { pending: result } : {}) },
+      );
+    } finally {
+      // Only once the row is settled: a poll in between still reads approved.
+      applying.delete(id);
+    }
     publish({
       type: 'approval',
       id,
@@ -492,6 +534,44 @@ export async function decideApproval(
       throw new Error('approval is already decided');
     throw error;
   }
+}
+
+/**
+ * A reopened app settled the change an approval left `executing` (#5486):
+ * complete that approval with the decided outcome. Only an approval still
+ * `executing` is touched: anything else was already settled (a copy of an
+ * old journal names it too), and settling twice is a no-op. Returns whether
+ * it settled.
+ */
+export async function settleRecoveredChange(change: {
+  request: string;
+  outcome: 'applied' | 'not-applied';
+  /** One step of a longer undo: some of it may have taken effect either way. */
+  partial?: boolean;
+}): Promise<boolean> {
+  const row = await (await approvals()).get(change.request);
+  if (!row || row.status !== 'executing') return false;
+  const { authority, tenantId } = await shellApprovalAuthority();
+  const ok = change.outcome === 'applied' && !change.partial;
+  await authority.complete(
+    tenantId,
+    change.request,
+    ok,
+    ok
+      ? { recovered: 'applied' }
+      : {
+          error: change.partial
+            ? 'Part of this undo took effect before the app stopped. Check the history before asking again.'
+            : 'The change did not take effect; nothing was changed.',
+        },
+  );
+  publish({
+    type: 'approval',
+    id: change.request,
+    status: ok ? 'approved' : 'failed',
+    summary: row.summary,
+  });
+  return true;
 }
 
 /**
@@ -519,7 +599,7 @@ export async function applyOwnBatch(
   const pending = await requestApply(expect, owner.id, opts);
   let outcome: ApprovalOutcome;
   try {
-    outcome = await decideApproval(pending.approvalId, true, owner.id);
+    outcome = await decideApproval(pending.approvalId, true, owner);
   } catch (e) {
     if (e instanceof Error && /^approval is already/.test(e.message))
       throw new EngineError(

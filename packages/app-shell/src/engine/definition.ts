@@ -4,9 +4,11 @@
 import { workerData } from 'node:worker_threads';
 import {
   type GeneratedExpression,
+  ObjectRegistry,
   type RuntimeFieldType,
   type RuntimeModelDefinition,
   runtimeModelEntry,
+  SmrtObject,
 } from '@happyvertical/smrt-core';
 import type { LoadRecordsCommand } from './data-migrations.ts';
 import { sqliteDialect } from './db/sqlite-dialect.ts';
@@ -186,6 +188,41 @@ const RESERVED = new Set([
   'typeId',
   'metaType',
 ]);
+/** The actions every model's generated tools and routes already own (#5194). */
+export const CRUD_ACTIONS: readonly string[] = [
+  'list',
+  'get',
+  'create',
+  'update',
+  'delete',
+];
+
+/**
+ * Why a method of that name cannot be installed or get a tool or route, or
+ * null when it can (#5194). A name the framework itself calls (`initialize`,
+ * `validateBeforeSave`, any `SmrtObject` or recipe-parent member) would run
+ * app code on a record load or save; a CRUD action name would take over the
+ * ordinary `<model>_list` tool. One rule for the runtime and for `validate`.
+ */
+export function reservedMethodReason(
+  name: string,
+  parentClass?: string | null,
+): 'crud' | 'framework' | null {
+  if (CRUD_ACTIONS.includes(name)) return 'crud';
+  if (name in SmrtObject.prototype) return 'framework';
+  if (
+    parentClass &&
+    name in
+      ((
+        ObjectRegistry.getClass(parentClass)?.constructor as
+          | { prototype: object }
+          | undefined
+      )?.prototype ?? {})
+  )
+    return 'framework';
+  return null;
+}
+
 export const FIELD_TYPES: readonly FieldType[] = [
   'text',
   'number',
@@ -275,10 +312,9 @@ export function restRouteAllowed(def: AppDefinition, rawUrl: string): boolean {
 /** Names of the generated tools: `<class>_list`, ... and one per method. */
 export function toolNamesFor(model: string, md: ModelDef): string[] {
   const cls = classNameFor(model, md).toLowerCase();
-  return [
-    ...['list', 'get', 'create', 'update', 'delete'],
-    ...Object.keys(md.methods ?? {}),
-  ].map((a) => `${cls}_${a}`);
+  return [...CRUD_ACTIONS, ...Object.keys(md.methods ?? {})].map(
+    (a) => `${cls}_${a}`,
+  );
 }
 
 /** Shipped (built-in) fields of an app model. */
@@ -312,8 +348,14 @@ export const runtimeType = (t: FieldType) => RUNTIME_TYPE[t];
 const isObj = (v: unknown): v is Record<string, unknown> =>
   !!v && typeof v === 'object' && !Array.isArray(v);
 
-/** Check a whole definition. Returns problems; empty means valid. */
-export function validate(def: unknown): string[] {
+/**
+ * Check a whole definition. Returns problems; empty means valid. `stored` is
+ * the definition already in place (what a change starts from, or the stored
+ * definition itself when it is only being loaded): a method it already has
+ * keeps loading even if its name is now reserved (it stays inert), while a
+ * method it lacks, added or renamed, is refused with a reserved name (#5194).
+ */
+export function validate(def: unknown, stored?: AppDefinition): string[] {
   const errs: string[] = [];
   if (!isObj(def)) return ['definition must be an object'];
   if (def.format !== FORMAT)
@@ -473,6 +515,16 @@ export function validate(def: unknown): string[] {
       errs.push(`${m}: too many methods`);
     for (const [name, meth] of Object.entries(methods)) {
       const at = `${m}.${name}()`;
+      const reserved = reservedMethodReason(
+        name,
+        recipeModelFor(m, md)?.parent,
+      );
+      if (reserved && !Object.hasOwn(stored?.models[m]?.methods ?? {}, name))
+        errs.push(
+          reserved === 'crud'
+            ? `${at}: '${name}' is one of the model's own actions (${CRUD_ACTIONS.join(', ')}); pick another name`
+            : `${at}: '${name}' is a name the framework itself uses; pick another name`,
+        );
       if (!FIELD_NAME.test(name) || RESERVED.has(name))
         errs.push(
           RESERVED.has(name)
@@ -714,6 +766,14 @@ export interface Migration {
   direction: 'up' | 'down';
   /** The version whose steps these are (archives are keyed by it). */
   version: number;
+  /**
+   * #5486: the id of the claimed host's in-flight change. The migrating boot
+   * records it as `applied` in its own transaction, so a change whose store
+   * write never landed can be rolled forward at the next open.
+   */
+  intent?: string;
+  /** With `intent`: this is the change's own reverse; it records `reversed` and clears `applied` instead. */
+  reverse?: boolean;
 }
 
 /** Convert one stored value to a field type. */

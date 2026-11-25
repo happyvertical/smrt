@@ -77,6 +77,7 @@ describe('plan grants as feature flags (#4761)', () => {
 
   it('defines the standard paid keys as framework features that default off', () => {
     expect(Object.values(STANDARD_FEATURE_KEYS).sort()).toEqual([
+      'app.methods',
       'backup.vault',
       'cloud.hosted',
       'inference.hosted',

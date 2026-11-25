@@ -1237,6 +1237,51 @@ describe('SMRT knowledge index', () => {
     });
   });
 
+  // #5603 — a setter that branches on a field some callers cannot read lets an
+  // updater confirm the hidden value by the accepted-versus-refused answer.
+  describe('setter reads hidden field (#5603)', () => {
+    const writeModel = async (setter: string) =>
+      writeFile(
+        join(rootDir, 'packages', 'demo', 'src', 'model.ts'),
+        [
+          '@smrt()',
+          'export class Account extends SmrtObject {',
+          '  @field({ sensitive: true }) secretHash = "";',
+          '  name = "";',
+          `  ${setter}`,
+          '}',
+          '',
+        ].join('\n'),
+      );
+    const findings = async () =>
+      (await checkKnowledgeFreshness({ rootDir })).issues.filter(
+        (issue) => issue.code === 'setter-reads-hidden-field',
+      );
+
+    it('fails on a setter that reads a sensitive field', async () => {
+      await writeModel(
+        'set label(v: string) { if (this.secretHash !== v) this.secretHash = v; }',
+      );
+
+      const [finding, ...rest] = await findings();
+
+      expect(rest).toEqual([]);
+      expect(finding?.severity).toBe('error');
+      expect(finding?.file).toBe('packages/demo/src/model.ts:5');
+      expect(finding?.message).toContain('Account.label');
+    });
+
+    it('accepts a setter that only assigns it or reads another field', async () => {
+      await writeModel('set label(v: string) { this.secretHash = v; }');
+      expect(await findings()).toEqual([]);
+
+      await writeModel(
+        'set label(v: string) { if (this.name !== v) this.name = v; }',
+      );
+      expect(await findings()).toEqual([]);
+    });
+  });
+
   it('builds review context with selected package and prompt bundle', async () => {
     const result = await buildReviewContext({
       rootDir,
