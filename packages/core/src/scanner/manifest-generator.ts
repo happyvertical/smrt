@@ -1950,8 +1950,8 @@ export class ManifestGenerator {
     }
     // Resolve identity before table lookup: a qualified missing model must
     // never bind to an unrelated model that happens to own the same table.
-    const resolve = (ref: string, packageName?: string) => {
-      const candidates = Object.entries(manifest.objects)
+    const resolve = (ref: string, packageName?: string, source = manifest) => {
+      const candidates = Object.entries(source.objects)
         .filter(
           ([key, candidate]) =>
             key === ref ||
@@ -1983,13 +1983,62 @@ export class ManifestGenerator {
 
     // An STI descendant need not publish a schema. Its physical owner is the
     // oldest STI ancestor, not a guessed table derived from its class name.
+    // Only qualified ancestors may load another owning manifest: this is not
+    // an autoloader for unrelated targets or ambiguous simple names.
+    const owners = new Map<string, SmartObjectManifest | null>();
+    const ownerOf = (
+      packageName: string,
+      fromManifest?: SmartObjectManifest,
+    ) => {
+      if (!owners.has(packageName)) {
+        owners.set(
+          packageName,
+          loadExternalManifestSync(packageName, { fromManifest }),
+        );
+      }
+      return owners.get(packageName) ?? undefined;
+    };
     let physical = target;
     let current: SmartObjectDefinition | undefined = target;
-    const visited = new Set<SmartObjectDefinition>();
-    while (current && !visited.has(current)) {
-      visited.add(current);
+    let owner: SmartObjectManifest | undefined;
+    const visited = new Set<string>();
+    while (current) {
+      const identity =
+        current.qualifiedName ?? `${current.packageName}:${current.className}`;
+      if (visited.has(identity)) break;
+      visited.add(identity);
       const parent = this.parentRef(current);
-      current = parent ? resolve(parent, current.packageName) : undefined;
+      if (!parent) break;
+      let next: SmartObjectDefinition | undefined = resolve(
+        parent,
+        current.packageName,
+      );
+      if (!next && owner?.packageName === current.packageName) {
+        next = resolve(parent, current.packageName, owner);
+      }
+      if (!next && isQualifiedName(parent)) {
+        const { packageName } = parseQualifiedName(parent);
+        if (owner?.packageName !== current.packageName) {
+          owner = current.packageName
+            ? ownerOf(current.packageName, owner)
+            : undefined;
+        }
+        const parentOwner: SmartObjectManifest | undefined =
+          packageName === owner?.packageName
+            ? owner
+            : ownerOf(packageName, owner);
+        // Exact identity only. Never let a same-named model from a different
+        // package stand in for a missing qualified physical ancestor.
+        next =
+          parentOwner &&
+          Object.values(parentOwner.objects).find(
+            (candidate) =>
+              (candidate.qualifiedName ??
+                `${candidate.packageName}:${candidate.className}`) === parent,
+          );
+        owner = parentOwner;
+      }
+      current = next;
       if (current?.decoratorConfig?.tableStrategy === 'sti') physical = current;
     }
     return (

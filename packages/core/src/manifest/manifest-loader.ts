@@ -733,9 +733,12 @@ function findWorkspaceRoot(startDir: string): string | null {
   }
 }
 
-function resolveInstalledPackageJsonPath(packageName: string): string | null {
+function resolveInstalledPackageJsonPath(
+  packageName: string,
+  startDir = process.cwd(),
+): string | null {
   if (!nodeHost()) return null;
-  let currentDir = process.cwd();
+  let currentDir = startDir;
 
   while (true) {
     const packageJsonPath = join(
@@ -758,9 +761,12 @@ function resolveInstalledPackageJsonPath(packageName: string): string | null {
   }
 }
 
-function resolveWorkspacePackageJsonPath(packageName: string): string | null {
+function resolveWorkspacePackageJsonPath(
+  packageName: string,
+  startDir = process.cwd(),
+): string | null {
   if (!nodeHost()) return null;
-  const workspaceRoot = findWorkspaceRoot(process.cwd());
+  const workspaceRoot = findWorkspaceRoot(startDir);
   if (!workspaceRoot) {
     return null;
   }
@@ -822,6 +828,20 @@ function resolveWorkspaceSourceManifestPath(packageDir: string): string | null {
 
 interface ManifestLoadOptions {
   warn?: boolean;
+  /** Resolve from this publicly loaded manifest; unknown provenance refuses. */
+  fromManifest?: SmartObjectManifest;
+}
+
+// Provenance belongs to the loaded object, not serialized manifest metadata.
+// Resolve symlinks here so walking parents follows pnpm's owning installation.
+const manifestDirectories = new WeakMap<SmartObjectManifest, string>();
+function rememberManifestDirectory(
+  manifest: SmartObjectManifest,
+  path: string,
+): void {
+  const host = nodeHost();
+  if (host)
+    manifestDirectories.set(manifest, dirname(host.fs.realpathSync(path)));
 }
 
 function resolveManifestExportPath(
@@ -829,9 +849,12 @@ function resolveManifestExportPath(
   options: ManifestLoadOptions = {},
 ): string | null {
   const shouldWarn = options.warn ?? true;
+  const startDir = options.fromManifest
+    ? manifestDirectories.get(options.fromManifest)
+    : undefined;
   const packageJsonPath =
-    resolveInstalledPackageJsonPath(packageName) ||
-    resolveWorkspacePackageJsonPath(packageName);
+    resolveInstalledPackageJsonPath(packageName, startDir) ||
+    resolveWorkspacePackageJsonPath(packageName, startDir);
 
   if (!packageJsonPath) {
     return null;
@@ -931,8 +954,13 @@ export function loadExternalManifestSync(
   packageName: string,
   options: ManifestLoadOptions = {},
 ): Manifest | null {
-  // Check cache first
-  if (getManifestCacheMap().has(packageName)) {
+  // A context-specific dependency can be another installation of the same
+  // package. The app-global name cache cannot select that installation.
+  if (options.fromManifest && !manifestDirectories.has(options.fromManifest)) {
+    return null;
+  }
+  const contextual = options.fromManifest !== undefined;
+  if (!contextual && getManifestCacheMap().has(packageName)) {
     debugLog(`[manifest-loader] Using cached manifest for ${packageName}`);
     return getManifestCacheMap().get(packageName)!;
   }
@@ -973,7 +1001,8 @@ export function loadExternalManifestSync(
       ? manifest
       : { ...manifest, packageName };
 
-    getManifestCacheMap().set(packageName, cachedManifest);
+    rememberManifestDirectory(cachedManifest, manifestPath);
+    if (!contextual) getManifestCacheMap().set(packageName, cachedManifest);
     debugLog(
       `[manifest-loader] ✅ Loaded external manifest for ${packageName} (${Object.keys(cachedManifest.objects).length} objects)`,
     );
@@ -1024,6 +1053,7 @@ export function loadManifestFromPathSync(
     }
 
     const cacheKey = manifest.packageName || manifestPath;
+    rememberManifestDirectory(manifest, manifestPath);
     getManifestCacheMap().set(cacheKey, manifest);
     debugLog(
       `[manifest-loader] ✅ Loaded manifest from path ${manifestPath} (${Object.keys(manifest.objects).length} objects)`,
