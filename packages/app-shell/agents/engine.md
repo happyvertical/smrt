@@ -634,8 +634,9 @@ one bundle (`format: 2`), so a desktop app moves to a hosted one and back.
   from the store when the app starts.
 - **Hosted placement.** `importUserApp({ database })` installs into the schema the
   host chose for ONE tenant's app.
-  Receiving a bundle over the network and mapping it to a tenant needs the
-  caller hand-off (#5188), so it is not wired here. The CLI's use is in
+  Receiving a bundle over the network and mapping it to a tenant is not wired
+  here; the operator command `smrt-app-shell migrate-to-postgres` (cloud-profile.md)
+  triggers the in-place SQLite-to-PostgreSQL move. The CLI's use is in
   `packages/cli/agents/app-commands.md`.
 - Tests: `portable-export.test.ts` (SQLite) and
   `portable-export-postgres.test.ts` (registered `test:postgres` suite: SQLite to

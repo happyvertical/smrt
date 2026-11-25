@@ -276,6 +276,7 @@ export function shellFileWanted(rel) {
     // Written into build/ by svelte.config.js's adapter step (#5546).
     rel === 'tools/start-entry.js' ||
     rel === 'tools/embed-entry.js' ||
+    rel === 'tools/operator-entry.js' ||
     rel.startsWith('src/') ||
     rel.startsWith('static/')
   );
