@@ -351,19 +351,22 @@ for the one operation on the host thread; a PGlite uses the host's client).
   its claim changes no draft row. The `starting` row's INSERT and `forkDraft`'s
   seeding of the new draft's own first version stay on the shell's connection
   (they create rows nobody else holds).
-  **Still unfenced** (hosted PostgreSQL; slice 3 of #5486):
-  - A draft host's boot, ownership bump and schema drops (admin connections,
-    no claim). The draft's own generation still guards its schema.
-  - The publish journal file (local data directory).
-  - `markPurged`; snapshot and rehearsal files.
+  **Draft boot and drops (#5486 slice 3).** A draft host's ownership bump
+  (`acquireOwnership`) and every schema drop or swap it makes (`admin()`) are
+  claim transactions on the lent claim, and `discardOrphanDraft` takes the live
+  host's claim too (`discardStaleDraft(dir, live)`), so a host that lost its
+  claim bumps and drops nothing.
+  **Still unfenced** (hosted PostgreSQL):
   - Fork and restore schema creation on admin connections (at worst a leaked
     side schema, removed by the sweep).
+  - The publish journal file (local data directory).
+  - `markPurged`; snapshot and rehearsal files.
   - Portable import's `populate` (claim never proven; unchanged from today).
 - **Fork** (a draft, a publish rehearsal): a live schema beside the app's, in one transaction (a
   failure leaves none). `forkDraft` writes the name in the draft marker
   (`schema`, `liveSchema`); `AppHost.open` on that directory takes the live app's database
   config and uses the marker's schema. `discard` drops it (a failure keeps
-  the marker, so it can be retried); `discardOrphanDraft(dir, database)` does
+  the marker, so it can be retried); `discardOrphanDraft(dir, database, claim?)` does
   the same for a directory no host holds.
 - **Snapshot** (undo points, `.pgdump` in `snapshots/`, same retention as
   `.db`): restore-only, adds no table. `AppHost.restoreSnapshot(principal, name)` builds

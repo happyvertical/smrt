@@ -11,7 +11,13 @@
 // `SMRT_TEST_POSTGRES_URL`, the ones marked [S] on a real server, where the
 // claim's proof, a terminated session and the pool of one are real.
 
-import { mkdirSync, mkdtempSync, readFileSync, rmSync } from 'node:fs';
+import {
+  existsSync,
+  mkdirSync,
+  mkdtempSync,
+  readFileSync,
+  rmSync,
+} from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { TenantCollection } from '@happyvertical/smrt-users';
@@ -41,6 +47,7 @@ import {
   AppHost,
   ClaimLostError,
   type Command,
+  discardOrphanDraft,
   isUnknownOutcome,
   MemoryVersionStore,
   type PublishStage,
@@ -889,6 +896,85 @@ describe.each(backends)('the version store in the swap (%s)', (backend) => {
         expect(active).toBe(0);
         // The lent claim is still the live host's: it keeps working.
         await run(live.host, rename);
+      });
+
+      const schemaThere = async (name: string) =>
+        (
+          await rows(`SELECT 1 AS x FROM pg_namespace WHERE nspname = ?`, [
+            name,
+          ])
+        ).length > 0;
+      const fenceOf = async (name: string) =>
+        (
+          await rows(
+            `SELECT value FROM "${name}"._app_meta WHERE key = 'fence'`,
+          )
+        )[0]?.value;
+
+      it('a draft opened on a lost lent claim bumps nothing and does not open', async () => {
+        const live = await hooked();
+        const d = await fork(live);
+        const draftSchema = d.draft.draft?.schema as string;
+        const before = await fenceOf(draftSchema);
+        const claim = live.host.lendableClaim as AppClaim;
+        await d.draft.close();
+        hosts.splice(hosts.indexOf(d.draft), 1);
+        await loseClaimNow(live);
+        const err = await AppHost.open(d.draft.dataDir, {
+          store: new DraftVersionStore(shell as never, d.id),
+          database: config(live.schema),
+          claim,
+          claimOptions: { heartbeatMs: 0 },
+        }).catch((e) => e);
+        expect(err).toBeInstanceOf(ClaimLostError);
+        // The bump is the first thing a boot does: it must not have landed.
+        expect(await fenceOf(draftSchema)).toBe(before);
+      });
+
+      it('discarding a draft on a lost lent claim drops nothing; on a proven one it drops the schema through the claim', async () => {
+        const live = await hooked();
+        const a = await fork(live);
+        const claim = live.host.lendableClaim as AppClaim;
+        const through = vi.spyOn(claim, 'transaction');
+        const aSchema = a.draft.draft?.schema as string;
+        await a.draft.discard();
+        expect(through).toHaveBeenCalled();
+        expect(await schemaThere(aSchema)).toBe(false);
+        through.mockRestore();
+        const b = await fork(live);
+        const bSchema = b.draft.draft?.schema as string;
+        await loseClaimNow(live);
+        const err = await b.draft.discard().catch((e) => e);
+        expect(err).toBeInstanceOf(ClaimLostError);
+        expect(await schemaThere(bSchema)).toBe(true);
+        expect(existsSync(b.draft.dataDir)).toBe(true);
+      });
+
+      it('an orphaned draft is dropped through the live claim, and not at all once it is lost', async () => {
+        const live = await hooked();
+        const claim = live.host.lendableClaim as AppClaim;
+        const a = await fork(live);
+        const aSchema = a.draft.draft?.schema as string;
+        await a.draft.close();
+        hosts.splice(hosts.indexOf(a.draft), 1);
+        const through = vi.spyOn(claim, 'transaction');
+        await discardOrphanDraft(a.draft.dataDir, config(live.schema), claim);
+        expect(through).toHaveBeenCalled();
+        expect(await schemaThere(aSchema)).toBe(false);
+        through.mockRestore();
+        const b = await fork(live);
+        const bSchema = b.draft.draft?.schema as string;
+        await b.draft.close();
+        hosts.splice(hosts.indexOf(b.draft), 1);
+        await loseClaimNow(live);
+        const err = await discardOrphanDraft(
+          b.draft.dataDir,
+          config(live.schema),
+          claim,
+        ).catch((e) => e);
+        expect(err).toBeInstanceOf(ClaimLostError);
+        expect(await schemaThere(bSchema)).toBe(true);
+        expect(existsSync(b.draft.dataDir)).toBe(true);
       });
 
       it('never releases the lent claim: closing the draft leaves live changing', async () => {
