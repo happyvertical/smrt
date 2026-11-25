@@ -1,6 +1,8 @@
 import assert from 'node:assert/strict';
 import { spawnSync } from 'node:child_process';
-import { readFileSync } from 'node:fs';
+import { mkdirSync, mkdtempSync, readFileSync, writeFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 import test from 'node:test';
 
 const workflow = readFileSync(
@@ -330,4 +332,57 @@ test('Coverage Gate reuses the core shard coverage and a skipped core job cannot
     'utf8',
   );
   assert.match(fork, /uses: \.\/\.github\/workflows\/test-suite\.yml\n\s+with:\n\s+mode: full/);
+});
+
+test('in a merge group the core shards run whenever the coverage gate deems core touched (#5648)', () => {
+  const suite = readFileSync(
+    new URL('../.github/workflows/test-suite.yml', import.meta.url),
+    'utf8',
+  );
+  const block = (name) =>
+    suite.match(
+      new RegExp(`^  ${name}:\\n[\\s\\S]*?(?=^  [a-z][a-z0-9-]*:\\n|(?![\\s\\S]))`, 'm'),
+    )?.[0];
+  const scope = block('affected-test-scope');
+  const gate = block('coverage-gate-core');
+  const cmd = 'node scripts/check-coverage.mjs --only core --list-checked';
+  // Same probe command and same BASE_REF expression on both sides.
+  assert.ok(scope.includes(cmd) && gate.includes(cmd));
+  const baseRef = 'BASE_REF: ${{ github.base_ref }}';
+  assert.ok(scope.includes(baseRef) && gate.includes(baseRef));
+
+  // Execute the scope step with stubbed tools. Turbo's selection says "no
+  // core"; the gate probe says core is touched (earlier queue entry).
+  const script = scope
+    .match(/^        run: \|\n((?: {10}.*\n|\n)+)/m)?.[1]
+    ?.replace(/^ {10}/gm, '');
+  assert.ok(script);
+  const run = (event, gateSays, turboSays = 'false') => {
+    const dir = mkdtempSync(join(tmpdir(), 'scope-'));
+    const bin = join(dir, 'bin');
+    mkdirSync(bin);
+    writeFileSync(join(bin, 'pnpm'), '#!/bin/sh\necho "{}"\n', { mode: 0o755 });
+    writeFileSync(
+      join(bin, 'node'),
+      `#!/bin/sh\ncase "$*" in\n*affected-test-shard*) echo ${turboSays};;\n*check-coverage*) echo ${gateSays};;\nesac\n`,
+      { mode: 0o755 },
+    );
+    const out = join(dir, 'out');
+    writeFileSync(out, '');
+    const r = spawnSync('bash', ['-c', script], {
+      env: {
+        PATH: `${bin}:${process.env.PATH}`,
+        BASE_SHA: 'abc',
+        GITHUB_EVENT_NAME: event,
+        GITHUB_OUTPUT: out,
+      },
+      encoding: 'utf8',
+    });
+    assert.equal(r.status, 0, r.stderr);
+    return readFileSync(out, 'utf8').trim();
+  };
+  assert.equal(run('merge_group', 'core'), 'core=true'); // the failing case
+  assert.equal(run('merge_group', ''), 'core=false');
+  assert.equal(run('pull_request', 'core'), 'core=false'); // PRs: no gate
+  assert.equal(run('merge_group', '', 'true'), 'core=true');
 });

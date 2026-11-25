@@ -479,7 +479,15 @@ are in the reusable workflow, so either failing fails `Required CI`;
 shard count and the commands. `fork-pr-validation.yml` calls the same workflow
 with `mode: full`, so it gets both jobs and the blobs unchanged. The `merge_group`
 paths cannot run on a pull request; the first queue transit is their first
-real execution.
+real execution. In a merge group the gate judges "core touched" against
+merge-base with main, which can include an earlier queue entry's core change
+that Turbo's `...[merge_group.base_sha]` selection does not; so
+`affected-test-scope` also reports `core=true` when the gate's own probe
+(`check-coverage.mjs --only core --list-checked`, same `BASE_REF`) says core is
+gated, keeping the shard producers a superset of the gate. Artifact names do
+not carry `run_attempt`: the gate's `core-coverage-blob-*` pattern would then
+match attempt 1's blobs too and fail as duplicates, so a re-run of only the
+failed shards is rejected and the whole workflow must be re-run.
 
 The affected workbench browser lane also starts after its scope decision,
 without waiting for package tests: it builds its own consumer fixture and

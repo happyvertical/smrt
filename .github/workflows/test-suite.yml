@@ -417,10 +417,22 @@ jobs:
         id: scope
         env:
           BASE_SHA: ${{ github.event.merge_group.base_sha || github.event.pull_request.base.sha }}
+          # Same base handling as `coverage-gate-core`'s scope probe (empty on
+          # merge_group, so check-coverage.mjs falls back to merge-base with main).
+          BASE_REF: ${{ github.base_ref }}
         run: |
           set -euo pipefail
           core=$(pnpm turbo run test --filter="...[$BASE_SHA]" --dry=json |
             node scripts/affected-test-shard.mjs --has-core)
+          # In a merge group the coverage gate decides "core touched" against
+          # merge-base with main, which can include an earlier queue entry's core
+          # change that `...[merge_group.base_sha]` does not select. The core
+          # shards must then still run and upload blobs, or the gate would find
+          # none and fail an unrelated entry (#5648). Producer is a superset.
+          if [ "$core" != "true" ] && [ "$GITHUB_EVENT_NAME" = "merge_group" ]; then
+            gated=$(node scripts/check-coverage.mjs --only core --list-checked)
+            if [ "$gated" = "core" ]; then core=true; fi
+          fi
           printf 'core=%s\n' "$core" | tee -a "$GITHUB_OUTPUT"
 
   affected-knowledge:

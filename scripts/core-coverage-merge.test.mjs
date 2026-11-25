@@ -235,3 +235,32 @@ test('end to end: a failing vitest merge fails', () => {
   });
   assert.ok(out.errors.some((e) => /merge-reports failed/.test(e)));
 });
+
+// Formats observed from real vitest 4.1.10 runs (three-file subset of core):
+// `vitest list --filesOnly` prints package-relative paths, in an order that
+// differs from the merged `--reporter=json` report, whose `testResults[].name`
+// are absolute.
+test('real vitest output formats compare equal and a dropped file fails', () => {
+  const pkgDir =
+    '/Users/will/Work/happyvertical/repos/smrt-worktrees/ci-wall-clock-5648/packages/core';
+  const listed = [
+    'src/browser-field.test.ts',
+    'src/byo-inference.test.ts',
+    'src/class.spec.ts',
+  ];
+  const report = {
+    testResults: [
+      { name: `${pkgDir}/src/byo-inference.test.ts` },
+      { name: `${pkgDir}/src/class.spec.ts` },
+      { name: `${pkgDir}/src/browser-field.test.ts` },
+    ],
+  };
+  assert.deepEqual(
+    verifyFileUnion(listed, filesFromJsonReport(report), pkgDir),
+    [],
+  );
+  assert.notDeepEqual(
+    verifyFileUnion(listed, filesFromJsonReport(report).slice(1), pkgDir),
+    [],
+  );
+});
