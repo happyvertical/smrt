@@ -359,7 +359,7 @@ jobs:
           set -o pipefail
           pnpm turbo run test --filter="...[$BASE_SHA]" --dry=json |
             node scripts/affected-test-shard.mjs '${{ matrix.shard }}' |
-            xargs -r pnpm turbo run test --concurrency=2
+            xargs -r pnpm turbo run --concurrency=2
 
   # Use Turbo's own task plan to decide whether the core Vitest shards are
   # needed. A path filter would miss global inputs (lockfile, root config,
@@ -934,7 +934,7 @@ jobs:
         run: |
           set -o pipefail
           node scripts/test-packages-shard.mjs '${{ matrix.shard }}' |
-            xargs -r pnpm turbo run test --concurrency=2
+            xargs -r pnpm turbo run --concurrency=2
         env:
           NODE_AUTH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           NODE_ENV: test

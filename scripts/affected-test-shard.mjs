@@ -7,14 +7,22 @@
  * `selectShard`: a dedicated package gets a trailing shard to itself and the
  * rest are balanced by measured duration.
  *
+ * A package listed in SPLIT_TEST_UNITS (app-shell) is scheduled as its split
+ * unit tasks, never as its plain `test`, so no test runs twice (#5647).
+ *
  * Usage: turbo ... --dry=json | node scripts/affected-test-shard.mjs <i>/<n>
  *
- * The script writes `--filter=<package>` flags to stdout for xargs and a
- * concise package-count observation to stderr for the Actions log.
+ * The script writes `<package>#<task>` unit ids to stdout for
+ * `xargs pnpm turbo run` and a concise unit-count observation to stderr for
+ * the Actions log.
  */
 import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
-import { selectShard, TEST_SECONDS } from './test-shard-balance.mjs';
+import {
+  expandTestUnits,
+  selectShard,
+  TEST_SECONDS,
+} from './test-shard-balance.mjs';
 
 const CORE_PACKAGE = '@happyvertical/smrt-core';
 
@@ -50,9 +58,11 @@ export function selectAffectedTestPackages(dryRun, { index, count }) {
     ),
   ].sort();
 
+  const units = expandTestUnits(packages);
   return {
     packages,
-    shard: selectShard(packages, { index, count }, TEST_SECONDS),
+    units,
+    shard: selectShard(units, { index, count }, TEST_SECONDS),
   };
 }
 
@@ -95,11 +105,9 @@ function main() {
   const shard = parseShard(shardArg);
   const selected = selectAffectedTestPackages(input, shard);
   console.error(
-    `Affected test shard ${shardArg}: ${selected.shard.length} of ${selected.packages.length} non-core package(s)`,
+    `Affected test shard ${shardArg}: ${selected.shard.length} of ${selected.units.length} unit(s) from ${selected.packages.length} non-core package(s)`,
   );
-  process.stdout.write(
-    selected.shard.map((packageName) => `--filter=${packageName}`).join(' '),
-  );
+  process.stdout.write(selected.shard.join(' '));
 }
 
 if (process.argv[1] === fileURLToPath(import.meta.url)) {

@@ -401,6 +401,35 @@ assigning by name had put 39.7 minutes of tests in one shard and 10.6 in the
 next. Its duration tables only steer balance: a stale or missing entry makes
 shards uneven and never drops a package.
 
+A package in `SPLIT_TEST_UNITS` (today `smrt-app-shell`) is scheduled as
+separate unit tasks instead of one `test` task (#5647). Its `test` script
+chained four Vitest configs for 1049 to 1462 s, longer than any shard's
+balanced share, so it fixed the critical path of `affected-package-tests` and
+`test-packages`. The units are hard-coded scripts, because Turbo hands `--`
+args only to the last command of an `&&` chain and to every package in one
+run: `test:unit:1of2` and `test:unit:2of2` (the default config, `vitest run
+--shard=1/2` and `2/2`) and `test:configs` (the pglite, dom and packed
+configs). Each is registered in `turbo.json` exactly like `test`. The selectors
+print `<package>#<task>` ids (for example `@happyvertical/smrt-app-shell#test:configs`)
+and both workflow steps run `xargs -r pnpm turbo run --concurrency=2`, so a
+split package never runs its plain `test` beside its units. `pnpm test` in the
+package stays the local aggregate. Splitting the default config with `--shard`
+was safe because a shuffled-file run (`--sequence.shuffle.files`) of that
+config passed; if files turn order-dependent, split by config only.
+`scripts/app-shell-test-units.test.mjs` fails when a config in the `test`
+script is run by no unit, when the `--shard` units do not cover `1..n`, or when
+a unit is missing from `turbo.json` or the weight table. A unit with no test
+files fails (`passWithNoTests` stays off).
+
+`balanceShards` keeps units of one package on different shards while a shard
+without a sibling exists. With fewer shards than units (a narrow affected
+closure), siblings share a shard and `turbo run --concurrency=2` runs them at
+once in the package directory. That is safe: running `test:unit:2of2` and
+`test:configs` concurrently through Turbo passed locally with unchanged counts
+(83 files and 760 tests, then 64 files and 617 tests), because each
+unit uses its own temp directories and in-process databases, and
+`svelte-kit sync` only rewrites the same generated files.
+
 `Merge Group Fail Fast` runs for merge groups only. `Required CI` reports when
 every job has finished, so a group that failed in its first minute used to hold
 the one-entry queue for the rest of the run. The job polls its own run and
