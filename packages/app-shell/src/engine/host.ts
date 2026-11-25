@@ -677,9 +677,11 @@ export class AppHost extends EventEmitter {
     // With a claim (#5470) every step here is a claim transaction, so a host
     // whose claim died bumps and drops nothing.
     if (this.claim) await this.checkClaimedStore();
-    const fence = this.claim
+    // A live host bumps on its own claim; a draft on the live host's lent one
+    // (#5486): either way a host without a claim bumps and drops nothing.
+    const fence = this.fenceClaim
       ? await acquireOwnership(
-          this.claim.admin,
+          this.fenceClaim.admin,
           schemaOf(this.database),
           this.lockTimeoutMs,
         )
@@ -2521,9 +2523,8 @@ export class AppHost extends EventEmitter {
    * connection of its own.
    */
   private admin<T>(work: (db: SqlDatabase) => Promise<T>): Promise<T> {
-    return this.claim
-      ? work(this.claim.admin)
-      : withSchemaAdmin(this.database, work);
+    const claim = this.fenceClaim;
+    return claim ? work(claim.admin) : withSchemaAdmin(this.database, work);
   }
 
   /** The claim died: retire the worker; every call now refuses with the claim's error. */
@@ -4132,11 +4133,13 @@ function shown(fd: FieldDef): FieldDef {
 /**
  * Discard a draft directory no host holds (a crash left it). On PostgreSQL the
  * draft's schema goes too, through the live app's `database` config; on SQLite
- * `discardDraftDirectory` is enough.
+ * `discardDraftDirectory` is enough. With `claim` (the live host's, #5486) the
+ * drop is a claim transaction: a host that lost its claim drops nothing.
  */
 export async function discardOrphanDraft(
   dataDir: string,
   database: DatabaseConfig = SQLITE,
+  claim?: AppClaim,
 ): Promise<void> {
   const marker = readDraftMarker(dataDir);
   if (marker?.schema) {
@@ -4155,9 +4158,10 @@ export async function discardOrphanDraft(
         'refused',
       );
     const schema = assertSchemaName(marker.schema);
-    await withSchemaAdmin({ ...database, schema }, (db) =>
-      dropSchema(db, schema, undefined, marker.liveSchema),
-    );
+    const drop = (db: SqlDatabase) =>
+      dropSchema(db, schema, undefined, marker.liveSchema);
+    if (claim) await drop(claim.admin as unknown as SqlDatabase);
+    else await withSchemaAdmin({ ...database, schema }, drop);
   }
   removeDraftDirectory(dataDir, true);
 }
