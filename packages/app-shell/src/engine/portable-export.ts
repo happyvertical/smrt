@@ -908,8 +908,15 @@ async function importPostgres(
     refuse(
       'The target already holds a different user app database; nothing was overwritten.',
     );
+  // The engine's own first start (version 0, no model, no row anywhere) is an
+  // untouched app, not a different one: the bundle's history starts from it.
+  const untouched =
+    !!state.meta &&
+    state.meta.version === 0 &&
+    Object.keys(state.meta.definition.models ?? {}).length === 0;
   if (
     state.meta &&
+    !untouched &&
     (state.meta.version !== bundle.version ||
       stableJson(state.meta.definition) !== stableJson(bundle.definition))
   )

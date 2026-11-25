@@ -172,6 +172,60 @@ describe.each(
     });
   };
 
+  it("installs over the engine's own untouched first start, and never over an app that was built in (#5193)", async () => {
+    const { store, dataDir } = await desktopApp();
+    const local = viaJson(
+      await exportUserApp({ dataDir, versions: await store.list() }),
+    ) as PortableUserApp;
+
+    // A hosted tenant opened its app once: version 0, no model, no row.
+    const fresh = await newSchema('untouched');
+    const freshDir = dir();
+    const first = await AppHost.open(freshDir, {
+      allowUnfencedStore: true,
+      store: new MemoryVersionStore(),
+      database: config(fresh),
+    });
+    await first.close();
+    const placed = await importUserApp({
+      dataDir: freshDir,
+      database: config(fresh),
+      bundle: local,
+    });
+    expect(placed.status).toBe('imported');
+    expect(
+      (
+        await verifyUserApp({
+          dataDir: freshDir,
+          database: config(fresh),
+          bundle: local,
+        })
+      ).ok,
+    ).toBe(true);
+
+    // An app that was built in (a model, even with no row) is someone's: refused.
+    const built = await newSchema('built');
+    const builtDir = dir();
+    const host = await AppHost.open(builtDir, {
+      allowUnfencedStore: true,
+      store: new MemoryVersionStore(),
+      database: config(built),
+    });
+    await host.execute(
+      hostOwner(host),
+      { type: 'defineModel', name: 'Mine', fields: { n: { type: 'text' } } },
+      A,
+    );
+    await host.close();
+    await expect(
+      importUserApp({
+        dataDir: builtDir,
+        database: config(built),
+        bundle: local,
+      }),
+    ).rejects.toThrow(/different version|different user app/);
+  });
+
   it('moves a desktop app to PostgreSQL and back: every record, hidden field, timestamp, history and undo point', async () => {
     const { store, dataDir } = await desktopApp();
     const local = viaJson(

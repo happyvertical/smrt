@@ -273,7 +273,10 @@ engine.md "SQLite to PostgreSQL in place") has moved it. v1 decisions:
   refusal that writes nothing), then runs `migrateOwnAppToPostgres` as that
   verified owner (tenant from the verified principal, never an argument). No
   principal is built from the operator's say-so. Exit 0 migrated or
-  already-migrated, 1 refused or failed, 2 usage. Hosted profile only.
+  already-migrated, 1 refused or failed (a shell that fails to start exits 1 with its
+  startup error, before the arguments are read), 2 usage once the shell started.
+  A database that cannot be reached is reported as such, not as "not the owner".
+  Hosted profile only.
 - **Refuses** (nothing written) while there is an open draft, waiting changes, or
   an unsettled approval (pending, accepted, executing, or approved with no result), each named in the message.
 - **The kept `app.db`** stays until an operator removes it; it is a snapshot as of
@@ -291,6 +294,35 @@ engine.md "SQLite to PostgreSQL in place") has moved it. v1 decisions:
 - The completion row is an engine convention in the app's own schema, not
   tamper-evident against the same database role: a role that can write the schema
   can forge or remove it.
+
+### Receiving a desktop app (#5193)
+
+`POST /api/shell/app/receive` (`receiveOwnUserApp`, `src/lib/server/receive-user-app.ts`)
+installs a desktop bundle (`exportUserApp`, `smrt app export`) as the signed-in
+owner's app in the shared PostgreSQL, in the schema the host names for that
+tenant's app. Owner session and same origin only (an operator or a link token
+is not a caller here yet). v1:
+
+- **Tenant** is the verified owner's, never a field of the request or bundle.
+- **Target** is an app that never held content: no history, or only the engine's
+  own empty version 0 (`isEmptyStart`) with no row anywhere. Any other app, a
+  SQLite file or an open draft is refused with nothing written (409); the
+  engine treats its own untouched first start (version 0, no model, no row) as
+  empty (`importPostgres`).
+- **Resumable and idempotent**: the rows go in one transaction with a completion
+  fact (`user-app-received`) and a verification before the commit (engine);
+  the version history and the pointer follow in one shell transaction, skipping
+  versions already stored. A crash between them converges on rerun; the same
+  bundle again is `already-received`. The tenant's open app is closed first
+  (refused while a call is inside it); do not use the app during a receive.
+- **Verification pass** (`verified: true` in the answer): per-table counts and
+  digests, the recorded version and definition, and the version history
+  (number, parent, definition, migration) against the bundle, after the commit.
+- Approvals and drafts are not carried (engine.md "Approvals and drafts in a move").
+- v1 defaults, revisit: the SQLite file on the desktop stays; the hosted app
+  cannot be moved back once it has taken writes; waiting changes and drafts refuse a move.
+- The CLI side (`runSharedCloudMigration`, `SharedCloudTransport.receiveUserApp`)
+  is wired; an HTTP transport that authenticates a cloud link to this route is not.
 
 ## Remaining (not in this slice)
 

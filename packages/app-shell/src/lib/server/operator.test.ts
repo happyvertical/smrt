@@ -204,6 +204,27 @@ describe('what the operator cannot do', () => {
     await expect(runAs(who, () => getHost())).rejects.toThrow(/SQLite file/);
   });
 
+  it('reports an unreachable shell database as itself, not as "not the owner"', async () => {
+    const { who } = await seedApp('down@example.test', 'd');
+    await closeHost();
+    configureShell({
+      profile: async () => 'cloud' as const,
+      db: async () => {
+        throw new Error('connection refused');
+      },
+      dataRoot: async () => h.dir,
+      secretMasterKey: async () => CLOUD_MASTER_KEY,
+      appDatabase: provider,
+    });
+    await expect(
+      migrateAppToPostgresAsOperator({
+        tenantId: who.tenantId,
+        userId: who.id,
+      }),
+    ).rejects.toThrow('connection refused');
+    await useShell(true);
+  });
+
   it('refuses on the desktop profile and says so on stderr with exit 1', async () => {
     const { who } = await seedApp('desk@example.test', 'd');
     await useShell(true, 'local');

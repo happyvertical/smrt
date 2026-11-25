@@ -784,6 +784,37 @@ export async function migrateOwnAppToPostgres(): Promise<MigrateToPostgresResult
   });
 }
 
+/** The hosted PostgreSQL provider for apps, or a refusal when none is configured. */
+export function requireAppDatabase(): NonNullable<ShellContext['appDatabase']> {
+  const provider = requireContext().appDatabase;
+  if (!provider)
+    throw new EngineError(
+      'there is no PostgreSQL database for apps configured',
+      'refused',
+    );
+  return provider;
+}
+
+/**
+ * Hosted: close the signed-in tenant's app (live and draft host) and forget its
+ * holder, so the next request opens it fresh. For the one operation that
+ * installs data under a closed app (`receive-user-app.ts`, #5193). Refused while
+ * a call is inside the app.
+ */
+export async function closeOwnApp(): Promise<void> {
+  await shellProfile();
+  const holder = holders.get(currentHolderKeySync());
+  if (!holder) return;
+  if (holder.leases > 0 || holder.handouts > 0 || holder.slotRef?.hold)
+    throw new EngineError('the app is in use; try again', 'refused');
+  const pending = holder.hostPromise;
+  await holder.slotRef?.host?.close().catch(() => {});
+  await (holder.hostRef ?? (await pending?.catch(() => null)))
+    ?.close()
+    .catch(() => {});
+  if (holders.get(holder.key) === holder) holders.delete(holder.key);
+}
+
 /**
  * Remove a copy nothing refers to (a crash left it), without the draft being
  * open: on PostgreSQL its schema goes too. The engine removes only what is one
