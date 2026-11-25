@@ -35,7 +35,8 @@ present and `persist` is on, plus `usage.handlers`; instances also keep an
 - User (#4760): a row's `userId` (`AI_USAGE_USER_TAG`) comes only from
   trusted sources: the sink attribution's tag (host code that built the
   sink), else `setAiUsageUserResolver()`'s user (the hosted gate registers
-  the principal's). A per-call `usageTags.userId` is dropped, and a throwing
+  the principal's, and only for the tenant the row bills: the resolver is
+  called with that tenant and answers no user for another). A per-call `usageTags.userId` is dropped, and a throwing
   resolver attributes nothing. Per-user hosted spend caps meter that tag.
 - Tenant: explicit `tenantId` (a string; `null` = global, skip ambient) →
   instance `tenantId` (non-empty) → ambient tenant from
