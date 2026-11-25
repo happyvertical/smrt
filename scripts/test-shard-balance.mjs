@@ -68,13 +68,24 @@ export const TEST_SECONDS = {
   '@happyvertical/smrt-workflows': 37,
 };
 
-/** `test:postgres` task seconds, PostgreSQL merge-group run of 2026-11-16. */
+/**
+ * `test:postgres` task seconds, PostgreSQL merge-group run of 2026-11-16, with
+ * the #5649 additions from merge-group run 45076013203 (app-shell, core).
+ * Keys are package names, or `<package>#<task>` ids for a package listed in
+ * SPLIT_POSTGRES_UNITS.
+ */
 export const POSTGRES_TEST_SECONDS = {
   '@happyvertical/smrt-analytics': 40,
+  // 7 files, 1172 s; it was missing and weighed DEFAULT_SECONDS (12 s).
+  '@happyvertical/smrt-app-shell': 1172,
   '@happyvertical/smrt-app-runtime': 41,
   '@happyvertical/smrt-cli': 33,
   '@happyvertical/smrt-commerce': 285,
-  '@happyvertical/smrt-core': 808,
+  // core: see SPLIT_POSTGRES_UNITS. The real-PG half measured about 360 s; the
+  // PGlite half 721-1227 s over 41 files (it was chained after the real-PG
+  // run, 808 s as one unit before). 960 s sits mid-range.
+  '@happyvertical/smrt-core#test:postgres:pglite': 960,
+  '@happyvertical/smrt-core#test:postgres:real': 360,
   '@happyvertical/smrt-education': 325,
   '@happyvertical/smrt-expenses': 56,
   '@happyvertical/smrt-jobs': 44,
@@ -104,6 +115,19 @@ export const SPLIT_TEST_UNITS = {
   ],
 };
 
+/**
+ * Packages whose `test:postgres` script chains a suite that needs the run's
+ * database with one that does not (#5649). `core` ran its real-PG files
+ * (`optional.test.ts`, one shared database, one process) and then 41 PGlite
+ * files in-process, one after the other in a single 721-1227 s tail. Each half
+ * is its own package script and `turbo.json` task so the two can run on
+ * different runners. The `test:postgres` script stays the local aggregate and
+ * is never scheduled in CI for a package listed here, so no file runs twice.
+ */
+export const SPLIT_POSTGRES_UNITS = {
+  '@happyvertical/smrt-core': ['test:postgres:real', 'test:postgres:pglite'],
+};
+
 /** A unit id: `<package>#<turbo task>`, the form `turbo run` accepts. */
 export const unitId = (packageName, task) => `${packageName}#${task}`;
 
@@ -122,6 +146,26 @@ export function expandTestUnits(names) {
     ...new Set(
       names.flatMap((name) =>
         (SPLIT_TEST_UNITS[name] ?? ['test']).map((task) =>
+          unitId(name, task),
+        ),
+      ),
+    ),
+  ].sort();
+}
+
+/**
+ * Turn registered `test:postgres` package names into lane units: a package in
+ * SPLIT_POSTGRES_UNITS becomes one unit per task, every other package its
+ * plain `test:postgres`.
+ *
+ * @param {string[]} names
+ * @returns {string[]} unit ids, sorted and de-duplicated
+ */
+export function expandPostgresUnits(names) {
+  return [
+    ...new Set(
+      names.flatMap((name) =>
+        (SPLIT_POSTGRES_UNITS[name] ?? ['test:postgres']).map((task) =>
           unitId(name, task),
         ),
       ),
