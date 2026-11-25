@@ -425,8 +425,8 @@ files fails (`passWithNoTests` stays off).
 without a sibling exists. With fewer shards than units (a narrow affected
 closure), siblings share a shard and `turbo run --concurrency=2` runs them at
 once in the package directory. That is safe: running `test:unit:2of2` and
-`test:configs` concurrently through Turbo passed locally (2349-file-equivalent
-counts unchanged: 83 files and 760 tests, 64 files and 617 tests), because each
+`test:configs` concurrently through Turbo passed locally with unchanged counts
+(83 files and 760 tests, then 64 files and 617 tests), because each
 unit uses its own temp directories and in-process databases, and
 `svelte-kit sync` only rewrites the same generated files.
 
