@@ -38,6 +38,7 @@ import {
 } from './host.ts';
 import { lifecycleFromEnv } from './host-lifecycle.ts';
 import { installShellInference } from './inference.ts';
+import { isMethodCodeEntitled } from './method-code.ts';
 import { prepareShellSchema } from './schema.ts';
 
 export const runtime = createSmrtSvelteKitRuntime({
@@ -114,6 +115,9 @@ configureShell({
     return cloudLimits.workerLimits;
   },
   appLimits: () => cloudLimits.appLimits(),
+  // Cloud only (a holder with no tenant never asks): app-authored method code
+  // needs the tenant's `app.methods` entitlement (#5194).
+  methodCode: (tenantId) => isMethodCodeEntitled(tenantId),
   // Cloud only (a local owner's app is a file in the data root).
   appDatabase: cloudAppDatabase(),
 });

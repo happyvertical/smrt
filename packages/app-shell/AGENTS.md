@@ -13,6 +13,8 @@ Starting the published server, graceful shutdown (SIGTERM/SIGINT drain), embeddi
 
 Hosted inference (gate at startup, entitlement, caps): [hosted inference](agents/hosted-inference.md).
 
+Method code (QuickJS) in the cloud profile runs only with the `app.methods` entitlement, checked on the host, per call: [method code](agents/method-code.md).
+
 Per-tenant storage metering (`storage.bytes` gauge, one read, request-count seam for #5195): [storage metering](agents/storage-metering.md).
 
 Workbook workflow ownership, upload limits, proof and recovery: [imports](agents/imports.md).

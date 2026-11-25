@@ -87,7 +87,7 @@ with none registered (a local install) there are no grants.
 
 The standard paid keys are exported as constants and all default off:
 `FEATURE_SYNC_DEVICES`, `FEATURE_BACKUP_VAULT`, `FEATURE_CLOUD_HOSTED`,
-`FEATURE_INFERENCE_HOSTED`, `FEATURE_PLUGINS_REMOTE`.
+`FEATURE_INFERENCE_HOSTED`, `FEATURE_PLUGINS_REMOTE`, `FEATURE_APP_METHODS`.
 
 ```ts
 import { FEATURE_SYNC_DEVICES, FeatureResolver, featureGateResponse, requireFeature } from '@happyvertical/smrt-features';
