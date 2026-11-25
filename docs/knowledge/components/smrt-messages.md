@@ -5,10 +5,10 @@ description: "Unified multi-channel messaging with STI-based hierarchies"
 status: "stable"
 generated:
   by: "smrt/scripts/generate-knowledge-okf.ts"
-  at: "2026-11-25T22:03:23Z"
+  at: "2026-11-25T22:09:40Z"
 audience: "internal"
 evidence_level: "source-inspected"
-source_revision: "sha256:0571b775172624309fd4eb2e2bb1b702226e8f92bf18fcdd19b1cd760abea7b8"
+source_revision: "sha256:24f1f25091faf161d5bf165bb0790d69543c3a9a704fe4d47482e68a4bb405ae"
 sources:
   - id: "manifest"
     resource: "https://github.com/happyvertical/smrt/blob/main/packages/messages/package.json"

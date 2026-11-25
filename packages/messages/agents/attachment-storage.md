@@ -22,11 +22,10 @@ must be an absolute, existing directory; its real path is resolved once.
   files and rows under it as relative paths; until then those sends fail.
   `backfillAccountIds()` writes the column directly so such rows still fill.
 
-
 ## Trust boundary
 
 Reads check the real path just before opening it, so the root must not be
-writable by untrusted parties (a swap inside the root between the check and the
+writable by untrusted parties (hard links or a symlink swap inside the root between the check and the
 read is not defended). Any file under the root can be named by any writer of an
 `Attachment` row; keep per-tenant files in per-tenant roots or apply your own
 prefix rule in the host.
