@@ -317,7 +317,11 @@ export function shellPolicySlugs(
 /**
  * Whether every shell table already has row-level security enabled and forced
  * and, for each command, a policy that names the slugs it should admit (read
- * back from the catalog, so a release that changes a slug re-applies).
+ * back from the catalog, so a release that ADDS a slug re-applies). It does not
+ * detect a removed slug or a changed predicate or helper body: the tenant match
+ * is ANDed outside the permission test, so isolation never depends on it, and a
+ * policy-version stamp (ordered, so a rolling deploy does not flip-flop) is the
+ * follow-up for the first release that changes policy text.
  */
 async function policiesCurrent(db: Queryable): Promise<boolean> {
   const schema = await currentSchema(db);

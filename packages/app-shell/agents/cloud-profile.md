@@ -82,7 +82,10 @@ import recovery among them).
   only generated route or tool of a shell model that loads a row by id (App's
   methods are static, every other model is closed), so each new one has to be
   thought through. The apply reads the catalog first and runs no DDL when the
-  policies (and their slugs) are current; otherwise it is one transaction under
+  policies and the slugs they must admit are present (a removed slug or a
+  changed predicate is not detected: isolation never depends on the slug test, and
+  an ordered policy-version stamp is the follow-up for the first release that
+  changes policy text); otherwise it is one transaction under
   an advisory lock with a lock timeout, so replicas starting together never
   interleave DROP/CREATE POLICY and no reader sees a table between them. A
   missing table says to run `smrt db:migrate`; every failure's reason goes to
