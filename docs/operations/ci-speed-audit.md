@@ -171,6 +171,7 @@ audit did not change cache behaviour; see Proposals.
 | `packages.microsoft.com` apt source parked on GitHub-hosted runners, plus `Acquire::Retries "5"` | same | Removes the 429 class (2 runs). The ONNX packages all come from the Ubuntu archive; self-hosted pods and `CI_ONNX_DEPS_READY` runners are untouched |
 | `smrt-app-shell` weight 628 to 1200 in the shard table | `scripts/test-shard-balance.mjs` | `app-shell` gets a shard to itself; shard 2/5 was 25.1 p50 in the merge queue against 13 to 15 elsewhere. Expected 3 to 6 minutes off the merge-queue and PR critical path. Re-measure after merge |
 | `testTimeout` 30 s to 60 s in `ingestion` | `packages/ingestion/vitest.config.ts` | Matches `app-shell`; no test is skipped or weakened, a hang just fails 30 s later |
+| Dropped ordering-only `needs` on `affected-package-tests` (waited on `affected-test-scope`, which waited on `affected-scope`); `affected-core-tests` keeps its need because it reads the scope output (#5646) | `.github/workflows/test-suite.yml` | The package shards start with their sibling jobs instead of about 80 s later (PR run 45077001900). Same jobs, same `Required CI` aggregate: a failed scope job still fails the reusable workflow |
 
 Not changed: required checks, rulesets, branch protection, runner
 infrastructure, secrets. `concurrency` already cancels superseded runs. The
