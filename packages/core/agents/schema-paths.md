@@ -69,8 +69,9 @@ including transitive packages hidden by pnpm. The public manifest loader's
 `fromManifest` option uses recorded load provenance; it does not substitute the
 app's cached installation. Qualified ancestors prefer that owning installation
 even when the app directly aggregates another installation of the same package; a
-missing contextual ancestor never borrows the app's aggregate. Initial app target
-references retain app resolution. Unknown load provenance refuses. Ancestry is bounded
+missing contextual ancestor never borrows the app's aggregate. Current caller-supplied local definitions outrank prior own-package manifests
+before any owning-manifest lookup. Initial app target references retain app
+resolution. Unknown load provenance refuses. Ancestry is bounded
 by qualified identity and owning
 manifests are memoized during traversal. Missing manifests do not authorize a
 guessed table or constraint. Optional `Model.column` suffixes are parsed after the package qualifier, so dotted package

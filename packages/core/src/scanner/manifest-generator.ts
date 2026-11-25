@@ -2013,7 +2013,13 @@ export class ManifestGenerator {
       const parent = this.parentRef(current);
       if (!parent) break;
       let next: SmartObjectDefinition | undefined;
-      if (isQualifiedName(parent)) {
+      if (localDefinitions.has(current)) {
+        // Current caller-supplied source outranks any prior own-package cache.
+        owner = undefined;
+        next =
+          resolve(parent, current.packageName, localManifest) ??
+          resolve(parent, current.packageName);
+      } else if (isQualifiedName(parent)) {
         const { packageName } = parseQualifiedName(parent);
         if (owner?.packageName !== current.packageName) {
           owner = current.packageName
@@ -2035,10 +2041,6 @@ export class ManifestGenerator {
                   `${candidate.packageName}:${candidate.className}`) === parent,
             );
           owner = parentOwner;
-        } else if (localDefinitions.has(current)) {
-          // Caller-supplied project definitions resolve in the app context.
-          // A missing external owner must never borrow an aggregate peer.
-          next = resolve(parent, current.packageName);
         }
       } else {
         next = resolve(

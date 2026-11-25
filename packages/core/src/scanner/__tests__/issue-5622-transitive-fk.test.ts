@@ -345,6 +345,88 @@ describe('transitive STI FK owner manifests (#5622 R1)', () => {
   });
 
   it.each([
+    true,
+    false,
+  ])('prefers current local source over a prior own-package cache with qualifiedParent=%s', async (qualified) => {
+    scratch = mkdtempSync(join(tmpdir(), 'smrt-fk5622-local-'));
+    clearManifestCache();
+    const fixture = (table: string) =>
+      manifest(APP, [
+        model(APP, 'LocalEntity', {
+          decoratorConfig: {
+            tableStrategy: 'sti',
+            tableName: table,
+            idType: 'uuid',
+          },
+        }),
+        model(APP, 'LocalPerson', {
+          extends: 'LocalEntity',
+          ...(qualified ? { extendsQualified: `${APP}:LocalEntity` } : {}),
+        }),
+        model(APP, 'LocalSubscription', {
+          decoratorConfig: { tableName: 'local_subscriptions' },
+          fields: {
+            personId: {
+              type: 'foreignKey',
+              related: `${APP}:LocalPerson`,
+              _meta: { onUpdate: 'NO ACTION' },
+            },
+          },
+        }),
+      ]);
+    const prior = fixture('obsolete_local_entities');
+    new ManifestGenerator().applyGenerationPasses(prior);
+    assert(
+      loadManifestFromPathSync(writePackage(join(scratch, 'prior'), prior)),
+    );
+    const build = fixture('current_local_entities');
+    new ManifestGenerator().applyGenerationPasses(build);
+    const authored = fixture('current_local_entities');
+    class LocalEntity extends SmrtObject {}
+    class LocalPerson extends LocalEntity {}
+    class LocalSubscription extends SmrtObject {}
+    const registrations: [typeof SmrtObject, string][] = [
+      [LocalEntity, 'LocalEntity'],
+      [LocalPerson, 'LocalPerson'],
+      [LocalSubscription, 'LocalSubscription'],
+    ];
+    for (const [ctor, name] of registrations) {
+      const key = `${APP}:${name}`;
+      const entry = authored.objects[key];
+      ObjectRegistry.register(ctor, {
+        ...entry.decoratorConfig,
+        name,
+        packageName: APP,
+        _manifest: { ...authored, objects: { [key]: entry } },
+        _manifestKey: key,
+      });
+    }
+    const runtime = new SchemaGenerator().generateSchemaFromRegistry(
+      `${APP}:LocalSubscription`,
+      'local_subscriptions',
+      await ObjectRegistry.getAllFields(`${APP}:LocalSubscription`),
+      { registry: ObjectRegistry },
+    );
+    expect(runtime.columns.person_id.foreignKey?.table).toBe(
+      'current_local_entities',
+    );
+    expect(
+      ObjectRegistry.getAllSchemasAsDefinitions().local_subscriptions.columns
+        .person_id.foreignKey?.table,
+    ).toBe('current_local_entities');
+    expect(
+      build.objects[`${APP}:LocalSubscription`].schema?.columns.person_id
+        .foreignKey,
+    ).toEqual(runtime.columns.person_id.foreignKey);
+    expect(
+      tryComputeManifestSchemaFingerprint({
+        ...build,
+        objects: { source: build.objects[`${APP}:LocalSubscription`] },
+      }),
+    ).toBe(computeSchemaFingerprint([runtime]));
+  });
+
+  it.each([
     'missing',
     'wrong',
   ] as const)('does not borrow the app aggregate for a %s contextual ancestor', (mode) => {

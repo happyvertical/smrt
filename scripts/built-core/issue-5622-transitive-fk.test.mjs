@@ -1,4 +1,5 @@
 import assert from 'node:assert/strict';
+import { spawnSync } from 'node:child_process';
 import {
   mkdirSync,
   mkdtempSync,
@@ -10,6 +11,7 @@ import {
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { test } from 'node:test';
+import { fileURLToPath } from 'node:url';
 import {
   foreignKey,
   ObjectRegistry,
@@ -222,3 +224,120 @@ for (const aggregateBase of [false, true]) {
   test(`built public loader selects owning STI ancestor with aggregateBase=${aggregateBase} (#5622)`, () =>
     checkOwningAncestor(aggregateBase));
 }
+
+test('current local build outranks a prior package cache and migrates in production (#5622)', async () => {
+  const scratch = mkdtempSync(join(tmpdir(), 'smrt-built-local-fk-'));
+  try {
+    ObjectRegistry.clear();
+    const fixture = (table) =>
+      manifest(APP, [
+        model(APP, 'Entity', {
+          decoratorConfig: {
+            tableStrategy: 'sti',
+            tableName: table,
+            idType: 'uuid',
+          },
+        }),
+        model(APP, 'Person', {
+          extends: 'Entity',
+          extendsQualified: `${APP}:Entity`,
+        }),
+        model(APP, 'Subscription', {
+          decoratorConfig: { tableName: 'fk5622_subscriptions' },
+          fields: {
+            personId: {
+              type: 'foreignKey',
+              related: `${APP}:Person`,
+              _meta: { onUpdate: 'NO ACTION' },
+            },
+          },
+        }),
+      ]);
+    const prior = fixture('obsolete_local_entities');
+    new ManifestGenerator().applyGenerationPasses(prior);
+    assert.ok(loadManifestFromPathSync(publish(join(scratch, 'prior'), prior)));
+    const build = fixture('fk5622_entities');
+    new ManifestGenerator().applyGenerationPasses(build);
+    const authored = fixture('fk5622_entities');
+    class Entity extends SmrtObject {}
+    class Person extends Entity {}
+    class Subscription extends SmrtObject {}
+    for (const [ctor, name] of [
+      [Entity, 'Entity'],
+      [Person, 'Person'],
+      [Subscription, 'Subscription'],
+    ]) {
+      const key = `${APP}:${name}`,
+        entry = authored.objects[key];
+      ObjectRegistry.register(ctor, {
+        ...entry.decoratorConfig,
+        name,
+        packageName: APP,
+        _manifest: { ...authored, objects: { [key]: entry } },
+        _manifestKey: key,
+      });
+    }
+    const runtime = new SchemaGenerator().generateSchemaFromRegistry(
+      `${APP}:Subscription`,
+      'fk5622_subscriptions',
+      await ObjectRegistry.getAllFields(`${APP}:Subscription`),
+      { registry: ObjectRegistry },
+    );
+    assert.equal(
+      runtime.columns.person_id.foreignKey?.table,
+      'fk5622_entities',
+    );
+    assert.equal(
+      ObjectRegistry.getAllSchemasAsDefinitions().fk5622_subscriptions.columns
+        .person_id.foreignKey?.table,
+      'fk5622_entities',
+    );
+    assert.deepEqual(
+      build.objects[`${APP}:Subscription`].schema.columns.person_id.foreignKey,
+      runtime.columns.person_id.foreignKey,
+    );
+    assert.equal(
+      tryComputeManifestSchemaFingerprint({
+        ...build,
+        objects: { source: build.objects[`${APP}:Subscription`] },
+      }),
+      computeSchemaFingerprint([runtime]),
+    );
+    const path = join(scratch, 'manifest.json');
+    const artifact = JSON.stringify(build);
+    writeFileSync(path, artifact);
+    const worker = fileURLToPath(
+      new URL('./fixtures/issue-5622-process.mjs', import.meta.url),
+    );
+    for (const phase of ['migrate', 'query']) {
+      const result = spawnSync(
+        process.execPath,
+        [worker, phase, path, join(scratch, 'app.db')],
+        {
+          encoding: 'utf8',
+          env: {
+            ...process.env,
+            NODE_ENV: 'production',
+            SMRT_BUILD_MANIFEST: path,
+            SMRT_ALLOW_UNMIGRATED_START: '',
+            VITEST: '',
+          },
+        },
+      );
+      assert.equal(
+        result.status,
+        0,
+        `${phase}: ${result.stdout}\n${result.stderr}`,
+      );
+      if (phase === 'query')
+        assert.equal(
+          JSON.parse(result.stdout.trim().split('\n').at(-1)).count,
+          0,
+        );
+    }
+    assert.equal(readFileSync(path, 'utf8'), artifact);
+  } finally {
+    ObjectRegistry.clear();
+    rmSync(scratch, { recursive: true, force: true });
+  }
+});
