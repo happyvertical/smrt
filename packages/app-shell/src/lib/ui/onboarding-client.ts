@@ -28,6 +28,8 @@ export interface OnboardingInfo {
   onboarding: 'fresh' | 'skipped' | null;
   engine: AssistantEngineId;
   apiReady: boolean;
+  /** The hosted app: only the owner's own API key is offered (no local tool, no ChatGPT). */
+  hosted?: boolean;
   /** Absent from an older server: treated as not signed in. */
   chatgpt?: ChatGPTInfo;
   tools: ToolInfo[];
