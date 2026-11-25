@@ -364,7 +364,7 @@ test('in a merge group the core shards run whenever the coverage gate deems core
     writeFileSync(join(bin, 'pnpm'), '#!/bin/sh\necho "{}"\n', { mode: 0o755 });
     writeFileSync(
       join(bin, 'node'),
-      `#!/bin/sh\ncase "$*" in\n*affected-test-shard*) echo ${turboSays};;\n*check-coverage*) echo ${gateSays};;\nesac\n`,
+      `#!/bin/sh\ncase "$*" in\n*affected-test-shard*) cat >/dev/null; echo ${turboSays};;\n*check-coverage*) echo ${gateSays};;\nesac\n`,
       { mode: 0o755 },
     );
     const out = join(dir, 'out');
