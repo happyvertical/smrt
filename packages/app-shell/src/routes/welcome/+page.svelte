@@ -12,6 +12,12 @@ import {
   skipOnboarding,
 } from '$lib/ui/onboarding-client';
 
+// Hosted (cloud): your own API key only, and no spreadsheet start (the
+// desktop's workbook import is refused there).
+const { data }: { data?: { hosted?: boolean } } = $props();
+let hostedSeen = $state(false);
+const hosted = $derived(data?.hosted === true || hostedSeen);
+
 let step = $state<1 | 2>(page.url.searchParams.get('step') === '2' ? 2 : 1);
 let ready = $state(false);
 let start = $state<'fresh' | 'spreadsheet'>('fresh');
@@ -31,7 +37,7 @@ async function finish() {
   error = '';
   try {
     await completeFresh();
-    if (start === 'spreadsheet') {
+    if (start === 'spreadsheet' && !hosted) {
       await invalidateAll();
       await goto('/import');
       return;
@@ -79,10 +85,20 @@ async function skip() {
   {#if step === 1}
     <section class="smrt-app-shell__card" aria-labelledby="connect-intro">
       <p id="connect-intro">
-        The assistant builds and changes your app for you. It runs on your own
-        Claude Code, or on your ChatGPT plan.
+        {#if hosted}
+          The assistant builds and changes your app for you. It runs on your
+          own API key.
+        {:else}
+          The assistant builds and changes your app for you. It runs on your own
+          Claude Code, or on your ChatGPT plan.
+        {/if}
       </p>
-      <ConnectAi onchange={(_info, ok) => (ready = ok)} />
+      <ConnectAi
+        onchange={(info, ok) => {
+          ready = ok;
+          if (info.hosted) hostedSeen = true;
+        }}
+      />
     </section>
     <div class="smrt-app-shell-welcome__actions">
       <button type="button" class="smrt-app-shell__btn smrt-app-shell__btn-primary" disabled={!ready} onclick={() => go(2)}>Next</button>
@@ -107,13 +123,15 @@ async function skip() {
             <span class="smrt-app-shell__muted">Start with an empty app. Tell the assistant what to build.</span>
           </span>
         </label>
-        <label class="smrt-app-shell__choice" class:smrt-app-shell__choice-on={start === 'spreadsheet'}>
-          <input type="radio" name="start" value="spreadsheet" bind:group={start} />
-          <span>
-            <strong>From a spreadsheet</strong>
-            <span class="smrt-app-shell__muted">Bring an Excel workbook in, then review and apply it.</span>
-          </span>
-        </label>
+        {#if !hosted}
+          <label class="smrt-app-shell__choice" class:smrt-app-shell__choice-on={start === 'spreadsheet'}>
+            <input type="radio" name="start" value="spreadsheet" bind:group={start} />
+            <span>
+              <strong>From a spreadsheet</strong>
+              <span class="smrt-app-shell__muted">Bring an Excel workbook in, then review and apply it.</span>
+            </span>
+          </label>
+        {/if}
       </fieldset>
       <div class="smrt-app-shell-welcome__actions">
         <button type="button" class="smrt-app-shell__btn" onclick={() => go(1)} disabled={busy}>Back</button>
