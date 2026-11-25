@@ -32,6 +32,7 @@ import {
   type AppVersion,
   AppVersionCollection,
 } from '../objects/AppVersion.ts';
+import { bindAmbientShellScope, isPostgresHandle } from './shell-tenancy.ts';
 
 export const APP_SLUG = 'app';
 
@@ -58,6 +59,20 @@ function inTenant<T>(
     return Promise.reject(new Error('this store belongs to another tenant'));
   if (ambient?.tenantId === tenantId) return fn();
   return withTenant({ tenantId, permissions: new Set<string>() }, fn);
+}
+
+/**
+ * The hosted claim's transaction is not one the shell's handle opened, so on
+ * PostgreSQL the shell's rows inside it (forced row-level security) need the
+ * ambient tenant published to it first. A no-op for a store with no tenant (the
+ * desktop) and when the shell's own database is not PostgreSQL (SQLite tests).
+ */
+async function bindClaimTx(
+  db: DatabaseInterface,
+  tenantId: string | null,
+  tx: unknown,
+): Promise<void> {
+  if (tenantId && isPostgresHandle(db)) await bindAmbientShellScope(tx);
 }
 
 function toRecord(row: VersionRow): VersionRecord {
@@ -272,6 +287,7 @@ export class ShellVersionStore implements VersionStore {
     markDraft = false,
   ): Promise<void> {
     return this.scoped(async () => {
+      await bindClaimTx(this.db, this.tenantId, tx);
       const txDb = tx as DatabaseInterface;
       for (const r of records) await this.insert(r, txDb);
       const app = await this.appRow(txDb);
@@ -344,6 +360,7 @@ export class ShellVersionStore implements VersionStore {
   reachable(tx: unknown): Promise<boolean> {
     return this.scoped(async () => {
       const id = this.appId ?? ((await this.appRow()).id as string);
+      await bindClaimTx(this.db, this.tenantId, tx);
       const found = await (tx as DatabaseInterface).query(
         `SELECT id FROM apps WHERE id = ?${this.tenantClause}`,
         [id, ...this.tenantParam],
@@ -451,6 +468,7 @@ export class DraftVersionStore implements VersionStore {
     expected: number | null,
   ): Promise<void> {
     return this.scoped(async () => {
+      await bindClaimTx(this.db, this.tenantId, tx);
       const txDb = tx as DatabaseInterface;
       for (const r of records) {
         if (await this.row(r.version, txDb))

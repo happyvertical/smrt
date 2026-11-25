@@ -38,7 +38,10 @@ its state root), `DATABASE_URL` and the provider settings (hosted). Hosted apps
 on PostgreSQL optionally split the credentials: `DATABASE_URL` stays the admin and
 `SMRT_APP_SHELL_RUNTIME_DATABASE_URL` is the unprivileged login user operations
 run as (cloud-profile.md "User apps on PostgreSQL"); the shared pool and the
-operation deadline have their own `SMRT_APP_SHELL_*` variables there. Liveness:
+operation deadline have their own `SMRT_APP_SHELL_*` variables there. Hosted start
+refuses a `DATABASE_URL` login that is a superuser or has BYPASSRLS (it would void
+the shell tables' row-level security; opt-out `SMRT_UNSAFE_ALLOW_RLS_BYPASS=1`,
+tests and local development only; cloud-profile.md). Liveness:
 `GET /api/_runtime/health`.
 
 ## Stopping: SIGTERM and SIGINT

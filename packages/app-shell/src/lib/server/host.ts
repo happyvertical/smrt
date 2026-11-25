@@ -59,6 +59,12 @@ import {
   type HostMetrics,
 } from './host-lifecycle.ts';
 import { assertOwner, PolicyError } from './owner.ts';
+import {
+  bindAmbientShellScope,
+  isPostgresHandle,
+  requireShellTenancy,
+  tenantBoundDb,
+} from './shell-tenancy.ts';
 import type { Target } from './target.ts';
 import { DraftVersionStore, ShellVersionStore } from './version-store.ts';
 
@@ -212,6 +218,8 @@ export async function shellProfile(): Promise<ShellProfile> {
   const value = resolve ? await resolve() : 'local';
   if (value !== 'local' && value !== 'cloud')
     throw new Error('the shell profile is not known');
+  // Cloud only: every shell model in `required` mode before anything reads it.
+  if (value === 'cloud') requireShellTenancy();
   profileCache = value;
   setTenantScopedEvents(value === 'cloud');
   return value;
@@ -249,8 +257,12 @@ export async function requireCloudProfile(what: string): Promise<void> {
  * tenant's rows. It refuses instead (401).
  */
 export async function getShellDb(): Promise<DatabaseInterface> {
-  if ((await shellProfile()) === 'cloud') requestTenant();
-  const db = await requireContext().db();
+  const cloud = (await shellProfile()) === 'cloud';
+  if (cloud) requestTenant();
+  const base = await requireContext().db();
+  // Cloud on PostgreSQL: every operation carries the tenant to the database's
+  // row-level security (shell-tenancy.ts). SQLite (tests) has no policies.
+  const db = cloud && isPostgresHandle(base) ? tenantBoundDb(base) : base;
   syncDb = db;
   return db;
 }
@@ -558,9 +570,16 @@ export async function withDraftRows<T>(
   work: (drafts: AppDraftCollection) => Promise<T>,
 ): Promise<T> {
   if (live.lendableClaim)
-    return live.claimTransaction(async (tx) =>
-      work(await AppDraftCollection.create({ db: tx as DatabaseInterface })),
-    );
+    return live.claimTransaction(async (tx) => {
+      if (
+        (await shellProfile()) === 'cloud' &&
+        isPostgresHandle(await getShellDb())
+      )
+        await bindAmbientShellScope(tx);
+      return work(
+        await AppDraftCollection.create({ db: tx as DatabaseInterface }),
+      );
+    });
   return work(await AppDraftCollection.create({ db: await getShellDb() }));
 }
 
@@ -626,8 +645,15 @@ async function adoptDraft(
     host: null,
     problem: null,
   };
-  const imports = await AppImportCollection.create({ db });
-  const pending = await imports.list({ where: { draftId: slot.id }, limit: 1 });
+  // Workbook import is the desktop's: in cloud `app_imports` (no tenancy, no
+  // policy) is never read.
+  const pending =
+    (await shellProfile()) === 'cloud'
+      ? []
+      : await (await AppImportCollection.create({ db })).list({
+          where: { draftId: slot.id },
+          limit: 1,
+        });
   if (
     pending[0] &&
     !['review', 'published', 'discarded'].includes(pending[0].status)

@@ -40,6 +40,7 @@ import { lifecycleFromEnv } from './host-lifecycle.ts';
 import { installShellInference } from './inference.ts';
 import { isMethodCodeEntitled } from './method-code.ts';
 import { prepareShellSchema } from './schema.ts';
+import { protectShellTables } from './shell-tenancy.ts';
 
 export const runtime = createSmrtSvelteKitRuntime({
   providerReadiness: createProviderReadinessProbe,
@@ -53,6 +54,8 @@ export const runtime = createSmrtSvelteKitRuntime({
     // Only the local runtime creates schema. A deployed database is migrated
     // by `smrt db:migrate` and a missing table fails the startup check.
     if (!context || context.profile === 'local') await prepareShellSchema(db);
+    // Cloud: the tables exist (migrated); put them under row-level security.
+    else if (context.profile === 'cloud') await protectShellTables(db);
   },
   classOverrides: {},
 });

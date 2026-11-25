@@ -5,10 +5,10 @@
 //
 // WHAT THIS PROVES: the shell's own code and models, on the real tenancy
 // interceptor, over one SQLite database, with two tenants in it. WHAT IT DOES
-// NOT: PostgreSQL (dialect, `database-rls` row-level-security policies: the
-// shell tables are not RLS-enforced in this slice), the deployed runtime's
-// startup and its PostgreSQL version probe, a live OIDC provider. Isolation
-// here is APPLICATION-level: tenant context plus tenant-pinned stores.
+// NOT: PostgreSQL (dialect, row-level-security policies: those are
+// `shell-rls.postgres.test.ts`), the deployed runtime's startup and its
+// PostgreSQL version probe, a live OIDC provider. Isolation here is
+// APPLICATION-level: `required` tenancy plus tenant-pinned stores.
 
 import { existsSync, readdirSync } from 'node:fs';
 import { join } from 'node:path';
