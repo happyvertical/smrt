@@ -8,7 +8,10 @@
  * core imports neither) answers allow, allow-with-warning, or block.
  *
  * - `byo`, `local` and `app` targets never consult the gate.
- * - No registered gate: hosted calls run (pre-#4760 behavior).
+ * - No registered gate: hosted calls run (pre-#4760 behavior), unless the
+ *   process opted in to {@link requireInferenceGate} (the hosted cloud
+ *   shell): then a hosted call with no gate is blocked (policy
+ *   `gate-error`), never run unchecked.
  * - A gate that throws or answers nonsense blocks the hosted call (fail
  *   closed, policy `gate-error`): a transport failure is never read as
  *   "within the cap", and since nothing ran it never counts as spend.
@@ -82,6 +85,24 @@ export function setInferenceGate(gate: InferenceGate | undefined): void {
   else holder[GATE_KEY] = gate;
 }
 
+const REQUIRE_KEY = Symbol.for('smrt.inference.gate.required');
+
+/**
+ * Opt this realm in (or out) of fail-closed hosted inference: while on, a
+ * `source: 'hosted'` call finding no registered gate is blocked with policy
+ * `gate-error` instead of running unchecked. Default off. Per realm (a
+ * worker thread has its own `globalThis`), so each realm that can reach a
+ * hosted target sets it before its gate is built.
+ */
+export function requireInferenceGate(required: boolean): void {
+  (globalThis as { [REQUIRE_KEY]?: boolean })[REQUIRE_KEY] = required;
+}
+
+/** Whether {@link requireInferenceGate} is on in this realm. */
+export function isInferenceGateRequired(): boolean {
+  return (globalThis as { [REQUIRE_KEY]?: boolean })[REQUIRE_KEY] === true;
+}
+
 /** The registered hosted inference gate, if any. */
 export function getInferenceGate(): InferenceGate | undefined {
   return (globalThis as GateHolder)[GATE_KEY];
@@ -137,8 +158,11 @@ export async function checkInferenceGate(
   request: InferenceGateRequest,
   gate: InferenceGate | undefined = getInferenceGate(),
 ): Promise<InferenceGateDecision> {
-  if (!isHostedInferenceTarget(request.target) || !gate) {
-    return { action: 'allow' };
+  if (!isHostedInferenceTarget(request.target)) return { action: 'allow' };
+  if (!gate) {
+    return isInferenceGateRequired()
+      ? { action: 'block', details: GATE_ERROR }
+      : { action: 'allow' };
   }
   let decision: unknown;
   try {

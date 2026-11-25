@@ -246,7 +246,19 @@ export function registerHostedInferenceGate(
     (!isGate && (gateOrOptions as HostedInferenceGateOptions).principal) ||
     getAmbientInferencePrincipal;
   setInferenceGate(gate);
-  setAiUsageUserResolver(() => text(principalOf()?.userId));
+  // The same rule the gate applies: a user is metered only against the
+  // tenant they act in, never one a call names for another tenant.
+  setAiUsageUserResolver((tenantId) => {
+    const principal = principalOf();
+    const billed = text(tenantId);
+    if (
+      billed &&
+      text(principal?.tenantId)?.toLowerCase() !== billed.toLowerCase()
+    ) {
+      return undefined;
+    }
+    return text(principal?.userId);
+  });
   return gate;
 }
 
