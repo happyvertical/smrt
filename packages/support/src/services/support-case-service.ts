@@ -195,6 +195,9 @@ export class SupportCaseService {
     }
     if (fromKey === toKey) return [];
     if (caseIds && caseIds.length === 0) return [];
+    if (caseIds && caseIds.length > 500) {
+      throw new Error('reassignRequester: at most 500 caseIds per call');
+    }
     const params: unknown[] = [toKey, new Date().toISOString(), fromKey];
     let sql = `UPDATE ${this.cases.tableName} SET requester_key = ?, updated_at = ? WHERE requester_key = ?`;
     if (tenantId === null) {

@@ -26,7 +26,7 @@ export interface SupportCaseView {
   channelKind: string;
   clientProfileId: string | null;
   projectId: string | null;
-  requesterKey: string | null;
+  requesterKey?: string | null;
   assignedSpecialistId: string | null;
   assignedSpecialistName: string | null;
   reopenCount: number;

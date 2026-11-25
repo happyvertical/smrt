@@ -416,6 +416,20 @@ describe('SupportCaseService', () => {
       expect(future).toHaveLength(0);
     });
 
+    it('lists tenant-less cases only when tenantId is null', async () => {
+      const bare = await service.openCase({
+        subject: 'bare',
+        requesterKey: 'p:u9',
+      });
+      await service.openCase({
+        subject: 'owned',
+        tenantId: 't-a',
+        requesterKey: 'p:u9',
+      });
+      const found = await service.listByRequester('p:u9', { tenantId: null });
+      expect(found.map((c) => c.id)).toEqual([bare.id]);
+    });
+
     it('reassigns within a tenant, idempotently, leaving others untouched', async () => {
       const mine = await service.openCase({
         subject: 'm1',
