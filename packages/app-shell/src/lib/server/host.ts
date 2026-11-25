@@ -29,7 +29,7 @@ import { fileURLToPath } from 'node:url';
 import { getCurrentTenant, withTenant } from '@happyvertical/smrt-tenancy';
 import { TenantCollection } from '@happyvertical/smrt-users';
 import type { DatabaseInterface } from '@happyvertical/sql';
-import type { DatabaseConfig } from '../../engine/db/index.ts';
+import type { AppClaim, DatabaseConfig } from '../../engine/db/index.ts';
 import { CapacityError } from '../../engine/errors.ts';
 import {
   AppHost,
@@ -527,15 +527,18 @@ export function openDraftHost(
   pin: string | null = null,
   database: DatabaseConfig | null = null,
   appLimits?: AppLimits,
+  /** The live host's claim, lent for the draft's store writes (#5486); never released by the draft. */
+  claim?: AppClaim,
   methodCode?: MethodCodeGate,
 ): Promise<AppHost> {
   return withConnections(database, 'draft', () =>
     AppHost.open(dir, {
+      autoApprove: true,
       store: new DraftVersionStore(db, id, pin),
+      ...(claim ? { claim } : {}),
       ...hostTenant(pin),
       workerUrl: workerUrl(),
       workerLimits: budgetedLimits(),
-      autoApprove: true,
       ...(appLimits ? { appLimits } : {}),
       ...(methodCode ? { methodCode } : {}),
       // A draft on PostgreSQL reopens with the LIVE app's config; its own
@@ -543,6 +546,22 @@ export function openDraftHost(
       ...(database ? { database } : {}),
     }),
   );
+}
+
+/**
+ * Run `work` on the draft rows. On a live host with a fenced claim it is one
+ * claim transaction (#5486): the claim's proof comes first, so a host that lost
+ * its claim changes no draft row, whoever holds the app now.
+ */
+export async function withDraftRows<T>(
+  live: AppHost,
+  work: (drafts: AppDraftCollection) => Promise<T>,
+): Promise<T> {
+  if (live.lendableClaim)
+    return live.claimTransaction(async (tx) =>
+      work(await AppDraftCollection.create({ db: tx as DatabaseInterface })),
+    );
+  return work(await AppDraftCollection.create({ db: await getShellDb() }));
 }
 
 /**
@@ -561,21 +580,28 @@ async function adoptDraft(
   const drafts = await AppDraftCollection.create({ db });
   const now = new Date().toISOString();
   const rows = await drafts.list({ limit: 1000 });
-  for (const row of rows.filter((r) => r.status === 'starting')) {
-    row.status = 'discarded';
-    row.note = 'the start did not finish';
-    row.endedAt = now;
-    await row.save();
-  }
+  // On a host with a claim these writes are one claim transaction (#5486): a
+  // host that lost its claim marks no draft discarded, whoever holds it now.
+  const discard = async (list: typeof rows, note: string) => {
+    if (!list.length) return;
+    await withDraftRows(live, async (coll) => {
+      for (const r of list) {
+        const row = (await coll.get(r.id as string)) ?? r;
+        row.status = 'discarded';
+        row.note = note;
+        row.endedAt = now;
+        await row.save();
+      }
+    });
+  };
+  await discard(
+    rows.filter((r) => r.status === 'starting'),
+    'the start did not finish',
+  );
   const open = rows
     .filter((r) => r.status === 'open')
     .sort((a, b) => (String(a.createdAt) < String(b.createdAt) ? 1 : -1));
-  for (const extra of open.slice(1)) {
-    extra.status = 'discarded';
-    extra.note = 'another draft was open';
-    extra.endedAt = now;
-    await extra.save();
-  }
+  await discard(open.slice(1), 'another draft was open');
   const row = open[0];
   if (!row) {
     // A copy nothing refers to any more (a crash after a publish or discard
@@ -619,6 +645,7 @@ async function adoptDraft(
       holder.pin,
       database,
       await appLimitsOf(holder),
+      live.lendableClaim,
       methodCodeOf(holder),
     );
     wireHostEvents(draft, 'draft', holder.tenantId);
@@ -863,13 +890,24 @@ async function openLive(holder: Holder): Promise<AppHost> {
     // the persisted outcome, until a later open settles it.
     const recovered = host.recoveredChange;
     if (recovered?.request) {
-      const { settleRecoveredChange } = await import('./approvals.ts');
-      await settleRecoveredChange({
-        request: recovered.request,
-        outcome: recovered.outcome,
-        partial: recovered.partial,
-      });
-      await host.acknowledgeRecovery(recovered.id);
+      const approvals = await import('./approvals.ts');
+      try {
+        await approvals.settleRecoveredChange({
+          request: recovered.request,
+          outcome: recovered.outcome,
+          partial: recovered.partial,
+        });
+        await host.acknowledgeRecovery(recovered.id);
+      } catch (e) {
+        const summary = await approvals
+          .getApprovalView(recovered.request)
+          .then((v) => v?.summary)
+          .catch(() => undefined);
+        throw new EngineError(
+          `the app cannot open yet: the approval ${recovered.request}${summary ? ` ("${summary}")` : ''} has an unsettled outcome from an interrupted change and could not be settled (${e instanceof Error ? e.message : String(e)}). Try again; nothing is lost.`,
+          'refused',
+        );
+      }
     }
   } catch (e) {
     // Never serve live thawed when we could not tell whether a draft is

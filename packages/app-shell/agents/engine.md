@@ -337,11 +337,23 @@ for the one operation on the host thread; a PGlite uses the host's client).
   (drain part-1 hosts before this ships); the `ready`-rejects-after-commit
   arm of `notApplied` is covered by reasoning (the boot operation commits
   before `ready`), not by a test that can force a lost COMMIT reply.
-  **Still unfenced** (hosted PostgreSQL; slice 2 of #5486):
-  - Every `DraftVersionStore` write, and a draft host's boot, ownership bump
-    and schema drops (admin connections, no claim). The draft's own generation
-    still guards its schema.
-  - `adoptDraft`'s draft-row writes (starting/extra open -> discarded).
+  **Drafts (#5486 slice 2).** A live host with a fenced store lends its claim
+  to its drafts (`lendableClaim`; `forkDraft` and the shell's `openDraftHost`
+  pass it as `HostOptions.claim`). A draft host never owns or releases it: it
+  is only where the draft's change and undo store writes run, through the same
+  P0 / M / T_c path with the draft schema's own generation and
+  `DraftVersionStore.commitIn` (a compare on `app_drafts.current_version`, and
+  the draft must still be `starting` or `open`). The draft stops when the lent
+  claim is lost. `forkDraft` clears the journal keys the copy inherited. The
+  shell's draft row UPDATES (`adoptDraft`'s discards, a draft's
+  starting -> open, a failed start, `discardNow`) run through `withDraftRows`,
+  one `claimTransaction` on a host with a fenced claim, so a host that lost
+  its claim changes no draft row. The `starting` row's INSERT and `forkDraft`'s
+  seeding of the new draft's own first version stay on the shell's connection
+  (they create rows nobody else holds).
+  **Still unfenced** (hosted PostgreSQL; slice 3 of #5486):
+  - A draft host's boot, ownership bump and schema drops (admin connections,
+    no claim). The draft's own generation still guards its schema.
   - The publish journal file (local data directory).
   - `markPurged`; snapshot and rehearsal files.
   - Fork and restore schema creation on admin connections (at worst a leaked

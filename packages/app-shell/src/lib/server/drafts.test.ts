@@ -5,8 +5,9 @@
 import { existsSync, readFileSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { parseRuntimeReportSpec } from '@happyvertical/smrt-reports';
-import { afterAll, beforeAll, describe, expect, it } from 'vitest';
+import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
 import {
+  AppHost,
   type Command,
   EMPTY_APP,
   type VersionRecord,
@@ -271,6 +272,52 @@ describe('restart with a draft open', () => {
       { type: 'removeModel', model: 'Scratch' },
       { author: h.owner.id },
     );
+  });
+});
+
+describe('an open that cannot settle a recovered approval (#5486)', () => {
+  it('fails naming the approval, closes the draft host it adopted, and a retry opens', async () => {
+    await ensureNoDraft();
+    await startDraft('Unsettled', h.owner);
+    await closeHost();
+    const opened: AppHost[] = [];
+    const real = AppHost.open.bind(AppHost);
+    let fail = true;
+    const spy = vi
+      .spyOn(AppHost, 'open')
+      .mockImplementation(async (dir, opts) => {
+        const host = await real(dir, opts);
+        opened.push(host);
+        if (!host.draft) {
+          // What a claimed reopen would have decided for an approval.
+          host.recoveredChange = {
+            id: 'change-1',
+            request: 'approval-gone',
+            outcome: 'applied',
+            partial: false,
+          };
+          if (fail)
+            vi.spyOn(host, 'acknowledgeRecovery').mockRejectedValueOnce(
+              new Error('the database refused'),
+            );
+        }
+        return host;
+      });
+    try {
+      await expect(getHost()).rejects.toThrow(
+        /approval approval-gone.*could not be settled.*database refused/s,
+      );
+      // Nothing from the failed open keeps running: not the live host, not the adopted draft.
+      expect(opened.some((x) => x.draft)).toBe(true);
+      expect(opened.every((x) => !x.appAlive)).toBe(true);
+      fail = false;
+      const live = await getHost();
+      expect(live.frozen).toBe(true);
+      expect(await draftInfo()).toMatchObject({ name: 'Unsettled' });
+    } finally {
+      spy.mockRestore();
+    }
+    await discardNow();
   });
 });
 

@@ -159,6 +159,11 @@ export function createClaim(
     onLost(fn) {
       if (lost) fn(lost);
       else listeners.push(fn);
+      // Unsubscribe: a lent claim outlives the drafts that listened to it.
+      return () => {
+        const at = listeners.indexOf(fn);
+        if (at >= 0) listeners.splice(at, 1);
+      };
     },
     async release() {
       if (timer) clearInterval(timer);
