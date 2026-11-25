@@ -332,7 +332,9 @@ these hold:
    `deployment-branch-policies` with the job's own token and refuses unless:
    the environment exists; admins cannot bypass its rules
    (`can_admins_bypass: false`); a `required_reviewers` rule has at least one
-   reviewer and `prevent_self_review: true`; deployment branches are "selected
+   reviewer (`prevent_self_review` is not required: this is a single-owner
+   repository, so the owner approves his own dispatch; the branch rule and the
+   required-reviewer approval are the controls); deployment branches are "selected
    branches" (`custom_branch_policies: true`, `protected_branches: false`) and
    the rule list is exactly one entry, the branch `main` (no tag, no pattern, no
    second branch). GitHub's permission table for fine-grained tokens lists
@@ -508,8 +510,11 @@ and the controls around it. Do these **in this order**:
 2. **Deployment branches and tags: selected branches, `main` only, no tags.**
    Add exactly one rule, the branch `main`. A dispatch from any other branch,
    or a pull request, then cannot read anything in the environment.
-3. **Required reviewers**, with **prevent self-review** on and **no admin
-   bypass** ("Allow administrators to bypass configured protection rules" off).
+3. **Required reviewers** (at least one) and **no admin
+   bypass**. Leave **prevent self-review** off: this is a single-owner
+   repository, so the owner must be able to approve the run he dispatched; the
+   branch rule above and the required-reviewer approval are the controls
+   (owner decision 2026-11-24, #5619). ("Allow administrators to bypass configured protection rules" off).
    Expect an approval prompt for the preflight, one for the signing legs and one
    for the publish job.
 4. **Protect `main` with a ruleset that requires review.** `.github/CODEOWNERS`

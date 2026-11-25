@@ -43,6 +43,9 @@ function fakeServer() {
           if (holders.get(key) === session) holders.delete(key);
           return { rows: [{ pg_advisory_unlock: true }] };
         }
+        // #5486: the claim session's own idle limit (a session of its own).
+        if (sql.includes("set_config('idle_session_timeout'"))
+          return { rows: [{ set_config: '30000ms' }] };
         throw new Error(`unexpected statement: ${sql}`);
       },
       close: async () => {

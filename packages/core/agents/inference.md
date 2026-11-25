@@ -286,7 +286,9 @@ subscriptions or features code.
   steps), `resolveInferenceTarget()` for a bound hosted single target, and
   the probes.
   `byo` / `local` / `app` never reach the gate. No gate registered: hosted
-  calls run.
+  calls run, unless the realm opted in to `requireInferenceGate(true)` (the
+  hosted cloud shell, #5194): then they are blocked with policy `gate-error`.
+  The flag is on `globalThis` and per realm (a worker thread sets its own).
 - **Decisions.** `allow`, `warn` (runs; details for the host's sink), or
   `block`. A gate that throws or answers anything malformed is a `block`
   with policy `gate-error` (`checkInferenceGate()`, fail closed; the cause

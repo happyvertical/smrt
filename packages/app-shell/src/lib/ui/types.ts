@@ -167,7 +167,17 @@ export interface VersionInfo {
   current: boolean;
 }
 
-export type ApprovalStatus = 'pending' | 'approved' | 'denied' | 'failed';
+/**
+ * `unknown` is the shell's view of an approval left `executing`: a change
+ * whose outcome the engine could not tell (#5486). It is never stored; a
+ * reopen settles the row, and the view then reads approved or failed.
+ */
+export type ApprovalStatus =
+  | 'pending'
+  | 'approved'
+  | 'denied'
+  | 'failed'
+  | 'unknown';
 
 export type ApprovalAction =
   | {

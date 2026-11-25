@@ -187,6 +187,18 @@ describe('registerHostedInferenceGate (#4760)', () => {
     expect(getInferenceGate()).toBe(gate);
     expect(getAiUsageUserResolver()?.()).toBe('u1');
   });
+
+  it('meters the user only against the tenant they act in', () => {
+    registerHostedInferenceGate({
+      killSwitch: switches(),
+      spend: spendAnswering(),
+      principal: () => ({ tenantId: 'T1', userId: 'u1' }),
+    });
+    const resolve = getAiUsageUserResolver();
+    expect(resolve?.('t1')).toBe('u1'); // same tenant, any case
+    expect(resolve?.(undefined)).toBe('u1'); // tenant not known: as before
+    expect(resolve?.('t2')).toBeUndefined(); // another tenant: no user
+  });
 });
 
 describe('kill switch helpers (#4760)', () => {

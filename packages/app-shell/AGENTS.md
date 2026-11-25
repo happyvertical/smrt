@@ -9,9 +9,13 @@ SvelteKit or `src/lib`). README has the route and JSON contracts.
 
 Cloud profile (tenant scoping, accounts, what must not exist there): [cloud profile](agents/cloud-profile.md).
 
+Operator command `smrt-app-shell migrate-to-postgres` (SQLite app into PostgreSQL, as the verified owner): [cloud profile](agents/cloud-profile.md) "User apps on PostgreSQL".
+
 Starting the published server, graceful shutdown (SIGTERM/SIGINT drain), embedding on a host-owned listener (`./embed`: handler + drain), Node version: [deploy](agents/deploy.md).
 
 Hosted inference (gate at startup, entitlement, caps): [hosted inference](agents/hosted-inference.md).
+
+Method code (QuickJS) in the cloud profile runs only with the `app.methods` entitlement, checked on the host, per call: [method code](agents/method-code.md).
 
 Per-tenant storage metering (`storage.bytes` gauge, one read, request-count seam for #5195): [storage metering](agents/storage-metering.md).
 

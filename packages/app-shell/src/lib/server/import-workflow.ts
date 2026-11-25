@@ -69,7 +69,7 @@ import {
 } from './changes.ts';
 import { discardIfUnused, discardNow, startDraft } from './drafts.ts';
 import { subscribe } from './events.ts';
-import { getDraftSlot } from './host.ts';
+import { getDraftSlot, requireLocalProfile } from './host.ts';
 import { HttpError } from './http.ts';
 import {
   createImportAssistant,
@@ -316,7 +316,12 @@ export function createShellImportService(options: ShellImportOptions) {
       throw new HttpError(404, 'This import is no longer available.');
     return join(root, 'imports', `${id}.xlsx`);
   };
-  const collection = () => AppImportCollection.create({ db });
+  // `app_imports` is the one shell table with no tenancy or policy (the cloud
+  // refuses workbook import): a write there fails loudly, never quietly.
+  const collection = async () => {
+    await requireLocalProfile('Workbook import');
+    return AppImportCollection.create({ db });
+  };
   let writes: Promise<unknown> = Promise.resolve();
   const save = (
     row: AppImport,

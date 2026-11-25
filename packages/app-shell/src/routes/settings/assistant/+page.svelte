@@ -1,6 +1,8 @@
 <script lang="ts">
 import { ShellSettingsPage } from '@happyvertical/smrt-svelte/app';
 import ConnectAi from '$lib/components/ConnectAi.svelte';
+
+const { data }: { data?: { hosted?: boolean } } = $props();
 </script>
 
 <svelte:head>
@@ -9,8 +11,12 @@ import ConnectAi from '$lib/components/ConnectAi.svelte';
 
 <ShellSettingsPage basePath="/settings" title="Assistant">
   <p>
-    Choose what runs the assistant: the Claude Code you already have installed,
-    your ChatGPT plan, or an API key. Codex is under Advanced.
+    {#if data?.hosted}
+      The assistant runs on your own API key. Save one under Advanced.
+    {:else}
+      Choose what runs the assistant: the Claude Code you already have installed,
+      your ChatGPT plan, or an API key. Codex is under Advanced.
+    {/if}
   </p>
   <ConnectAi variant="settings" advancedHref="/settings/inference" />
   <p class="smrt-app-shell-assistant__again">

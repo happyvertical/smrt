@@ -10,8 +10,11 @@
 //   - it exists (404 is a refusal: the API also answers 404 when the token
 //     cannot read it, and either way the release must not go on);
 //   - admins cannot bypass its protection rules (`can_admins_bypass: false`);
-//   - a `required_reviewers` rule exists with at least one reviewer and
-//     `prevent_self_review: true`;
+//   - a `required_reviewers` rule exists with at least one reviewer. Self-review
+//     is NOT required to be prevented: this is a single-owner repository, so
+//     the owner must be able to approve the run he dispatched (decision
+//     2026-11-24, #5619). The branch rule and the required-reviewer approval
+//     are the controls;
 //   - deployment branches are "selected branches" (`custom_branch_policies:
 //     true`, `protected_branches: false`) and the policy list is exactly one
 //     entry: the branch `main` (no tag rule, no pattern, no second branch).
@@ -141,10 +144,6 @@ export async function checkEnvironment({
     reviewerRule.reviewers.length === 0
   ) {
     problems.push(`environment ${environment} has no required reviewers`);
-  } else if (reviewerRule.prevent_self_review !== true) {
-    problems.push(
-      `environment ${environment} allows the person who started the run to approve it (turn on "Prevent self-review")`,
-    );
   }
 
   const policy = env.deployment_branch_policy;

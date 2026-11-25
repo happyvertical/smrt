@@ -44,3 +44,42 @@ it('keeps Fresh selected and completes onboarding before opening a spreadsheet i
   expect(navigation.invalidateAll).toHaveBeenCalledOnce();
   expect(navigation.goto).toHaveBeenCalledWith('/import');
 });
+
+const hostedState = {
+  engine: 'api',
+  hosted: true,
+  apiReady: false,
+  onboarding: null,
+  tools: [],
+  chatgpt: { signedIn: false, signingIn: false },
+};
+
+it('hosted: the connect step offers only the API key (no ChatGPT, no local tool)', async () => {
+  page.url = new URL('http://localhost/welcome');
+  vi.stubGlobal(
+    'fetch',
+    vi.fn(async () => new Response(JSON.stringify(hostedState))),
+  );
+  component = mount(Page, {
+    target: document.body,
+    props: { data: { hosted: true } },
+  });
+  await new Promise((resolve) => setTimeout(resolve, 0));
+  await tick();
+  const text = document.body.textContent ?? '';
+  expect(text).toMatch(/your\s+own\s+API key/);
+  expect(text).not.toMatch(/ChatGPT|Claude Code|Codex/);
+  expect(document.querySelector('#chatgpt')).toBeNull();
+});
+
+it('hosted: no spreadsheet start (the desktop’s workbook import is refused there)', async () => {
+  page.url = new URL('http://localhost/welcome?step=2');
+  component = mount(Page, {
+    target: document.body,
+    props: { data: { hosted: true } },
+  });
+  await tick();
+  expect(document.body.textContent).toContain('Fresh');
+  expect(document.body.textContent).not.toContain('From a spreadsheet');
+  expect(document.querySelector('input[value="spreadsheet"]')).toBeNull();
+});

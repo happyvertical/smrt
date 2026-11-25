@@ -221,7 +221,7 @@ function touched(step: Step): { table: string; column: string }[] {
 export function findChainBlockers(chain: DraftChain): BatchBlocker[] {
   const out: BatchBlocker[] = [];
   chain.versions.forEach((rec) => {
-    for (const e of validate(rec.definition)) {
+    for (const e of validate(rec.definition, rec.definition)) {
       const m = /^report ([^:]+): unknown field (.+)$/.exec(e);
       if (m)
         out.push({
