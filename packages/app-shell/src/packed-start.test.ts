@@ -15,7 +15,12 @@
  * (`node_modules/*`): the dependencies are the workspace's, the package under
  * test is the tarball's.
  */
-import { type ChildProcess, execFileSync, spawn } from 'node:child_process';
+import {
+  type ChildProcess,
+  execFileSync,
+  spawn,
+  spawnSync,
+} from 'node:child_process';
 import {
   existsSync,
   mkdirSync,
@@ -74,6 +79,7 @@ beforeAll(() => {
     'build/index.js',
     'build/server-start.js',
     'build/embed.js',
+    'build/operator.js',
     'bin/smrt-app-shell.mjs',
     'dist/lib/server/shutdown.js',
     'dist/lib/server/embed.d.ts',
@@ -230,4 +236,31 @@ server.closeAllConnections();
   // The host's listener is still open and still answers after the drain.
   expect(r.listening).toBe(true);
   expect(r.after).toBeGreaterThanOrEqual(200);
+});
+
+it('runs an operator command through the bin and exits with its code, listening on nothing (#5193)', () => {
+  const run = (...args: string[]) =>
+    spawnSync(
+      process.execPath,
+      [
+        join(installed, 'bin/smrt-app-shell.mjs'),
+        'migrate-to-postgres',
+        ...args,
+      ],
+      {
+        cwd: work,
+        env: shellEnv(0),
+        encoding: 'utf8',
+        timeout: 90_000,
+      },
+    );
+  // Usage error: exit 2, the usage on stderr.
+  const usage = run();
+  expect(usage.status, usage.stderr).toBe(2);
+  expect(usage.stderr).toContain('usage: smrt-app-shell migrate-to-postgres');
+  // The desktop profile refuses the hosted command: exit 1, before any lookup.
+  const id = '00000000-0000-4000-8000-000000000000';
+  const desktop = run('--tenant', id, '--user', id);
+  expect(desktop.status, desktop.stderr).toBe(1);
+  expect(desktop.stderr).toContain('hosted-profile operation');
 });

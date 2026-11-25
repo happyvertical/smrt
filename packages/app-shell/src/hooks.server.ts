@@ -17,6 +17,7 @@ import { installHostedInferenceGate } from '$lib/server/hosted-inference';
 import { installHostedProvisioning } from '$lib/server/hosted-provisioning';
 import { shellImports, stopShellImports } from '$lib/server/import-runtime';
 import { installMethodCodeGate } from '$lib/server/method-code';
+import { runOperatorCommand } from '$lib/server/operator';
 import {
   ensureOwnerHandoff,
   keepOwnerHandoffFresh,
@@ -40,6 +41,15 @@ export const init = async () => {
         endStreams: closeAllStreams,
         stopWork: stopShellImports,
       }),
+      // One-shot operator commands (`smrt-app-shell migrate-to-postgres`,
+      // #5193), run by `build/operator.js` inside this bundle.
+      {
+        run: (argv) =>
+          runOperatorCommand(argv, {
+            out: (line) => process.stdout.write(`${line}\n`),
+            err: (line) => process.stderr.write(`${line}\n`),
+          }),
+      },
     );
   // The assistant's review of the changes waiting runs after the exact checks.
   installChangeReview();

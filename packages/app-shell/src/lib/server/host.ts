@@ -731,8 +731,8 @@ async function liveDatabase(
  * copy exists (neither is carried). The tenant, app and
  * schema come from the shell's own rows, never from input.
  *
- * NOT wired to any caller yet: who may run it (an operator, the owner) is the
- * hosted caller/principal work (#5188/#5195/#5375).
+ * Run by the operator command (`operator.ts`), which verifies the user is the
+ * tenant's owner and calls this inside that owner's scope; there is no owner route.
  */
 export async function migrateOwnAppToPostgres(): Promise<MigrateToPostgresResult> {
   const provider = requireContext().appDatabase;

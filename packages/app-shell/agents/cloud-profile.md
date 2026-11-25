@@ -279,12 +279,17 @@ separates one app from another. User tables carry forced row-level-security poli
 An app still in an `app.db` is refused until `migrateOwnAppToPostgres()` (host.ts;
 engine.md "SQLite to PostgreSQL in place") has moved it. v1 decisions:
 
-- **Trigger**: an explicit operator action, never a boot job and no owner-facing
-  route. Today the function is not wired to anything: the operator command needs
-  the shell context over the hosted database (the CLI has none), so it waits with
-  the caller/principal hand-off (#5188/#5195/#5375). The function runs as the
-  app's owner (tenant from the verified principal, never an argument), so a
-  command must supply that principal.
+- **Trigger**: an explicit operator command, never a boot job and no owner-facing
+  route: `smrt-app-shell migrate-to-postgres --tenant <id> --user <owner id> [--json]`
+  (`src/lib/server/operator.ts`, `build/operator.js`), run on the host with the
+  server's own environment. It starts the shell the way `./embed` does (listening
+  on nothing, no background job runner), checks that the user is the tenant's
+  owner (`requireOwner`: an ACTIVE membership with the system `owner` role, looked
+  up in shell.db; a non-owner, another tenant's owner and unknown ids are one
+  refusal that writes nothing), then runs `migrateOwnAppToPostgres` as that
+  verified owner (tenant from the verified principal, never an argument). No
+  principal is built from the operator's say-so. Exit 0 migrated or
+  already-migrated, 1 refused or failed, 2 usage. Hosted profile only.
 - **Refuses** (nothing written) while there is an open draft, waiting changes, or
   an unsettled approval (pending, accepted, executing, or approved with no result), each named in the message.
 - **The kept `app.db`** stays until an operator removes it; it is a snapshot as of
