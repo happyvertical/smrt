@@ -110,7 +110,7 @@ export function normalizeAttachmentPath(filePath: unknown): string {
 
 /**
  * The normalised path of an attachment owned by `accountId`: it must lie under
- * `<accountId>/` (account ids are unique across tenants, so this scopes both
+ * `<accountId>/` (server-assigned ids contain no `/`, and are unique across tenants, so this scopes both
  * tenant and account) and name a file below that directory.
  */
 export function scopeAttachmentPath(

@@ -37,3 +37,5 @@ Reads check the real path just before opening it, so the root must not be
 writable by untrusted parties (hard links or a symlink swap inside the root between the check and the
 read is not defended). The per-account prefix stops one account naming another
 account's file; it does not separate writers within one account.
+The root's layout is the operator's: a symlinked account directory that points at
+another account's directory inside the root is followed. Do not create one.
