@@ -494,6 +494,8 @@ export {
   inferenceBlockedUsageRecord,
   inferenceGateRequest,
   isHostedInferenceTarget,
+  isInferenceGateRequired,
+  requireInferenceGate,
   setInferenceGate,
 } from './inference-gate';
 export {
