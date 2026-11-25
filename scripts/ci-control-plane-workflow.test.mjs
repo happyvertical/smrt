@@ -223,3 +223,111 @@ test('affected package shards and the scope job carry no ordering-only needs, an
     );
   }
 });
+
+test('Coverage Gate reuses the core shard coverage and a skipped core job cannot skip it (#5648)', () => {
+  const suite = readFileSync(
+    new URL('../.github/workflows/test-suite.yml', import.meta.url),
+    'utf8',
+  );
+  const suiteJob = (name) => {
+    const block = suite.match(
+      new RegExp(`^  ${name}:\\n[\\s\\S]*?(?=^  [a-z][a-z0-9-]*:\\n|(?![\\s\\S]))`, 'm'),
+    )?.[0];
+    assert.ok(block, `test-suite job ${name} must exist`);
+    return block;
+  };
+  const needsOf = (block) =>
+    (block.match(/^    needs: (.+)$/m)?.[1] ?? '')
+      .replace(/[[\]\s]/g, '')
+      .split(',')
+      .filter(Boolean);
+  const shardsOf = (block) =>
+    block.match(/^        shard: \[(.+)\]$/m)?.[1].split(',').length;
+
+  const nonCore = suiteJob('coverage-gate');
+  const gate = suiteJob('coverage-gate-core');
+  const full = suiteJob('test-core');
+  const affected = suiteJob('affected-core-tests');
+
+  // Non-core gate: starts as soon as build finishes and never re-runs core.
+  assert.deepEqual(needsOf(nonCore), ['build']);
+  assert.match(nonCore, /run: node scripts\/check-coverage\.mjs --exclude core$/m);
+  assert.match(nonCore, /^    if: inputs\.mode == 'full' \|\| github\.event_name == 'merge_group'$/m);
+
+  // Core gate: a skipped test-core / affected-core-tests must never skip it.
+  assert.deepEqual(needsOf(gate), ['build', 'test-core', 'affected-core-tests']);
+  const admission = gate.match(/^    if: >-\n([\s\S]*?)(?=^    \S)/m)?.[1] ?? '';
+  const flat = admission.replace(/\s+/g, ' ').trim();
+  assert.equal(
+    flat,
+    "!cancelled() && (inputs.mode == 'full' || github.event_name == 'merge_group') && needs.build.result == 'success'",
+  );
+  assert.doesNotMatch(admission, /success\(\)|always\(\)/);
+  assert.doesNotMatch(admission, /needs\.(test-core|affected-core-tests)/);
+  assert.doesNotMatch(suite, /continue-on-error/);
+
+  // Shard results are checked explicitly, and everything after the scope
+  // probe is conditional on it so an untouched core ends the job early.
+  assert.match(gate, /core-coverage-merge\.mjs shard-results/);
+  assert.match(gate, /--test-core "\$\{\{ needs\.test-core\.result \}\}"/);
+  assert.match(gate, /--affected-core-tests "\$\{\{ needs\.affected-core-tests\.result \}\}"/);
+  assert.match(gate, /node scripts\/check-coverage\.mjs --only core --list-checked/);
+  assert.match(gate, /fetch-depth: 0/);
+  const afterScope = gate.slice(gate.indexOf('id: scope'));
+  const steps = afterScope.split(/^      - name: /m).slice(1);
+  assert.ok(steps.length >= 7);
+  for (const step of steps) {
+    assert.match(step, /^ {8}if: steps\.scope\.outputs\.core == 'true'$/m, step.split('\n')[0]);
+  }
+  // Same build, manifest and absolute checkout root as the shards.
+  assert.match(gate, /--filter='@happyvertical\/smrt-core\.\.\.'/);
+  assert.match(gate, /generate:test --filter='@happyvertical\/smrt-core'/);
+  // One folder per artifact so a duplicate blob is seen, not overwritten.
+  assert.match(gate, /pattern: core-coverage-blob-\*/);
+  assert.doesNotMatch(gate, /merge-multiple:/);
+  assert.match(gate, /core-coverage-merge\.mjs merge\s+--blobs/);
+  assert.match(gate, /--expected-shards "\$CORE_SHARDS"/);
+  assert.match(
+    gate,
+    /node scripts\/check-coverage\.mjs --only core\s+--summary core=packages\/core\/coverage\/coverage-summary\.json/,
+  );
+
+  // The expected shard count is the matrix size of BOTH producers.
+  const expected = Number(gate.match(/CORE_SHARDS: '(\d+)'/)?.[1]);
+  assert.equal(shardsOf(full), expected);
+  assert.equal(shardsOf(affected), expected);
+
+  // Both producers emit distinct blobs with the blob reporter, upload them,
+  // and fail the shard if no blob was written.
+  for (const producer of [full, affected]) {
+    assert.match(producer, /--coverage \\\n\s+--reporter=default --reporter=blob/);
+    assert.match(
+      producer,
+      /--outputFile\.blob="\.vitest-reports\/blob-\$\{SHARD%\/\*\}-\$\{SHARD#\*\/\}\.json"/,
+    );
+    assert.match(producer, /path: packages\/core\/\.vitest-reports\/blob-\*\.json/);
+    assert.match(producer, /if-no-files-found: error/);
+  }
+  assert.match(full, /name: core-coverage-blob-full-\$\{\{ strategy\.job-index \}\}/);
+  assert.match(affected, /name: core-coverage-blob-affected-\$\{\{ strategy\.job-index \}\}/);
+  // Affected mode pays for coverage only in a merge group, where the gate runs.
+  assert.match(
+    affected,
+    /- name: Run affected core tests \(shard[^\n]+\n\s+if: github\.event_name != 'merge_group'/,
+  );
+  assert.match(
+    affected,
+    /- name: Run affected core tests with coverage blob[^\n]+\n\s+if: github\.event_name == 'merge_group'/,
+  );
+  assert.match(affected, /if: always\(\) && github\.event_name == 'merge_group'/);
+
+  // The caller's required result is the reusable workflow's result, which
+  // fails when either gate job fails; fork-pr-validation reaches the same
+  // jobs in full mode.
+  assert.match(job('required-ci'), /TEST_SUITE: \$\{\{ needs\.test\.result \}\}/);
+  const fork = readFileSync(
+    new URL('../.github/workflows/fork-pr-validation.yml', import.meta.url),
+    'utf8',
+  );
+  assert.match(fork, /uses: \.\/\.github\/workflows\/test-suite\.yml\n\s+with:\n\s+mode: full/);
+});

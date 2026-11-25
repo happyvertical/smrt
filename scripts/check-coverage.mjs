@@ -16,6 +16,14 @@
  *   node scripts/check-coverage.mjs --packages a,b  # explicit list (local / manual)
  *   BASE_REF=main node scripts/check-coverage.mjs   # override the diff base
  *
+ * CI splits the gate in two (#5648): the non-core gate runs with `--exclude core`
+ * and measures each package itself; the core gate runs with `--only core
+ * --summary core=<coverage-summary.json>` and reads the report merged from the
+ * three `test-core` shards instead of re-running the core suite. Floors, interim
+ * floors, exemptions and the pre-existing-debt rule are the same code path for
+ * both. `--list-checked` prints the gated packages (after --only/--exclude) and
+ * exits, so a job can tell whether a package is subject to the floor at all.
+ *
  * Measurement: per-package `vitest run --coverage` (v8) with the json-summary
  * reporter; the gate reads total line coverage from coverage/coverage-summary.json.
  *
@@ -26,18 +34,18 @@
 import { execFileSync } from 'node:child_process';
 import { existsSync, readFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
-import { fileURLToPath } from 'node:url';
+import { fileURLToPath, pathToFileURL } from 'node:url';
 
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), '..');
 const PKGS = join(ROOT, 'packages');
 
-const FLOORS = { T1: 80, T2: 70, T3: 50 };
+export const FLOORS = { T1: 80, T2: 70, T3: 50 };
 
 // Tier assignments — mirror of docs/content/PRODUCTION_READINESS.md §Tiers.
 // Package directory name → tier. `types` is coverage-waived (zero-runtime).
 // Packages absent from this map are "untiered": skipped with a warning until a
 // tier is ratified for them (gnode/subscriptions/templates/etc.).
-const TIERS = {
+export const TIERS = {
   // T1 Foundation (80%)
   cli: 'T1',
   config: 'T1',
@@ -91,7 +99,7 @@ const TIERS = {
   voice: 'T3',
 };
 // Coverage-waived packages (zero-runtime). See rubric footnote †.
-const WAIVED = new Set(['types']);
+export const WAIVED = new Set(['types']);
 
 // Packages temporarily exempt from the line-coverage gate (distinct from WAIVED:
 // these DO ship runtime code, but v8 line coverage isn't a meaningful gate for
@@ -105,7 +113,7 @@ const WAIVED = new Set(['types']);
 //     hooks, workspace fs scanning) — exercised through every package's test run
 //     rather than unit line-coverage; its "product" is test infrastructure.
 // Revisit both as their respective coverage stories mature.
-const GATE_EXEMPT = new Set(['smrt-svelte', 'vitest']);
+export const GATE_EXEMPT = new Set(['smrt-svelte', 'vitest']);
 
 // Interim ratchet floors for packages that measure BELOW their ratified tier
 // floor. S6 (#1411) explicitly deferred per-package coverage *uplift* to Wave 3;
@@ -116,7 +124,7 @@ const GATE_EXEMPT = new Set(['smrt-svelte', 'vitest']);
 // can't regress it, while the uplift to the tier floor is tracked as its own
 // work item. Ratchet upward as uplift lands; delete the entry once the package
 // measures at its tier floor.
-const INTERIM_FLOORS = {
+export const INTERIM_FLOORS = {
   // core: interim floor removed — the #1500 coverage uplift took core from
   // ~66% to 83.79% lines (2026-06-21), clearing the ratified T1 80% floor. The
   // gate now enforces the real tier floor for core. Add new entries here only
@@ -232,7 +240,16 @@ function measureCoverage(pkg) {
     // Non-zero exit (failing/zero tests). Fall through to read any summary; if
     // none exists the package is treated as uncovered (gate fails).
   }
-  const summaryPath = join(cwd, 'coverage', 'coverage-summary.json');
+  return readCoverageSummary(join(cwd, 'coverage', 'coverage-summary.json'));
+}
+
+/**
+ * Read a vitest `json-summary` report. Returns `{ pct, files }` (total line
+ * coverage % and the per-file keys v8 measured), or null when the file is
+ * missing or unreadable — an absent report is "no coverage produced" and fails
+ * the gate; it is never read as passing.
+ */
+export function readCoverageSummary(summaryPath) {
   if (!existsSync(summaryPath)) return null;
   try {
     const summary = JSON.parse(readFileSync(summaryPath, 'utf8'));
@@ -283,7 +300,7 @@ function buildCoverageClosures(packages) {
  * the surgical version of the smrt-svelte gate exemption: it keeps `.svelte`
  * that IS measured (e.g. `content`'s component-tested files) under the gate.
  */
-function touchesMeasuredSource(touchedRel, coverageFiles) {
+export function touchesMeasuredSource(touchedRel, coverageFiles) {
   const norm = (p) => p.replace(/\\/g, '/');
   const measured = coverageFiles.map(norm);
   for (const rel of touchedRel) {
@@ -293,28 +310,15 @@ function touchesMeasuredSource(touchedRel, coverageFiles) {
   return false;
 }
 
-function main() {
-  const explicit = flagValue('--packages');
-  // In CI we have the git diff, so we know WHICH files were touched — that lets
-  // us tell a pre-existing shortfall apart from one this PR could have caused.
-  // Explicit `--packages` mode has no diff, so it always enforces the floor.
-  const touchedMap = explicit ? null : touchedSourceByPackage();
-  const touched = explicit
-    ? explicit
-        .split(',')
-        .map((s) => s.trim())
-        .filter(Boolean)
-    : [...touchedMap.keys()];
-
-  if (touched.length === 0) {
-    console.log('✓ coverage-gate: no packages touched — nothing to check.');
-    return;
-  }
-
+/**
+ * Split touched packages into the ones the gate checks and the ones it skips
+ * (waived, exempt, untiered), attaching each checked package's effective floor.
+ * Pure: shared by the CI gates and the unit tests.
+ */
+export function selectGatedPackages(touched) {
   const checked = [];
   const skipped = [];
-  for (const pkg of touched.sort()) {
-    if (!existsSync(join(PKGS, pkg))) continue; // deleted dir
+  for (const pkg of [...touched].sort()) {
     if (WAIVED.has(pkg)) {
       skipped.push(`${pkg} (coverage waived)`);
       continue;
@@ -336,53 +340,140 @@ function main() {
       interim: interim !== undefined,
     });
   }
+  return { checked, skipped };
+}
 
+/**
+ * Decide one package's result from its measured coverage. `cov` is
+ * `{ pct, files }` or null (nothing measured). `touchedEntry` is the diff entry
+ * (`{ files, onlyModified }`) or undefined in explicit `--packages` mode.
+ * Returns `{ outcome: 'pass' | 'debt' | 'fail', line }`; only 'fail' blocks.
+ * The below-floor shortfall is pre-existing debt (report, don't block) only when
+ * the PR cannot have changed this package's covered surface: every touched file
+ * is an in-place modification (no add/delete/rename) AND none of them are files
+ * v8 actually measured. That covers a `.svelte`-only refactor in a package
+ * without component tests. A new/removed file, or a modified file that IS
+ * measured, still blocks; explicit `--packages` mode has no diff, so it always
+ * enforces.
+ */
+export function evaluateCoverage({ pkg, tier, floor, interim }, cov, touchedEntry) {
+  const floorLabel = interim
+    ? `interim floor ${floor}% — tier floor ${FLOORS[tier]}%, uplift tracked separately`
+    : `floor ${floor}%`;
+  if (cov === null || cov === undefined || cov.pct === null) {
+    return {
+      outcome: 'fail',
+      pct: 'no coverage summary',
+      line: `✗ ${pkg} (${tier}): no coverage produced (${floorLabel})`,
+    };
+  }
+  const { pct, files } = cov;
+  if (pct >= floor) {
+    return {
+      outcome: 'pass',
+      pct,
+      line: `✓ ${pkg} (${tier}): ${pct.toFixed(2)}% (${floorLabel})`,
+    };
+  }
+  if (
+    touchedEntry?.onlyModified &&
+    !touchesMeasuredSource(touchedEntry.files, files)
+  ) {
+    return {
+      outcome: 'debt',
+      pct,
+      line:
+        `• ${pkg} (${tier}): ${pct.toFixed(2)}% < floor ${floor}% — PR only ` +
+        'modifies source v8 does not measure here; pre-existing debt, not blocked',
+    };
+  }
+  return {
+    outcome: 'fail',
+    pct,
+    line: `✗ ${pkg} (${tier}): ${pct.toFixed(2)}% (${floorLabel})`,
+  };
+}
+
+function csvFlag(name) {
+  const v = flagValue(name);
+  return v
+    ? v
+        .split(',')
+        .map((s) => s.trim())
+        .filter(Boolean)
+    : null;
+}
+
+/** `--summary core=path[,other=path]` → Map<pkg, absolute-or-relative path>. */
+export function parseSummaryFlag(value) {
+  const map = new Map();
+  for (const part of (value ?? '').split(',').filter(Boolean)) {
+    const eq = part.indexOf('=');
+    if (eq <= 0 || eq === part.length - 1) {
+      throw new Error(`--summary expects pkg=path, got "${part}"`);
+    }
+    map.set(part.slice(0, eq).trim(), part.slice(eq + 1).trim());
+  }
+  return map;
+}
+
+function main() {
+  const explicit = flagValue('--packages');
+  const only = csvFlag('--only');
+  const exclude = new Set(csvFlag('--exclude') ?? []);
+  const summaries = parseSummaryFlag(flagValue('--summary'));
+  const listChecked = process.argv.includes('--list-checked');
+  // In CI we have the git diff, so we know WHICH files were touched — that lets
+  // us tell a pre-existing shortfall apart from one this PR could have caused.
+  // Explicit `--packages` mode has no diff, so it always enforces the floor.
+  const touchedMap = explicit ? null : touchedSourceByPackage();
+  const touched = (
+    explicit
+      ? explicit
+          .split(',')
+          .map((s) => s.trim())
+          .filter(Boolean)
+      : [...touchedMap.keys()]
+  ).filter((pkg) => (!only || only.includes(pkg)) && !exclude.has(pkg));
+
+  const existing = touched.filter((pkg) => existsSync(join(PKGS, pkg))); // deleted dir
+  const { checked, skipped } = selectGatedPackages(existing);
+
+  if (listChecked) {
+    console.log(checked.map(({ pkg }) => pkg).join(','));
+    return;
+  }
+
+  if (touched.length === 0) {
+    console.log('✓ coverage-gate: no packages touched — nothing to check.');
+    return;
+  }
   for (const line of skipped) console.log(`• skipped: ${line}`);
   if (checked.length === 0) {
     console.log('✓ coverage-gate: no tiered packages to check.');
     return;
   }
 
-  buildCoverageClosures(checked);
+  // Packages with a precomputed summary (core's merged shard report, #5648)
+  // are not re-measured, so they need no dependency-closure build either.
+  buildCoverageClosures(checked.filter(({ pkg }) => !summaries.has(pkg)));
 
   const failures = [];
   const results = [];
-  for (const { pkg, tier, floor, interim } of checked) {
+  for (const entry of checked) {
+    const { pkg, tier, floor, interim } = entry;
     const floorLabel = interim
       ? `interim floor ${floor}% — tier floor ${FLOORS[tier]}%, uplift tracked separately`
       : `floor ${floor}%`;
     console.log(`\n── measuring coverage: ${pkg} (${tier}, ${floorLabel}) ──`);
-    const cov = measureCoverage(pkg);
-    if (cov === null || cov.pct === null) {
-      failures.push({ pkg, tier, floor, pct: 'no coverage summary' });
-      results.push(`✗ ${pkg} (${tier}): no coverage produced (${floorLabel})`);
-      continue;
+    const cov = summaries.has(pkg)
+      ? readCoverageSummary(summaries.get(pkg))
+      : measureCoverage(pkg);
+    const verdict = evaluateCoverage(entry, cov, touchedMap?.get(pkg));
+    results.push(verdict.line);
+    if (verdict.outcome === 'fail') {
+      failures.push({ pkg, tier, floor, pct: verdict.pct });
     }
-    const { pct, files } = cov;
-    if (pct >= floor) {
-      results.push(`✓ ${pkg} (${tier}): ${pct.toFixed(2)}% (${floorLabel})`);
-      continue;
-    }
-    // Below floor. The shortfall is only treated as pre-existing debt (report,
-    // don't block) when the PR *cannot* have changed this package's covered
-    // surface: every touched file is an in-place modification (no add/delete/
-    // rename) AND none of them are files v8 actually measured. That covers a
-    // `.svelte`-only refactor in a package without component tests. A new/removed
-    // file, or a modified file that IS measured, still blocks. Explicit
-    // `--packages` mode has no diff, so it always enforces.
-    const touchedEntry = touchedMap?.get(pkg);
-    if (
-      touchedEntry?.onlyModified &&
-      !touchesMeasuredSource(touchedEntry.files, files)
-    ) {
-      results.push(
-        `• ${pkg} (${tier}): ${pct.toFixed(2)}% < floor ${floor}% — PR only ` +
-          'modifies source v8 does not measure here; pre-existing debt, not blocked',
-      );
-      continue;
-    }
-    results.push(`✗ ${pkg} (${tier}): ${pct.toFixed(2)}% (${floorLabel})`);
-    failures.push({ pkg, tier, floor, pct });
   }
 
   console.log('\n=== Per-tier coverage gate ===');
@@ -402,4 +493,9 @@ function main() {
   );
 }
 
-main();
+if (
+  process.argv[1] &&
+  import.meta.url === pathToFileURL(process.argv[1]).href
+) {
+  main();
+}
