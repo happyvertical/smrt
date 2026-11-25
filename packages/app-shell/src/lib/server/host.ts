@@ -608,7 +608,11 @@ async function adoptDraft(
     // was recorded): the engine removes it, and only if it is one of its own.
     if (existsSync(dir))
       try {
-        await discardOrphanDraft(dir, database ?? undefined);
+        await discardOrphanDraft(
+          dir,
+          database ?? undefined,
+          live.lendableClaim,
+        );
       } catch {
         // not removable (no marker, a symlink): left alone, never forced
       }
@@ -785,9 +789,12 @@ export async function migrateOwnAppToPostgres(): Promise<MigrateToPostgresResult
  * open: on PostgreSQL its schema goes too. The engine removes only what is one
  * of its own drafts.
  */
-export async function discardStaleDraft(dir: string): Promise<void> {
+export async function discardStaleDraft(
+  dir: string,
+  live?: AppHost,
+): Promise<void> {
   const database = (await currentHolder()).database;
-  await discardOrphanDraft(dir, database ?? undefined);
+  await discardOrphanDraft(dir, database ?? undefined, live?.lendableClaim);
 }
 
 /** True when an approval is still waiting to be decided or applied. */
