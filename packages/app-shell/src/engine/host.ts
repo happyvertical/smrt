@@ -222,7 +222,9 @@ export interface HostOptions {
   /**
    * Tests only: a claim over an in-process PGlite (see `unprovenClaim`) in
    * place of the one a PostgreSQL server host makes itself. Production PGlite
-   * hosts have none.
+   * hosts have none. On a DRAFT host: the live host's claim, lent (#5486): the
+   * draft's change and undo store writes run on it, and the draft never
+   * releases it.
    */
   claim?: AppClaim;
   /**
@@ -511,6 +513,9 @@ export class AppHost extends EventEmitter {
   private releaseDatabase?: () => Promise<void>;
   /** PostgreSQL server: the claim this live host's swap and store commits run on (#5470). */
   private claim?: AppClaim;
+  /** A draft host: the live host's claim, lent for its store writes; never released here (#5486). */
+  private borrowed?: AppClaim;
+  private unlisten?: () => void;
   private claimLost: Error | null = null;
   /** The approval a running command was asked under (the queue runs one at a time; #5486). */
   private currentRequest: string | null = null;
@@ -546,6 +551,7 @@ export class AppHost extends EventEmitter {
     dataDir: string,
     opts: HostOptions,
     database: HostDatabase,
+    borrowed?: AppClaim,
   ) {
     super();
     this.dataDir = dataDir;
@@ -557,6 +563,8 @@ export class AppHost extends EventEmitter {
     this.claim = database.claim;
     this.allowUnfencedStore = opts.allowUnfencedStore === true;
     this.claim?.onLost((e) => this.loseClaim(e));
+    this.borrowed = borrowed;
+    this.unlisten = this.borrowed?.onLost((e) => this.loseClaim(e));
     this.lockTimeoutMs = opts.swapLockTimeoutMs ?? DEFAULT_LOCK_TIMEOUT_MS;
     this.store = opts.store;
     this.workerUrl = opts.workerUrl ?? defaultWorkerUrl();
@@ -640,14 +648,23 @@ export class AppHost extends EventEmitter {
       release: claim ? () => claim.release() : undefined,
       claim,
     };
+    let made: AppHost | undefined;
     try {
-      const host = new AppHost(dataDir, opts, database);
+      const host = new AppHost(
+        dataDir,
+        opts,
+        database,
+        marker ? opts.claim : undefined,
+      );
+      made = host;
       await host.boot();
       const recovered = host.recoveredEvent;
       host.recoveredEvent = null;
       if (recovered) setImmediate(() => host.emit('changed', recovered));
       return host;
     } catch (e) {
+      // A draft that never opened must not stay subscribed to the lent claim.
+      made?.unlisten?.();
       await claim?.release();
       throw e;
     }
@@ -684,7 +701,7 @@ export class AppHost extends EventEmitter {
     this.recovery = reconcilePublish(this.dataDir, cur);
     if (atomicOutcome) this.recovery = atomicOutcome;
     // A change an earlier host left between its migration and its store write.
-    if (this.atomic) cur = await this.reconcileChange(cur);
+    if (this.fenced) cur = await this.reconcileChange(cur);
     // A crash outside the journal's window (a rehearsal or a restore that
     // never got to swap) leaves a side schema: drop the app's own.
     if (this.onServer && !this.draft) await this.sweepSideSchemas();
@@ -698,10 +715,10 @@ export class AppHost extends EventEmitter {
         migration: null,
         createdAt: now(),
       };
-      if (this.atomic) {
+      if (this.fenced) {
         // The first version is a store write like any other: under the claim.
         const schema = schemaOf(this.database);
-        await (this.claim as AppClaim).transaction(async (tx) => {
+        await (this.fenceClaim as AppClaim).transaction(async (tx) => {
           await holdFence(tx, schema, this.fence as number);
           await this.store.commitIn?.(tx, [seed], 0, null);
         });
@@ -753,7 +770,7 @@ export class AppHost extends EventEmitter {
     let outcome: 'applied' | 'not-applied' | 'undecided' | null = null;
     let found: ChangeKey | null = null;
     let forward = false;
-    await (this.claim as AppClaim).transaction(async (tx) => {
+    await (this.fenceClaim as AppClaim).transaction(async (tx) => {
       await holdFence(tx, schema, this.fence as number);
       const meta = await readMeta(tx, schema, [
         CHANGE_KEY,
@@ -839,9 +856,9 @@ export class AppHost extends EventEmitter {
    * it for the next open, which settles again.
    */
   async acknowledgeRecovery(id: string): Promise<void> {
-    if (!this.atomic || this.claimLost) return;
+    if (!this.fenced || this.claimLost) return;
     const schema = schemaOf(this.database);
-    await (this.claim as AppClaim).transaction(async (tx) => {
+    await (this.fenceClaim as AppClaim).transaction(async (tx) => {
       await holdFence(tx, schema, this.fence as number);
       const raw = (await readMeta(tx, schema, [CHANGE_KEY]))[CHANGE_KEY];
       try {
@@ -1013,7 +1030,7 @@ export class AppHost extends EventEmitter {
     /** The records the store commits with this change; a claimed host (#5486) writes them under its claim. */
     records?: VersionRecord[],
   ) {
-    if (this.atomic && records)
+    if (this.fenced && records)
       return this.transitionClaimed(next, nextVersion, migration, records);
     const swapped = await this.swap(next, nextVersion, migration);
     try {
@@ -1055,7 +1072,7 @@ export class AppHost extends EventEmitter {
     migration: Migration | undefined,
     records: VersionRecord[],
   ) {
-    const claim = this.claim as AppClaim;
+    const claim = this.fenceClaim as AppClaim;
     const store = this.store;
     const schema = schemaOf(this.database);
     const from = this.version;
@@ -1071,15 +1088,16 @@ export class AppHost extends EventEmitter {
       await holdFence(tx, schema, this.fence as number);
       // A decided outcome nobody has acknowledged yet must not be overwritten.
       const prior = (await readMeta(tx, schema, [CHANGE_KEY]))[CHANGE_KEY];
-      let pending = false;
+      let unsettled: ChangeKey | null = null;
       try {
-        pending = !!prior && !!(JSON.parse(prior) as ChangeKey).decided;
+        const k = prior ? (JSON.parse(prior) as ChangeKey) : null;
+        if (k?.decided) unsettled = k;
       } catch {
         /* an unreadable journal is overwritten as before */
       }
-      if (pending)
+      if (unsettled)
         throw new EngineError(
-          'an earlier interrupted change has not been settled yet; reopen the app',
+          `an earlier interrupted change${unsettled.request ? ` (approval ${unsettled.request})` : ''} has not been settled yet; reopen the app`,
           'refused',
         );
       await store.commitIn?.(tx, [], from, from);
@@ -1144,7 +1162,7 @@ export class AppHost extends EventEmitter {
    * an error or "yes" means the old worker must not come back.
    */
   private async notApplied(id: string): Promise<boolean> {
-    const claim = this.claim;
+    const claim = this.fenceClaim;
     if (!claim) return false;
     try {
       const schema = schemaOf(this.database);
@@ -1167,7 +1185,7 @@ export class AppHost extends EventEmitter {
 
   /** A swap with no steps failed: did its boot commit anyway? True only for a definite "no". */
   private async notCommitted(id: string): Promise<boolean> {
-    const claim = this.claim;
+    const claim = this.fenceClaim;
     if (!claim) return false;
     try {
       const schema = schemaOf(this.database);
@@ -2542,6 +2560,38 @@ export class AppHost extends EventEmitter {
     return this.claimLost;
   }
 
+  /** The claim this host's change and undo store writes run on: its own, or a draft's lent one (#5486). */
+  private get fenceClaim(): AppClaim | undefined {
+    return this.claim ?? this.borrowed;
+  }
+
+  /** Do this host's change and undo store writes run on a claim (#5486)? */
+  private get fenced() {
+    return !!this.fenceClaim && !!this.store.commitIn;
+  }
+
+  /**
+   * The claim a live host lends to its drafts (#5486), only when its store
+   * writes are fenced; undefined for a draft and for every host without one.
+   */
+  get lendableClaim(): AppClaim | undefined {
+    return this.fenced && !this.draft ? this.claim : undefined;
+  }
+
+  /**
+   * Run `work` in one claim transaction: the claim's proof first, so a host
+   * that lost its claim writes nothing (#5486). For the shell's own rows
+   * (`adoptDraft`) on a host that has one; check `lendableClaim` first.
+   */
+  claimTransaction<T>(work: (tx: unknown) => Promise<T>): Promise<T> {
+    if (!this.claim || this.draft)
+      throw new EngineError(
+        'this host has no claim of its own to run a transaction on',
+        'refused',
+      );
+    return this.claim.transaction(work);
+  }
+
   /** Does this host commit the store inside the swap's transaction (#5470)? */
   private get atomic() {
     return !!this.claim && !!this.store.commitIn;
@@ -3107,8 +3157,18 @@ export class AppHost extends EventEmitter {
         : undefined;
       const liveSchema = schema ? schemaOf(this.database) : undefined;
       try {
-        if (schema) await this.forkSchemaTo(schema);
-        else await this.callApp('copyTo', join(dir, 'app.db'));
+        if (schema) {
+          await this.forkSchemaTo(schema);
+          // The copy carries the live app's change journal (#5486): a draft
+          // starts with none of its own.
+          await withSchemaAdmin(
+            { ...this.database, schema } as DatabaseConfig,
+            (db) =>
+              db.transaction((tx) =>
+                deleteMeta(tx, schema, [CHANGE_KEY, APPLIED_KEY, REVERSED_KEY]),
+              ),
+          );
+        } else await this.callApp('copyTo', join(dir, 'app.db'));
         writeDraftMarker(dir, this.dataDir, base.version, schema, liveSchema);
         await opts.store.append(structuredClone(base));
         await opts.store.setCurrent(base.version);
@@ -3122,6 +3182,10 @@ export class AppHost extends EventEmitter {
           autoApprove: true,
           database: schema ? this.database : undefined,
           swapLockTimeoutMs: this.lockTimeoutMs,
+          // Its store writes run on this host's claim, lent, never released.
+          ...(schema && this.lendableClaim
+            ? { claim: this.lendableClaim }
+            : {}),
         });
       } catch (e) {
         rmSync(dir, { recursive: true, force: true });
@@ -3163,6 +3227,7 @@ export class AppHost extends EventEmitter {
       if (at !== 0) return false; // changes since the base, or unreadable
       await this.drainInflight();
       this.closed = true;
+      this.unlisten?.();
       await this.app.terminate();
       if (draft.schema)
         await this.dropSideSchema(draft.schema, true, this.fence);
@@ -4048,6 +4113,7 @@ export class AppHost extends EventEmitter {
   async close() {
     await this.queue;
     this.closed = true;
+    this.unlisten?.(); // a draft stops listening to the claim it was lent
     this.releaseSpare();
     try {
       await this.app.terminate();
