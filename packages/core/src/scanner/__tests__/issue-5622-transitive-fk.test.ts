@@ -170,7 +170,7 @@ function setup(
     ],
     [CHILD],
   );
-  return { build, childPath };
+  return { build, childPath, base, child };
 }
 
 describe('transitive STI FK owner manifests (#5622 R1)', () => {
@@ -254,6 +254,106 @@ describe('transitive STI FK owner manifests (#5622 R1)', () => {
     expect(
       loadExternalManifestSync(BASE, { fromManifest: { ...child } }),
     ).toBeNull();
+  });
+
+  function addDirectAppBase(build: SmartObjectManifest) {
+    assert(scratch);
+    const appBase = manifest(BASE, [
+      model(BASE, 'Entity', {
+        decoratorConfig: {
+          tableStrategy: 'sti',
+          tableName: 'wrong_app_entities',
+          idType: 'uuid',
+        },
+      }),
+    ]);
+    new ManifestGenerator().generateSchemas(appBase);
+    writePackage(
+      join(scratch, 'app', 'node_modules', '@fk5622', 'base'),
+      appBase,
+    );
+    build.smrtDependencies?.push(BASE);
+  }
+
+  it('uses the constructor-owning base before a conflicting direct aggregate installation', async () => {
+    const { build, base, child } = setup(false);
+    addDirectAppBase(build);
+    new ManifestGenerator().applyGenerationPasses(build);
+    class Ancestor extends SmrtObject {}
+    class Entity extends Ancestor {}
+    class Person extends Entity {}
+    class Subscription extends SmrtObject {}
+    const register = (
+      ctor: typeof SmrtObject,
+      content: SmartObjectManifest,
+      name: string,
+    ) => {
+      const key = `${content.packageName}:${name}`;
+      ObjectRegistry.register(ctor, {
+        ...content.objects[key].decoratorConfig,
+        name,
+        packageName: content.packageName,
+        _manifest: { ...content, objects: { [key]: content.objects[key] } },
+        _manifestKey: key,
+      });
+    };
+    register(Ancestor, base, 'Ancestor');
+    register(Entity, base, 'Entity');
+    register(Person, child, 'Person');
+    foreignKey(`${CHILD}:Person`, { onUpdate: 'NO ACTION' })(
+      Subscription.prototype,
+      'personId',
+    );
+    smrt({ packageName: APP, tableName: 'fk5622_transitive_subscriptions' })(
+      Subscription,
+    );
+    const runtime = new SchemaGenerator().generateSchemaFromRegistry(
+      `${APP}:Subscription`,
+      'fk5622_transitive_subscriptions',
+      await ObjectRegistry.getAllFields(`${APP}:Subscription`),
+      { registry: ObjectRegistry },
+    );
+    expect(runtime.columns.person_id.foreignKey?.table).toBe(
+      'fk5622_transitive_entities',
+    );
+    expect(
+      ObjectRegistry.getAllSchemasAsDefinitions()
+        .fk5622_transitive_subscriptions.columns.person_id.foreignKey?.table,
+    ).toBe('fk5622_transitive_entities');
+    expect(
+      build.objects[`${APP}:Subscription`].schema?.columns.person_id.foreignKey,
+    ).toEqual(runtime.columns.person_id.foreignKey);
+    expect(tryComputeManifestSchemaFingerprint(build)).toBe(
+      computeSchemaFingerprint([runtime]),
+    );
+    const direct = manifest(
+      APP,
+      [
+        model(APP, 'DirectLink', {
+          fields: {
+            entityId: { type: 'foreignKey', related: `${BASE}:Entity` },
+          },
+        }),
+      ],
+      [CHILD, BASE],
+    );
+    new ManifestGenerator().applyGenerationPasses(direct);
+    expect(
+      direct.objects[`${APP}:DirectLink`].schema?.columns.entity_id.foreignKey
+        ?.table,
+    ).toBe('wrong_app_entities');
+  });
+
+  it.each([
+    'missing',
+    'wrong',
+  ] as const)('does not borrow the app aggregate for a %s contextual ancestor', (mode) => {
+    const { build } = setup(false, mode);
+    addDirectAppBase(build);
+    new ManifestGenerator().applyGenerationPasses(build);
+    expect(
+      build.objects[`${APP}:Subscription`].schema?.columns.person_id.foreignKey,
+    ).toBeUndefined();
   });
 
   it.each([

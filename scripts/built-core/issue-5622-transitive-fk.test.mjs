@@ -70,7 +70,7 @@ function publish(dir, content) {
   return path;
 }
 
-test('built public loader provenance reaches a non-hoisted STI ancestor (#5622 R1)', async () => {
+async function checkOwningAncestor(aggregateBase) {
   const cwd = process.cwd();
   const scratch = mkdtempSync(join(tmpdir(), 'smrt-built-transitive-fk-'));
   try {
@@ -119,12 +119,26 @@ test('built public loader provenance reaches a non-hoisted STI ancestor (#5622 R
     const childPath = publish(childDir, child);
     const published = readFileSync(childPath, 'utf8');
     symlinkSync(childDir, join(app, 'node_modules', '@fk5622', 'built-child'));
+    if (aggregateBase) {
+      const appBase = manifest(BASE, [
+        model(BASE, 'Entity', {
+          decoratorConfig: {
+            tableStrategy: 'sti',
+            tableName: 'wrong_app_entities',
+            idType: 'uuid',
+          },
+        }),
+      ]);
+      new ManifestGenerator().generateSchemas(appBase);
+      publish(join(app, 'node_modules', '@fk5622', 'built-base'), appBase);
+    }
     process.chdir(app);
-    assert.equal(
-      loadExternalManifestSync(BASE),
-      null,
-      'ancestor is not hoisted into the app',
-    );
+    if (!aggregateBase)
+      assert.equal(
+        loadExternalManifestSync(BASE),
+        null,
+        'ancestor is not hoisted into the app',
+      );
     const loaded = loadManifestFromPathSync(childPath);
     assert.ok(loaded);
     assert.equal(
@@ -146,7 +160,7 @@ test('built public loader provenance reaches a non-hoisted STI ancestor (#5622 R
           },
         }),
       ],
-      [CHILD],
+      aggregateBase ? [CHILD, BASE] : [CHILD],
     );
     new ManifestGenerator().applyGenerationPasses(build);
     const schema = build.objects[`${APP}:Subscription`].schema;
@@ -157,13 +171,19 @@ test('built public loader provenance reaches a non-hoisted STI ancestor (#5622 R
     class Entity extends SmrtObject {}
     class Person extends Entity {}
     class Subscription extends SmrtObject {}
-    smrt({
+    ObjectRegistry.register(Entity, {
+      ...base.objects[`${BASE}:Entity`].decoratorConfig,
+      name: 'Entity',
       packageName: BASE,
-      tableStrategy: 'sti',
-      tableName: 'built_fk5622_entities',
-      idType: 'uuid',
-    })(Entity);
-    smrt({ packageName: CHILD })(Person);
+      _manifest: base,
+      _manifestKey: `${BASE}:Entity`,
+    });
+    ObjectRegistry.register(Person, {
+      name: 'Person',
+      packageName: CHILD,
+      _manifest: child,
+      _manifestKey: `${CHILD}:Person`,
+    });
     foreignKey(`${CHILD}:Person`, { onUpdate: 'NO ACTION' })(
       Subscription.prototype,
       'personId',
@@ -176,6 +196,11 @@ test('built public loader provenance reaches a non-hoisted STI ancestor (#5622 R
       schema.tableName,
       await ObjectRegistry.getAllFields(`${APP}:Subscription`),
       { registry: ObjectRegistry },
+    );
+    assert.equal(
+      ObjectRegistry.getAllSchemasAsDefinitions().built_fk5622_subscriptions
+        .columns.person_id.foreignKey?.table,
+      'built_fk5622_entities',
     );
     assert.deepEqual(
       schema.columns.person_id.foreignKey,
@@ -191,4 +216,9 @@ test('built public loader provenance reaches a non-hoisted STI ancestor (#5622 R
     ObjectRegistry.clear();
     rmSync(scratch, { recursive: true, force: true });
   }
-});
+}
+
+for (const aggregateBase of [false, true]) {
+  test(`built public loader selects owning STI ancestor with aggregateBase=${aggregateBase} (#5622)`, () =>
+    checkOwningAncestor(aggregateBase));
+}

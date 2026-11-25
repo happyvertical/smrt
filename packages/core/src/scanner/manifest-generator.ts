@@ -1855,6 +1855,7 @@ export class ManifestGenerator {
           field.related,
           targets,
           schemaByTable,
+          manifest,
           obj.packageName,
         );
         if (!targetSchema) {
@@ -1942,6 +1943,7 @@ export class ManifestGenerator {
     related: string,
     manifest: SmartObjectManifest,
     schemaByTable: Map<string, ManifestSchema>,
+    localManifest: SmartObjectManifest,
     sourcePackageName?: string,
   ): ManifestSchema | undefined {
     const { target: relatedTarget } = parseForeignKeyReference(related);
@@ -1998,6 +2000,7 @@ export class ManifestGenerator {
       }
       return owners.get(packageName) ?? undefined;
     };
+    const localDefinitions = new Set(Object.values(localManifest.objects));
     let physical = target;
     let current: SmartObjectDefinition | undefined = target;
     let owner: SmartObjectManifest | undefined;
@@ -2009,34 +2012,40 @@ export class ManifestGenerator {
       visited.add(identity);
       const parent = this.parentRef(current);
       if (!parent) break;
-      let next: SmartObjectDefinition | undefined = resolve(
-        parent,
-        current.packageName,
-      );
-      if (!next && owner?.packageName === current.packageName) {
-        next = resolve(parent, current.packageName, owner);
-      }
-      if (!next && isQualifiedName(parent)) {
+      let next: SmartObjectDefinition | undefined;
+      if (isQualifiedName(parent)) {
         const { packageName } = parseQualifiedName(parent);
         if (owner?.packageName !== current.packageName) {
           owner = current.packageName
             ? ownerOf(current.packageName, owner)
             : undefined;
         }
-        const parentOwner: SmartObjectManifest | undefined =
-          packageName === owner?.packageName
-            ? owner
-            : ownerOf(packageName, owner);
-        // Exact identity only. Never let a same-named model from a different
-        // package stand in for a missing qualified physical ancestor.
-        next =
-          parentOwner &&
-          Object.values(parentOwner.objects).find(
-            (candidate) =>
-              (candidate.qualifiedName ??
-                `${candidate.packageName}:${candidate.className}`) === parent,
-          );
-        owner = parentOwner;
+        if (owner) {
+          const parentOwner: SmartObjectManifest | undefined =
+            packageName === owner.packageName
+              ? owner
+              : ownerOf(packageName, owner);
+          // The declaring installation is authoritative even when the app
+          // directly aggregates another installation of this package.
+          next =
+            parentOwner &&
+            Object.values(parentOwner.objects).find(
+              (candidate) =>
+                (candidate.qualifiedName ??
+                  `${candidate.packageName}:${candidate.className}`) === parent,
+            );
+          owner = parentOwner;
+        } else if (localDefinitions.has(current)) {
+          // Caller-supplied project definitions resolve in the app context.
+          // A missing external owner must never borrow an aggregate peer.
+          next = resolve(parent, current.packageName);
+        }
+      } else {
+        next = resolve(
+          parent,
+          current.packageName,
+          owner?.packageName === current.packageName ? owner : manifest,
+        );
       }
       current = next;
       if (current?.decoratorConfig?.tableStrategy === 'sti') physical = current;
