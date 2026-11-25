@@ -8,7 +8,12 @@
 // async scope, never from an argument).
 import type { MigrateToPostgresResult } from '../../engine/index.ts';
 import { EngineError } from '../../engine/index.ts';
-import { migrateOwnAppToPostgres, safeId, shellProfile } from './host.ts';
+import {
+  getShellDb,
+  migrateOwnAppToPostgres,
+  safeId,
+  shellProfile,
+} from './host.ts';
 import { PolicyError, requireOwner, runAs } from './owner.ts';
 
 export const MIGRATE_COMMAND = 'migrate-to-postgres';
@@ -73,6 +78,11 @@ export async function migrateAppToPostgresAsOperator(input: {
     );
   const tenantId = safeId(input.tenantId, 'the tenant');
   const userId = safeId(input.userId, 'the user');
+  // The shell database first: `isOwner` fails closed on ANY error, so an
+  // unreachable database must show as itself, not as "not the owner".
+  await runAs({ id: userId, tenantId }, async () => {
+    await (await getShellDb()).query('SELECT 1');
+  });
   // The verified owner, looked up in shell.db; a non-owner or a tenant that
   // does not exist is the same refusal (nothing says which).
   let owner: Awaited<ReturnType<typeof requireOwner>>;

@@ -765,6 +765,20 @@ export interface SharedCloudTransport {
    * must fail.
    */
   putAsset(asset: CloudAssetUpload): Promise<'stored' | 'exists'>;
+  /**
+   * Hand the bundle's whole `userApp` section to the hosted receiver of the
+   * session's own tenant (#5193). Idempotent: the same section again answers
+   * `already-received`. The answer carries the section digest and whether the
+   * receiver's verification pass (counts and digests of every table and the
+   * version history) agreed. A transport without it cannot carry a user app.
+   */
+  receiveUserApp?(
+    userApp: NonNullable<LogicalExportBundle['userApp']>,
+  ): Promise<{
+    status: 'received' | 'already-received';
+    digest: string;
+    verified: boolean;
+  }>;
 }
 
 function camelField(column: string): string {
@@ -865,6 +879,8 @@ export interface SharedMigrationJournal {
   assetsStored: string[];
   /** SHA-256 of each acknowledged batch, in order. */
   acknowledgedBatches: string[];
+  /** Digest of the user app section the hosted receiver verified (#5193). */
+  userAppReceived?: string;
   status: 'in-progress' | 'applied';
 }
 
@@ -936,14 +952,13 @@ export async function runSharedCloudMigration(
   options: SharedMigrationOptions,
 ): Promise<SharedMigrationResult> {
   const { plan, transport } = options;
-  if (plan.bundle.userApp) {
-    // The engine installs a user app into a hosted PostgreSQL schema
-    // (`importUserApp({ database })`, #5193), but the shared sync/apply stream
-    // has no receiver for run-time tables, and one per tenant needs the
-    // hosted caller's identity (#5188). Refuse rather than drop it.
+  if (plan.bundle.userApp && !transport.receiveUserApp) {
+    // The hosted receiver (#5193) is what carries run-time tables into the
+    // tenant's own schema; a transport with none cannot, so refuse rather than
+    // drop the user app.
     throw new CloudMigrationError(
       'plan_refused',
-      'This application has an app shell user app, which the shared cloud target has no receiver for yet; nothing was sent.',
+      'This application has an app shell user app, which this cloud transport has no receiver for; nothing was sent.',
     );
   }
   const batchSize = options.batchSize ?? DEFAULT_BATCH_SIZE;
@@ -1027,6 +1042,23 @@ export async function runSharedCloudMigration(
       }
     }
     journal.acknowledgedBatches.push(digests[index]);
+    writeJsonAtomic(options.journalPath, journal);
+  }
+  const userApp = plan.bundle.userApp;
+  if (userApp && journal.userAppReceived !== userApp.digest) {
+    // One receive per tenant, verified on the hosted side; a rerun after a
+    // crash is the same call (the receiver converges, never duplicates).
+    const received = await transport.receiveUserApp?.(userApp);
+    if (
+      !received ||
+      received.digest !== userApp.digest ||
+      received.verified !== true
+    )
+      throw new CloudMigrationError(
+        'verification_failed',
+        'The hosted receiver did not confirm the user app against its digest; nothing was overwritten. Rerun to converge.',
+      );
+    journal.userAppReceived = userApp.digest;
     writeJsonAtomic(options.journalPath, journal);
   }
   journal.status = 'applied';

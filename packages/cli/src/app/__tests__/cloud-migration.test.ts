@@ -669,6 +669,116 @@ describe.each(engines)('shared cloud target ($name)', (engine) => {
     return { ...space, db, otherTenant, transport, assets, plan, hostedExport };
   }
 
+  describe('an app shell user app (#5193)', () => {
+    const userApp = {
+      format: 2,
+      source: 'sqlite',
+      definition: { format: 1, name: 'x', recipes: [], models: {} },
+      version: 1,
+      versions: [],
+      versionsDigest: 'v',
+      tables: [],
+      digest: 'user-app-digest',
+    } as never;
+    async function withUserApp() {
+      const fixture = await sharedFixture();
+      const plan = {
+        ...fixture.plan,
+        bundle: { ...fixture.plan.bundle, userApp },
+      };
+      return {
+        fixture,
+        plan,
+        journalPath: join(fixture.root, 'state', 'j.json'),
+      };
+    }
+
+    it('refuses a transport with no receiver before anything is sent', async () => {
+      const { fixture, plan, journalPath } = await withUserApp();
+      let sent = 0;
+      await expect(
+        runSharedCloudMigration({
+          plan,
+          segments: SEGMENTS,
+          transport: {
+            ...fixture.transport,
+            apply: async (request) => {
+              sent += 1;
+              return fixture.transport.apply(request);
+            },
+          },
+          journalPath,
+        }),
+      ).rejects.toMatchObject({ code: 'plan_refused' });
+      expect(sent).toBe(0);
+    });
+
+    it('hands the section to the receiver once, and a resume does not send it again', async () => {
+      const { fixture, plan, journalPath } = await withUserApp();
+      const received: unknown[] = [];
+      const transport: SharedCloudTransport = {
+        ...fixture.transport,
+        receiveUserApp: async (section) => {
+          received.push(section);
+          return {
+            status: 'received',
+            digest: 'user-app-digest',
+            verified: true,
+          };
+        },
+      };
+      await runSharedCloudMigration({
+        plan,
+        segments: SEGMENTS,
+        transport,
+        journalPath,
+      });
+      expect(received).toEqual([userApp]);
+      expect(JSON.parse(readFileSync(journalPath, 'utf8'))).toMatchObject({
+        status: 'applied',
+        userAppReceived: 'user-app-digest',
+      });
+      await runSharedCloudMigration({
+        plan,
+        segments: SEGMENTS,
+        transport: {
+          ...transport,
+          receiveUserApp: async () => {
+            throw new Error('sent again');
+          },
+        },
+        journalPath,
+      });
+    });
+
+    it.each([
+      [
+        'unverified',
+        { status: 'received', digest: 'user-app-digest', verified: false },
+      ],
+      [
+        'another digest',
+        { status: 'received', digest: 'other', verified: true },
+      ],
+    ] as const)('does not complete when the receiver answers %s', async (_name, answer) => {
+      const { fixture, plan, journalPath } = await withUserApp();
+      await expect(
+        runSharedCloudMigration({
+          plan,
+          segments: SEGMENTS,
+          transport: {
+            ...fixture.transport,
+            receiveUserApp: async () => answer,
+          },
+          journalPath,
+        }),
+      ).rejects.toMatchObject({ code: 'verification_failed' });
+      const journal = JSON.parse(readFileSync(journalPath, 'utf8'));
+      expect(journal.status).toBe('in-progress');
+      expect(journal.userAppReceived).toBeUndefined();
+    });
+  });
+
   it('round-trips local -> cloud -> local preserving every record and asset', async () => {
     const fixture = await sharedFixture();
     expect(fixture.plan.skipped).toEqual({
