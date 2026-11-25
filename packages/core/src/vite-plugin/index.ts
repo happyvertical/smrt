@@ -89,6 +89,7 @@ import {
   type HostToolNameDeclaration,
 } from './host-tool-names.js';
 import { importBuildAwareModule } from './import-build-aware.js';
+import { createPackageOwnerResolver } from './package-owner.js';
 import { injectPackageStamps, packageStampText } from './package-stamp.js';
 import {
   findCliApiCoherenceViolations,
@@ -1871,6 +1872,9 @@ export function smrtPlugin(
         typeAliases: results.typeAliases,
         recipes: results.recipes,
         uiSelectors: results.uiSelectors,
+        // A class compiled from a workspace package's source belongs to that
+        // package, whose own build is what registers it at runtime (#5655).
+        packageNameForFile: createPackageOwnerResolver(rootDir),
       });
 
       // Add moduleType identifier

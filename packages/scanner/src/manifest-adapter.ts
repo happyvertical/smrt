@@ -522,6 +522,14 @@ export class ManifestAdapter {
       recipes?: RecipeDefinition[];
       /** Selector slots from {@link ScanResults.uiSelectors} (#3599). */
       uiSelectors?: Record<string, UiSelectorDeclaration>;
+      /**
+       * Per-class owner package (#5655). When it returns a name for a class's
+       * source file, that package, not `packageName`, qualifies the class, so
+       * a workspace package compiled from source keeps the identity its own
+       * build registers at runtime. `packageName` stays the fallback and the
+       * manifest-level name.
+       */
+      packageNameForFile?: (filePath: string) => string | undefined;
     } = {},
   ): SmartObjectManifest {
     this.typeAliases = options.typeAliases || {};
@@ -625,7 +633,11 @@ export class ManifestAdapter {
    */
   toSmartObjectDefinition(
     classDef: ResolvedClassDefinition,
-    options: { packageName?: string; packageVersion?: string } = {},
+    options: {
+      packageName?: string;
+      packageVersion?: string;
+      packageNameForFile?: (filePath: string) => string | undefined;
+    } = {},
   ): SmartObjectDefinition {
     // Extract static properties (e.g., uiSlots, adminRoutes on Agent subclasses)
     // Use own fields (classDef.fields) not allFields — static properties use
@@ -704,7 +716,10 @@ export class ManifestAdapter {
         : defaultCollectionName(classDef.className);
 
     // Determine package name (prefer option, then classDef value)
-    const packageName = options.packageName || classDef.packageName;
+    const packageName =
+      options.packageNameForFile?.(classDef.filePath) ||
+      options.packageName ||
+      classDef.packageName;
 
     // Generate qualified name if packageName is available (Issue #713)
     // Format: @package/name:ClassName for namespace isolation
