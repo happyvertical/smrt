@@ -934,9 +934,15 @@ describe('content contributions', () => {
       filename: 'evidence.jpg',
       contentType: 'image/jpeg',
       size: 1234,
-      filePath: '/tmp/evidence.jpg',
     });
     await firstAttachment.save();
+    // The stored path is read as a source URI only; `save()` accepts relative
+    // paths under a message account, so write the column directly.
+    await db.update(
+      attachments.tableName,
+      { id: firstAttachment.id },
+      { file_path: '/tmp/evidence.jpg' },
+    );
 
     const created = await contributions.ingestEmailContribution({
       emailId: firstEmail.id || '',
