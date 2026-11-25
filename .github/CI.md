@@ -627,10 +627,20 @@ read-only token. There is no enabling variable.
   database and run one at a time, so ingestion's 22 minutes only shorten
   across jobs: the selector appends `-- --shard=<i>/<n>` and Turbo hands it to
   the package's Vitest run. Its 303-case proposal suite is four files per
-  backend for the same reason. Every job retains
+  backend for the same reason. The selector prints `<package>#<task>` units
+  for `turbo run`: `core` is two (#5649), `test:postgres:real` (its 100
+  real-PostgreSQL files, one process, one database) and `test:postgres:pglite`
+  (42 files, in-process PGlite, no shared database), balanced separately
+  from `POSTGRES_TEST_SECONDS` in `scripts/test-shard-balance.mjs` and kept
+  off one shard when more than one exists; `core`'s `test:postgres` stays the
+  local aggregate (real PostgreSQL, then PGlite) and is never scheduled in CI.
+  An affected list from a merge group matches units on their owning package,
+  so an affected `core` runs both halves. `app-shell` is weighed 1172 s (it was
+  missing, so weighed 12 s). Every job retains
   `--concurrency=2 --continue --summarize`,
   run every selected package even after one fails, and
-  `scripts/postgres-lane-summary.mjs` writes a per-package table to the job
+  `scripts/postgres-lane-summary.mjs` writes a per-unit table (every Turbo run
+  file in the step, the `test:postgres` and core's two half tasks) to the job
   summary.
 - **`postgres-required`** (hosted) is the lane's single aggregate status and
   the context the ruleset requires. It always reports: it passes when `scope` skipped the suites for a

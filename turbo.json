@@ -305,6 +305,38 @@
       ],
       "cache": false
     },
+    "test:postgres:real": {
+      "dependsOn": [
+        "build",
+        "generate:test"
+      ],
+      "env": [
+        "CI_POSTGRES_BASE_URL",
+        "CI_POSTGRES_ADMIN_URL",
+        "DATABASE_URL",
+        "TEST_DB_URL",
+        "TEST_DB_ADAPTER",
+        "SMRT_TEST_POSTGRES_URL",
+        "SMRT_TEST_POSTGRES_ADMIN_URL"
+      ],
+      "cache": false
+    },
+    "test:postgres:pglite": {
+      "dependsOn": [
+        "build",
+        "generate:test"
+      ],
+      "env": [
+        "CI_POSTGRES_BASE_URL",
+        "CI_POSTGRES_ADMIN_URL",
+        "DATABASE_URL",
+        "TEST_DB_URL",
+        "TEST_DB_ADAPTER",
+        "SMRT_TEST_POSTGRES_URL",
+        "SMRT_TEST_POSTGRES_ADMIN_URL"
+      ],
+      "cache": false
+    },
     "@happyvertical/smrt-vitest#test:postgres": {
       "dependsOn": [
         "build",
