@@ -13,6 +13,7 @@
 import { existsSync } from 'node:fs';
 import type { DatabaseInterface } from '@happyvertical/sql';
 import {
+  assertAppUnclaimed,
   checkUserAppBundle,
   discardUnfilledImport,
   EngineError,
@@ -120,6 +121,9 @@ export async function receiveOwnUserApp(
   await closeOwnApp();
   const schema = appSchemaName(tenant, app.id as string);
   await provider.provision(schema);
+  // Another process may hold this tenant's app open (`closeOwnApp` closes only
+  // this one's): refused here, before anything is staged.
+  await assertAppUnclaimed(provider.config(schema));
   // The history first, in one shell transaction with the pointer (versions
   // already stored, a rerun or the empty start, are skipped). If the app is
   // opened before the rows are in, it boots at the bundle's version on empty
@@ -173,11 +177,15 @@ export async function receiveOwnUserApp(
       }
       if (!ours) {
         // The engine drops the schema only under the app's claim and only if it
-        // holds no completion fact and no row.
+        // holds no completion fact and no row. A claim another host holds is
+        // not ours to take: the schema is theirs, and the history still goes back.
         await discardUnfilledImport({
           dataDir: live,
           database,
           key: RECEIVE_COMPLETION_KEY,
+        }).catch((refused: unknown) => {
+          if (!(refused instanceof EngineError && refused.code === 'refused'))
+            throw refused;
         });
         if (added.length) await store.unstage(added, before);
       }

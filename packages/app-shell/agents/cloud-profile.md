@@ -323,7 +323,10 @@ is not a caller here yet). v1:
   it and with an empty schema, the half-built schema goes too (engine `discardUnfilledImport`: under the
   app's claim, so refused while another host has the app open, and only with no
   completion fact and no row; the schema is provisioned again on the next use) and the history goes back, so
-  the tenant is left as found. A state that cannot be read is left alone. The tenant's open app is closed first (refused
+  the tenant is left as found. A state that cannot be read is left alone. Before anything is staged the app's claim is probed (`assertAppUnclaimed`): a
+  process that holds the tenant's app open (the close below reaches only this
+  one's) refuses the receive with nothing written, and a claim taken later
+  still gives the staged history back. The tenant's open app is closed first (refused
   while a call is inside it); do not use the app during a receive.
 - **Refuses** (named, nothing written) while the tenant has an open draft,
   waiting changes or an unsettled approval, as the SQLite migration does

@@ -435,6 +435,19 @@ export async function readAppMetaValue(options: {
 }
 
 /**
+ * Refuse unless no host runs the app on `database` right now: takes the app's
+ * claim and lets it go at once (PostgreSQL server only; nothing to claim on
+ * PGlite or SQLite). A check before staging anything, not a lock held: the
+ * import takes its own claim for the rows.
+ */
+export async function assertAppUnclaimed(
+  database: DatabaseConfig,
+): Promise<void> {
+  const claim = await claimAppDatabase(database);
+  await claim?.release();
+}
+
+/**
  * Throw away an import that never committed a row (#5193): drop the app's
  * schema, with the half-built tables the engine's own start made in it. Done
  * under the app's claim (refused while another host holds the app), and only

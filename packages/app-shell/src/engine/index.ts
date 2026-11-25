@@ -127,6 +127,7 @@ export { METHOD_CODE_DENIED, type MethodCodeGate } from './method-code.ts';
 // Only engine code can act as the system: that mint is deliberately not exported.
 export { appPermissionSlugs } from './permissions.ts';
 export {
+  assertAppUnclaimed,
   checkUserAppBundle,
   digestVersionHistory,
   discardUnfilledImport,
