@@ -68,6 +68,10 @@ owners and call `configureMailAccess({ options, resolvePrincipal })` at startup
   on purpose (`available` means outbound transport; JMAP is receive and sync
   only), and `connectMailbox` still connects it. Policy lookups use the
   configured db handle, not a caller's transaction.
+- Draft writes (and their attachments) need the `draft` scope on an owned
+  account, checked in `Message.save()`/`delete()` and
+  `Attachment.save()`/`delete()`; rules and bypasses:
+  [agents/send-approval.md](agents/send-approval.md#draft-writes).
 - `Message.send()` needs the `send` scope on an owned account. Agent sends
   (principal `kind` other than `person`/`human`) on a mail account are held
   for a person's approval unless the owner opted in to `auto_send`;
