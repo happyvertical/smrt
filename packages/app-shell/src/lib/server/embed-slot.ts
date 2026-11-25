@@ -13,10 +13,21 @@ export const EMBED_SLOT = Symbol.for('@happyvertical/smrt-app-shell/embed');
 
 export interface EmbedSlot {
   drain: Drain;
+  /**
+   * The operator commands (`operator.ts`), for `build/operator.js` only
+   * (#5193): the exit code of one command line, run inside the bundle's shell.
+   */
+  operator?: {
+    run(argv: readonly string[]): Promise<number>;
+  };
 }
 
-export function registerEmbeddedDrain(drain: Drain): void {
+export function registerEmbeddedDrain(
+  drain: Drain,
+  operator?: EmbedSlot['operator'],
+): void {
   (globalThis as Record<symbol, unknown>)[EMBED_SLOT] = {
     drain,
+    ...(operator ? { operator } : {}),
   } satisfies EmbedSlot;
 }
