@@ -312,10 +312,13 @@ jobs:
           NODE_ENV: test
 
   affected-package-tests:
-    # Runs concurrently with affected-core-tests: both matrices shard disjoint
-    # package sets, and a failing core shard already fails `Required CI`.
-    needs: affected-test-scope
-    if: inputs.mode == 'affected' && needs.affected-test-scope.result == 'success'
+    # No `needs`: each shard recomputes its own Turbo dry run and reads nothing
+    # from affected-test-scope, so waiting on it (and on affected-scope behind
+    # it) only delayed the shards (#5646). A failing scope job still fails this
+    # workflow, and with it `Required CI`, because the reusable workflow's
+    # result is failure when any of its jobs fails. Runs concurrently with
+    # affected-core-tests: both matrices shard disjoint package sets.
+    if: inputs.mode == 'affected'
     runs-on: ubuntu-latest
     timeout-minutes: 90
     strategy:
@@ -364,7 +367,6 @@ jobs:
   # packages/core/** edit.
   affected-test-scope:
     name: Detect Affected Test Scope
-    needs: affected-scope
     if: inputs.mode == 'affected'
     runs-on: ubuntu-latest
     timeout-minutes: 90

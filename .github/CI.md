@@ -410,9 +410,14 @@ needs and never fails the run itself. Jobs still running at that moment do not
 report, so a group with several defects shows one per attempt; the PR run is
 never cancelled this way.
 
-`affected-package-tests` depends on `affected-test-scope` alone and runs with
-`affected-core-tests`; the matrices shard disjoint package sets, while a
-failing core shard already fails `Required CI`.
+`affected-package-tests` and `affected-test-scope` declare no `needs`: each
+package shard recomputes its own Turbo dry run and reads nothing from the scope
+job, so waiting on it (and on `affected-scope` behind it) only delayed the
+shards by about 80 seconds (#5646). Only `affected-core-tests` keeps
+`needs: affected-test-scope`, because it reads its `core` output. A failed
+scope job or shard still fails the reusable workflow, and therefore `Required
+CI`; `scripts/ci-control-plane-workflow.test.mjs` pins the graph and that
+aggregate.
 
 The affected workbench browser lane also starts after its scope decision,
 without waiting for package tests: it builds its own consumer fixture and

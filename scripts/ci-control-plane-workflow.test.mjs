@@ -143,3 +143,83 @@ test('affected knowledge freshness keeps the release upgrade gate (#5364)', () =
   const affected = suite.match(/^  affected-knowledge:\n[\s\S]*?(?=^  [a-z][a-z0-9-]*:\n)/m)?.[0] ?? '';
   assert.match(affected, /run: pnpm check:release-upgrade$/m);
 });
+
+test('affected package shards and the scope job carry no ordering-only needs, and a failed scope job still fails Required CI (#5646)', () => {
+  const suite = readFileSync(
+    new URL('../.github/workflows/test-suite.yml', import.meta.url),
+    'utf8',
+  );
+  const suiteJob = (name) => {
+    const block = suite.match(
+      new RegExp(`^  ${name}:\\n[\\s\\S]*?(?=^  [a-z][a-z0-9-]*:\\n|(?![\\s\\S]))`, 'm'),
+    )?.[0];
+    assert.ok(block, `test-suite job ${name} must exist`);
+    return block;
+  };
+  const needsOf = (block) => {
+    const inline = block.match(/^    needs: (.+)$/m)?.[1];
+    if (inline) return inline.replace(/[[\]\s]/g, '').split(',');
+    const list = block.match(/^    needs:\n((?:      - .+\n)+)/m)?.[1];
+    return list ? [...list.matchAll(/- (.+)/g)].map((m) => m[1]) : [];
+  };
+
+  // The shards recompute their own Turbo dry run; waiting added ~80 s.
+  assert.deepEqual(needsOf(suiteJob('affected-package-tests')), []);
+  assert.deepEqual(needsOf(suiteJob('affected-test-scope')), []);
+  assert.match(
+    suiteJob('affected-package-tests'),
+    /^    if: inputs\.mode == 'affected'$/m,
+  );
+  assert.doesNotMatch(
+    suiteJob('affected-package-tests'),
+    /needs\.affected-test-scope/,
+  );
+  // The core shards still consume the scope job's output.
+  assert.deepEqual(needsOf(suiteJob('affected-core-tests')), [
+    'affected-test-scope',
+  ]);
+  assert.match(
+    suiteJob('affected-core-tests'),
+    /^    if: inputs\.mode == 'affected' && needs\.affected-test-scope\.outputs\.core == 'true'$/m,
+  );
+  // The scope job and package shards still run the same Turbo selection.
+  assert.match(suiteJob('affected-test-scope'), /affected-test-shard\.mjs --has-core/);
+  assert.match(suiteJob('affected-package-tests'), /affected-test-shard\.mjs '\$\{\{ matrix\.shard \}\}'/);
+
+  // Required CI still aggregates the same `test` result, and it must fail for
+  // any non-success result: a failed scope job fails the reusable workflow.
+  const required = job('required-ci');
+  assert.match(required, /^      - test$/m);
+  assert.match(required, /TEST_SUITE: \$\{\{ needs\.test\.result \}\}/);
+  const script = required
+    .match(/^        run: \|\n([\s\S]*)/m)?.[1]
+    ?.replace(/^          /gm, '');
+  assert.ok(script);
+  const env = {};
+  for (const m of required.matchAll(
+    /^          ([A-Z_]+): \$\{\{ needs\.[^\n]+\.result \}\}$/gm,
+  )) {
+    env[m[1]] = 'success';
+  }
+  Object.assign(env, {
+    EVENT_NAME: 'pull_request',
+    PUBLISH_DRY_RUN: 'skipped',
+    VISUAL_SELECTED: 'false',
+    VISUAL_RESULT: 'skipped',
+    PLANNER_SELECTED: 'false',
+    PLANNER_RESULT: 'skipped',
+    DOCS_SELECTED: 'false',
+    DOCS_RESULT: 'skipped',
+  });
+  for (const result of ['success', 'failure', 'cancelled', 'skipped', '']) {
+    const run = spawnSync('bash', ['-c', script], {
+      env: { ...env, TEST_SUITE: result },
+      encoding: 'utf8',
+    });
+    assert.equal(
+      run.status === 0,
+      result === 'success',
+      `test suite ${result || 'absent'}: ${run.stdout}${run.stderr}`,
+    );
+  }
+});
