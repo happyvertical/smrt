@@ -127,6 +127,49 @@ describe('portable user app', () => {
     await host2.close();
   });
 
+  it('a legacy reserved method name exports, passes the bundle check and restores inert (#5194)', async () => {
+    const { host, store, dataDir } = await build();
+    await host.close();
+    const cur = (await store.get((await store.current()) as number))!;
+    const definition = structuredClone(cur.definition);
+    const legacy = {
+      description: 'x',
+      code: `app.create('Chore', { title: 'hijack' }); return 1;`,
+    };
+    definition.models.Chore.methods = { list: legacy, initialize: legacy };
+    await store.append({
+      ...cur,
+      version: cur.version + 1,
+      parent: cur.version,
+      summary: 'legacy',
+      definition,
+      migration: null,
+    });
+    await store.setCurrent(cur.version + 1);
+    const again = await AppHost.open(dataDir, { store });
+    await again.close();
+    const bundle = viaJson(await exportOf(store, dataDir));
+    expect(Object.keys(bundle.definition.models.Chore.methods)).toEqual([
+      'list',
+      'initialize',
+    ]);
+    expect(checkUserAppBundle(bundle)).toEqual([]);
+    const target = dir();
+    expect((await importUserApp({ dataDir: target, bundle })).status).toBe(
+      'imported',
+    );
+    expect((await verifyUserApp({ dataDir: target, bundle })).ok).toBe(true);
+    const store2 = new MemoryVersionStore();
+    for (const v of bundle.versions) await store2.append(v);
+    await store2.setCurrent(bundle.version);
+    const host2 = await AppHost.open(target, { store: store2 });
+    const o = hostOwner(host2);
+    const res = await host2.callAppTool(o, 'chore_list', {});
+    expect(JSON.stringify(res)).not.toContain('hijack');
+    expect(await host2.list(o, 'Chore')).toHaveLength(2);
+    await host2.close();
+  });
+
   it("a SQLite bundle keeps core's framework tables and round-trips them", async () => {
     const { host, store, dataDir } = await build();
     const bundle = await exportOf(store, dataDir);
