@@ -11,6 +11,7 @@
 import {
   getInferenceGate,
   InferenceUnavailableError,
+  requireInferenceGate,
 } from '@happyvertical/smrt-core';
 import {
   HOSTED_INFERENCE_KILL_SWITCH,
@@ -90,6 +91,10 @@ export async function installHostedInferenceGate(options: {
   deps?: HostedInferenceDeps;
 }): Promise<HostedInferenceGate | undefined> {
   if ((await shellProfile()) !== 'cloud') return undefined;
+  // From here a hosted call that finds no gate is refused, never run
+  // unchecked (core's seam is fail-open by default). Set before the stores
+  // are built so a failed build leaves the process closed, not open.
+  requireInferenceGate(true);
   const deps =
     options.deps ?? (await createHostedInferenceDeps(await options.db()));
   const spend: HostedSpendEvaluator = {
@@ -110,6 +115,7 @@ export async function installHostedInferenceGate(options: {
 /** Tests: forget the installed gate (the caller clears core's seam). */
 export function resetHostedInference(): void {
   installed = undefined;
+  requireInferenceGate(false);
 }
 
 /**
