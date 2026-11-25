@@ -185,7 +185,7 @@ rough.
 
 | # | Proposal | Saves | Risk | Effort | Needs owner decision |
 | --- | --- | --- | --- | --- | --- |
-| 1 | Split `app-shell` tests across two shards, or give it its own matrix entry, and reduce its 1196 s (`fileParallelism: false`, one test file `minimal-row.generated.test.ts` is a large share of the 2221 s of summed test time) | 6 to 9 (new critical path becomes M5 gate, 19 min) | Low | Medium | No |
+| 1 | Shipped on `release/ci-wall-clock` (#5647): `app-shell` runs as three units (default config `--shard` 1/2 and 2/2, and pglite+dom+packed), balanced like any package. Original proposal: split `app-shell` tests across two shards, or give it its own matrix entry, and reduce its 1196 s (`fileParallelism: false`, one test file `minimal-row.generated.test.ts` is a large share of the 2221 s of summed test time) | 6 to 9 (new critical path becomes M5 gate, 19 min) | Low | Medium | No |
 | 2 | Shipped here: weight fix for `app-shell` | 3 to 6 | Low | Done | No |
 | 3 | Shipped here: install and apt retries | 0 p50, removes about 1 in 80 failed runs (about 25 to 30 minutes each with a re-run) | Low | Done | No |
 | 4 | Refresh `TEST_SECONDS` / `POSTGRES_TEST_SECONDS` automatically, from a nightly job summing per-package `Duration`, instead of by hand. Package attribution from raw job logs is unreliable; use `turbo run --summarize` output | Keeps 2 from regressing | Low | Medium | No |

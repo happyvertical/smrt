@@ -189,7 +189,7 @@ Shared assistant adapters and legacy approval storage: [agents/shared-pieces.md]
 
 ## Tests and build
 
-`vitest run` then `vitest run -c vitest.dom.config.ts` (the layout's jsdom component tests, `*.dom.test.ts`, over smrt-svelte's built `dist`; rebuild smrt-svelte first). Node suite: in-process, SQLite, temp dirs; `test-support.ts` seeds an owner
+`pnpm test` is the local aggregate (default, pglite, dom, packed configs). CI runs it as the units `test:unit:1of2`, `test:unit:2of2` (default config `--shard`) and `test:configs` (the other three): a new Vitest config added to `test` must also join a unit, or `scripts/app-shell-test-units.test.mjs` fails. `vitest run` then `vitest run -c vitest.dom.config.ts` (the layout's jsdom component tests, `*.dom.test.ts`, over smrt-svelte's built `dist`; rebuild smrt-svelte first). Node suite: in-process, SQLite, temp dirs; `test-support.ts` seeds an owner
 and a member; it opens the real driver because the vitest setup would
 pre-create tables). `pnpm build` (tsc models, `svelte-kit sync`, `vite build`;
 the smrt() plugin generates `src/routes/api/{apps,approvals,_changes,_events,
