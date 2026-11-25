@@ -545,9 +545,20 @@ export class ManifestAdapter {
       objects[manifestKey] = definition;
     }
 
+    // A recipe names models by class name; a class compiled from another
+    // package's source is qualified by its owner (#5655). A name declared by
+    // several owners resolves to this package's own class first.
+    const ownerByClass = new Map<string, string>();
+    for (const definition of Object.values(objects)) {
+      if (!definition.packageName) continue;
+      const known = ownerByClass.get(definition.className);
+      if (known === undefined || definition.packageName === options.packageName)
+        ownerByClass.set(definition.className, definition.packageName);
+    }
     const recipes = this.qualifyRecipes(
       options.recipes ?? [],
       options.packageName,
+      ownerByClass,
     );
     // Selector bindings carry no source path: manifests must stay portable.
     const selectorEntries = Object.entries(options.uiSelectors ?? {}).sort(
@@ -588,9 +599,12 @@ export class ManifestAdapter {
   private qualifyRecipes(
     recipes: RecipeDefinition[],
     packageName: string | undefined,
+    ownerByClass: ReadonlyMap<string, string> = new Map(),
   ): RecipeDefinition[] {
-    const qualify = (className: string): string =>
-      packageName ? createQualifiedName(packageName, className) : className;
+    const qualify = (className: string): string => {
+      const owner = ownerByClass.get(className) ?? packageName;
+      return owner ? createQualifiedName(owner, className) : className;
+    };
     return recipes.map((recipe) => ({
       ...recipe,
       models: recipe.models.map(qualify),
