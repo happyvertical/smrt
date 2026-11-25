@@ -448,6 +448,47 @@ scope job or shard still fails the reusable workflow, and therefore `Required
 CI`; `scripts/ci-control-plane-workflow.test.mjs` pins the graph and that
 aggregate.
 
+Coverage Gate is two jobs (#5648). `Coverage Gate` measures every touched
+tiered package except core (`check-coverage.mjs --exclude core`) and starts as
+soon as `build` finishes. `Coverage Gate (core)` does not re-run the core suite
+(that repeat was 1063 s and 1205 s in two sampled merge groups, nearly the
+whole critical path). The core shards run `vitest run --shard=i/3 --coverage
+--reporter=default --reporter=blob --outputFile.blob=.vitest-reports/blob-i-3.json`
+and upload the blob (`core-coverage-blob-full-N` from `test-core`,
+`core-coverage-blob-affected-N` from `affected-core-tests`, the latter only in a
+merge group, because pull requests never reach the gate). The gate job downloads
+every blob into its own folder, and `scripts/core-coverage-merge.mjs` fails
+unless there are exactly `CORE_SHARDS` blobs `blob-1-n` .. `blob-n-n`, each
+once (missing, duplicate and mixed-count blobs fail). It then runs `vitest
+--merge-reports --coverage --coverage.reporter=json-summary` in `packages/core`
+after the same build and `generate:test` as the shards, on the same checkout
+root so the absolute `include` paths match, and requires the merged run's test
+files to equal an independent `vitest list --filesOnly` exactly, each once (a
+blob missing a file fails). `check-coverage.mjs --only core --summary
+core=packages/core/coverage/coverage-summary.json` then applies the floors,
+interim floors, exemptions and the touched-source debt rule through the same
+code path as every other package. `test-core` and `affected-core-tests` are
+mutually exclusive, so one is always skipped; the gate's `if` is therefore
+`!cancelled() && (inputs.mode == 'full' || github.event_name == 'merge_group')
+&& needs.build.result == 'success'` (never the implicit `success()`, which a
+skipped needed job would turn into a skipped gate, i.e. a pass), and it checks
+the shard results itself: exactly one of them must be `success`. When core is
+not touched the job ends after the scope probe, before install. Both gate jobs
+are in the reusable workflow, so either failing fails `Required CI`;
+`scripts/ci-control-plane-workflow.test.mjs` pins the graph, the `if`, the
+shard count and the commands. `fork-pr-validation.yml` calls the same workflow
+with `mode: full`, so it gets both jobs and the blobs unchanged. The `merge_group`
+paths cannot run on a pull request; the first queue transit is their first
+real execution. In a merge group the gate judges "core touched" against
+merge-base with main, which can include an earlier queue entry's core change
+that Turbo's `...[merge_group.base_sha]` selection does not; so
+`affected-test-scope` also reports `core=true` when the gate's own probe
+(`check-coverage.mjs --only core --list-checked`, same `BASE_REF`) says core is
+gated, keeping the shard producers a superset of the gate. Artifact names do
+not carry `run_attempt`: the gate's `core-coverage-blob-*` pattern would then
+match attempt 1's blobs too and fail as duplicates, so a re-run of only the
+failed shards is rejected and the whole workflow must be re-run.
+
 The affected workbench browser lane also starts after its scope decision,
 without waiting for package tests: it builds its own consumer fixture and
 does not consume their outputs. The #4306 baseline measured only 2–3 seconds
