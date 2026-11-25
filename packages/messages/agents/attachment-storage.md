@@ -22,7 +22,7 @@ must be an absolute, existing directory; its real path is resolved once.
   the stored path is re-checked against the message's current account, so an
   attachment moved to another account's message loses its file (rows written earlier with an absolute or
   escaping path are refused), the target's real path is resolved, and one
-  outside the root's real path throws. Missing or unreadable file stays `null`.
+  outside the account's own directory (or the root) throws. Missing or unreadable file stays `null`.
 - **Send / held send**: `EmailSender` turns a refusal into the failed send
   `Attachment "x" was not sent: ...` (recorded on `sendError`, nothing reaches
   the transport); `mailSendBindingHash` binds a refused row as `unreadable`.

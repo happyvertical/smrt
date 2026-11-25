@@ -85,28 +85,35 @@ export type AttachmentFileRead =
   | { status: 'missing' }
   | { status: 'outside' };
 
+function within(base: string, target: string): boolean {
+  const rel = relative(base, target);
+  return !(
+    rel === '' ||
+    rel === '..' ||
+    rel.startsWith(`..${sep}`) ||
+    isAbsolute(rel)
+  );
+}
+
 /**
- * Read `segments` below `realRoot`. The target's real path (symlinks
- * resolved) must stay inside the root's real path, and the bytes are read
- * from that resolved path.
+ * Read `segments` below `realRoot`. The first segment is the owner's
+ * directory: its real path must stay inside the root, and the target's real
+ * path (symlinks resolved) must stay inside that directory. The bytes are read
+ * from the resolved path.
  */
 export async function readAttachmentFileUnderRoot(
   realRoot: string,
   segments: readonly string[],
 ): Promise<AttachmentFileRead> {
+  let ownerDir: string;
   let target: string;
   try {
+    ownerDir = await realpath(join(realRoot, segments[0] ?? ''));
     target = await realpath(join(realRoot, ...segments));
   } catch {
     return { status: 'missing' };
   }
-  const rel = relative(realRoot, target);
-  if (
-    rel === '' ||
-    rel === '..' ||
-    rel.startsWith(`..${sep}`) ||
-    isAbsolute(rel)
-  ) {
+  if (!within(realRoot, ownerDir) || !within(ownerDir, target)) {
     return { status: 'outside' };
   }
   try {

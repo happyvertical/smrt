@@ -126,6 +126,13 @@ describe('configureAttachmentStorage', () => {
           /outside/,
         );
         expect((await read(`${ACCT}/in.txt`))?.toString()).toBe('real');
+
+        // A link into another account's directory stays inside the root but
+        // outside this account's directory.
+        mkdirSync(join(dir, 'acct-2'));
+        writeFileSync(join(dir, 'acct-2', 's.txt'), 'other');
+        symlinkSync(join(dir, 'acct-2', 's.txt'), join(base, 'cross.txt'));
+        await expect(read(`${ACCT}/cross.txt`)).rejects.toThrow(/outside/);
       } finally {
         rmSync(outside, { recursive: true, force: true });
       }
