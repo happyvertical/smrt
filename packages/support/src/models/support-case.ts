@@ -130,7 +130,12 @@ export class SupportCase extends SmrtObject {
    * {@link SupportCaseService.reassignRequester} can re-home cases atomically.
    * Nullable, no backfill.
    */
-  @field({ type: 'text', nullable: true, indexed: true })
+  @field({
+    type: 'text',
+    nullable: true,
+    indexed: true,
+    description: 'An identifier from the app for who asked, if known.',
+  })
   requesterKey: string | null = null;
 
   /** Channel binding that created this case, when intake-created. */
