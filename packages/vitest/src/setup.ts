@@ -22,7 +22,7 @@
 import { existsSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import type { SchemaDefinition } from '@happyvertical/smrt-core';
-import { afterAll, beforeAll, vi } from 'vitest';
+import { afterAll, beforeAll, inject, vi } from 'vitest';
 import type { SmrtVitestPluginOptions } from './index.js';
 import {
   applySqliteSpeedPragmas,
@@ -38,6 +38,12 @@ import {
  * static, module-load-time import of `./index.js`).
  */
 const SETUP_OPTIONS_ENV_KEY = '__SMRT_VITEST_SETUP_OPTIONS__';
+
+declare module 'vitest' {
+  interface ProvidedContext {
+    __smrtVitestManifestHookTimeout?: number;
+  }
+}
 
 declare global {
   // eslint-disable-next-line no-var
@@ -162,9 +168,17 @@ async function ensureManifestsRegisteredInThisProcess(): Promise<void> {
   }
 }
 
-beforeAll(async () => {
-  await ensureManifestsRegisteredInThisProcess();
-});
+// Manifest registration loads the worker's module graph, which can exceed
+// Vitest's 10s default under shared-runner load. Budget this hook alone using
+// the documented 30s setup budget, preserving larger (or disabled) consumer
+// hook budgets. No other hook or test default changes.
+const consumerHookTimeout = inject('__smrtVitestManifestHookTimeout');
+beforeAll(
+  async () => {
+    await ensureManifestsRegisteredInThisProcess();
+  },
+  consumerHookTimeout === 0 ? 0 : Math.max(30_000, consumerHookTimeout ?? 0),
+);
 
 // Type alias for any to avoid conflicts with smrt-core's globalThis declarations
 type CacheState = unknown;
