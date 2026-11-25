@@ -1,5 +1,26 @@
 # @happyvertical/smrt-core
 
+## 0.70.3
+
+### Patch Changes
+
+- ### Features
+  
+  - indexed requesterKey on SupportCase (#5644) (support)
+  - required tenancy and forced RLS for the cloud shell tables (#5191) (#5634) (app-shell)
+  - hosted receiver and per-tenant placement of a desktop user app (#5193) (#5637) (app-shell)
+  - cloud welcome offers only the API key; hide operator inference rows (#5191) (#5636) (app-shell)
+  - operator command to move a tenant's SQLite app to PostgreSQL (#5193) (#5632) (app-shell)
+  - per-user attribution and fail-closed hosted gate (#5194) (#5633) (app-shell)
+  
+  ### Bug Fixes
+  
+  - preserve qualified STI foreign-key build schemas (#5627) (core)
+  - check the draft scope on message writes (#5617) (messages)
+- @happyvertical/smrt-config@0.70.3
+  - @happyvertical/smrt-scanner@0.70.3
+  - @happyvertical/smrt-types@0.70.3
+
 ## 0.70.2
 
 ### Patch Changes
