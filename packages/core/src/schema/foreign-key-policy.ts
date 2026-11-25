@@ -79,3 +79,17 @@ export function resolveForeignKeyDeleteAction(options: {
     declared: false,
   };
 }
+
+/** Split optional model.column after the package qualifier, preserving dotted package names. */
+export function parseForeignKeyReference(related: string): {
+  target: string;
+  column?: string;
+} {
+  const separator = related.indexOf('.', related.lastIndexOf(':') + 1);
+  return separator < 0
+    ? { target: related }
+    : {
+        target: related.slice(0, separator),
+        column: related.slice(separator + 1),
+      };
+}
