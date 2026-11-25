@@ -142,5 +142,19 @@ test('affected selection emits app-shell units, not its plain test task', () => 
     (index) => selectAffectedTestPackages(dryRun, { index, count: 3 }).shard,
   );
   assert.deepEqual(emitted.sort(), expandTestUnits([APP_SHELL, '@happyvertical/smrt-tags']));
-  assert.ok(emitted.every((id) => unitPackage(id) !== APP_SHELL || id !== unitId(APP_SHELL, 'test')));
+});
+
+test('sibling units avoid sharing a shard while a free shard exists', () => {
+  const units = expandTestUnits([APP_SHELL, '@happyvertical/smrt-ingestion']);
+  const siblings = SPLIT_TEST_UNITS[APP_SHELL].map((task) => unitId(APP_SHELL, task));
+  // Three units, three shared shards: one per shard, though weights would co-locate.
+  const weights = { ...TEST_SECONDS, [siblings[0]]: 1, [siblings[1]]: 1, [siblings[2]]: 1 };
+  const shards = [1, 2, 3].map((index) => selectShard(units, { index, count: 4 }, weights));
+  assert.deepEqual(shards.flat().sort(), units);
+  for (const shard of shards) {
+    assert.ok(shard.filter((id) => siblings.includes(id)).length <= 1, shard.join());
+  }
+  // With fewer shards than units they must share: still exactly once.
+  const two = [1, 2].map((index) => selectShard(units, { index, count: 3 }, weights));
+  assert.deepEqual(two.flat().sort(), units);
 });

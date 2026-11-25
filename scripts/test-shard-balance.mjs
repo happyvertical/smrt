@@ -154,8 +154,16 @@ export function balanceShards(names, count, seconds) {
     (a, b) => weight(b) - weight(a) || (a < b ? -1 : 1),
   );
   for (const name of longestFirst) {
-    let lightest = shards[0];
-    for (const shard of shards) {
+    // Units of one package (app-shell's) avoid sharing a shard while a shard
+    // without a sibling exists: sibling units run in the same package
+    // directory, and two of them can run at once under `--concurrency=2`.
+    const owner = unitPackage(name);
+    const hasSibling = (shard) =>
+      shard.names.some((other) => other !== name && unitPackage(other) === owner);
+    const free = shards.filter((shard) => !hasSibling(shard));
+    const pool = free.length > 0 ? free : shards;
+    let lightest = pool[0];
+    for (const shard of pool) {
       if (shard.total < lightest.total) lightest = shard;
     }
     lightest.names.push(name);
