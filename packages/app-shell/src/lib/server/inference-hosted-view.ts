@@ -20,17 +20,26 @@ export function hideDeploymentRows(
     // Only the tenant's own override stays; what the operator set (the app
     // target, what the tier falls back to, where its value comes from) goes.
     tiers: data.tiers.map((row) => {
-      const own = row.supplyingLevel === 'tenant' || row.tenantTarget != null;
+      // Only a row the tenant's own override supplies is shown as such. A
+      // stored tenant override the operator's allow-list has since blocked
+      // falls back to the operator's value, which stays hidden.
+      const own = row.supplyingLevel === 'tenant';
       return {
         tier: row.tier,
         effectiveLabel: own ? row.effectiveLabel : 'Provided by the platform',
         effectiveTarget: own ? row.effectiveTarget : null,
         supplyingLevel: own ? row.supplyingLevel : undefined,
+        // The tenant's own stored value (it is theirs, blocked or not).
         tenantTarget: row.tenantTarget ?? null,
+        // The allow-list itself is the operator's policy and stays hidden; the
+        // server still refuses a choice outside it.
+        tenantBlocked: row.tenantBlocked,
         appTarget: null,
         inheritedLabel: null,
       };
     }),
+    // `effectiveTier` is a tier name (good, great...), never a model target, so
+    // it stays; the app and inherited values behind it go.
     defaultTier: data.defaultTier
       ? {
           effectiveTier: data.defaultTier.effectiveTier,

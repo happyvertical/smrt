@@ -68,13 +68,15 @@ const overrideRows = async () =>
     (await h.db.query('SELECT * FROM _smrt_inference_overrides')).rows,
   );
 
+let operator: InferenceSettingsService;
+
 beforeAll(async () => {
   vi.stubEnv('OPENAI_API_KEY', OPERATOR_KEY);
   h = await openCloudShell();
   installShellInference();
   // The operator's deployment-wide tier binding: it names a provider and no
   // key, so the provider's conventional variable would supply the key.
-  const operator = await InferenceSettingsService.create(
+  operator = await InferenceSettingsService.create(
     { db: h.db },
     { authorize: () => true },
   );
@@ -222,6 +224,35 @@ describe('cloud: the operator’s deployment-wide rows are not shown', () => {
     const ann = (await loadAs(h.a)).tiers.find((t) => t.tier === 'good');
     expect(JSON.stringify(ann?.tenantTarget)).toContain('gpt-4.1');
     expect(JSON.stringify(await loadAs(h.b))).not.toContain('gpt-4.1');
+  });
+});
+
+describe('cloud: a tenant override the operator has since blocked', () => {
+  it('does not fall through to the operator’s value on the page', async () => {
+    await post('saveTier', h.a, {
+      tier: 'good',
+      scope: 'tenant',
+      target: { provider: 'openai', model: 'gpt-4.1' },
+    });
+    await operator.setTenantAllowList({
+      binding: 'tier:good',
+      allowList: ['model:openai/gpt-4.1-nano'],
+    });
+    try {
+      const page = await loadAs(h.a);
+      const row = page.tiers.find((t) => t.tier === 'good') as unknown as {
+        tenantBlocked?: boolean;
+        effectiveLabel: string;
+      };
+      expect(row.tenantBlocked).toBe(true);
+      expect(row.effectiveLabel).toBe('Provided by the platform');
+      expect(JSON.stringify(page)).not.toContain('gpt-4o-mini');
+    } finally {
+      await operator.setTenantAllowList({
+        binding: 'tier:good',
+        allowList: ['model:openai/gpt-4.1'],
+      });
+    }
   });
 });
 
