@@ -99,7 +99,8 @@ describe.each(backends)('shell tables, forced RLS (%s)', (backend) => {
     );
     if (backend === 'postgres') {
       // A non-superuser CI login that made the role holds only ADMIN OPTION on it
-      // (16+); `CREATE SCHEMA ... AUTHORIZATION` and the test's cleanup need SET.
+      // (16+); `CREATE SCHEMA ... AUTHORIZATION` needs SET and the cleanup (DROP of
+      // what the role owns) needs INHERIT.
       const major = Math.floor(
         Number(
           rowsOf(await admin.query('SHOW server_version_num'))[0]
@@ -108,8 +109,19 @@ describe.each(backends)('shell tables, forced RLS (%s)', (backend) => {
       );
       await admin.query(
         major >= 16
-          ? `GRANT "${role}" TO CURRENT_USER WITH SET TRUE, INHERIT FALSE`
+          ? `GRANT "${role}" TO CURRENT_USER WITH SET TRUE, INHERIT TRUE`
           : `GRANT "${role}" TO CURRENT_USER`,
+      );
+    }
+    if (backend === 'postgres') {
+      // The single-login profile's login is the deployment's admin: it may
+      // create schemas (a draft's side schema, an app's copy) in its database
+      // (cloud-profile.md: "Needs a PostgreSQL role that may CREATE SCHEMA").
+      const dbName = String(
+        rowsOf(await admin.query('SELECT current_database() AS n'))[0]?.n,
+      );
+      await admin.query(
+        `GRANT CREATE, TEMPORARY ON DATABASE "${dbName.replace(/"/g, '""')}" TO "${role}"`,
       );
     }
     await admin.query(`CREATE SCHEMA "${schema}" AUTHORIZATION "${role}"`);
@@ -154,16 +166,23 @@ describe.each(backends)('shell tables, forced RLS (%s)', (backend) => {
     await h?.close();
     if (backend === 'postgres') {
       await db?.close?.();
-      for (const s of (
-        rowsOf(
-          await admin.query(
-            `SELECT nspname FROM pg_namespace WHERE nspname LIKE 'app\\_%' AND nspowner = (SELECT oid FROM pg_roles WHERE rolname = '${role}')`,
-          ),
-        ) as Array<{ nspname: string }>
-      ).map((r) => r.nspname))
-        await admin.query(`DROP SCHEMA IF EXISTS "${s}" CASCADE`);
-      await admin.query(`DROP SCHEMA IF EXISTS "${schema}" CASCADE`);
-      await admin.query(`DROP ROLE IF EXISTS "${role}"`);
+      // Best effort: the CI database is made for this job and dropped with it.
+      const attempt = async (sql: string) => {
+        try {
+          await admin.query(sql);
+        } catch {
+          /* leave it to the database's own teardown */
+        }
+      };
+      const owned = rowsOf(
+        await admin.query(
+          `SELECT nspname FROM pg_namespace WHERE nspname LIKE 'app\\_%' AND nspowner = (SELECT oid FROM pg_roles WHERE rolname = '${role}')`,
+        ),
+      ).map((r) => String(r.nspname));
+      for (const name of owned)
+        await attempt(`DROP SCHEMA IF EXISTS "${name}" CASCADE`);
+      await attempt(`DROP SCHEMA IF EXISTS "${schema}" CASCADE`);
+      await attempt(`DROP ROLE IF EXISTS "${role}"`);
       await admin.close?.();
     } else {
       await pglite.exec('RESET ROLE');
@@ -506,11 +525,11 @@ describe.each(backends)('shell tables, forced RLS (%s)', (backend) => {
   it('would show the other owner’s rows if the policy were not there (the test bites)', async () => {
     const tables = ['apps'];
     for (const table of tables)
-      await admin.query(
+      await db.query(
         `ALTER TABLE "${schema}"."${table}" NO FORCE ROW LEVEL SECURITY`,
       );
     for (const table of tables)
-      await admin.query(
+      await db.query(
         `ALTER TABLE "${schema}"."${table}" DISABLE ROW LEVEL SECURITY`,
       );
     try {
