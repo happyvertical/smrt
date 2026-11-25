@@ -645,8 +645,15 @@ async function adoptDraft(
     host: null,
     problem: null,
   };
-  const imports = await AppImportCollection.create({ db });
-  const pending = await imports.list({ where: { draftId: slot.id }, limit: 1 });
+  // Workbook import is the desktop's: in cloud `app_imports` (no tenancy, no
+  // policy) is never read.
+  const pending =
+    (await shellProfile()) === 'cloud'
+      ? []
+      : await (await AppImportCollection.create({ db })).list({
+          where: { draftId: slot.id },
+          limit: 1,
+        });
   if (
     pending[0] &&
     !['review', 'published', 'discarded'].includes(pending[0].status)

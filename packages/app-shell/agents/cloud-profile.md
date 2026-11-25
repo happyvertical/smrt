@@ -74,7 +74,20 @@ import recovery among them).
   table owner, the single-login profile), four policies per table: a row is
   visible when `tenant_id` equals `smrt.tenant_id` and `smrt.permissions` holds
   `SHELL_STORE_PERMISSION` (a marker for a connection the shell's stores opened,
-  not an owner permission: owner-only is `assertOwner`). A table that cannot be
+  not an owner permission: owner-only is `assertOwner`). `Approval`'s SELECT
+  also admits `approvals.read` (`shellPolicySlugs`): the generated
+  `POST /api/approvals/[id]/decide` loads the row through the request's own RLS
+  database, which carries the session's permissions and never the marker, before
+  `assertOwner()` runs. `shell-routes.test.ts` pins that `Approval.decide` is the
+  only generated route or tool of a shell model that loads a row by id (App's
+  methods are static, every other model is closed), so each new one has to be
+  thought through. The apply reads the catalog first and runs no DDL when the
+  policies (and their slugs) are current; otherwise it is one transaction under
+  an advisory lock with a lock timeout, so replicas starting together never
+  interleave DROP/CREATE POLICY and no reader sees a table between them. A
+  missing table says to run `smrt db:migrate`; every failure's reason goes to
+  stderr (`app-shell.database.rls-incomplete`) because the runtime reports a
+  failed start generically. A table that cannot be
   protected refuses the start (reason on stderr). So does a login that is a
   superuser or has BYPASSRLS: many owners share the database and such a login
   silently removes every boundary (`app-shell.database.rls-bypass`). The one
@@ -100,7 +113,9 @@ Test: `shell-rls.postgres.test.ts` (registered `test:postgres` lane: PGlite and 
 real server). The login is a NOSUPERUSER NOBYPASSRLS role that owns the tables;
 two owners go through the real stores, then the assertions go around the
 application layer (raw SQL for the other owner's row id) and fail when the
-policies are removed. Without the policies 4 of its 6 tests fail.
+policies are removed. It also runs the generated decide route for two owners
+(the owner decides their own approval, the other gets a 404). The hosted claim's
+binding runs only on the real-server lane (`claimAppDatabase` is PostgreSQL only).
 
 Desktop (tenancy interceptor ON in the local runtime): optional-mode rows
 written with no context get a NULL tenant and are then invisible to reads made

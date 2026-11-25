@@ -293,40 +293,131 @@ function shellTables(): Map<string, string> {
 }
 
 /**
+ * The permission slugs each shell table's policy admits, per command. Every
+ * table admits the store marker. `Approval` also admits `approvals.read` for
+ * SELECT: its generated `POST /api/approvals/[id]/decide` route loads the row
+ * through the request's own RLS database (the session's permissions, never the
+ * store marker) before `assertOwner()` runs, so without it the owner's decision
+ * would be a 404. The route's only other gate is `assertOwner()`, and no other
+ * generated surface of `Approval` reads a row (`api`/`mcp` list only `decide`
+ * and the static `pending`); `shell-routes.test.ts` pins that set.
+ */
+export function shellPolicySlugs(
+  className: string,
+): Record<'SELECT' | 'INSERT' | 'UPDATE' | 'DELETE', string[]> {
+  const marker = [SHELL_STORE_PERMISSION];
+  return {
+    SELECT: className === 'Approval' ? [...marker, 'approvals.read'] : marker,
+    INSERT: marker,
+    UPDATE: marker,
+    DELETE: marker,
+  };
+}
+
+/**
+ * Whether every shell table already has row-level security enabled and forced
+ * and, for each command, a policy that names the slugs it should admit (read
+ * back from the catalog, so a release that changes a slug re-applies).
+ */
+async function policiesCurrent(db: Queryable): Promise<boolean> {
+  const schema = await currentSchema(db);
+  const tables = shellTables();
+  const state = new Map((await shellRlsState(db)).map((s) => [s.table, s]));
+  for (const table of tables.keys()) {
+    const s = state.get(table);
+    if (!s?.rls || !s.forced || s.policies !== 4) return false;
+  }
+  const defs = rowsOf(
+    await db.query(
+      `SELECT c.relname AS name, p.polcmd AS cmd,
+              coalesce(pg_get_expr(p.polqual, p.polrelid), '') || ' ' || coalesce(pg_get_expr(p.polwithcheck, p.polrelid), '') AS body
+         FROM pg_policy p JOIN pg_class c ON c.oid = p.polrelid
+        WHERE c.relnamespace = to_regnamespace(${quote(schema)})
+          AND c.relname IN (${[...tables.keys()].map(quote).join(', ')})`,
+    ),
+  );
+  const cmd = { SELECT: 'r', INSERT: 'a', UPDATE: 'w', DELETE: 'd' } as const;
+  for (const [table, model] of tables) {
+    const wanted = shellPolicySlugs(model);
+    for (const action of Object.keys(cmd) as Array<keyof typeof cmd>) {
+      const body = defs
+        .filter((d) => d.name === table && d.cmd === cmd[action])
+        .map((d) => String(d.body))
+        .join(' ');
+      if (!wanted[action].every((slug) => body.includes(`'${slug}'`)))
+        return false;
+    }
+  }
+  return true;
+}
+
+/** Take the apply's lock, so two starting replicas never interleave their DDL. */
+const APPLY_LOCK = "hashtext('smrt-app-shell:shell-rls')";
+
+/**
  * Enable and force row-level security on every shell table and (re)create the
  * policies, as the table owner (the deployment's admin login), then read the
  * catalog back: a table still without them, or a login that bypasses them,
- * is reported. Idempotent; run at every cloud start after `smrt db:migrate`
- * made the tables. PostgreSQL only.
+ * is reported. Run at every cloud start after `smrt db:migrate` made the
+ * tables; PostgreSQL only.
  *
- * Returns the problems found (empty when every table is protected and the
- * login is subject to the policies).
+ * Live traffic is never touched when nothing changed: the catalog is read
+ * first and the DDL runs only when a table lacks the current policies. When it
+ * does run it is ONE transaction under an advisory lock with a lock timeout
+ * (a rolling deploy's second replica waits, re-checks and finds it done; no
+ * reader ever sees a table between DROP and CREATE POLICY).
+ *
+ * Throws when a shell table does not exist (run `smrt db:migrate`). Returns the
+ * problems found (empty when every table is protected and the login is subject
+ * to the policies).
  */
 export async function applyShellRls(db: Queryable): Promise<string[]> {
   requireShellTenancy();
   const schemaName = await currentSchema(db);
+  const tables = shellTables();
+  const present = new Set((await shellRlsState(db)).map((s) => s.table));
+  const absent = [...tables.keys()].filter((t) => !present.has(t));
+  if (absent.length)
+    throw new Error(
+      `the shell tables ${absent.join(', ')} do not exist: run smrt db:migrate first`,
+    );
   const { applyScopedPostgresPermissionPolicies } = await import(
     '@happyvertical/smrt-users/postgres-policies'
   );
-  const result = await applyScopedPostgresPermissionPolicies(db, {
+  const scope = {
     schemaName,
-    includeClass: (c) =>
+    includeClass: (c: { className: string; qualifiedName?: string }) =>
       c.qualifiedName?.startsWith(SHELL_PACKAGE) === true &&
       (SHELL_TENANT_MODELS as readonly string[]).includes(c.className),
-    permissionsFor: () => ({
-      SELECT: [SHELL_STORE_PERMISSION],
-      INSERT: [SHELL_STORE_PERMISSION],
-      UPDATE: [SHELL_STORE_PERMISSION],
-      DELETE: [SHELL_STORE_PERMISSION],
-    }),
-  });
+    permissionsFor: (c: { className: string }) => shellPolicySlugs(c.className),
+  };
+  let result:
+    | Awaited<ReturnType<typeof applyScopedPostgresPermissionPolicies>>
+    | undefined;
+  if (!(await policiesCurrent(db))) {
+    const transaction = (
+      db as {
+        transaction?: <T>(fn: (tx: Queryable) => Promise<T>) => Promise<T>;
+      }
+    ).transaction;
+    const apply = async (tx: Queryable) => {
+      await tx.query("SELECT set_config('lock_timeout', '10s', true)");
+      await tx.query(`SELECT pg_advisory_xact_lock(${APPLY_LOCK})`);
+      // Another replica may have applied while this one waited.
+      if (await policiesCurrent(tx)) return undefined;
+      return applyScopedPostgresPermissionPolicies(tx, scope);
+    };
+    result = (
+      transaction ? await transaction.call(db, apply) : await apply(db)
+    ) as typeof result;
+  }
   const problems: string[] = [];
-  const covered = new Set(result.targets.map((t) => t.tableName));
+  const covered = new Set((result?.targets ?? []).map((t) => t.tableName));
   for (const [table, model] of shellTables())
-    if (!covered.has(table))
+    if (result && !covered.has(table))
       problems.push(
         `no policy was generated for ${table} (${model}: ${
-          result.skipped
+          (result?.skipped ?? [])
             .filter((s) => s.className === model)
             .map((s) => s.reason)
             .join('; ') || 'not registered as tenant-scoped'
@@ -373,7 +464,18 @@ export async function protectShellTables(
     options.warn ??
     ((entry) => void process.stderr.write(`${JSON.stringify(entry)}\n`));
   const env = options.env ?? process.env;
-  const problems = await applyShellRls(db as Queryable);
+  let problems: string[];
+  try {
+    problems = await applyShellRls(db as Queryable);
+  } catch (error) {
+    // The runtime reports a failed start generically: say why here.
+    warn({
+      level: 'error',
+      event: 'app-shell.database.rls-incomplete',
+      message: error instanceof Error ? error.message : String(error),
+    });
+    throw error;
+  }
   const bypass = problems.filter((p) => /BYPASSRLS/.test(p));
   const broken = problems.filter((p) => !/BYPASSRLS/.test(p));
   if (bypass.length) {

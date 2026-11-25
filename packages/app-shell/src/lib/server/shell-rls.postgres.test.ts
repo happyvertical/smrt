@@ -12,11 +12,35 @@
 
 import { randomUUID } from 'node:crypto';
 import { rmSync } from 'node:fs';
+import { postgresPrincipalSettings } from '@happyvertical/smrt-users/postgres-settings';
 import { getDatabase } from '@happyvertical/sql';
 import { importPGlite } from '@happyvertical/sql/pglite';
-import { afterAll, beforeAll, describe, expect, it } from 'vitest';
+import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
+
+// The generated item route reads through the runtime's REQUEST database. The
+// stand-in below is set per call to one that carries the session's own settings
+// (tenant and permissions, never the store marker), as the runtime's RLS
+// request transaction does.
+const request = vi.hoisted(() => ({
+  collection: null as null | ((name: string) => Promise<unknown>),
+}));
+vi.mock('$lib/server/smrt', () => ({
+  // The legacy exports a generated route probes for first.
+  getCollection: undefined,
+  getSmrtConfig: undefined,
+  runtime: {
+    getCollection: (name: string) => {
+      if (!request.collection) throw new Error('no request in flight');
+      return request.collection(name);
+    },
+    classOptions: () => ({}),
+  },
+}));
+
 import type { DatabaseConfig } from '../../engine/db/index.ts';
+import * as decideRoute from '../../routes/api/approvals/[id]/decide/+server.ts';
 import { App } from '../objects/App.ts';
+import { ApprovalCollection } from '../objects/Approval.ts';
 import { applyOwnBatch } from './approvals.ts';
 import { changesState, flushChecks } from './changes.ts';
 import { type CloudHarness, openCloudShell } from './cloud-test-support.ts';
@@ -93,6 +117,21 @@ describe.each(backends)('shell tables, forced RLS (%s)', (backend) => {
     await admin.query(
       `CREATE ROLE "${role}" LOGIN PASSWORD '${password}' NOSUPERUSER NOBYPASSRLS`,
     );
+    if (backend === 'postgres') {
+      // A non-superuser CI login that made the role holds only ADMIN OPTION on it
+      // (16+); `CREATE SCHEMA ... AUTHORIZATION` and the test's cleanup need SET.
+      const major = Math.floor(
+        Number(
+          rowsOf(await admin.query('SHOW server_version_num'))[0]
+            ?.server_version_num,
+        ) / 10000,
+      );
+      await admin.query(
+        major >= 16
+          ? `GRANT "${role}" TO CURRENT_USER WITH SET TRUE, INHERIT FALSE`
+          : `GRANT "${role}" TO CURRENT_USER`,
+      );
+    }
     await admin.query(`CREATE SCHEMA "${schema}" AUTHORIZATION "${role}"`);
     // The deployment's login owns everything it makes, as a single-login
     // deployment's does.
@@ -170,6 +209,22 @@ describe.each(backends)('shell tables, forced RLS (%s)', (backend) => {
       return rowsOf(await tx.query(sql, params));
     });
 
+  it('changes nothing on a start that finds the policies current (no DDL under live traffic)', async () => {
+    const statements: string[] = [];
+    const spy = {
+      engine: 'pglite',
+      query: (sql: string, ...params: unknown[]) => {
+        statements.push(sql);
+        return db.query(sql, ...params);
+      },
+      transaction: undefined,
+    };
+    await applyShellRls(spy as never);
+    expect(
+      statements.filter((q) => /\b(CREATE|DROP|ALTER)\b/i.test(q)),
+    ).toEqual([]);
+  });
+
   it('refuses to start on a login that bypasses row-level security, unless told loudly', async () => {
     // The shell's real login, except that the catalog says it bypasses (what a
     // superuser or BYPASSRLS role reports); everything else is the real database.
@@ -195,6 +250,120 @@ describe.each(backends)('shell tables, forced RLS (%s)', (backend) => {
     expect(seen[0]).toMatchObject({
       event: 'app-shell.database.rls-bypass-allowed',
     });
+  });
+
+  /** Run the generated decide route as `who`, its collections on a request database that carries `permissions`. */
+  const decideAs = async (
+    who: CloudHarness['a'],
+    id: string,
+    permissions: string[],
+  ) => {
+    const settings = postgresPrincipalSettings({
+      tenantId: who.tenantId,
+      userId: who.id,
+      session: null,
+      sessionId: null,
+      permissions,
+      superAdminBypass: false,
+      systemContext: false,
+    });
+    const methods = new Set([
+      'get',
+      'list',
+      'query',
+      'insert',
+      'update',
+      'upsert',
+      'delete',
+      'count',
+    ]);
+    const requestDb = new Proxy(db, {
+      get(target, prop, receiver) {
+        if (typeof prop === 'string' && methods.has(prop))
+          return (...args: unknown[]) =>
+            (target as Required<Pick<Db, 'transaction'>>).transaction(
+              async (tx) => {
+                for (const [k, v] of settings)
+                  await tx.query('SELECT set_config(?, ?, true)', [k, v]);
+                return (
+                  tx as never as Record<string, (...a: unknown[]) => unknown>
+                )[prop](...args);
+              },
+            );
+        const v = Reflect.get(target, prop, receiver);
+        return typeof v === 'function' ? v.bind(target) : v;
+      },
+    });
+    request.collection = async () =>
+      ApprovalCollection.create({ db: requestDb as never });
+    try {
+      return await runAs(who, async () =>
+        decideRoute.POST({
+          locals: {
+            user: { id: who.id, tenantId: who.tenantId },
+            tenantContext: {
+              tenantId: who.tenantId,
+              permissions: new Set(permissions),
+            },
+            permissions,
+          },
+          params: { id },
+          request: new Request('http://localhost/x', {
+            method: 'POST',
+            body: JSON.stringify({ approve: false }),
+          }),
+        } as never),
+      );
+    } catch (error) {
+      return error as { status?: number };
+    } finally {
+      request.collection = null;
+    }
+  };
+
+  it('lets an owner decide their own approval through the generated route, and nobody else’s', async () => {
+    const pending: Record<string, string> = {};
+    for (const owner of [h.a, h.b])
+      pending[owner.tenantId] = await runAs(owner, async () => {
+        const row = await (
+          await ApprovalCollection.create({ db: await getShellDb() })
+        ).create({
+          status: 'pending',
+          summary: 'x',
+          actionKey: randomUUID(),
+          requestedBy: owner.id,
+          command: '{}',
+          createdAt: new Date().toISOString(),
+        });
+        await row.save();
+        return row.id as string;
+      });
+    const owned = ['approvals.read', 'approvals.update'];
+    // Another owner's id: the policy hides the row, so the route says 404.
+    const other = (await decideAs(h.b, pending[h.a.tenantId], owned)) as {
+      status?: number;
+    };
+    expect(other.status).toBe(404);
+    // A session without the read permission sees nothing either.
+    const noRead = (await decideAs(h.a, pending[h.a.tenantId], [
+      'approvals.update',
+    ])) as { status?: number };
+    expect(noRead.status).toBe(404);
+    // The owner's own: loaded through their request database, decided by the shell.
+    const mine = (await decideAs(
+      h.a,
+      pending[h.a.tenantId],
+      owned,
+    )) as Response;
+    expect(mine.status).toBe(200);
+    expect(await mine.json()).toMatchObject({
+      action: 'decide',
+      result: { id: pending[h.a.tenantId], status: 'denied' },
+    });
+    // And bob's own is still his to decide.
+    expect(
+      ((await decideAs(h.b, pending[h.b.tenantId], owned)) as Response).status,
+    ).toBe(200);
   });
 
   it('puts every shell table under forced row-level security and finds the login subject to it', async () => {
