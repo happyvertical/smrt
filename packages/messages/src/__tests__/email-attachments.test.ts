@@ -6,13 +6,23 @@
  * send lifecycle that records a failure on the message is the real one.
  */
 
-import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import {
+  mkdirSync,
+  mkdtempSync,
+  rmSync,
+  symlinkSync,
+  writeFileSync,
+} from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { getTestDatabase } from '@happyvertical/smrt-core';
 import { withTenant } from '@happyvertical/smrt-tenancy';
 import type { DatabaseInterface } from '@happyvertical/sql';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import {
+  configureAttachmentStorage,
+  resetAttachmentStorage,
+} from '../attachment-storage';
 import { AttachmentCollection } from '../collections/AttachmentCollection';
 import { EmailCollection } from '../collections/EmailCollection';
 import { MessageCollection } from '../collections/MessageCollection';
@@ -160,6 +170,7 @@ describe('Email.send with stored attachments', () => {
     db = await getTestDatabase();
     await prepareMessageParents(db);
     dir = mkdtempSync(join(tmpdir(), 'smrt-email-attachments-'));
+    configureAttachmentStorage({ root: dir });
     client = makeClient();
     vi.spyOn(EmailAccount.prototype, 'createClient').mockResolvedValue(
       client as any,
@@ -168,6 +179,7 @@ describe('Email.send with stored attachments', () => {
 
   afterEach(async () => {
     vi.restoreAllMocks();
+    resetAttachmentStorage();
     rmSync(dir, { recursive: true, force: true });
     if (db && typeof db.close === 'function') await db.close();
   });
@@ -217,10 +229,9 @@ describe('Email.send with stored attachments', () => {
   }
 
   it('reads the stored file and sends it as an attachment', async () => {
-    const filePath = join(dir, 'PO-1042.pdf');
-    writeFileSync(filePath, PDF_BYTES);
+    writeFileSync(join(dir, 'PO-1042.pdf'), PDF_BYTES);
     const email = await makeEmail();
-    await storeAttachment(email.id ?? '', { filePath });
+    await storeAttachment(email.id ?? '', { filePath: 'PO-1042.pdf' });
 
     const result = await email.send();
 
@@ -245,30 +256,187 @@ describe('Email.send with stored attachments', () => {
     });
   });
 
-  it.skipIf(process.platform === 'win32')(
-    'reads a POSIX file whose name contains a backslash',
-    async () => {
-      const filePath = join(dir, 'report\\2026.pdf');
-      writeFileSync(filePath, PDF_BYTES);
+  it('reads a stored file below a subdirectory and normalises the stored path', async () => {
+    mkdirSync(join(dir, 'po'));
+    writeFileSync(join(dir, 'po', 'PO-1042.pdf'), PDF_BYTES);
+    const email = await makeEmail();
+    const row = await storeAttachment(email.id ?? '', {
+      filePath: './po//PO-1042.pdf',
+    });
+
+    expect(row.filePath).toBe('po/PO-1042.pdf');
+    const result = await email.send();
+
+    expect(result.error).toBeUndefined();
+    expect(
+      sentPayload(client).attachments?.[0].content?.equals(PDF_BYTES),
+    ).toBe(true);
+  });
+
+  it.each([
+    ['an absolute path', '/etc/hosts'],
+    ['a parent segment', '../secret.txt'],
+    ['a buried parent segment', 'a/../../b'],
+    ['a backslash', 'a\\b.pdf'],
+    ['a NUL', 'a\u0000.pdf'],
+    ['encoded dots', '%2e%2e%2fsecret.txt'],
+    ['an encoded separator', 'a%2fb.pdf'],
+    ['a drive path', 'C:/x.pdf'],
+  ])('refuses to store %s', async (_name, filePath) => {
+    const email = await makeEmail();
+    await expect(storeAttachment(email.id ?? '', { filePath })).rejects.toThrow(
+      /Attachment filePath refused/,
+    );
+    const rows = await (await AttachmentCollection.create({ db })).list({
+      where: { messageId: email.id },
+    });
+    expect(rows).toHaveLength(0);
+  });
+
+  it('fails the send for a stored absolute path and sends nothing', async () => {
+    const outside = mkdtempSync(join(tmpdir(), 'smrt-outside-'));
+    try {
+      writeFileSync(join(outside, 'secret.txt'), 'secret');
       const email = await makeEmail();
-      await storeAttachment(email.id ?? '', { filePath });
+      const row = await storeAttachment(email.id ?? '', {
+        filePath: 'placeholder.pdf',
+      });
+      const table = (await AttachmentCollection.create({ db })).tableName;
+      // A row written before the root existed, past the write-time check.
+      await db.update(
+        table,
+        { id: row.id },
+        { file_path: join(outside, 'secret.txt') },
+      );
 
       const result = await email.send();
 
-      expect(result.error).toBeUndefined();
-      expect(
-        sentPayload(client).attachments?.[0].content?.equals(PDF_BYTES),
-      ).toBe(true);
+      expect(result.success).toBe(false);
+      expect(result.error).toContain('Attachment "PO-1042.pdf" was not sent');
+      expect(result.error).toContain('absolute path');
+      expect(client.send).not.toHaveBeenCalled();
+      expect((await reload(email.id ?? '')).sendStatus).toBe('failed');
+    } finally {
+      rmSync(outside, { recursive: true, force: true });
+    }
+  });
+
+  it('fails the send for a stored escaping path', async () => {
+    const email = await makeEmail();
+    const row = await storeAttachment(email.id ?? '', {
+      filePath: 'placeholder.pdf',
+    });
+    const table = (await AttachmentCollection.create({ db })).tableName;
+    await db.update(table, { id: row.id }, { file_path: '../secret.txt' });
+
+    const result = await email.send();
+
+    expect(result.success).toBe(false);
+    expect(result.error).toContain('parent directory segment');
+    expect(client.send).not.toHaveBeenCalled();
+  });
+
+  it('backfills the account of a row that holds a legacy absolute path', async () => {
+    const email = await makeEmail();
+    const row = await storeAttachment(email.id ?? '', {
+      filePath: 'PO-1042.pdf',
+    });
+    const attachments = await AttachmentCollection.create({ db });
+    await db.update(
+      attachments.tableName,
+      { id: row.id },
+      { account_id: null, file_path: '/legacy/PO-1042.pdf' },
+    );
+
+    expect(await attachments.backfillAccountIds()).toBe(1);
+
+    const stored = await attachments.get({ id: row.id });
+    expect(stored?.accountId).toBe(email.accountId);
+    expect(stored?.filePath).toBe('/legacy/PO-1042.pdf');
+  });
+
+  it('fails the send closed when no storage root is configured', async () => {
+    writeFileSync(join(dir, 'PO-1042.pdf'), PDF_BYTES);
+    const email = await makeEmail();
+    await storeAttachment(email.id ?? '', { filePath: 'PO-1042.pdf' });
+    resetAttachmentStorage();
+
+    const result = await email.send();
+
+    expect(result.success).toBe(false);
+    expect(result.error).toContain('configureAttachmentStorage');
+    expect(client.send).not.toHaveBeenCalled();
+  });
+
+  it.skipIf(process.platform === 'win32')(
+    'refuses a symlink inside the root that leads outside, allows one that stays inside',
+    async () => {
+      const outside = mkdtempSync(join(tmpdir(), 'smrt-outside-'));
+      try {
+        writeFileSync(join(outside, 'secret.txt'), 'secret');
+        symlinkSync(join(outside, 'secret.txt'), join(dir, 'escape.pdf'));
+        symlinkSync(outside, join(dir, 'escape-dir'));
+        writeFileSync(join(dir, 'PO-1042.pdf'), PDF_BYTES);
+        symlinkSync(join(dir, 'PO-1042.pdf'), join(dir, 'alias.pdf'));
+
+        const email = await makeEmail();
+        await storeAttachment(email.id ?? '', { filePath: 'escape.pdf' });
+        let result = await email.send();
+        expect(result.success).toBe(false);
+        expect(result.error).toContain('outside the attachment storage root');
+
+        const viaDir = await makeEmail();
+        await storeAttachment(viaDir.id ?? '', {
+          filePath: 'escape-dir/secret.txt',
+        });
+        result = await viaDir.send();
+        expect(result.success).toBe(false);
+        expect(result.error).toContain('outside the attachment storage root');
+        expect(client.send).not.toHaveBeenCalled();
+
+        const inside = await makeEmail();
+        await storeAttachment(inside.id ?? '', { filePath: 'alias.pdf' });
+        result = await inside.send();
+        expect(result.error).toBeUndefined();
+        expect(
+          sentPayload(client).attachments?.[0].content?.equals(PDF_BYTES),
+        ).toBe(true);
+      } finally {
+        rmSync(outside, { recursive: true, force: true });
+      }
+    },
+  );
+
+  it.skipIf(process.platform === 'win32')(
+    'works when the root itself is a symlink',
+    async () => {
+      writeFileSync(join(dir, 'PO-1042.pdf'), PDF_BYTES);
+      const holder = mkdtempSync(join(tmpdir(), 'smrt-root-link-'));
+      try {
+        const link = join(holder, 'root');
+        symlinkSync(dir, link);
+        configureAttachmentStorage({ root: link });
+        const email = await makeEmail();
+        await storeAttachment(email.id ?? '', { filePath: 'PO-1042.pdf' });
+
+        const result = await email.send();
+
+        expect(result.error).toBeUndefined();
+        expect(
+          sentPayload(client).attachments?.[0].content?.equals(PDF_BYTES),
+        ).toBe(true);
+      } finally {
+        rmSync(holder, { recursive: true, force: true });
+      }
     },
   );
 
   it('sends stored rows first, then the send-time attachments', async () => {
-    const filePath = join(dir, 'PO-1042.pdf');
-    writeFileSync(filePath, PDF_BYTES);
+    writeFileSync(join(dir, 'PO-1042.pdf'), PDF_BYTES);
     const email = await makeEmail();
     email.hasAttachments = false;
     await email.save();
-    await storeAttachment(email.id ?? '', { filePath });
+    await storeAttachment(email.id ?? '', { filePath: 'PO-1042.pdf' });
 
     const result = await email.send({
       attachments: [
@@ -309,7 +477,7 @@ describe('Email.send with stored attachments', () => {
   });
 
   it('fails the send and records the error when a stored file is missing', async () => {
-    const filePath = join(dir, 'missing', 'PO-1042.pdf');
+    const filePath = 'missing/PO-1042.pdf';
     const email = await makeEmail();
     await storeAttachment(email.id ?? '', { filePath });
 

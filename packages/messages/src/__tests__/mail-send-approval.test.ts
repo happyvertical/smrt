@@ -45,6 +45,10 @@ import {
   resetMailAccess,
   runWithMailSystemAccess,
 } from '../access.js';
+import {
+  configureAttachmentStorage,
+  resetAttachmentStorage,
+} from '../attachment-storage.js';
 // The package entry registers the messages permission catalog.
 import '../index.js';
 import { MessageCollection } from '../collections/MessageCollection';
@@ -278,6 +282,7 @@ describe('agent send policy and held sends (#5141)', () => {
     vi.restoreAllMocks();
     resetMailSendApprovals();
     resetMailAccess();
+    resetAttachmentStorage();
     disableTenancy();
     await db.close?.();
   });
@@ -630,6 +635,7 @@ describe('agent send policy and held sends (#5141)', () => {
       const dir = await mkdtemp(join(tmpdir(), 'smrt-held-send-'));
       const file = join(dir, 'invoice.pdf');
       await writeFile(file, 'original bytes');
+      configureAttachmentStorage({ root: dir });
       try {
         const draft = await draftAsAgent();
         await as(asAgent(), async () => {
@@ -638,7 +644,7 @@ describe('agent send policy and held sends (#5141)', () => {
             tenantId: tenantA,
             messageId: draft.id as string,
             filename: 'invoice.pdf',
-            filePath: file,
+            filePath: 'invoice.pdf',
           });
           await attachment.initialize();
           await attachment.save();
@@ -656,10 +662,10 @@ describe('agent send policy and held sends (#5141)', () => {
       }
     });
 
-    it('checks the exact attachment bytes the sender hands over', async () => {
+    it('binds a refused attachment path like an unreadable file and sends nothing', async () => {
       const dir = await mkdtemp(join(tmpdir(), 'smrt-held-send-'));
-      const file = join(dir, 'invoice.pdf');
-      await writeFile(file, 'original bytes');
+      await writeFile(join(dir, 'invoice.pdf'), 'original bytes');
+      configureAttachmentStorage({ root: dir });
       try {
         const draft = await draftAsAgent();
         await as(asAgent(), async () => {
@@ -668,7 +674,53 @@ describe('agent send policy and held sends (#5141)', () => {
             tenantId: tenantA,
             messageId: draft.id as string,
             filename: 'invoice.pdf',
-            filePath: file,
+            filePath: 'invoice.pdf',
+          });
+          await attachment.initialize();
+          await attachment.save();
+          // A row stored before the root existed, past the write-time check.
+          await db.update(
+            attachment.tableName,
+            { id: attachment.id },
+            { file_path: join(dir, 'invoice.pdf') },
+          );
+        });
+        const id = await pendingId(draft);
+        await approveViaInbox(id);
+        vi.spyOn(EmailAccount.prototype, 'createSender').mockImplementation(
+          async function (this: EmailAccount) {
+            return new EmailSender(
+              { isConnected: () => true, send: providerSend } as never,
+              this,
+            ) as never;
+          },
+        );
+        const released = await releaseAs(person(owner), id);
+        const result = (
+          released as { result?: { success: boolean; error?: string } }
+        ).result;
+        expect(result?.success).toBe(false);
+        expect(result?.error).toMatch(/was not sent: Attachment filePath/);
+        expect(providerSend).not.toHaveBeenCalled();
+      } finally {
+        await rm(dir, { recursive: true, force: true });
+      }
+    });
+
+    it('checks the exact attachment bytes the sender hands over', async () => {
+      const dir = await mkdtemp(join(tmpdir(), 'smrt-held-send-'));
+      const file = join(dir, 'invoice.pdf');
+      await writeFile(file, 'original bytes');
+      configureAttachmentStorage({ root: dir });
+      try {
+        const draft = await draftAsAgent();
+        await as(asAgent(), async () => {
+          const attachment = new Attachment({
+            ...options,
+            tenantId: tenantA,
+            messageId: draft.id as string,
+            filename: 'invoice.pdf',
+            filePath: 'invoice.pdf',
           });
           await attachment.initialize();
           await attachment.save();

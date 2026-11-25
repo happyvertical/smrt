@@ -760,7 +760,7 @@ describe('AttachmentCollection', () => {
         contentType: 'application/pdf',
         size: 2048,
         contentDisposition: 'attachment',
-        filePath: '/tmp/report.pdf',
+        filePath: 'reports/report.pdf',
       }),
     );
     await persist(

@@ -50,7 +50,9 @@ if (!result.success) {
 }
 
 // Attach files: stored `Attachment` rows are read through
-// `Attachment.readContent()` at send time, and bytes rendered on demand go in
+// `Attachment.readContent()` at send time from the directory you configure
+// once at startup with `configureAttachmentStorage({ root: '/data/attachments' })`
+// (required to read stored files; `filePath` is relative to it), and bytes rendered on demand go in
 // `send({ attachments })`. Both reach the transport together; a stored file
 // that cannot be read fails the send (sendStatus 'failed', sendError set)
 // instead of being dropped.
@@ -67,7 +69,7 @@ await attachments.create({
   filename: 'PO-1042.pdf',
   contentType: 'application/pdf',
   size: pdfBytes.length,
-  filePath: '/data/po/PO-1042.pdf',
+  filePath: 'po/PO-1042.pdf', // /data/attachments/po/PO-1042.pdf
 });
 await order.send({
   attachments: [
