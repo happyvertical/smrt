@@ -52,7 +52,9 @@ export {
 export {
   type CaseActor,
   type CaseTimelineItem,
+  type ListByRequesterOptions,
   type OpenCaseInput,
+  type ReassignRequesterInput,
   type RecordInteractionInput,
   SupportCaseService,
 } from './support-case-service.js';
