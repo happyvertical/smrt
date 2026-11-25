@@ -211,7 +211,7 @@ jobs:
           # The selector prints `<package>#<task>` units (core's real-PG and
           # PGlite halves are separate units, #5649).
           node scripts/postgres-test-shard.mjs "$POSTGRES_SHARD" | \
-            xargs -r pnpm turbo run --concurrency=2 --continue --summarize
+            xargs -r pnpm turbo run --concurrency=2 --continue --summarize=true
         env:
           POSTGRES_SHARD: ${{ matrix.shard }}
           POSTGRES_AFFECTED: ${{ needs.scope.outputs.affected }}

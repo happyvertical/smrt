@@ -386,3 +386,26 @@ test('in a merge group the core shards run whenever the coverage gate deems core
   assert.equal(run('pull_request', 'core'), 'core=false'); // PRs: no gate
   assert.equal(run('merge_group', '', 'true'), 'core=true');
 });
+
+test('turbo xargs lines and hidden-directory uploads cannot silently break (#5658)', () => {
+  const dir = new URL('../.github/workflows/', import.meta.url);
+  for (const file of ['test-suite.yml', 'postgres-tests.yml']) {
+    const text = readFileSync(new URL(file, dir), 'utf8');
+    // `--summarize` takes an optional value, so a bare flag directly before the
+    // piped unit ids swallows the first id ("invalid value ... for --summarize").
+    for (const line of text.split('\n')) {
+      if (/xargs .*turbo run/.test(line)) {
+        assert.doesNotMatch(line, /--summarize(\s|$)/, `${file}: ${line.trim()}`);
+      }
+    }
+  }
+  const suite = readFileSync(new URL('test-suite.yml', dir), 'utf8');
+  const uploads = suite.split(/^ {6}- name: /m).filter((step) =>
+    /upload-artifact@/.test(step) && /path:.*\/\./.test(step),
+  );
+  assert.ok(uploads.length >= 2, 'core coverage blob uploads present');
+  for (const step of uploads) {
+    // upload-artifact excludes hidden files/directories by default.
+    assert.match(step, /include-hidden-files: true/, step.split('\n')[0]);
+  }
+});

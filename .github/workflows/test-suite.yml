@@ -333,6 +333,10 @@ jobs:
         with:
           name: core-coverage-blob-affected-${{ strategy.job-index }}
           path: packages/core/.vitest-reports/blob-*.json
+          # `.vitest-reports` is a hidden directory; upload-artifact skips
+          # hidden files unless told otherwise, which would leave the gate
+          # with no blobs.
+          include-hidden-files: true
           if-no-files-found: error
           retention-days: 7
 
@@ -996,6 +1000,10 @@ jobs:
         with:
           name: core-coverage-blob-full-${{ strategy.job-index }}
           path: packages/core/.vitest-reports/blob-*.json
+          # `.vitest-reports` is a hidden directory; upload-artifact skips
+          # hidden files unless told otherwise, which would leave the gate
+          # with no blobs.
+          include-hidden-files: true
           if-no-files-found: error
           retention-days: 7
 
