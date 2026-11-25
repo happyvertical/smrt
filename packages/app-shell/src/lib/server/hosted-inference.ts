@@ -69,7 +69,10 @@ export async function createHostedInferenceDeps(
  * billed, which a background call (a job, a shared agent client) may not have
  * as its ambient one. The rows are read for that tenant only.
  */
-function inTenant<T>(tenantId: string, fn: () => Promise<T>): Promise<T> {
+export function inTenant<T>(
+  tenantId: string,
+  fn: () => Promise<T>,
+): Promise<T> {
   const current = getCurrentTenant();
   if (current?.tenantId?.toLowerCase() === tenantId.toLowerCase()) return fn();
   return withTenant({ tenantId }, fn);

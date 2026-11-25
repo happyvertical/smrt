@@ -1,6 +1,6 @@
 // Shared plumbing for the shell's JSON routes: owner session required,
 // same-origin for writes, bounded JSON bodies, errors without internals.
-import { EngineError } from '../../engine/index.ts';
+import { EngineError, METHOD_CODE_DENIED } from '../../engine/index.ts';
 import {
   PolicyError,
   type Principal,
@@ -107,8 +107,12 @@ export function errorResponse(error: unknown): Response {
       {
         ...error.details,
         error: error.message,
-        // A cap refusal's own code survives; every other code is the engine's.
-        code: error.details?.code === 'app_limit' ? 'app_limit' : error.code,
+        // A cap or entitlement refusal's own code survives; every other code is the engine's.
+        code:
+          error.details?.code === 'app_limit' ||
+          error.details?.code === METHOD_CODE_DENIED
+            ? error.details.code
+            : error.code,
       },
       ENGINE_STATUS[error.code] ?? 400,
     );

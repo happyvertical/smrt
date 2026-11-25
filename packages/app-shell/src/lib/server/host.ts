@@ -38,6 +38,7 @@ import {
   discardOrphanDraft,
   EngineError,
   isMigratedToPostgres,
+  type MethodCodeGate,
   type MigrateToPostgresResult,
   migrateUserAppToPostgres,
   type WorkerLimits,
@@ -106,6 +107,15 @@ export interface ShellContext {
   appLimits?: (
     tenantId: string,
   ) => AppLimits | undefined | Promise<AppLimits | undefined>;
+  /**
+   * Cloud only (#5194): whether a tenant may run app-authored method code
+   * (the `app.methods` entitlement). Handed to the tenant's live host and to a
+   * draft host reopened after a restart (a draft forked from live inherits it
+   * from the engine); asked by the engine on each call, so a change of plan
+   * applies at once. Absent: method code always runs, with no lookup. The
+   * desktop never has one.
+   */
+  methodCode?: MethodCodeGate;
   /**
    * How many apps one process keeps open (#5192): idle eviction, a cap on
    * open apps, a cap on concurrent wakes. Honoured by the `cloud` profile only;
@@ -519,6 +529,7 @@ export function openDraftHost(
   appLimits?: AppLimits,
   /** The live host's claim, lent for the draft's store writes (#5486); never released by the draft. */
   claim?: AppClaim,
+  methodCode?: MethodCodeGate,
 ): Promise<AppHost> {
   return withConnections(database, 'draft', () =>
     AppHost.open(dir, {
@@ -529,6 +540,7 @@ export function openDraftHost(
       workerUrl: workerUrl(),
       workerLimits: budgetedLimits(),
       ...(appLimits ? { appLimits } : {}),
+      ...(methodCode ? { methodCode } : {}),
       // A draft on PostgreSQL reopens with the LIVE app's config; its own
       // schema comes from the marker in `dir`.
       ...(database ? { database } : {}),
@@ -634,6 +646,7 @@ async function adoptDraft(
       database,
       await appLimitsOf(holder),
       live.lendableClaim,
+      methodCodeOf(holder),
     );
     wireHostEvents(draft, 'draft', holder.tenantId);
     slot.host = lifecycleOn() ? leased(holder, draft) : draft;
@@ -839,6 +852,11 @@ async function appLimitsOf(holder: Holder): Promise<AppLimits | undefined> {
   return (await limits(holder.tenantId)) ?? undefined;
 }
 
+/** The method-code gate of a cloud tenant's app (#5194); none on the desktop. */
+function methodCodeOf(holder: Holder): MethodCodeGate | undefined {
+  return holder.tenantId ? requireContext().methodCode : undefined;
+}
+
 /** Open one holder's live host: the app, its draft, the freeze. */
 async function openLive(holder: Holder): Promise<AppHost> {
   const db = await getShellDb();
@@ -855,6 +873,7 @@ async function openLive(holder: Holder): Promise<AppHost> {
       workerUrl: workerUrl(),
       workerLimits: budgetedLimits(),
       ...(appLimits ? { appLimits } : {}),
+      ...(methodCodeOf(holder) ? { methodCode: methodCodeOf(holder) } : {}),
       ...(database ? { database } : {}),
     }),
   );

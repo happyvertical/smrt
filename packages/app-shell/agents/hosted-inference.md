@@ -59,6 +59,6 @@ features/subscriptions/gate on SQLite, fake resolver), `hooks.server.test.ts`.
   per-user caps and attribution there wait for #5188/#5189/#5375;
   a removed member's active key is budget-synced but not revoked while the
   tenant stays entitled;
-  `plugins.remote`, `sync.devices`, `backup.vault` and `cloud.hosted` have no
+  `app.methods` is wired ([method code](method-code.md)); `plugins.remote`, `sync.devices`, `backup.vault` and `cloud.hosted` have no
   shell surface to gate. `cloud.hosted` is deliberately not a gate on the whole
   cloud shell (v1 decision); the gate is code-local, so that stays possible.
