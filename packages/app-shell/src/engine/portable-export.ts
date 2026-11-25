@@ -43,6 +43,7 @@ import {
   type PortableColumn,
   type PortableDb,
 } from './db/portable.ts';
+import { DEFAULT_LOCK_TIMEOUT_MS, dropSchema } from './db/postgres-copy.ts';
 import {
   lockSchemaForRead,
   postgresPortable,
@@ -434,21 +435,42 @@ export async function readAppMetaValue(options: {
 }
 
 /**
- * How many rows the user tables of an app on PostgreSQL hold (the same count
- * the import's own "is the target empty" check makes). A schema or meta that
- * does not exist holds none. A database that could not be read throws.
+ * Throw away an import that never committed a row (#5193): drop the app's
+ * schema, with the half-built tables the engine's own start made in it. Done
+ * under the app's claim (refused while another host holds the app), and only
+ * when the schema holds neither the completion fact `key` (the rows' own
+ * transaction records it, so with it the rows are in) nor a single user row;
+ * anything else is left exactly as it is. Returns whether it dropped. PostgreSQL
+ * only. A database that cannot be read throws.
  */
-export async function countUserAppRows(options: {
+export async function discardUnfilledImport(options: {
   dataDir: string;
   database: DatabaseConfig;
-}): Promise<number> {
-  if (options.database.kind === 'sqlite')
-    throw new EngineError('this reads a PostgreSQL app', 'refused');
-  return inDatabase(options.dataDir, options.database, 'read', async (db) => {
-    let n = 0;
-    for (const name of await db.tables()) n += await db.count(name);
-    return n;
-  });
+  key: string;
+}): Promise<boolean> {
+  const { database } = options;
+  if (database.kind === 'sqlite')
+    throw new EngineError('this discards a PostgreSQL app', 'refused');
+  const claim = await claimAppDatabase(database);
+  try {
+    const { fact, rows } = await inDatabase(
+      options.dataDir,
+      database,
+      'read',
+      async (db) => {
+        let n = 0;
+        for (const name of await db.tables()) n += await db.count(name);
+        return { fact: await db.metaValue(options.key), rows: n };
+      },
+    );
+    if (fact !== null || rows > 0) return false;
+    await withSchemaAdmin(database, (db) =>
+      dropSchema(db, database.schema, DEFAULT_LOCK_TIMEOUT_MS),
+    );
+    return true;
+  } finally {
+    await claim?.release();
+  }
 }
 
 /** True when the directory holds an app.db the engine has started. */

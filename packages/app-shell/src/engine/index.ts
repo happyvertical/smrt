@@ -128,8 +128,8 @@ export { METHOD_CODE_DENIED, type MethodCodeGate } from './method-code.ts';
 export { appPermissionSlugs } from './permissions.ts';
 export {
   checkUserAppBundle,
-  countUserAppRows,
   digestVersionHistory,
+  discardUnfilledImport,
   type ExportUserAppOptions,
   exportUserApp,
   hasUserAppDatabase,

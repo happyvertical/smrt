@@ -14,7 +14,7 @@ import { existsSync } from 'node:fs';
 import type { DatabaseInterface } from '@happyvertical/sql';
 import {
   checkUserAppBundle,
-  countUserAppRows,
+  discardUnfilledImport,
   EngineError,
   importUserApp,
   type PortableUserApp,
@@ -160,14 +160,25 @@ export async function receiveOwnUserApp(
     // cannot be read is left exactly as it is.
     try {
       const database = provider.config(schema);
-      const committed = await readAppMetaValue({
+      const fact = await readAppMetaValue({
         dataDir: live,
         database,
         key: RECEIVE_COMPLETION_KEY,
       });
-      if (committed === null) {
-        if ((await countUserAppRows({ dataDir: live, database })) === 0)
-          await provider.drop?.(schema);
+      let ours = false;
+      try {
+        ours = fact !== null && JSON.parse(fact).digest === bundle.digest;
+      } catch {
+        // not this bundle's fact
+      }
+      if (!ours) {
+        // The engine drops the schema only under the app's claim and only if it
+        // holds no completion fact and no row.
+        await discardUnfilledImport({
+          dataDir: live,
+          database,
+          key: RECEIVE_COMPLETION_KEY,
+        });
         if (added.length) await store.unstage(added, before);
       }
     } catch {

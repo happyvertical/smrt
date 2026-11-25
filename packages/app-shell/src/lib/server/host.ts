@@ -146,11 +146,6 @@ export interface ShellContext {
   appDatabase?: {
     config: (schema: string) => DatabaseConfig;
     provision: (schema: string) => Promise<void>;
-    /**
-     * Drop an app's schema (CASCADE). Only a receive whose import failed before
-     * committing a row, in a schema that held no row, calls it (#5193).
-     */
-    drop?: (schema: string) => Promise<void>;
   };
 }
 

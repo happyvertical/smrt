@@ -59,9 +59,6 @@ const flaky = (target: unknown): unknown =>
     },
   });
 const provider = {
-  drop: async (schema: string) => {
-    await pg.exec(`DROP SCHEMA IF EXISTS "${schema}" CASCADE`);
-  },
   config: (schema: string): DatabaseConfig => ({
     kind: 'pglite',
     schema,
