@@ -122,23 +122,35 @@ export async function receiveOwnUserApp(
   // tables (the engine's own migration), and the rows still go in; the other
   // order would let that open rewrite the schema's record to the empty app and
   // refuse every rerun.
+  const added: number[] = [];
+  const before = await store.current();
   if (!placed) {
     const have = new Set(existing.map((v) => v.version));
-    await store.commit(
-      incoming.filter((v) => !have.has(v.version)),
-      bundle.version,
-    );
+    const fresh = incoming.filter((v) => !have.has(v.version));
+    await store.commit(fresh, bundle.version);
+    added.push(...fresh.map((v) => v.version));
   }
-  const imported = await importUserApp({
-    dataDir: live,
-    database: provider.config(schema),
-    bundle,
-    tenantId: tenant,
-    completion: {
-      key: RECEIVE_COMPLETION_KEY,
-      value: JSON.stringify({ digest: bundle.digest, version: bundle.version }),
-    },
-  });
+  let imported: Awaited<ReturnType<typeof importUserApp>>;
+  try {
+    imported = await importUserApp({
+      dataDir: live,
+      database: provider.config(schema),
+      bundle,
+      tenantId: tenant,
+      completion: {
+        key: RECEIVE_COMPLETION_KEY,
+        value: JSON.stringify({
+          digest: bundle.digest,
+          version: bundle.version,
+        }),
+      },
+    });
+  } catch (error) {
+    // The engine refused or failed before committing any row: the history this
+    // call wrote goes back, so a refusal leaves the tenant as it was found.
+    if (added.length) await store.unstage(added, before).catch(() => {});
+    throw error;
+  }
 
   // The verification pass: tables (counts and digests), meta, then the history.
   const found = await verifyUserApp({

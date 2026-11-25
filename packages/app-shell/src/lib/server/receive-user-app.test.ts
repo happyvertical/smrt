@@ -326,6 +326,37 @@ describe('what the receiver refuses', () => {
     expect(await schemas()).toEqual(before);
   });
 
+  it('an engine refusal after the history was written takes the history back', async () => {
+    const mine = await desktopBundle('desk8@example.test');
+    const other = await desktopBundle('desk9@example.test');
+    const who = await tenantOf('refused@example.test');
+    await useShell(true);
+    const appId = await appIdOf(who);
+    const schema = appSchemaName(who.tenantId, appId);
+    const { live } = tenantAppDirs(h.dir, who.tenantId, appId);
+    await provider.provision(schema);
+    // The schema already holds another app's rows (not from this tenant's history).
+    await importUserApp({
+      dataDir: live,
+      database: provider.config(schema),
+      bundle: other,
+      tenantId: who.tenantId,
+    });
+    const history = () =>
+      runAs(who, async () =>
+        new ShellVersionStore(await getShellDb(), who.tenantId).list(),
+      );
+    await expect(runAs(who, () => receiveOwnUserApp(mine))).rejects.toThrow(
+      /different/,
+    );
+    expect(await history()).toEqual([]);
+    expect(
+      await runAs(who, async () =>
+        new ShellVersionStore(await getShellDb(), who.tenantId).current(),
+      ),
+    ).toBeNull();
+  });
+
   it('a bundle that does not match its own digests, a non-owner, and the desktop profile', async () => {
     const bundle = await desktopBundle('desk4@example.test');
     const who = await tenantOf('guard@example.test');

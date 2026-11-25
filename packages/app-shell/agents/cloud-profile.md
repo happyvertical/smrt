@@ -316,7 +316,9 @@ is not a caller here yet). v1:
   opened in the gap boots at the bundle's version on empty tables (the engine's
   own migration) and the rerun still fills it, but rows written there first make
   the rerun refuse (nothing is lost: the desktop file is kept). The same bundle
-  again is `already-received`. The tenant's open app is closed first (refused
+  again is `already-received`. An engine refusal or failure before any row is in
+  takes the history this call wrote back (`ShellVersionStore.unstage`), so it
+  leaves the tenant as found. The tenant's open app is closed first (refused
   while a call is inside it); do not use the app during a receive.
 - **Refuses** (named, nothing written) while the tenant has an open draft,
   waiting changes or an unsettled approval, as the SQLite migration does
