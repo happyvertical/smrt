@@ -162,6 +162,7 @@ export async function receiveOwnUserApp(
     // if it is not and the schema is empty, this call's own half-built tables
     // go too (the engine builds them before its row transaction). A state that
     // cannot be read is left exactly as it is.
+    let heldElsewhere = false;
     try {
       const database = provider.config(schema);
       const fact = await readAppMetaValue({
@@ -177,8 +178,7 @@ export async function receiveOwnUserApp(
       }
       if (!ours) {
         // The engine drops the schema only under the app's claim and only if it
-        // holds no completion fact and no row. A claim another host holds is
-        // not ours to take: the schema is theirs, and the history still goes back.
+        // holds no completion fact and no row.
         await discardUnfilledImport({
           dataDir: live,
           database,
@@ -186,8 +186,9 @@ export async function receiveOwnUserApp(
         }).catch((refused: unknown) => {
           if (!(refused instanceof EngineError && refused.code === 'refused'))
             throw refused;
+          heldElsewhere = true;
         });
-        if (added.length) await store.unstage(added, before);
+        if (!heldElsewhere && added.length) await store.unstage(added, before);
       }
     } catch {
       throw new EngineError(
@@ -195,6 +196,14 @@ export async function receiveOwnUserApp(
         'refused',
       );
     }
+    // Another host took the app after the check: it may already run on the
+    // history this call wrote, so the history stays, consistent with it, and a
+    // rerun (once that host is closed) converges.
+    if (heldElsewhere)
+      throw new EngineError(
+        'another host has this app open, so the receive was not completed; close it and retry the receive',
+        'refused',
+      );
     throw error;
   }
 

@@ -141,24 +141,24 @@ describe("another process holds the tenant's app", () => {
     expect(await history(who)).toEqual(before);
   });
 
-  it('a claim taken between the check and the import still gives the staged history back', async () => {
+  it('a claim taken between the check and the import keeps the history and a rerun converges', async () => {
     const bundle = await desktopBundle('deskr@example.test');
     const who = await tenantOf('raced@example.test');
     await useShell(true);
-    const before = await history(who);
     claim.importFails = true;
     claim.discard = () => {
       throw new EngineError('another host already runs the app', 'refused');
     };
     try {
       await expect(runAs(who, () => receiveOwnUserApp(bundle))).rejects.toThrow(
-        /another host/,
+        /another host has this app open/,
       );
     } finally {
       claim.importFails = false;
       claim.discard = null;
     }
-    expect(await history(who)).toEqual(before);
+    // A host that booted in the gap runs on this history: it stays.
+    expect((await history(who)).length).toBe(bundle.versions.length);
     const done = await runAs(who, () => receiveOwnUserApp(bundle));
     expect(done.verified).toBe(true);
   });
