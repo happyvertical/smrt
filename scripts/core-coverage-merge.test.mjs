@@ -242,7 +242,7 @@ test('end to end: a failing vitest merge fails', () => {
 // are absolute.
 test('real vitest output formats compare equal and a dropped file fails', () => {
   const pkgDir =
-    '/Users/will/Work/happyvertical/repos/smrt-worktrees/ci-wall-clock-5648/packages/core';
+    '/repo/packages/core';
   const listed = [
     'src/browser-field.test.ts',
     'src/byo-inference.test.ts',
