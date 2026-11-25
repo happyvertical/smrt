@@ -6,10 +6,11 @@ import {
   rmSync,
   writeFileSync,
 } from 'node:fs';
-import { tmpdir } from 'node:os';
+import { homedir, tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { describe, expect, it } from 'vitest';
+import setupTestHome from '../test-home.global-setup.js';
 import { installTestHome, testHomeEnvironment } from '../test-home.js';
 
 const names = [
@@ -24,6 +25,53 @@ const names = [
 ];
 
 describe('test home isolation', () => {
+  const rejectForwarding = () => {
+    throw new Error('Non-Vitest setup context must not receive a hook budget');
+  };
+
+  it.each([
+    { label: 'no argument', context: undefined },
+    { label: 'null context', context: null },
+    {
+      label: 'Playwright FullConfig',
+      context: { projects: [], workers: 1, version: '1.63.0' },
+    },
+    {
+      label: 'null config',
+      context: { config: null, provide: rejectForwarding },
+    },
+    {
+      label: 'missing budget',
+      context: { config: {}, provide: rejectForwarding },
+    },
+    {
+      label: 'invalid budget',
+      context: { config: { hookTimeout: '60000' }, provide: rejectForwarding },
+    },
+    { label: 'missing provide', context: { config: { hookTimeout: 60000 } } },
+  ])('shared setup supports $label and cleans up its isolated home', ({
+    context,
+  }) => {
+    const originalHome = homedir();
+    const dispose =
+      context === undefined ? setupTestHome() : setupTestHome(context);
+    const home = homedir();
+    try {
+      expect(home).not.toBe(originalHome);
+      expect(existsSync(home)).toBe(true);
+      expect(
+        execFileSync(process.execPath, ['-p', 'require("node:os").homedir()'], {
+          encoding: 'utf8',
+          env: { ...process.env, NODE_ENV: 'production' },
+        }).trim(),
+      ).toBe(home);
+    } finally {
+      dispose();
+    }
+    expect(homedir()).toBe(originalHome);
+    expect(existsSync(home)).toBe(false);
+  });
+
   it('keeps Windows profiles shallow while preserving isolation and cleanup', () => {
     const source = new URL('../test-home.ts', import.meta.url).href;
     const result = JSON.parse(
@@ -34,7 +82,7 @@ describe('test home isolation', () => {
           '-e',
           `
         import { realpathSync, existsSync } from 'node:fs';
-        import { tmpdir } from 'node:os';
+        import { homedir, tmpdir } from 'node:os';
         const parent = realpathSync(tmpdir());
         Object.defineProperty(process, 'platform', { value: 'win32' });
         const { installTestHome } = await import(${JSON.stringify(source)});
