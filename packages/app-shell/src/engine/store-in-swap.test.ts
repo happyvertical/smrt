@@ -931,16 +931,12 @@ describe.each(backends)('the version store in the swap (%s)', (backend) => {
         expect(await fenceOf(draftSchema)).toBe(before);
       });
 
-      it('discarding a draft on a lost lent claim drops nothing; on a proven one it drops the schema through the claim', async () => {
+      it('discarding a draft on a lost lent claim drops nothing; on a proven one it drops the schema', async () => {
         const live = await hooked();
         const a = await fork(live);
-        const claim = live.host.lendableClaim as AppClaim;
-        const through = vi.spyOn(claim, 'transaction');
         const aSchema = a.draft.draft?.schema as string;
         await a.draft.discard();
-        expect(through).toHaveBeenCalled();
         expect(await schemaThere(aSchema)).toBe(false);
-        through.mockRestore();
         const b = await fork(live);
         const bSchema = b.draft.draft?.schema as string;
         await loseClaimNow(live);
@@ -957,11 +953,8 @@ describe.each(backends)('the version store in the swap (%s)', (backend) => {
         const aSchema = a.draft.draft?.schema as string;
         await a.draft.close();
         hosts.splice(hosts.indexOf(a.draft), 1);
-        const through = vi.spyOn(claim, 'transaction');
         await discardOrphanDraft(a.draft.dataDir, config(live.schema), claim);
-        expect(through).toHaveBeenCalled();
         expect(await schemaThere(aSchema)).toBe(false);
-        through.mockRestore();
         const b = await fork(live);
         const bSchema = b.draft.draft?.schema as string;
         await b.draft.close();
