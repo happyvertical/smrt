@@ -278,11 +278,66 @@ for the one operation on the host thread; a PGlite uses the host's client).
   server the tests marked [S]: a terminated claim, a delayed commit after a
   takeover, the heartbeat, a claim lost right after it was taken) and
   `claim.test.ts`.
-  **Unfenced in #5470 part 1** (hosted PostgreSQL; follow-up: #5486):
-  - Change and undo store writes (`append`/`setCurrent` after a migration):
-    unconditional, on the store pool, no claim proof. A host that loses its
-    claim after its worker's migration can still record the version after the
-    next host has read the store.
+  **Change and undo store writes on the claim (#5486 slice 1; same host
+  profile).** A change or an undo step of a claimed host (S = the store's
+  current version, D = the data's `_app_meta.version`, g = the host's
+  generation) runs in three steps: **P0**, a claim transaction (proof, the
+  fence `FOR SHARE` = g, `commitIn(tx, [], p, p)` as a compare, and the
+  `change` key `{id, from, to, record, request}` in the live `_app_meta`);
+  **M**, the worker's migration, whose boot operation also writes `applied` =
+  the change id (`Migration.intent`, steps or not; it is one transaction with
+  the steps and D, committed before `ready`); **T_c**, a claim
+  transaction (proof, fence, `commitIn(tx, records, v, expected p)`, and
+  `change.committed = true`). `applied` stays (the last change's id) until the
+  next open removes it.
+  Outcome of T_c: *refused* (callback did not finish) or *answered* (the
+  server returned a SQLSTATE that is not class 08/57P) with the claim still
+  proven, so the migration is reversed under the same claim (a flagged boot of
+  the down steps, or a step-less boot of the old definition; it deletes
+  `applied` and records `reversed` = the id, so a reverse whose COMMIT reply
+  is lost still reopens as "never landed") and the error is
+  returned as today; *unknown* (the claim lost, or an error with no SQLSTATE
+  after the callback finished, such as the SDK's "rolled back the transaction
+  at commit") never reverses and never respawns an old worker: the host stops
+  its worker, ends its claim session (so nothing of it can still commit) and
+  throws a `ClaimLostError` with `details.outcome = 'unknown'`
+  (`isUnknownOutcome`). When the forward `ready` rejects with the claim
+  proven and the swap migrates, `notApplied` takes ownership (the bump waits
+  for any open migration transaction) and reads `applied` in that same
+  transaction: only "no" respawns the old worker, on the new generation. A
+  step-less swap never stopped the old worker, so it does not bump: it waits
+  for the failed boot's transaction (`awaitFenceHolders`) and reads `applied`;
+  anything but a definite "no" is unknown. A
+  claim lost while the new worker boots stops it instead of installing it.
+  **Boot** then settles what an earlier host left, in one claim transaction
+  after the publish reconcile (`reconcileChange`): `committed` -> applied;
+  `reversed` = the id -> never landed; `applied` = the id with S = from and D
+  = to -> roll the store forward (`commitIn`), emitting `changed` once the host
+  is open; no `applied` with D = S = from -> never landed; anything else -> a
+  notice. The keys are removed
+  either way (a fork or a snapshot copies them), except that a decided change
+  that names an approval keeps `change` (marked `decided`) until the shell
+  settles the approval and calls `acknowledgeRecovery`, so a failed open or a
+  stopped process in between cannot lose the outcome. The shell fails the open
+  when settling fails, and a change refuses to start while such a key stands. The first version (seed) is
+  also a claim transaction. `host.recoveredChange` names the approval
+  (`ExecuteOptions.request`) of a decided change; the shell settles it only
+  if it is still `executing` (`settleRecoveredChange`). The claim session sets
+  `idle_session_timeout` = max(30 s, 6 x heartbeat) (0 with no heartbeat), so
+  a frozen host's session cannot hold a half-answered COMMIT forever.
+  Each step of an `undoTo` journals `part` {index, of}; a recovered step
+  settles its approval as approved only when it is the last step that landed,
+  and otherwise as failed ("part of this undo took effect"). The shell shows
+  an `executing` approval as `unknown` ("Outcome unknown", a view status only;
+  nothing stores it) unless this process is applying it right now, which still
+  reads `approved` as before; `decideApproval` leaves it `executing` on an
+  unknown outcome and returns `{status: 'unknown', error}`.
+  Residual: a change interrupted before P0 leaves nothing; a part-1 host that
+  opens after an interrupted change boots the old version on the new tables
+  (drain part-1 hosts before this ships); the `ready`-rejects-after-commit
+  arm of `notApplied` is covered by reasoning (the boot operation commits
+  before `ready`), not by a test that can force a lost COMMIT reply.
+  **Still unfenced** (hosted PostgreSQL; slice 2 of #5486):
   - Every `DraftVersionStore` write, and a draft host's boot, ownership bump
     and schema drops (admin connections, no claim). The draft's own generation
     still guards its schema.

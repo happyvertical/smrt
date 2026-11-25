@@ -356,6 +356,14 @@ export async function claimApp(
         `another host already runs the app in schema ${config.schema}; one host per app. Stop it, or point this host at its own schema.`,
         'refused',
       );
+    // #5486: the server ends a session that goes quiet (the heartbeat speaks
+    // every `heartbeatMs`), so a frozen host's ghost session cannot hold the
+    // lock or a half-answered COMMIT forever. 0 (no heartbeat) leaves it off.
+    // PostgreSQL 14 is the floor (docs/content/postgres-permissions.md).
+    const beat = options?.heartbeatMs ?? 5000;
+    await raw.query(`SELECT set_config('idle_session_timeout', ?, false)`, [
+      `${beat > 0 ? Math.max(30_000, 6 * beat) : 0}ms`,
+    ]);
   } catch (e) {
     await raw.close?.().catch(() => {});
     throw e;

@@ -40,7 +40,7 @@ const uid = $derived(`ap-${approval.id}`);
 const badge = $derived(
   approval.status === 'approved'
     ? 'smrt-app-shell__badge-ok'
-    : approval.status === 'pending'
+    : approval.status === 'pending' || approval.status === 'unknown'
       ? 'smrt-app-shell__badge-warn'
       : 'smrt-app-shell__badge-bad',
 );
