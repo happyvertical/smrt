@@ -25,6 +25,7 @@ import {
   openCloudShell,
 } from '$lib/server/cloud-test-support';
 import { installShellInference } from '$lib/server/inference';
+import { hideDeploymentRows } from '$lib/server/inference-hosted-view';
 import { runAs } from '$lib/server/owner';
 import { actions, load } from './+page.server';
 
@@ -243,6 +244,51 @@ describe('cloud: the tenant may choose what its allow-list names', () => {
       page as unknown as { defaultTier: { tenantAllowList?: unknown } }
     ).defaultTier;
     expect(d && 'tenantAllowList' in d).toBe(true);
+  });
+});
+
+describe('cloud: alias and fusion choices the allow-list admits', () => {
+  it('lists the admitted names only, with none of their definitions', () => {
+    const base = {
+      tenantId: 't',
+      canEdit: true,
+      canPersonalize: false,
+      defaults: {},
+      providers: [],
+      tiers: [
+        {
+          tier: 'good',
+          effectiveLabel: 'x',
+          tenantAllowList: ['alias:shared', 'fusion:pairA'],
+        },
+      ],
+      defaultTier: null,
+      aliases: [
+        {
+          name: 'shared',
+          source: 'app',
+          candidates: [{ provider: 'openai', model: 'operator-secret-model' }],
+        },
+        { name: 'private', source: 'app', candidates: [{ model: 'other' }] },
+      ],
+      fusions: [
+        { name: 'pairA', source: 'app', definition: { seats: ['sk-seat'] } },
+        { name: 'pairB', source: 'app', definition: { seats: ['x'] } },
+      ],
+      transcripts: null,
+      usage: null,
+    };
+    const page = hideDeploymentRows(base as never);
+    expect(page.aliases.map((a) => a.name)).toEqual(['shared']);
+    expect(page.fusions.map((f) => f.name)).toEqual(['pairA']);
+    const text = JSON.stringify(page);
+    for (const secret of [
+      'operator-secret-model',
+      'sk-seat',
+      'private',
+      'pairB',
+    ])
+      expect(text, secret).not.toContain(secret);
   });
 });
 

@@ -11,10 +11,24 @@
 // the deployment.
 import type { InferenceSettingsPageData } from '@happyvertical/smrt-inference/server';
 
+/** The panel's own allow-list matching (exact, trailing `*`, or `*`); display only. */
+const admits = (list: readonly string[], ref: string) =>
+  list.some((p) =>
+    p === '*'
+      ? true
+      : p.endsWith('*')
+        ? ref.startsWith(p.slice(0, -1))
+        : p === ref,
+  );
+
 /** What an owner who does not own the deployment may see of the settings page. */
 export function hideDeploymentRows(
   data: InferenceSettingsPageData,
 ): InferenceSettingsPageData {
+  const admitted = [
+    ...data.tiers.flatMap((t) => t.tenantAllowList ?? []),
+    ...(data.defaultTier?.tenantAllowList ?? []),
+  ];
   return {
     ...data,
     // Only the tenant's own override stays; what the operator set (the app
@@ -53,8 +67,16 @@ export function hideDeploymentRows(
           inheritedTier: null,
         }
       : data.defaultTier,
-    aliases: [],
-    fusions: [],
+    // The panel enables an alias or fusion choice only when it can list that
+    // entry, so the NAMES the tenant's allow-lists admit are projected, and
+    // nothing of their definitions (candidates, base URLs, key variable names,
+    // seat prompts).
+    aliases: data.aliases
+      .filter((a) => admits(admitted, `alias:${a.name}`))
+      .map((a) => ({ name: a.name, source: a.source, candidates: [] })),
+    fusions: data.fusions
+      .filter((f) => admits(admitted, `fusion:${f.name}`))
+      .map((f) => ({ name: f.name, source: f.source, definition: {} })),
     transcripts: null,
   } as unknown as InferenceSettingsPageData;
 }

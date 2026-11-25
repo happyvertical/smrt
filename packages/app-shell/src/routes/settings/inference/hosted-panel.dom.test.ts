@@ -75,7 +75,6 @@ it('an allowed override is selectable and the operator’s value is not on the p
   expect(modelOption()).not.toBeNull();
   expect(modelOption()?.disabled).toBe(false);
   expect(document.body.textContent).not.toContain('operator-model-x');
-  expect(document.body.textContent).not.toContain('operatorchain');
 });
 
 it('with nothing allowed the Model choice stays disabled', async () => {
