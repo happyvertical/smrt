@@ -558,7 +558,8 @@ async function counts(db: PortableDb) {
   let rows = 0;
   for (const n of names) rows += await db.count(n);
   return {
-    recorded: meta !== null && validate(meta.definition).length === 0,
+    recorded:
+      meta !== null && validate(meta.definition, meta.definition).length === 0,
     version: meta?.version ?? null,
     tables: names.length,
     rows,
@@ -577,7 +578,9 @@ function problemsIn(bundle: PortableUserApp): string[] {
     !Number.isSafeInteger(bundle.version)
   )
     return ['the user app section is incomplete'];
-  const defErrors = validate(bundle.definition);
+  // A persisted definition is legacy as a whole, as at boot: a method whose
+  // name is reserved now (#5194) keeps loading, inert.
+  const defErrors = validate(bundle.definition, bundle.definition);
   if (defErrors.length) problems.push(`invalid definition: ${defErrors[0]}`);
   const names = new Set<string>();
   for (const t of bundle.tables) {

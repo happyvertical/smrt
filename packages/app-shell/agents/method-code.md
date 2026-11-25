@@ -41,6 +41,19 @@ shell `src/lib/server/method-code.ts` (`installMethodCodeGate`,
   would call the framework member); it stays runnable through `runMethod` (and
   is gated there). Otherwise stored code could run on ordinary record ops
   with no run-time check.
+- **Reserved names (#5194).** `validate(def, stored?)` refuses a method added or
+  renamed to a reserved name, with an error naming the conflict. Reserved is
+  `reservedMethodReason` (definition.ts), the one rule the runtime also uses: a
+  CRUD action (`CRUD_ACTIONS`: `list`, `get`, `create`, `update`, `delete`,
+  which the generated `<model>_<action>` tools and routes own) or a framework
+  member (hook names, any `SmrtObject` or recipe-parent member). `stored` is
+  the definition already in place: a method it has keeps loading, so
+  `applyChange`, `assertValid` and import pass the current definition, and the
+  boot, recovery and draft-chain checks pass the stored definition itself.
+  Such a stored method stays inert: never installed, no generated tool or
+  route, and `methodCodeTarget` never reads `<model>_list` or `/api/<route>/list`
+  as the method, so a tenant without `app.methods` still gets the CRUD list.
+  It remains runnable (and gated) through `runMethod` only.
 - **Undo.** `analyseUndo` applies the same rule as a change: an undo that
   brings back code the current definition lacks needs the key.
 - **Fail closed.** A gate that throws (stores down, check not installed) refuses
