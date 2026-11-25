@@ -43,7 +43,10 @@ import { prepareShellSchema } from './schema.ts';
 
 export const runtime = createSmrtSvelteKitRuntime({
   providerReadiness: createProviderReadinessProbe,
-  backgroundJobs: true,
+  // Not in an operator command (`smrt-app-shell migrate-to-postgres`, #5193):
+  // that one-shot process runs beside the server and must not start a second
+  // job runner.
+  backgroundJobs: process.env.SMRT_APP_SHELL_OPERATOR !== '1',
   // Idempotent; creates the shell's tables (and the users/tenancy/profiles
   // tables) on an empty data directory. See schema.ts for the pending hook.
   prepareDatabase: async (db, context) => {

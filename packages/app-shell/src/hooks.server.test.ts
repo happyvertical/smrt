@@ -105,7 +105,9 @@ it('hands the ordered drain to the entries once the runtime is ready, not under 
     endStreams: mocks.closeStreams,
     stopWork: mocks.stopImports,
   });
-  expect(mocks.install).toHaveBeenCalledWith(drainFn);
+  expect(mocks.install).toHaveBeenCalledWith(drainFn, {
+    run: expect.any(Function),
+  });
   mocks.install.mockClear();
   mocks.env.dev = true;
   await init();
