@@ -9,7 +9,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterAll, describe, expect, it, vi } from 'vitest';
 import { hostOwner } from '../test/engine-principal.ts';
-import { type AppDefinition, EMPTY_APP } from './definition.ts';
+import { type AppDefinition, EMPTY_APP, validate } from './definition.ts';
 import {
   AppHost,
   type Command,
@@ -78,6 +78,32 @@ async function seeded(withMethod = true) {
       allowed = v;
     },
   };
+}
+
+/**
+ * Store a version whose Order model carries `methods` and reopen the app on it
+ * (what an app saved before a name was reserved looks like), under `gate`.
+ */
+async function reopenWith(
+  w: Awaited<ReturnType<typeof seeded>>,
+  methods: Record<string, { description: string; code: string }>,
+  gate: (tenantId: string) => boolean | Promise<boolean>,
+) {
+  await w.host.close();
+  hosts.splice(hosts.indexOf(w.host), 1);
+  const cur = (await w.store.get((await w.store.current()) as number))!;
+  const definition = structuredClone(cur.definition);
+  definition.models.Order.methods = methods;
+  await w.store.append({
+    ...cur,
+    version: cur.version + 1,
+    parent: cur.version,
+    summary: 'legacy',
+    definition,
+    migration: null,
+  });
+  await w.store.setCurrent(cur.version + 1);
+  return open(gate, w.store, w.dir);
 }
 
 const denied = (e: unknown) =>
@@ -215,18 +241,18 @@ describe('method code without the entitlement', () => {
 });
 
 describe('code that is not reached through a run', () => {
-  it('a method named like a framework hook never runs on a record load or save', async () => {
-    const w = await seeded(false);
-    await w.run({
-      type: 'addMethod',
-      model: 'Order',
-      name: 'initialize',
-      method: {
-        description: 'hook',
-        code: `app.create('Order', { title: 'hijack' }); return 1;`,
+  it('a stored method named like a framework hook never runs on a record load or save', async () => {
+    const w0 = await seeded(false);
+    const w = await reopenWith(
+      w0,
+      {
+        initialize: {
+          description: 'hook',
+          code: `app.create('Order', { title: 'hijack' }); return 1;`,
+        },
       },
-    });
-    w.setAllowed(false);
+      () => false,
+    );
     const owner = hostOwner(w.host);
     await w.host.create(owner, 'Order', { title: 'a', qty: 1 });
     const rows = await w.host.list(owner, 'Order');
@@ -380,6 +406,114 @@ describe('drafts and publish', () => {
     );
     const ok = await w.host.previewPublish(draft);
     expect(ok.methods.map((m) => m.change)).toEqual(['unchanged']);
+  });
+});
+
+describe('reserved method names (#5194)', () => {
+  const stamp = (code = 'return 1;') => ({ description: 'x', code });
+  const add = (w: Awaited<ReturnType<typeof seeded>>, name: string) =>
+    w
+      .run({ type: 'addMethod', model: 'Order', name, method: stamp() })
+      .catch((e) => e);
+
+  it('refuses a new method named after a CRUD action, naming the conflict', async () => {
+    const w = await seeded(false);
+    for (const name of ['list', 'get', 'create', 'update', 'delete']) {
+      const e = await add(w, name);
+      expect(e).toBeInstanceOf(EngineError);
+      expect(e.message).toMatch(new RegExp(`Order\\.${name}\\(\\): '${name}'`));
+    }
+    expect((await add(w, 'list')).message).toMatch(/own actions/);
+    expect(w.host.def.models.Order.methods ?? {}).toEqual({});
+  });
+
+  it('refuses a new method named after a framework member', async () => {
+    const w = await seeded(false);
+    for (const name of ['initialize', 'validateBeforeSave']) {
+      const e = await add(w, name);
+      expect(e).toBeInstanceOf(EngineError);
+      expect(e.message).toMatch(/name the framework itself uses/);
+    }
+  });
+
+  it('refuses a template that carries a reserved method name', () => {
+    const bad = structuredClone(EMPTY_APP) as AppDefinition;
+    bad.models.Order = {
+      label: 'Order',
+      fields: { title: { type: 'text' } },
+      methods: { list: stamp() },
+    } as never;
+    expect(validate(bad).join('\n')).toMatch(/Order\.list\(\): 'list'/);
+    // The same definition already stored keeps validating.
+    expect(validate(bad, bad)).toEqual([]);
+    // A rename is a new name: the old one stays, the new reserved one is refused.
+    const renamed = structuredClone(bad);
+    renamed.models.Order.methods = { get: stamp() };
+    expect(validate(renamed, bad).join('\n')).toMatch(/Order\.get\(\)/);
+  });
+
+  it('normal names still work, entitled or not', async () => {
+    const w = await seeded(false);
+    await w.run({
+      type: 'addMethod',
+      model: 'Order',
+      name: 'archive',
+      method: stamp(),
+    });
+    expect(w.host.def.models.Order.methods?.archive).toBeDefined();
+  });
+
+  it('a stored definition with one still boots; <model>_list is the CRUD list without app.methods', async () => {
+    const w = await seeded(false);
+    await w.host.create(hostOwner(w.host), 'Order', { title: 'kept', qty: 1 });
+    const hijack = stamp(`app.create('Order', { title: 'hijack' }); return 1;`);
+    const again = await reopenWith(
+      w,
+      { list: hijack, initialize: hijack },
+      () => false,
+    );
+    const o = hostOwner(again.host);
+    expect(Object.keys(again.host.def.models.Order.methods ?? {})).toEqual([
+      'list',
+      'initialize',
+    ]);
+    const res = await again.host.callAppTool(o, 'order_list', {});
+    expect(JSON.stringify(res)).toContain('kept');
+    expect(JSON.stringify(res)).not.toContain('hijack');
+    expect(await again.host.list(o, 'Order')).toHaveLength(1);
+    // The method itself is still refused where it can run.
+    expect(
+      denied(await again.host.runMethod(o, 'Order', 'list').catch((e) => e)),
+    ).toBe(true);
+    // Unrelated changes keep working on an app that carries them.
+    await again.run({
+      type: 'addField',
+      model: 'Order',
+      field: 'note',
+      definition: { type: 'text' },
+    } as Command);
+    expect(again.host.def.models.Order.fields.note).toBeDefined();
+  });
+
+  it('methodCodeTarget never reads a CRUD tool or route as a method', () => {
+    const d = {
+      ...EMPTY_APP,
+      models: {
+        Order: {
+          label: 'Order',
+          fields: { title: { type: 'text' } },
+          methods: { list: stamp(), get: stamp() },
+        },
+      },
+    } as AppDefinition;
+    expect(methodCodeTarget(d, 'callTool', ['order_list', {}])).toBeNull();
+    expect(
+      methodCodeTarget(d, 'rest', [{ method: 'GET', url: '/api/orders/get' }]),
+    ).toBeNull();
+    expect(methodCodeTarget(d, 'runMethod', ['Order', 'list'])).toEqual({
+      model: 'Order',
+      method: 'list',
+    });
   });
 });
 

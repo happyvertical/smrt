@@ -5,6 +5,7 @@
 
 import {
   type AppDefinition,
+  CRUD_ACTIONS,
   type ModelDef,
   tableFor,
   toolNamesFor,
@@ -27,14 +28,7 @@ export const slugFor = (def: AppDefinition, model: string, action: string) =>
 export function appPermissionSlugs(def: AppDefinition): string[] {
   const out: string[] = [];
   for (const [m, md] of Object.entries(def.models))
-    for (const a of [
-      'list',
-      'get',
-      'create',
-      'update',
-      'delete',
-      ...Object.keys(md.methods ?? {}),
-    ])
+    for (const a of [...CRUD_ACTIONS, ...Object.keys(md.methods ?? {})])
       out.push(`${collectionOf(m, md)}.${a}`);
   return out;
 }
@@ -48,14 +42,7 @@ export function toolTarget(
     const names = toolNamesFor(m, md);
     const i = names.indexOf(name);
     if (i < 0) continue;
-    const actions = [
-      'list',
-      'get',
-      'create',
-      'update',
-      'delete',
-      ...Object.keys(md.methods ?? {}),
-    ];
+    const actions = [...CRUD_ACTIONS, ...Object.keys(md.methods ?? {})];
     return { model: m, action: actions[i] };
   }
   return null;

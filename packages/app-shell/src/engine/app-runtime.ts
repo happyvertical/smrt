@@ -10,7 +10,6 @@ import {
   ObjectRegistry,
   planRuntimeModelDDL,
   registerRuntimeModel,
-  SmrtObject,
   withCallerOwnedDatabaseTransaction,
   withEmbeddedWriteTransaction,
 } from '@happyvertical/smrt-core';
@@ -56,6 +55,7 @@ import {
   type ModelDef,
   RECIPES,
   recipeModelFor,
+  reservedMethodReason,
   restRouteAllowed,
   routeFor,
   type Step,
@@ -444,17 +444,11 @@ export class AppRuntime {
       // A method named like a member the framework itself calls (`initialize`,
       // `validateBeforeSave`, ...) would replace it and run sandbox code on
       // every record load or save, outside any run-time entitlement check
-      // (#5194). It stays runnable through `runMethod`; it never shadows.
+      // (#5194). A CRUD action name (`list`, ...) is the same: it must not take
+      // over the model's own tool. It stays runnable through `runMethod`.
       const parentClass = recipeModelFor(model, md)?.parent;
       const inherited = (name: string) =>
-        name in SmrtObject.prototype ||
-        (!!parentClass &&
-          name in
-            ((
-              ObjectRegistry.getClass(parentClass)?.constructor as
-                | { prototype: object }
-                | undefined
-            )?.prototype ?? {}));
+        reservedMethodReason(name, parentClass) !== null;
       for (const name of Object.keys(md.methods ?? {}))
         if (!inherited(name))
           methods[name] = function (this: { id?: string }, params?: Row) {
