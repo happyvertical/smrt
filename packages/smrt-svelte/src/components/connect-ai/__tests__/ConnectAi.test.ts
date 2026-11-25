@@ -481,3 +481,50 @@ it.each([
     ).toBeNull(),
   );
 });
+
+describe.each([
+  undefined,
+  'compact',
+] as const)('a hosted deployment in %s presentation', (presentation) => {
+  it('offers only the owner’s own API key: no ChatGPT row, no ChatGPT preview note, no CLI', async () => {
+    const info: ConnectAiState = {
+      engine: 'api',
+      configured: false,
+      apiReady: false,
+      hosted: true,
+      chatgpt: { signedIn: false, signingIn: false },
+      tools: [],
+    };
+    const { container } = render(ConnectAi, {
+      client: client(info),
+      presentation,
+      apiKeyHref: '/settings/inference',
+      initialState: info,
+    });
+    await waitFor(() =>
+      expect(
+        container.querySelector(
+          'a[href="/settings/inference"], [href="/settings/inference"]',
+        ),
+      ).not.toBeNull(),
+    );
+    const text = container.textContent ?? '';
+    expect(text).not.toMatch(/ChatGPT/);
+    expect(text).not.toMatch(/Claude Code|Codex/);
+    expect(container.querySelector('#chatgpt')).toBeNull();
+    expect(container.querySelector('a[href*="openai.com/siwc"]')).toBeNull();
+  });
+
+  it('still shows ChatGPT on the desktop (hosted unset)', async () => {
+    const info = state();
+    const { container } = render(ConnectAi, {
+      client: client(info),
+      presentation,
+      apiKeyHref: '/settings/inference',
+      initialState: info,
+    });
+    await waitFor(() =>
+      expect(container.querySelector('#chatgpt')).not.toBeNull(),
+    );
+  });
+});

@@ -85,6 +85,23 @@ beforeAll(async () => {
     target: { provider: 'openai', model: 'gpt-4o-mini' },
   });
   // Tenants bind a tier only to what the operator's allow-list names.
+  await operator.setAlias({
+    name: 'operatorchain',
+    alias: {
+      candidates: [{ provider: 'openai', model: 'operator-secret-model' }],
+    },
+  });
+  await operator.setFusion({
+    name: 'operatorfusion',
+    definition: {
+      mode: 'pair',
+      seats: [
+        { name: 'a', prompt: 'operator.prompt.a', target: 'good' },
+        { name: 'b', prompt: 'operator.prompt.b', target: 'good' },
+        { name: 'c', prompt: 'operator.prompt.c', target: 'great' },
+      ],
+    },
+  });
   await operator.setTenantAllowList({
     binding: 'tier:good',
     allowList: ['model:openai/gpt-4.1'],
@@ -172,6 +189,39 @@ describe('cloud: the assistant runs only on the owner’s own key', () => {
     expect(await resolveAssistantOptions(h.a, config)).toMatchObject({
       apiKey: ANN_KEY,
     });
+  });
+});
+
+describe('cloud: the operator’s deployment-wide rows are not shown', () => {
+  it('shows no app tier target, alias, fusion or transcript setting, only the tenant’s own', async () => {
+    const page = await loadAs(h.a);
+    const text = JSON.stringify(page);
+    for (const secret of [
+      'gpt-4o-mini',
+      'operator-secret-model',
+      'operatorchain',
+      'operatorfusion',
+      'operator.prompt',
+    ])
+      expect(text, secret).not.toContain(secret);
+    expect(page.aliases).toEqual([]);
+    expect((page as unknown as { fusions: unknown[] }).fusions).toEqual([]);
+    expect(
+      (page as unknown as { transcripts: unknown }).transcripts,
+    ).toBeNull();
+    for (const row of page.tiers) expect(row.appTarget).toBeNull();
+    expect((page as unknown as { hosted: boolean }).hosted).toBe(true);
+  });
+
+  it('keeps the tenant’s own override visible and the other tenant’s hidden', async () => {
+    await post('saveTier', h.a, {
+      tier: 'good',
+      scope: 'tenant',
+      target: { provider: 'openai', model: 'gpt-4.1' },
+    });
+    const ann = (await loadAs(h.a)).tiers.find((t) => t.tier === 'good');
+    expect(JSON.stringify(ann?.tenantTarget)).toContain('gpt-4.1');
+    expect(JSON.stringify(await loadAs(h.b))).not.toContain('gpt-4.1');
   });
 });
 

@@ -138,6 +138,21 @@ Tests: `routes/settings/inference/cloud-inference.test.ts`,
 `change-feed` cases in `cloud-change-feed.test.ts`, and the local-profile
 case in `inference-settings.test.ts`.
 
+**Settings page.** `routes/settings/inference/+page.server.ts` returns, in cloud,
+`hideDeploymentRows(page)` (`inference-hosted-view.ts`): the operator's tier
+targets, aliases, fusions and the app-wide transcript setting are removed (the
+owner's interim decision: hide, not show read-only); what stays is the tenant's
+own tier overrides and default tier, key state and usage. The panel runs with
+`scope="tenant"` and no app edit controls. Test: `cloud-inference.test.ts` ("the
+operator's deployment-wide rows are not shown").
+
+**Welcome and Connect AI.** The state route already answers `hosted: true` in
+cloud; `ConnectAiState.hosted` (smrt-svelte) makes the shared component drop the
+ChatGPT row, the CLI rows and the ChatGPT preview note, leaving the owner's own
+API key. The welcome page (and Settings > Assistant) ask the profile (`+page.server.ts`)
+and, hosted, say "your own API key" and offer no spreadsheet start (workbook
+import is refused in cloud).
+
 ## Accounts
 
 `accounts.ts`: `ownerTenantFor(db, user)` is the whole sign-up. Idempotent,
@@ -291,7 +306,7 @@ engine.md "SQLite to PostgreSQL in place") has moved it. v1 decisions:
 
 - Supplying a hosted identity provider's config is the operator's
   (`packages.users.auth.oidc` in smrt.config; the shell only reads it): no live
-  provider was exercised. The welcome/connect-AI UI still shows desktop options.
+  provider was exercised.
 - `required` mode and RLS policies for the shell tables (above); the
   `database-rls` request transaction is not used by the shell's long-lived stores.
 - Hosted inference: gate, entitlement and provisioning landed (#5194, `hosted-inference.md`); the caller-aware parts wait for #5188/#5189/#5375. Workbook import in cloud, a statement timeout per
