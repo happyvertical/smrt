@@ -735,10 +735,10 @@ function findWorkspaceRoot(startDir: string): string | null {
 
 function resolveInstalledPackageJsonPath(
   packageName: string,
-  startDir = process.cwd(),
+  startDir?: string,
 ): string | null {
   if (!nodeHost()) return null;
-  let currentDir = startDir;
+  let currentDir = startDir ?? process.cwd();
 
   while (true) {
     const packageJsonPath = join(
@@ -763,10 +763,10 @@ function resolveInstalledPackageJsonPath(
 
 function resolveWorkspacePackageJsonPath(
   packageName: string,
-  startDir = process.cwd(),
+  startDir?: string,
 ): string | null {
   if (!nodeHost()) return null;
-  const workspaceRoot = findWorkspaceRoot(startDir);
+  const workspaceRoot = findWorkspaceRoot(startDir ?? process.cwd());
   if (!workspaceRoot) {
     return null;
   }
