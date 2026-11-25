@@ -44,18 +44,23 @@ import {
 } from './db/index.ts';
 import {
   acquireOwnership,
+  awaitFenceHolders,
   DEFAULT_LOCK_TIMEOUT_MS,
+  deleteMeta,
   dropSchema,
   forkSchema,
+  holdFence,
   listSideSchemas,
   markPublished,
   readDumpHeader,
+  readMeta,
   readPublished,
   restoreDump,
   revokeSchema,
   type SqlDatabase,
   schemaExists,
   swapSchemas,
+  writeMeta,
 } from './db/postgres-copy.ts';
 import { assertSchemaName, isSideSchema } from './db/schema-name.ts';
 import {
@@ -440,6 +445,53 @@ const MAX_REVIEW_CODE_CHARS = 200_000;
 const isObj = (v: unknown): v is Row =>
   !!v && typeof v === 'object' && !Array.isArray(v);
 
+/** `_app_meta` keys of a claimed host's change journal (#5486). */
+const CHANGE_KEY = 'change';
+const APPLIED_KEY = 'applied';
+const REVERSED_KEY = 'reversed';
+
+/**
+ * What a claimed host writes before it changes the app (#5486): which change
+ * this is, so a reopen can finish it (roll the store forward) or say it never
+ * landed. `committed` is set by the change's own store transaction.
+ */
+interface ChangeKey {
+  id: string;
+  from: number;
+  to: number;
+  /** The forward change's version record; null for an undo step. */
+  record: VersionRecord | null;
+  /** The approval that asked for it, when it ran under one. */
+  request: string | null;
+  /** Step `index` of `of` when the change is one step of an `undoTo`. */
+  part?: { index: number; of: number };
+  committed?: boolean;
+  /**
+   * What a reopen decided, kept (with the key) until the shell has settled the
+   * approval that asked for it (`acknowledgeRecovery`): a failed open or a
+   * stopped process in between must not lose the outcome.
+   */
+  decided?: 'applied' | 'not-applied';
+}
+
+/** What the reopen decided about the change an earlier host left in flight. */
+export interface RecoveredChange {
+  id: string;
+  request: string | null;
+  outcome: 'applied' | 'not-applied';
+  /** One step of a longer undo: the outcome says nothing about the whole of it. */
+  partial: boolean;
+}
+
+const UNKNOWN_CHANGE =
+  'this host lost its claim on the app while a change was running, so whether the change took effect is unknown; reopen the app and check before repeating it.';
+
+/** Did the server itself answer (a SQLSTATE that is not a connection failure)? */
+function serverAnswered(e: unknown): boolean {
+  const code = String((e as { code?: unknown } | undefined)?.code ?? '');
+  return /^[0-9A-Z]{5}$/.test(code) && !/^(08|57P)/.test(code);
+}
+
 export class AppHost extends EventEmitter {
   def: AppDefinition = EMPTY_APP;
   version = 0;
@@ -460,6 +512,14 @@ export class AppHost extends EventEmitter {
   /** PostgreSQL server: the claim this live host's swap and store commits run on (#5470). */
   private claim?: AppClaim;
   private claimLost: Error | null = null;
+  /** The approval a running command was asked under (the queue runs one at a time; #5486). */
+  private currentRequest: string | null = null;
+  /** The step of an `undoTo` that is running (journaled with its change). */
+  private currentPart: { index: number; of: number } | null = null;
+  /** What boot decided about a change an earlier host left in flight; the shell settles its approval. */
+  recoveredChange: RecoveredChange | null = null;
+  /** `changed`, emitted once the host is open and its owner can listen (a rolled-forward change). */
+  private recoveredEvent: { version: number; summary: string } | null = null;
   private readonly allowUnfencedStore: boolean;
   /**
    * What the chosen database cannot do yet, said plainly, for the shell to
@@ -583,6 +643,9 @@ export class AppHost extends EventEmitter {
     try {
       const host = new AppHost(dataDir, opts, database);
       await host.boot();
+      const recovered = host.recoveredEvent;
+      host.recoveredEvent = null;
+      if (recovered) setImmediate(() => host.emit('changed', recovered));
       return host;
     } catch (e) {
       await claim?.release();
@@ -620,11 +683,13 @@ export class AppHost extends EventEmitter {
     }
     this.recovery = reconcilePublish(this.dataDir, cur);
     if (atomicOutcome) this.recovery = atomicOutcome;
+    // A change an earlier host left between its migration and its store write.
+    if (this.atomic) cur = await this.reconcileChange(cur);
     // A crash outside the journal's window (a rehearsal or a restore that
     // never got to swap) leaves a side schema: drop the app's own.
     if (this.onServer && !this.draft) await this.sweepSideSchemas();
     if (cur === null) {
-      await this.store.append({
+      const seed: VersionRecord = {
         version: 0,
         parent: null,
         author: 'engine',
@@ -632,8 +697,18 @@ export class AppHost extends EventEmitter {
         definition: EMPTY_APP,
         migration: null,
         createdAt: now(),
-      });
-      await this.store.setCurrent(0);
+      };
+      if (this.atomic) {
+        // The first version is a store write like any other: under the claim.
+        const schema = schemaOf(this.database);
+        await (this.claim as AppClaim).transaction(async (tx) => {
+          await holdFence(tx, schema, this.fence as number);
+          await this.store.commitIn?.(tx, [seed], 0, null);
+        });
+      } else {
+        await this.store.append(seed);
+        await this.store.setCurrent(0);
+      }
       cur = 0;
     }
     const rec = await this.store.get(cur);
@@ -656,6 +731,128 @@ export class AppHost extends EventEmitter {
     this.version = cur;
     this.app = this.spawn(this.def, this.version);
     await this.app.ready;
+  }
+
+  /**
+   * Settle the change an earlier host of this app left in flight (#5486), by
+   * its journal alone, in one claim transaction. Returns the store's current
+   * version after it.
+   * - `committed`: it landed. Nothing to write.
+   * - `applied` is its id, and the store and the data's version are where the
+   *   change started and ended: its migration committed but the store write
+   *   never did, so the store rolls forward.
+   * - no `applied` and the data and the store are both at its start: it never
+   *   landed.
+   * - anything else: left as it is, with a notice.
+   * The journal is removed either way (a fork or a snapshot copies it).
+   */
+  private async reconcileChange(cur: number | null): Promise<number | null> {
+    const schema = schemaOf(this.database);
+    const store = this.store;
+    let current = cur;
+    let outcome: 'applied' | 'not-applied' | 'undecided' | null = null;
+    let found: ChangeKey | null = null;
+    let forward = false;
+    await (this.claim as AppClaim).transaction(async (tx) => {
+      await holdFence(tx, schema, this.fence as number);
+      const meta = await readMeta(tx, schema, [
+        CHANGE_KEY,
+        APPLIED_KEY,
+        REVERSED_KEY,
+        'version',
+      ]);
+      if (meta[CHANGE_KEY] === undefined) {
+        await deleteMeta(tx, schema, [APPLIED_KEY, REVERSED_KEY]);
+        return;
+      }
+      try {
+        found = JSON.parse(meta[CHANGE_KEY]) as ChangeKey;
+      } catch {
+        found = null;
+      }
+      const data = meta.version === undefined ? null : Number(meta.version);
+      if (!found) outcome = 'undecided';
+      else if (found.decided) outcome = found.decided;
+      else if (found.committed) outcome = 'applied';
+      else if (meta[REVERSED_KEY] === found.id) outcome = 'not-applied';
+      else if (
+        meta[APPLIED_KEY] === found.id &&
+        found.from === cur &&
+        data === found.to
+      ) {
+        await store.commitIn?.(
+          tx,
+          found.record ? [found.record] : [],
+          found.to,
+          found.from,
+        );
+        current = found.to;
+        forward = true;
+        outcome = 'applied';
+      } else if (
+        meta[APPLIED_KEY] !== found.id &&
+        data === found.from &&
+        cur === found.from
+      )
+        outcome = 'not-applied';
+      else outcome = 'undecided';
+      const f = found as ChangeKey | null;
+      if (f?.request && (outcome === 'applied' || outcome === 'not-applied')) {
+        // Decided for an approval: keep the journal until it is acknowledged.
+        await writeMeta(
+          tx,
+          schema,
+          CHANGE_KEY,
+          JSON.stringify({ ...f, decided: outcome }),
+        );
+        await deleteMeta(tx, schema, [APPLIED_KEY, REVERSED_KEY]);
+      } else
+        await deleteMeta(tx, schema, [CHANGE_KEY, APPLIED_KEY, REVERSED_KEY]);
+    });
+    if (outcome === 'undecided')
+      this.notices.push(
+        'A change was running when this app last stopped and could not be settled either way; check the version history.',
+      );
+    const f = found as ChangeKey | null;
+    if (f?.request && (outcome === 'applied' || outcome === 'not-applied'))
+      this.recoveredChange = {
+        id: f.id,
+        request: f.request,
+        outcome,
+        // The last step landing, or the first not landing, decides the whole undo.
+        partial:
+          !!f.part &&
+          !(outcome === 'applied' && f.part.index === f.part.of - 1) &&
+          !(outcome === 'not-applied' && f.part.index === 0),
+      };
+    if (forward && f)
+      this.recoveredEvent = {
+        version: f.to,
+        summary: f.record?.summary ?? 'recovered change',
+      };
+    return current;
+  }
+
+  /**
+   * The shell settled the approval of `recoveredChange` (or found nothing to
+   * settle): drop the journal that kept its outcome (#5486). A failure leaves
+   * it for the next open, which settles again.
+   */
+  async acknowledgeRecovery(id: string): Promise<void> {
+    if (!this.atomic || this.claimLost) return;
+    const schema = schemaOf(this.database);
+    await (this.claim as AppClaim).transaction(async (tx) => {
+      await holdFence(tx, schema, this.fence as number);
+      const raw = (await readMeta(tx, schema, [CHANGE_KEY]))[CHANGE_KEY];
+      try {
+        const k = raw ? (JSON.parse(raw) as ChangeKey) : null;
+        if (k?.id === id && k.decided)
+          await deleteMeta(tx, schema, [CHANGE_KEY]);
+      } catch {
+        /* an unreadable journal is the next open's notice */
+      }
+    });
+    if (this.recoveredChange?.id === id) this.recoveredChange = null;
   }
 
   /** Connections parked by `retireApp` for the next worker; see there. */
@@ -731,6 +928,12 @@ export class AppHost extends EventEmitter {
     def: AppDefinition,
     version: number,
     migration?: Migration,
+    /**
+     * A claimed host's change in flight (#5486): `change` is the forward
+     * swap's intent id; `reverse` marks the change's own reverse. In flight a
+     * lost claim or an unknown outcome never respawns the old worker.
+     */
+    flight?: { change?: string; reverse?: boolean },
   ) {
     const t0 = performance.now();
     const migrating = !!migration?.steps.length;
@@ -740,20 +943,46 @@ export class AppHost extends EventEmitter {
     try {
       next = this.spawn(def, version, migration);
       booted = await next.ready;
+      if (flight?.change && this.claimLost) {
+        // The claim died while the new worker booted: it must not serve.
+        await next.terminate().catch(() => {});
+        throw await this.abandonChange();
+      }
     } catch (e) {
+      if (e instanceof ClaimLostError && e.details?.outcome === 'unknown')
+        throw e;
+      let respawn = true;
+      // The reverse never boots the old worker on data it could not put back.
+      let unknown = !!flight?.reverse;
       try {
         if (next) {
           this.keepBudget(next);
           await next.terminate();
         }
         if (migrating) {
-          this.app = this.spawn(this.def, this.version);
-          await this.app.ready.catch(() => {});
-          this.app.settleBudget();
+          if (flight?.reverse) respawn = false;
+          else if (flight?.change) {
+            // #5486: did the migration commit? Bump the generation (waiting
+            // for its transaction) and read; only "no" is safe to respawn on.
+            respawn = !this.claimLost && (await this.notApplied(flight.change));
+            unknown = !respawn;
+          }
+          if (respawn) {
+            this.app = this.spawn(this.def, this.version);
+            await this.app.ready.catch(() => {});
+            this.app.settleBudget();
+          }
+        } else if (flight?.change && !this.claimLost) {
+          // No steps: the old worker never stopped, so no bump. But the new
+          // worker's boot may have committed with its reply lost: wait for it
+          // to end and read what it left.
+          unknown = !(await this.notCommitted(flight.change));
         }
       } finally {
         this.releaseSpare();
       }
+      if (unknown || (flight && this.claimLost))
+        throw await this.abandonChange(e);
       if (e instanceof CapacityError) throw e;
       if (
         e instanceof EngineError &&
@@ -781,7 +1010,11 @@ export class AppHost extends EventEmitter {
     nextVersion: number,
     migration: Migration | undefined,
     persist: () => Promise<void>,
+    /** The records the store commits with this change; a claimed host (#5486) writes them under its claim. */
+    records?: VersionRecord[],
   ) {
+    if (this.atomic && records)
+      return this.transitionClaimed(next, nextVersion, migration, records);
     const swapped = await this.swap(next, nextVersion, migration);
     try {
       await persist();
@@ -805,6 +1038,167 @@ export class AppHost extends EventEmitter {
     return swapped;
   }
 
+  /**
+   * A change on a claimed host (#5486). S = the store's current version, D =
+   * the data's version, g = this host's generation.
+   *   P0  claim tx: proof, fence = g, compare S = p, write `change`.
+   *   M   the worker's migration (g-fenced; a migrating one also writes `applied`).
+   *   T_c claim tx: proof, fence = g, record the version and move S p -> v.
+   * A host that dies between M and T_c leaves D = v, S = p: the next open
+   * reads `change` and `applied` and rolls the store forward (`reconcileChange`).
+   * From P0 on, a lost claim or an unknown outcome stops the host (it never
+   * respawns an old worker on data that may have moved) and says so.
+   */
+  private async transitionClaimed(
+    next: AppDefinition,
+    nextVersion: number,
+    migration: Migration | undefined,
+    records: VersionRecord[],
+  ) {
+    const claim = this.claim as AppClaim;
+    const store = this.store;
+    const schema = schemaOf(this.database);
+    const from = this.version;
+    const change: ChangeKey = {
+      id: randomUUID(),
+      from,
+      to: nextVersion,
+      record: records[0] ?? null,
+      request: this.currentRequest,
+      ...(this.currentPart ? { part: this.currentPart } : {}),
+    };
+    await claim.transaction(async (tx) => {
+      await holdFence(tx, schema, this.fence as number);
+      // A decided outcome nobody has acknowledged yet must not be overwritten.
+      const prior = (await readMeta(tx, schema, [CHANGE_KEY]))[CHANGE_KEY];
+      let pending = false;
+      try {
+        pending = !!prior && !!(JSON.parse(prior) as ChangeKey).decided;
+      } catch {
+        /* an unreadable journal is overwritten as before */
+      }
+      if (pending)
+        throw new EngineError(
+          'an earlier interrupted change has not been settled yet; reopen the app',
+          'refused',
+        );
+      await store.commitIn?.(tx, [], from, from);
+      await writeMeta(tx, schema, CHANGE_KEY, JSON.stringify(change));
+    });
+    const migrating = !!migration?.steps.length;
+    // Every claimed change journals `applied` in its worker's boot transaction
+    // (one with the migration's steps and the version), steps or not.
+    const swapped = await this.swap(
+      next,
+      nextVersion,
+      {
+        steps: [],
+        direction: 'up',
+        version: nextVersion,
+        ...migration,
+        intent: change.id,
+      },
+      { change: change.id },
+    );
+    let done = false;
+    try {
+      await claim.transaction(async (tx) => {
+        await holdFence(tx, schema, this.fence as number);
+        await store.commitIn?.(tx, records, nextVersion, from);
+        await writeMeta(
+          tx,
+          schema,
+          CHANGE_KEY,
+          JSON.stringify({ ...change, committed: true }),
+        );
+        done = true;
+      });
+    } catch (e) {
+      // Refused (no COMMIT sent) or answered by the server (rolled back), with
+      // the claim still proven: nothing committed and nobody else can have
+      // moved the app, so the migration is reversed under the same claim.
+      // Anything else (a lost claim, a reply that never came) is unknown.
+      const proven = !claim.lost;
+      if (!proven || (done && !serverAnswered(e)))
+        throw await this.abandonChange(e);
+      const back: Migration = {
+        steps: migration?.steps ?? [],
+        direction: migration?.direction === 'up' ? 'down' : 'up',
+        version: migration?.version ?? nextVersion,
+        intent: change.id,
+        reverse: true,
+      };
+      await this.swap(this.def, this.version, back, { reverse: true });
+      throw e;
+    }
+    this.def = next;
+    this.version = nextVersion;
+    return swapped;
+  }
+
+  /**
+   * Did the in-flight migration of change `id` commit? Takes ownership (bumps
+   * the generation, which waits for any transaction of the migration still
+   * open and fences it out) and reads `applied` in that same transaction, so
+   * the answer is final. True only for "no", with the new generation adopted;
+   * an error or "yes" means the old worker must not come back.
+   */
+  private async notApplied(id: string): Promise<boolean> {
+    const claim = this.claim;
+    if (!claim) return false;
+    try {
+      const schema = schemaOf(this.database);
+      let applied = false;
+      const fence = await acquireOwnership(
+        claim.admin,
+        schema,
+        this.lockTimeoutMs,
+        async (tx) => {
+          applied =
+            (await readMeta(tx, schema, [APPLIED_KEY]))[APPLIED_KEY] === id;
+        },
+      );
+      this.database = { ...this.database, fence } as DatabaseConfig;
+      return !applied;
+    } catch {
+      return false;
+    }
+  }
+
+  /** A swap with no steps failed: did its boot commit anyway? True only for a definite "no". */
+  private async notCommitted(id: string): Promise<boolean> {
+    const claim = this.claim;
+    if (!claim) return false;
+    try {
+      const schema = schemaOf(this.database);
+      return await claim.transaction(async (tx) => {
+        await awaitFenceHolders(tx, schema);
+        return (await readMeta(tx, schema, [APPLIED_KEY]))[APPLIED_KEY] !== id;
+      });
+    } catch {
+      return false;
+    }
+  }
+
+  /**
+   * A change of this host has an unknown outcome (or the claim died under
+   * it): stop serving, end the claim's session (so nothing of it can still
+   * commit) and tell the caller. The next open settles what happened.
+   */
+  private async abandonChange(cause?: unknown): Promise<ClaimLostError> {
+    const unknown = new ClaimLostError(UNKNOWN_CHANGE, { outcome: 'unknown' });
+    unknown.cause = cause;
+    if (!this.claimLost) {
+      this.claimLost = new ClaimLostError(
+        'this host stopped serving the app after a change whose outcome is unknown; reopen the app. This call wrote nothing.',
+      );
+      this.emit('claim-lost', this.claimLost);
+    }
+    await this.app?.terminate().catch(() => {});
+    await this.claim?.release().catch(() => {});
+    return unknown;
+  }
+
   /** Validate, start the new app runtime, record the version. Every change takes this path. */
   private async applyChange(
     next: AppDefinition,
@@ -826,18 +1220,25 @@ export class AppHost extends EventEmitter {
     const migration: Migration | undefined = steps.length
       ? { steps, direction: 'up', version: v }
       : undefined;
-    const swapped = await this.transition(next, v, migration, async () => {
-      await this.store.append({
-        version: v,
-        parent,
-        author,
-        summary,
-        definition: next,
-        migration: steps.length ? { steps } : null,
-        createdAt: now(),
-      });
-      await this.store.setCurrent(v);
-    });
+    const record: VersionRecord = {
+      version: v,
+      parent,
+      author,
+      summary,
+      definition: next,
+      migration: steps.length ? { steps } : null,
+      createdAt: now(),
+    };
+    const swapped = await this.transition(
+      next,
+      v,
+      migration,
+      async () => {
+        await this.store.append(record);
+        await this.store.setCurrent(v);
+      },
+      [record],
+    );
     this.emit('changed', { version: v, summary });
     return {
       version: v,
@@ -995,7 +1396,12 @@ export class AppHost extends EventEmitter {
         )
           throw new ApprovalRequiredError(a.plan);
       }
-      return a.apply(opts.author);
+      this.currentRequest = opts.request ?? null;
+      try {
+        return await a.apply(opts.author);
+      } finally {
+        this.currentRequest = null;
+      }
     });
   }
 
@@ -1669,6 +2075,7 @@ export class AppHost extends EventEmitter {
           parent.version,
           migration,
           () => this.store.setCurrent(parent.version),
+          [],
         );
         const summary = `undo: ${rec.summary}${swapped.skipped ? `; skipped ${swapped.skipped} deleted referring records` : ''}`;
         this.emit('changed', { version: parent.version, summary });
@@ -1777,6 +2184,7 @@ export class AppHost extends EventEmitter {
         let skipped = 0;
         for (const [i, r] of undone.entries()) {
           try {
+            this.currentPart = { index: i, of: undone.length };
             const step = await (await this.analyseUndo(r.version)).apply('');
             const c = step as ChangeResult;
             statements.push(...c.statements);
@@ -1784,6 +2192,12 @@ export class AppHost extends EventEmitter {
             appRestartMs += c.appRestartMs;
             skipped += c.skipped ?? 0;
           } catch (e) {
+            if (e instanceof ClaimLostError && e.details?.outcome === 'unknown')
+              throw new ClaimLostError(
+                `undid ${i} of ${undone.length} changes; the outcome of the next one is unknown; reopen the app and check before repeating it.`,
+                { outcome: 'unknown' },
+              );
+            this.currentPart = null;
             const code = e instanceof EngineError ? e.code : 'migration_failed';
             throw new EngineError(
               `undid ${i} of ${undone.length} changes; the app is now at version ${this.version}: ${(e as Error).message}`,
@@ -1791,6 +2205,7 @@ export class AppHost extends EventEmitter {
             );
           }
         }
+        this.currentPart = null;
         return {
           version: target,
           summary:

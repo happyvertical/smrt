@@ -857,9 +857,24 @@ async function openLive(holder: Holder): Promise<AppHost> {
   try {
     await adoptDraft(holder, db, host, dirs.draft, database);
     await freezeForWaitingChanges(db, host);
+    // The change an earlier host of this app left unfinished (#5486) was
+    // decided by the open: settle the approval that asked for it. A failure
+    // fails the open (below), so nothing is served, and no change can overwrite
+    // the persisted outcome, until a later open settles it.
+    const recovered = host.recoveredChange;
+    if (recovered?.request) {
+      const { settleRecoveredChange } = await import('./approvals.ts');
+      await settleRecoveredChange({
+        request: recovered.request,
+        outcome: recovered.outcome,
+        partial: recovered.partial,
+      });
+      await host.acknowledgeRecovery(recovered.id);
+    }
   } catch (e) {
     // Never serve live thawed when we could not tell whether a draft is
     // open: fail the open; the next call retries.
+    await holder.slotRef?.host?.close().catch(() => {});
     holder.slotRef = null;
     await host.close().catch(() => {});
     throw e;
