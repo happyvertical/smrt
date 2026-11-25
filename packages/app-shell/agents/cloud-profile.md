@@ -31,7 +31,8 @@ server's machine.
 ## Tenant scoping
 
 Every shell model that holds one owner's data is `tenantScoped: { mode:
-'optional' }` (static decorator literal, both profiles):
+'optional' }` (static decorator literal, both profiles; cloud runs them as
+`required`, below):
 
 | Model | Table | Holds |
 |---|---|---|
@@ -53,38 +54,53 @@ store and AI usage rows belong to `smrt-preferences`/`smrt-inference`/
 (its `tenantId` is an explicit field the batch lookup filters on, there was
 nothing to adopt, and the change feed does not offer it).
 
-Why `optional`, not `required`: `required` makes every no-context read throw,
-and the desktop still has background paths with no tenant context (import
-recovery). Cloud fail-closed is enforced by the shell instead:
+## `required` mode and row-level security (#5191)
 
-- `getShellDb()` refuses (401) with no tenant context in cloud; the sign-in
-  flow uses `getAccountsDb()`, only for the global user/tenant/membership tables.
-- Stores are pinned: `ShellVersionStore` / `DraftVersionStore` take the tenant,
-  run every operation inside it (`inTenant`) and refuse a different ambient
-  tenant.
-- `host.ts` keys the live host, version store and draft slot by tenant
-  (`holders`), from the verified session's tenant context only. App directories
-  come from validated UUIDs (`tenantAppDirs`), never from input.
-- The event bus carries a tenant on every event; cloud subscribers get only
-  their tenant's (an untenanted event reaches nobody).
-- `approval-store.ts` takes the tenant from the request in cloud and its raw
-  `UPDATE` adds `AND tenant_id = ?` (raw SQL bypasses the interceptor).
-- Process-wide state is per tenant or keyed by globally unique ids, never one
-  shared slot: the changes queue (`changes.ts`) and the draft lifecycle queue
-  (`drafts.ts`) are `createTenantQueue()`s (one job at a time per tenant, so a
-  slow check for one tenant never stalls another); the check scheduler and its
-  `owners` / `importIndex` maps are keyed by batch id (a UUID of exactly one
-  tenant) and `runChecksJob` re-enters the owner's tenant (`runAs`) whatever
-  timer fired it; the assistant's comment-turn slot is keyed by the owner's user id (unique across tenants; an owner has one tenant).
-  `apply-now.ts` and `template-records.ts` are pure (no state); the
-  `setAfterChecks` / `setWorkingCopyReplaced` hooks are data-only, set once.
-- `owner.ts`: the owner check runs inside the principal's own tenant; a user
-  who owns tenant A is not the owner of B.
+`shell-tenancy.ts`. Cloud only; the desktop never calls it and its decorators
+stay `optional` (the desktop still has background paths with no tenant context,
+import recovery among them).
 
-Moving to `required` (and PostgreSQL RLS policies for these tables) needs the
-desktop's no-context paths audited first, and core's `PostgresPermissionPolicies`
-pass over the shell's registry. NOT done here; the shell tables are not
-RLS-enforced.
+- **Mode.** `shellProfile()` resolving to `cloud` calls `requireShellTenancy()`:
+  core's `ObjectRegistry.registerOverride(name, { tenancy: { mode: 'required' } })`
+  for every model in `SHELL_TENANT_MODELS` (process-wide, monotonic, no schema
+  change). A read or write with no tenant context now throws instead of reading
+  across tenants. `AppImport` is not in the list: it declares no tenancy and
+  workbook import is refused in cloud, so its table stays empty there; the
+  import service refuses to touch it in cloud (`requireLocalProfile`), so a
+  write there fails loudly.
+- **Policies.** At cloud start `prepareDatabase` runs `protectShellTables`:
+  `smrt-users`' scoped policy generator over the shell classes (the tables'
+  current schema), row-level security ENABLED and FORCED (so it holds for the
+  table owner, the single-login profile), four policies per table: a row is
+  visible when `tenant_id` equals `smrt.tenant_id` and `smrt.permissions` holds
+  `SHELL_STORE_PERMISSION` (a marker for a connection the shell's stores opened,
+  not an owner permission: owner-only is `assertOwner`). A table that cannot be
+  protected refuses the start (reason on stderr). So does a login that is a
+  superuser or has BYPASSRLS: many owners share the database and such a login
+  silently removes every boundary (`app-shell.database.rls-bypass`). The one
+  opt-out is `SMRT_UNSAFE_ALLOW_RLS_BYPASS=1` (tests, local development), which
+  logs `rls-bypass-allowed` loudly. Default: refuse. Desktop and self-hosted
+  single-owner are unchanged.
+- **Long-lived stores.** They outlive the request that made them and run in the
+  engine's queues, so they cannot use the request's RLS transaction. In cloud on
+  PostgreSQL `getShellDb()` returns `tenantBoundDb(base)`: every operation (and
+  every `transaction()`) runs in a transaction that first publishes the ambient
+  tenant and the store marker as `smrt.*` settings. The tenant is read when the
+  operation runs, never when the handle was made, and with none the call
+  refuses. Inside such a transaction the handle reuses it (no second
+  connection). `table()`, `acquireSession()` and `beginTransaction()` are refused
+  on it. The hosted claim's transaction (`commitIn`, `reachable`, `withDraftRows`)
+  is not one the handle opened, so those bind the ambient tenant to it
+  (`bindAmbientShellScope`). There is no system path: no shell code reads across
+  tenants. SQLite (cloud tests) has no policies; the application layer holds there.
+- **Raw SQL** bypasses the tenancy interceptor and not the policies: the stores'
+  raw `UPDATE`s still add `AND tenant_id = ?`, and the policy is the second line.
+
+Test: `shell-rls.postgres.test.ts` (registered `test:postgres` lane: PGlite and a
+real server). The login is a NOSUPERUSER NOBYPASSRLS role that owns the tables;
+two owners go through the real stores, then the assertions go around the
+application layer (raw SQL for the other owner's row id) and fail when the
+policies are removed. Without the policies 4 of its 6 tests fail.
 
 Desktop (tenancy interceptor ON in the local runtime): optional-mode rows
 written with no context get a NULL tenant and are then invisible to reads made
@@ -155,8 +171,9 @@ comes from the request. The App row is created on the tenant's first request.
 events, directories, sign-up, sessions), `cloud-surfaces.test.ts` (what must
 not exist in cloud; local unchanged), `local-tenant-scope.test.ts` (desktop
 upgrade and tenancy ON). Harness: `cloud-test-support.ts`. They run on SQLite
-with the real tenancy interceptor; PostgreSQL, the deployed runtime's startup
-(version probe), RLS and a live OIDC provider are NOT exercised.
+with the real tenancy interceptor; the deployed runtime's startup
+(version probe) and a live OIDC provider are NOT exercised; the shell tables' RLS
+is `shell-rls.postgres.test.ts` (above).
 
 ## Many apps in one process (#5192)
 
@@ -292,8 +309,6 @@ engine.md "SQLite to PostgreSQL in place") has moved it. v1 decisions:
 - Supplying a hosted identity provider's config is the operator's
   (`packages.users.auth.oidc` in smrt.config; the shell only reads it): no live
   provider was exercised. The welcome/connect-AI UI still shows desktop options.
-- `required` mode and RLS policies for the shell tables (above); the
-  `database-rls` request transaction is not used by the shell's long-lived stores.
 - Hosted inference: gate, entitlement and provisioning landed (#5194, `hosted-inference.md`); the caller-aware parts wait for #5188/#5189/#5375. Workbook import in cloud, a statement timeout per
   operation (the database layer, not the registry), a cross-process lock for the first sign-in of one account (the insert-only
   ids already prevent a second tenant).

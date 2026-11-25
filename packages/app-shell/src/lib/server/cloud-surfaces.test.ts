@@ -77,6 +77,18 @@ describe('cloud profile', () => {
     expect(touched).toEqual([]);
   });
 
+  it('never reads or writes app_imports (the one shell table with no tenancy or policy)', async () => {
+    const { createShellImportService } = await import('./import-workflow.ts');
+    const service = createShellImportService({
+      db: h.db,
+      root: h.dir,
+    } as never);
+    await expect(service.current(h.a)).rejects.toMatchObject({
+      code: 'not_found',
+    });
+    service.dispose();
+  });
+
   it('serves the account sign-in routes (cloud only)', async () => {
     expect(typeof signInLogin.GET).toBe('function');
     expect(typeof signInCallback.GET).toBe('function');
