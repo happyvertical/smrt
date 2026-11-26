@@ -341,3 +341,11 @@ connection directly through `saveCliConfig` without mutating process environment
 Modern stdio bridges advertise `tools.listChanged` and poll the stateless upstream
 catalog every two seconds (including pages). Changed descriptors, revocation and
 recovery invalidate discovery; close clears the timer. No shared catalog cache.
+
+## Commands without a published schema
+
+When a custom action publishes no input schema (for example an action that
+takes an untyped option bag), its command accepts only a positional JSON
+payload. The CLI prints a one-line stderr hint to that effect only when no
+payload was passed; passing one is silent. GET payloads travel as query
+strings, so every value is a string: the server must coerce numbers itself.

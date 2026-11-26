@@ -387,12 +387,17 @@ async function runResourceCommand(
   }
 
   const parser = buildFlagParser(command.parameters);
-  if (parser.status.kind === 'unsupported') {
+  // The hint tells the caller to pass a JSON payload; a caller who already
+  // did has nothing to act on, so it is only printed when none was given.
+  const payloadGiven = positional.some((arg) =>
+    arg.trimStart().startsWith('{'),
+  );
+  if (!payloadGiven && parser.status.kind === 'unsupported') {
     stderr.write(
       `[smrt-app-cli] complex schema for \`${slug} ${commandName}\`; ` +
         `pass JSON payload directly\n`,
     );
-  } else if (parser.status.kind === 'missing') {
+  } else if (!payloadGiven && parser.status.kind === 'missing') {
     stderr.write(
       `[smrt-app-cli] schema unavailable for \`${slug} ${commandName}\`; ` +
         `pass JSON payload directly: $ <cli> ${slug} ${commandName}` +
