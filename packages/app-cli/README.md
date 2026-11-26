@@ -180,6 +180,20 @@ route elsewhere, set `mcpPath` on `createAppCli()` or pass it per call
 (`smrt-mcp-bridge`, or `SMRT_MCP_PATH`) and `--mcp-path` / `SMRT_APP_MCP_PATH`
 (`smrt-app`). The path must be same-server and absolute.
 
+### Agent credentials and `auth status`
+
+`auth status` asks the session endpoint who the token belongs to. A durable
+agent credential is not a session, and apps commonly refuse it there, so the
+command would report `authenticated: false` for a valid token. Set
+`agentStatusPath` on `createAppCli()` (`--agent-status-path` /
+`SMRT_APP_AGENT_STATUS_PATH` for `smrt-app`) to the app's same-server
+credential-introspection route, for example
+`/api/tracker/agent-credentials/self`. When the session check fails, `auth
+status` then calls that route and prints `authenticated: true`,
+`kind: "agent-credential"`, and the route's JSON body (agent slug,
+capabilities, expiry). If the route also rejects the token, the original
+session error is reported unchanged.
+
 For a local-profile s-m-r-t app, mint a credential with
 `smrt app token --scopes <scope>` in the app checkout. The token is printed
 once. Then give the bridge the loopback server and that token through the
@@ -327,3 +341,11 @@ connection directly through `saveCliConfig` without mutating process environment
 Modern stdio bridges advertise `tools.listChanged` and poll the stateless upstream
 catalog every two seconds (including pages). Changed descriptors, revocation and
 recovery invalidate discovery; close clears the timer. No shared catalog cache.
+
+## Commands without a published schema
+
+When a custom action publishes no input schema (for example an action that
+takes an untyped option bag), its command accepts only a positional JSON
+payload. The CLI prints a one-line stderr hint to that effect only when no
+payload was passed; passing one is silent. GET payloads travel as query
+strings, so every value is a string: the server must coerce numbers itself.
