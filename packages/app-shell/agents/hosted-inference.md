@@ -69,14 +69,32 @@ features/subscriptions/gate on SQLite, fake resolver), `hooks.server.test.ts`.
   has no billing writer: the code that writes plan changes and calls
   `trackEntitlementChange` lives outside this repository, so the listener is an
   exported, tested entry point that stays idle until a host calls it in this process.
+- **Members joining and leaving, and the repair pass.** The same install also
+  runs one reconcile per tenant (`reconcileTenant` in `hosted-provisioning.ts`):
+  read the plan with smrt-subscriptions' `snapshotEntitlements`, run the
+  smrt-inference reconciler (entitled provisions every active member and syncs
+  budgets; not entitled revokes everything), then, while entitled, revoke the
+  active grants of people who are no longer active members (reason
+  `member-removed`). It is idempotent: a converged tenant makes no gateway call.
+  Two triggers use it. (1) A watcher on core's change signals for the memberships
+  table (`subscribeToChangeSignals`, every write path and, on PostgreSQL, every
+  replica; users needs no hook): a join, a status change or a delete reconciles
+  that tenant, bursts coalesce, tenants run one at a time, and a failure is
+  written to stderr and left to the repair pass. (2) A timer: sixty seconds after
+  start, then every `HOSTED_RECONCILE_INTERVAL_MS` (six hours; `reconcileIntervalMs`
+  overrides, 0 turns it off), `reconcileAllHostedTenants` lists the active tenants
+  (`TenantCollection`, paged) and reconciles each, so a reaction lost to a crash
+  repairs itself. The shell has no job runner in the cloud profile, so this is an
+  unref'd in-process timer like the owner-link renewal, not a `smrt-jobs` job;
+  every replica runs it, which the per-tenant advisory lock and idempotence
+  allow. Both are installed only by `installHostedProvisioning`, so on the
+  desktop, or in cloud without a gateway, there is no subscription, no timer and
+  no query; `stopHostedProvisioning` (the shutdown `stopWork`) stops both.
 - **Not covered.** PostgreSQL (the spend reader's JSON tag matching and
   required-tenancy reads, and the provisioner's per-tenant advisory lock, which
-  needs a pool of at least three connections, run on SQLite here); a scheduled
-  repair reconcile and provisioning for a member who joins while the tenant is
-  already entitled (the host calls `provision()`; no tenant listing or member
-  flow in the shell); a hosted call from inside the app worker (see above);
-  a removed member's active key is budget-synced but not revoked while the
-  tenant stays entitled;
+  needs a pool of at least three connections, run on SQLite here); the repair pass and
+  member watcher on PostgreSQL (SQLite only here; across replicas they rely on
+  its LISTEN/NOTIFY signals); a hosted call from inside the app worker (see above);
   `app.methods` is wired ([method code](method-code.md)); `plugins.remote`, `sync.devices`, `backup.vault` and `cloud.hosted` have no
   shell surface to gate. `cloud.hosted` is deliberately not a gate on the whole
   cloud shell (v1 decision); the gate is code-local, so that stays possible.

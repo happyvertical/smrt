@@ -29,6 +29,10 @@ import {
 } from '@happyvertical/smrt-subscriptions';
 import { withTenant } from '@happyvertical/smrt-tenancy';
 import {
+  MembershipCollection,
+  MembershipStatus,
+} from '@happyvertical/smrt-users';
+import {
   afterAll,
   afterEach,
   beforeAll,
@@ -50,6 +54,8 @@ import {
 } from './hosted-inference.ts';
 import {
   installHostedProvisioning,
+  reconcileAllHostedTenants,
+  reconcileHostedTenant,
   resetHostedProvisioning,
 } from './hosted-provisioning.ts';
 
@@ -253,5 +259,190 @@ describe('hosted provisioning', () => {
     await install(new FakeAdmin());
     await install(new FakeAdmin());
     expect(getEntitlementChangeListeners()).toHaveLength(1);
+  });
+});
+
+/** Add `userId` to the tenant with the same role the owner there holds. */
+async function addMember(tenantId: string, ownerId: string, userId: string) {
+  const memberships = await MembershipCollection.create({ db: h.db });
+  const [owner] = await memberships.list({
+    where: { tenantId, userId: ownerId },
+    limit: 1,
+  });
+  const member = await memberships.create({
+    tenantId,
+    userId,
+    roleId: String(owner.roleId),
+    status: MembershipStatus.ACTIVE,
+  });
+  await member.save();
+  return member;
+}
+
+const keyCount = (admin: FakeAdmin) => admin.keys.length;
+
+describe('members joining and leaving an entitled tenant', () => {
+  it('provisions a member who joins after the plan, and revokes one who is removed', async () => {
+    const admin = new FakeAdmin();
+    await install(admin);
+    await setPlan(h.a.tenantId, 5_000_000);
+    expect(keyCount(admin)).toBe(1);
+
+    const carol = await h.newUser('carol@example.test');
+    const membership = await addMember(h.a.tenantId, h.a.id, carol.id);
+    await vi.waitFor(() => expect(keyCount(admin)).toBe(2));
+    expect(await storedConfig(h.a.tenantId, carol.id)).toMatchObject({
+      source: 'hosted',
+    });
+
+    // Deactivating the membership takes the key back.
+    membership.status = MembershipStatus.INACTIVE;
+    await membership.save();
+    await vi.waitFor(() => expect(admin.deleted).toEqual(['key-2']));
+    expect(await storedConfig(h.a.tenantId, carol.id)).toMatchObject({
+      mode: 'off',
+    });
+    // The owner keeps theirs.
+    expect(await storedConfig(h.a.tenantId, h.a.id)).toMatchObject({
+      source: 'hosted',
+    });
+  });
+
+  it('revokes a member whose membership row is deleted', async () => {
+    const admin = new FakeAdmin();
+    await install(admin);
+    await setPlan(h.b.tenantId, 5_000_000);
+    const dave = await h.newUser('dave@example.test');
+    const membership = await addMember(h.b.tenantId, h.b.id, dave.id);
+    await vi.waitFor(() => expect(keyCount(admin)).toBe(2));
+    await membership.delete();
+    await vi.waitFor(() => expect(admin.deleted).toHaveLength(1));
+    expect(await storedConfig(h.b.tenantId, dave.id)).toMatchObject({
+      mode: 'off',
+    });
+  });
+
+  it('gives a joiner nothing while the tenant has no plan', async () => {
+    const admin = new FakeAdmin();
+    await install(admin);
+    // Earlier tests left this tenant a plan: take it away first.
+    await setPlan(h.a.tenantId, null);
+    const erin = await h.newUser('erin@example.test');
+    await addMember(h.a.tenantId, h.a.id, erin.id);
+    // Let the member watcher run; nothing is entitled, so nothing is minted.
+    await reconcileHostedTenant(h.a.tenantId);
+    expect(keyCount(admin)).toBe(0);
+    expect(await storedConfig(h.a.tenantId, erin.id)).toBeUndefined();
+  });
+});
+
+describe('scheduled repair reconcile', () => {
+  it('repairs every entitled tenant, and a second pass changes nothing', async () => {
+    const admin = new FakeAdmin();
+    // The timer is off: the repair is called directly, as the timer would.
+    await installHostedInferenceGate({ db: async () => h.db });
+    await installHostedProvisioning({
+      db: async () => h.db,
+      admin,
+      env: GATEWAY_ENV,
+      reconcileIntervalMs: 0,
+    });
+    await setPlan(h.a.tenantId, 5_000_000);
+    await setPlan(h.b.tenantId, 5_000_000);
+    const before = keyCount(admin);
+
+    // Simulate a lost reaction: a member whose key was never minted.
+    const fay = await h.newUser('fay@example.test');
+    await addMember(h.a.tenantId, h.a.id, fay.id);
+    const first = await reconcileAllHostedTenants();
+    expect(first?.failures).toEqual([]);
+    expect(await storedConfig(h.a.tenantId, fay.id)).toMatchObject({
+      source: 'hosted',
+    });
+
+    const keys = keyCount(admin);
+    const deleted = admin.deleted.length;
+    expect(keys).toBeGreaterThanOrEqual(before);
+    const second = await reconcileAllHostedTenants();
+    expect(second).toMatchObject({
+      provisioned: 0,
+      revoked: 0,
+      removed: 0,
+      failures: [],
+    });
+    expect(keyCount(admin)).toBe(keys);
+    expect(admin.deleted).toHaveLength(deleted);
+  });
+
+  it('revokes keys of a tenant that lost its plan without the listener firing', async () => {
+    const admin = new FakeAdmin();
+    await installHostedInferenceGate({ db: async () => h.db });
+    await installHostedProvisioning({
+      db: async () => h.db,
+      admin,
+      env: GATEWAY_ENV,
+      reconcileIntervalMs: 0,
+    });
+    await setPlan(h.a.tenantId, 5_000_000);
+    // Cancel the subscription directly, bypassing trackEntitlementChange.
+    await withTenant({ tenantId: h.a.tenantId }, async () => {
+      const subs = await TenantSubscriptionCollection.create({ db: h.db });
+      for (const sub of await subs.list({ limit: 50 })) {
+        sub.status = 'canceled';
+        await sub.save();
+      }
+    });
+    const pass = await reconcileAllHostedTenants();
+    expect(pass?.revoked).toBeGreaterThanOrEqual(1);
+    expect(await storedConfig(h.a.tenantId, h.a.id)).toMatchObject({
+      mode: 'off',
+    });
+  });
+
+  it('makes no call and no query without a gateway or off the cloud', async () => {
+    const admin = new FakeAdmin();
+    await installHostedInferenceGate({ db: async () => h.db });
+    expect(
+      await installHostedProvisioning({
+        db: async () => h.db,
+        admin,
+        env: {},
+      }),
+    ).toBe(false);
+    expect(await reconcileAllHostedTenants()).toBeUndefined();
+    expect(await reconcileHostedTenant(h.a.tenantId)).toBeUndefined();
+    useProfile('local');
+    expect(
+      await installHostedProvisioning({
+        db: async () => h.db,
+        admin,
+        env: GATEWAY_ENV,
+      }),
+    ).toBe(false);
+    expect(await reconcileAllHostedTenants()).toBeUndefined();
+    expect(keyCount(admin)).toBe(0);
+  });
+
+  it('arms the repair timer only when a gateway is installed', async () => {
+    vi.useFakeTimers();
+    try {
+      const admin = new FakeAdmin();
+      await installHostedInferenceGate({ db: async () => h.db });
+      await installHostedProvisioning({
+        db: async () => h.db,
+        admin,
+        env: GATEWAY_ENV,
+        reconcileIntervalMs: 1000,
+      });
+      await setPlan(h.b.tenantId, 5_000_000);
+      const fay = await h.newUser('gus@example.test');
+      resetHostedProvisioning();
+      await addMember(h.b.tenantId, h.b.id, fay.id);
+      // Stopped: the elapsed timers run nothing.
+      await vi.advanceTimersByTimeAsync(5000);
+      expect(await storedConfig(h.b.tenantId, fay.id)).toBeUndefined();
+    } finally {
+      vi.useRealTimers();
+    }
   });
 });

@@ -14,7 +14,10 @@ import { registerEmbeddedDrain } from '$lib/server/embed-slot';
 import { closeAllStreams } from '$lib/server/events';
 import { drainShell, shellProfile } from '$lib/server/host';
 import { installHostedInferenceGate } from '$lib/server/hosted-inference';
-import { installHostedProvisioning } from '$lib/server/hosted-provisioning';
+import {
+  installHostedProvisioning,
+  stopHostedProvisioning,
+} from '$lib/server/hosted-provisioning';
 import { shellImports, stopShellImports } from '$lib/server/import-runtime';
 import { installMethodCodeGate } from '$lib/server/method-code';
 import { runOperatorCommand } from '$lib/server/operator';
@@ -39,7 +42,10 @@ export const init = async () => {
       createDrain({
         drain: drainShell,
         endStreams: closeAllStreams,
-        stopWork: stopShellImports,
+        stopWork: async () => {
+          stopHostedProvisioning();
+          await stopShellImports();
+        },
       }),
       // One-shot operator commands (`smrt-app-shell migrate-to-postgres`,
       // #5193), run by `build/operator.js` inside this bundle.
