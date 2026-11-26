@@ -674,17 +674,14 @@ describe('emitted SvelteKit list route with the real tenant interceptor', () => 
       `?tenant_id=${THEIRS}`,
       `?TenantId=${THEIRS}`,
       `?${enc('tenant_id[=]')}=${THEIRS}`,
-    ])('refuses %s', async (query) => {
-      // A filter outside the caller's tenant is a permission denial that
-      // names neither tenant.
-      const refusal = await asUs(query).then(
-        () => undefined,
-        (error: unknown) => error,
-      );
-      expect(refusal).toMatchObject({
-        status: 403,
-        message: 'Permission denied.',
-      });
+    ])('drops the tenant filter of %s and serves the caller tenant', async (query) => {
+      // The tenant a read acts in comes from the principal alone (#5195): a
+      // query filter on a tenant column is dropped, as the runtime REST
+      // handler drops it, so no spelling selects (or empties) another
+      // tenant's rows.
+      const { titles, body } = await titlesOf(await asUs(query));
+      expect(titles).toEqual(['our order 1', 'our order 2']);
+      expect(body.count).toBe(2);
     });
 
     it('refuses a required-mode read by a caller with no tenant with a 403', async () => {
@@ -697,10 +694,13 @@ describe('emitted SvelteKit list route with the real tenant interceptor', () => 
       expect(refusal).toMatchObject({ status: 403 });
     });
 
-    it('answers 400 when two spellings both name the caller tenant', async () => {
-      await expect(
-        asUs(`?tenantId=${OURS}&tenant_id=${OURS}`),
-      ).rejects.toMatchObject({ status: 400 });
+    it('serves the caller tenant when two spellings both name it', async () => {
+      // Both filters are tenant filters and are dropped (#5195); the old 400
+      // for a duplicated tenant filter has no filter left to refuse.
+      const { titles } = await titlesOf(
+        await asUs(`?tenantId=${OURS}&tenant_id=${OURS}`),
+      );
+      expect(titles).toEqual(['our order 1', 'our order 2']);
     });
 
     it.each([
@@ -723,8 +723,10 @@ describe('emitted SvelteKit list route with the real tenant interceptor', () => 
       const narrowed = await titlesOf(
         await asUs(`?${enc('tenant_id[in]')}=${THEIRS}`),
       );
-      expect(narrowed.titles).toEqual([]);
-      expect(narrowed.body.count).toBe(0);
+      // A tenant filter is dropped (#5195), so it neither selects another
+      // tenant nor empties the caller's own rows.
+      expect(narrowed.titles).toEqual(['our order 1', 'our order 2']);
+      expect(narrowed.body.count).toBe(2);
     });
   });
 
@@ -753,13 +755,15 @@ describe('emitted SvelteKit list route with the real tenant interceptor', () => 
       );
       const { titles } = await titlesOf(response);
       expect(titles).toEqual(['our notice']);
-      await expect(
-        request(
+      // A filter naming another tenant is dropped, never honoured (#5195).
+      const mixed = await titlesOf(
+        await request(
           noticeRoute,
           `emittedroutenotices?tenantId=${OURS}&tenant_id=${THEIRS}`,
           signedIn,
         ),
-      ).rejects.toMatchObject({ status: 403, message: 'Permission denied.' });
+      );
+      expect(mixed.titles).toEqual(['our notice']);
     });
   });
 

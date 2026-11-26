@@ -12,6 +12,10 @@ import { field, foreignKey } from '../decorators/index.js';
 import { createGeneratedCollectionAccess } from '../generated-collection-access.js';
 import { MCPGenerator } from '../generators/mcp.js';
 import { APIGenerator } from '../generators/rest.js';
+import {
+  apiPrincipalFromLocals,
+  authorize,
+} from '../generators/route-authz.js';
 import { reportUnexpectedHttpError } from '../generators/route-error.js';
 import { normalizeTypedHttpError } from '../generators/typed-http-error.js';
 import { SmrtObject } from '../object.js';
@@ -527,6 +531,9 @@ for (const type of ['sqlite', 'duckdb', 'postgres'] as const) {
         prepareWriteInput,
         publicSerializerOf,
         toPublicJSONValue,
+        // The shared route decision the emitted guard asks (#5195).
+        apiPrincipalFromLocals,
+        authorize,
       };
       try {
         await generateSvelteKitRoutes(
@@ -600,7 +607,7 @@ for (const type of ['sqlite', 'duckdb', 'postgres'] as const) {
                     if (args.path === '@happyvertical/smrt-core')
                       return {
                         contents:
-                          'const host = globalThis[Symbol.for("smrt.issue3460.generated-route")]; export const isRuntimeModelEnabled = host.isRuntimeModelEnabled; export const hasRuntimeExposureGate = host.hasRuntimeExposureGate; export const createGeneratedCollectionAccess = host.createGeneratedCollectionAccess; export const normalizeTypedHttpError = host.normalizeTypedHttpError; export const reportUnexpectedHttpError = host.reportUnexpectedHttpError; export const ObjectRegistry = host.ObjectRegistry; export const enterRequestTenancy = host.enterRequestTenancy; export const tenancyReadScope = host.tenancyReadScope; export const boundTenancyCacheScoped = host.boundTenancyCacheScoped; export const boundTenancyEtagDiscriminator = host.boundTenancyEtagDiscriminator; export const getRequestTenantContext = host.getRequestTenantContext; export const applyUpdateInput = host.applyUpdateInput; export const prepareWriteInput = host.prepareWriteInput; export const publicSerializerOf = host.publicSerializerOf; export const toPublicJSONValue = host.toPublicJSONValue;',
+                          'const host = globalThis[Symbol.for("smrt.issue3460.generated-route")]; export const isRuntimeModelEnabled = host.isRuntimeModelEnabled; export const hasRuntimeExposureGate = host.hasRuntimeExposureGate; export const createGeneratedCollectionAccess = host.createGeneratedCollectionAccess; export const normalizeTypedHttpError = host.normalizeTypedHttpError; export const reportUnexpectedHttpError = host.reportUnexpectedHttpError; export const ObjectRegistry = host.ObjectRegistry; export const enterRequestTenancy = host.enterRequestTenancy; export const tenancyReadScope = host.tenancyReadScope; export const boundTenancyCacheScoped = host.boundTenancyCacheScoped; export const boundTenancyEtagDiscriminator = host.boundTenancyEtagDiscriminator; export const getRequestTenantContext = host.getRequestTenantContext; export const applyUpdateInput = host.applyUpdateInput; export const prepareWriteInput = host.prepareWriteInput; export const publicSerializerOf = host.publicSerializerOf; export const toPublicJSONValue = host.toPublicJSONValue; export const apiPrincipalFromLocals = host.apiPrincipalFromLocals; export const authorize = host.authorize;',
                         loader: 'js',
                       };
                     if (args.path.endsWith('smrt-register'))

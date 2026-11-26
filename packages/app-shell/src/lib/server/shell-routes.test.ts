@@ -104,9 +104,11 @@ describe('the generated approvals decide route', () => {
         expect(i, needle).toBeGreaterThan(-1);
         return i;
       };
-      // In this order: permission gate, request-scoped load, 404, decide.
+      // In this order: permission gate (the shared decision, asked for the
+      // `update` permission of the `decide` action, #5195), request-scoped
+      // load, 404, decide.
       const order = [
-        at('requireRoutePermission(locals, "update")'),
+        at('requireRouteAccess(locals, "decide", true, "update")'),
         at('await getCollection<Approval>('),
         at('collection.get(params.id)'),
         at('item.decide('),
