@@ -1,5 +1,6 @@
 import {
   mkdtempSync,
+  readFileSync,
   realpathSync,
   rmSync,
   symlinkSync,
@@ -630,4 +631,60 @@ describe('installer inputs (smrt desktop build)', () => {
       expect.objectContaining({ code: 'config_invalid_field', field }),
     );
   });
+});
+
+describe('private PDF document policy', () => {
+  it('is opt-in, closed, bounded and exports the frozen product policy', () => {
+    expect(parse(null).privateDocuments).toBeUndefined();
+    const policy = parse({
+      privateDocuments: { routes: ['/admin/resume-assets/:id/pdf'] },
+    }).privateDocuments;
+    expect(policy?.routes).toEqual(['/admin/resume-assets/:id/pdf']);
+    expect(Object.isFrozen(policy?.routes)).toBe(true);
+    for (const value of [
+      null,
+      true,
+      {},
+      { routes: [] },
+      { routes: ['/documents/:id/pdf'], unsafe: true },
+      { routes: ['/documents/:id/pdf', '/documents/:id/pdf'] },
+    ]) {
+      expect(() => parse({ privateDocuments: value })).toThrow(BundleTreeError);
+    }
+  });
+  it.each([
+    '/auth/:id',
+    '/api/_runtime/pdf',
+    '/owner-claim/pdf',
+    '/documents/./pdf',
+    '/documents/%2e/pdf',
+    '/documents/:other/pdf',
+    '/documents//pdf',
+    '/documents/id/pdf?x',
+    '/documents/proof/pdf',
+  ])('rejects reserved or noncanonical route %s', (route) => {
+    expect(() => parse({ privateDocuments: { routes: [route] } })).toThrow(
+      BundleTreeError,
+    );
+  });
+});
+
+it('matches the shared TypeScript/Rust canonical private document route cases', () => {
+  const cases = JSON.parse(
+    readFileSync(
+      new URL(
+        '../../examples/private-documents-policy-cases.json',
+        import.meta.url,
+      ),
+      'utf8',
+    ),
+  ) as { valid: string[]; invalid: string[] };
+  for (const route of cases.valid)
+    expect(
+      parse({ privateDocuments: { routes: [route] } }).privateDocuments?.routes,
+    ).toEqual([route]);
+  for (const route of cases.invalid)
+    expect(() => parse({ privateDocuments: { routes: [route] } })).toThrow(
+      BundleTreeError,
+    );
 });
