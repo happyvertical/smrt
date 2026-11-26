@@ -313,6 +313,8 @@ describe.each(backends)('shell tables, forced RLS (%s)', (backend) => {
     it('pins the policy text to its version (bump SHELL_RLS_POLICY_VERSION when this digest changes)', async () => {
       const pinned: Record<number, string> = {
         1: '664b71d5cfa8cf2b546e0a13205a62dbf4b44390de58949e78729e148277e2b5',
+        // v2 adds receive_links (the CLI receive link token, #5638).
+        2: '7eea979dbbd5ea19ef8b3dc69f184f8f05d264ac1d96c8fe5a76fc2f432f8939',
       };
       expect(await shellPolicyDigest('public')).toBe(
         pinned[SHELL_RLS_POLICY_VERSION],
