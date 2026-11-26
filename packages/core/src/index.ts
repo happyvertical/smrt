@@ -307,6 +307,22 @@ export {
 // Code generators (tree-shakeable)
 export * from './generators/index';
 export { toProviderToolSchema } from './generators/provider-tool-schema.js';
+export {
+  clientKeyFor,
+  createGuestCreateLimiter,
+  defineGuestCreate,
+  type ExecuteGuestCreateInput,
+  executeGuestCreate,
+  GuestCreateBodyError,
+  type GuestCreateConfig,
+  type GuestCreateDb,
+  type GuestCreateLimiter,
+  type GuestCreateLimiterOptions,
+  type GuestCreateResult,
+  normalizeClientIdentity,
+  projectGuestBody,
+  type ResolvedGuestCreateConfig,
+} from './guest-create';
 export { type HierarchyView, SmrtHierarchical } from './hierarchical';
 // Inference tiers and the binding resolver seam (#4750). Browser-safe; keep
 // this list identical in index.ts and browser.ts.
