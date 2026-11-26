@@ -21,6 +21,7 @@
 // The tenant always comes from the verified session's tenant context
 // (`getCurrentTenant()`), never from input; the timer re-enters each tenant's
 // context (`withTenant`) because the tenant-scoped models need one.
+import { randomUUID } from 'node:crypto';
 import { existsSync } from 'node:fs';
 import { stat } from 'node:fs/promises';
 import { join } from 'node:path';
@@ -48,6 +49,12 @@ export const STORAGE_BYTES_METRIC = 'storage.bytes';
 export const REQUEST_COUNT_METRIC = 'api.requests';
 /** `source` of every row written here; the reader and nothing else trusts it. */
 export const STORAGE_SOURCE = 'app-shell.storage';
+
+/** Counter: one row per app wake (`quantity` 1; `dimensions.wakeMs`). */
+export const APP_WAKE_METRIC = 'app.wakes';
+/** Counter: milliseconds an app stayed awake, one row per close. */
+export const APP_AWAKE_METRIC = 'app.awake_ms';
+export const WORKER_SOURCE = 'app-shell.worker';
 const USAGE_TABLE = '_smrt_tenant_usage_metrics';
 
 /** Minimum time between two samples of one tenant, and the bucket length. */
@@ -187,6 +194,12 @@ export interface TenantUsage {
     count: number;
     /** False until the request-count writer (#5195) exists. */
     metered: boolean;
+  };
+  /** Worker activity from wake and idle-close samples (counters: summed). */
+  worker: {
+    wakes: number;
+    /** Milliseconds awake, summed over closed spans (a still-open app adds nothing yet). */
+    awakeMs: number;
   };
 }
 
@@ -348,6 +361,7 @@ export class StorageMeter {
         backend: null,
       },
       requests: { count: 0, metered: false },
+      worker: { wakes: 0, awakeMs: 0 },
     };
     if (!(await db.tableExists(USAGE_TABLE))) return result;
     const metrics = await TenantUsageMetricCollection.create({ db });
@@ -385,7 +399,89 @@ export class StorageMeter {
       count: requests.reduce((sum, m) => sum + m.quantity, 0),
       metered: requests.length > 0,
     };
+    const worker = await metrics.list({
+      where: { ...overlap, source: WORKER_SOURCE },
+      limit: 100_000,
+    });
+    for (const m of worker) {
+      if (m.metricKey === APP_WAKE_METRIC) result.worker.wakes += m.quantity;
+      if (m.metricKey === APP_AWAKE_METRIC) {
+        // A span that crosses the window's edge counts only the part inside.
+        const from = Math.max(m.windowStart.getTime(), window.start.getTime());
+        const to = Math.min(m.windowEnd.getTime(), window.end.getTime());
+        const span = m.windowEnd.getTime() - m.windowStart.getTime();
+        result.worker.awakeMs +=
+          span > 0
+            ? Math.round((m.quantity * Math.max(0, to - from)) / span)
+            : m.quantity;
+      }
+    }
     return result;
+  }
+
+  /**
+   * The host just woke this tenant's app: record the wake and sample storage.
+   * Called by host.ts, fire and forget; never throws, never waits on anything
+   * the wake needs. `tenantId` is the HOST's tenant (cloud), not input.
+   */
+  async onWake(tenantId: string, wakeMs: number): Promise<void> {
+    await this.activity(tenantId, {
+      metricKey: APP_WAKE_METRIC,
+      quantity: 1,
+      spanMs: 0,
+      dimensions: { event: 'wake', wakeMs },
+    });
+  }
+
+  /** The host closed this tenant's app (idle or capacity): record its awake span and sample storage. */
+  async onClose(
+    tenantId: string,
+    awakeMs: number,
+    why: 'idle' | 'capacity',
+  ): Promise<void> {
+    await this.activity(tenantId, {
+      metricKey: APP_AWAKE_METRIC,
+      quantity: Math.max(0, Math.round(awakeMs)),
+      spanMs: Math.max(0, Math.round(awakeMs)),
+      dimensions: { event: 'close', why },
+    });
+  }
+
+  private async activity(
+    tenantId: string,
+    row: {
+      metricKey: string;
+      quantity: number;
+      spanMs: number;
+      dimensions: Record<string, unknown>;
+    },
+  ): Promise<void> {
+    try {
+      if ((await shellProfile()) !== 'cloud') return;
+      await withTenant(
+        { tenantId, permissions: new Set<string>() },
+        async () => {
+          const db = await this.dbOf();
+          if (!(await db.tableExists(USAGE_TABLE))) return;
+          const end = this.now();
+          const metrics = await TenantUsageMetricCollection.create({ db });
+          await metrics.recordUsage({
+            tenantId,
+            metricKey: row.metricKey,
+            quantity: row.quantity,
+            windowStart: new Date(end - row.spanMs),
+            windowEnd: new Date(end),
+            source: WORKER_SOURCE,
+            sourceId: randomUUID(),
+            dimensions: row.dimensions,
+          });
+        },
+      ).catch(() => {});
+      // The gauge (once per bucket, as ever); its own failures are swallowed.
+      await this.sample(tenantId).catch(() => false);
+    } catch {
+      // Metering never fails a wake or a close.
+    }
   }
 
   startTimer(): void {
