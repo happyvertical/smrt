@@ -125,6 +125,17 @@ export {
   createRestServer,
   startRestServer,
 } from './rest';
+// The one authorization decision shared by REST and generated SvelteKit routes
+export {
+  type AuthorizeDecision,
+  type AuthorizeDenial,
+  type AuthorizeInput,
+  apiPrincipalFromLocals,
+  authorize,
+  isMutatingOperation,
+  isOperationPublic,
+  stripTenantFilters,
+} from './route-authz';
 export { reportUnexpectedHttpError } from './route-error';
 export type { OpenAPIConfig } from './swagger';
 // Swagger/OpenAPI documentation utilities

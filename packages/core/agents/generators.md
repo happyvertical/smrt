@@ -168,6 +168,12 @@ transports; `packages/cli/src/__tests__/cli-writable-policy.test.ts`;
 
 ### Host-resolved principal on runtime REST (#5195)
 
+**One decision** (`generators/route-authz.ts`, #5195). `authorize()` is the pure
+sign-in / `<collection>.<action>` / write-body tenant decision; `stripTenantFilters()`
+the read-filter rule; `apiPrincipalFromLocals()` derives the principal of a SvelteKit
+request from `locals`. Callers pass model policy in (no registry); super-admin bypass
+counts only with `allowSuperAdminBypass`.
+
 `APIConfig.resolvePrincipal(req)` returns the request's
 `APIRequestPrincipal` (`{ tenantId, allowCrossTenant, authenticated, userId?,
 permissions?, callerKind?, superAdminBypass? }`) or `null` (anonymous). The
