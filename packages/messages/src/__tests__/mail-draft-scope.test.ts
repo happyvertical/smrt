@@ -2106,6 +2106,18 @@ describe('draft scope on message writes (#5616)', () => {
         }
         expect((await load(id)).sendStatus).toBe('sent');
       });
+
+      it('may still be deleted by a principal with the draft scope', async () => {
+        const id = await seed({ subject: 'racing', sendStatus: 'pending' });
+        const stale = await load(id);
+        await system(async () => {
+          const email = await load(id);
+          email.sendStatus = 'sent';
+          await email.save();
+        });
+        await as(principal(owner), () => stale.delete());
+        expect(await exists(id)).toBe(false);
+      });
     });
 
     describe('a queued row whose account was deleted', () => {

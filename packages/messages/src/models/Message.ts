@@ -545,7 +545,11 @@ export class Message extends SmrtObject {
         if (isMailWriteGated(stored, write)) {
           priorAccountIds.push(String(stored.account_id ?? ''));
         }
-        if (stored.send_status === 'sent' && row.sendStatus !== 'sent') {
+        if (
+          save &&
+          stored.send_status === 'sent' &&
+          row.sendStatus !== 'sent'
+        ) {
           result.refused = true;
         }
         unchanged = this.matchesStoredBeyond(
