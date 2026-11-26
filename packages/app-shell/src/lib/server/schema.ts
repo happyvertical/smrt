@@ -66,6 +66,7 @@ export const TENANT_SCOPED_TABLES = [
   'assistant_threads',
   'assistant_messages',
   'change_cards',
+  'receive_links',
 ] as const;
 
 /**

@@ -31,6 +31,7 @@ import {
   tenantAppDirs,
 } from './host.ts';
 import { type Principal, runAs } from './owner.ts';
+import { mintReceiveLink } from './receive-link.ts';
 import { receiveOwnUserApp } from './receive-user-app.ts';
 import { ShellVersionStore } from './version-store.ts';
 
@@ -510,5 +511,35 @@ describe('POST /api/shell/app/receive', () => {
       bundle: { ...bundle, tables: [] },
     });
     expect(other.status).toBe(400);
+  });
+  it("takes the CLI's link token: owner-minted, one receive into its own tenant, spent by use", async () => {
+    const bundle = await desktopBundle('desk12@example.test');
+    const who = await tenantOf('linkowner@example.test');
+    const other = await tenantOf('linkother@example.test');
+    await useShell(true);
+    const bearer = (token: string) =>
+      call(null, { bundle }, { authorization: `Bearer ${token}`, origin: '' });
+    const mintFor = async (p: Principal) =>
+      (await runAs(p, () => mintReceiveLink())).token;
+    const first = await mintFor(who);
+    // a token of one tenant never reaches another's app
+    const otherSecret = (await mintFor(other)).split('.')[2];
+    const crossed = `${first.split('.').slice(0, 2).join('.')}.${otherSecret}`;
+    expect((await bearer(crossed)).status).toBe(401);
+    const ok = await bearer(first);
+    expect(ok.status).toBe(200);
+    expect(await ok.json()).toMatchObject({
+      status: 'received',
+      verified: true,
+    });
+    // the same token again: spent
+    expect((await bearer(first)).status).toBe(401);
+    // a new token converges on the same bundle; it landed in `who`'s tenant only
+    const again = await bearer(await mintFor(who));
+    expect(await again.json()).toMatchObject({ status: 'already-received' });
+    const otherApp = await runAs(other, async () =>
+      new ShellVersionStore(await getShellDb(), other.tenantId).list(),
+    );
+    expect(otherApp.length).toBeLessThanOrEqual(1);
   });
 });

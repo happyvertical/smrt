@@ -224,9 +224,16 @@ Agent docs (#4878): `install` runs `docs:agents`, `dev` refreshes a missing or s
   app-shell `agents/cloud-profile.md`) after the rows and assets, records the
   digest in the journal once the receiver reports it verified (counts and
   digests of every table and the version history), and refuses a transport
-  without one before anything is sent. The shipped HTTP transport and the
-  link-token authentication the shell would need for it are not built: the
-  receiver accepts an owner session only.
+  without one before anything is sent. The HTTP transport is
+  `createReceiveTransport` (`receive-transport.ts`, #5638): one POST of the
+  section to `<origin>/api/shell/app/receive` with an owner-minted link token
+  (one tenant, one receive, 10 minutes, spent by its first use; app-shell
+  `agents/cloud-profile.md` "The receive link token") as `Authorization: Bearer`
+  only: never a URL, argument or message, redirects refused, https (loopback
+  http), token scrubbed from every failure. `smrt app receive --origin <url>
+  --bundle <export file>` sends an export's `userApp`; the token comes from
+  `SMRT_RECEIVE_TOKEN`, never an argument. A refused token is spent: mint a new
+  one and rerun (the receive converges).
 - **Cloud migration** (#4806, `cloud-migration.ts`, library only; hosted
   routes and `smrt app cloud` commands are follow-ups): built on a
   `smrt-cloud-link-v1` link (app-runtime README). `planCloudMigration`
