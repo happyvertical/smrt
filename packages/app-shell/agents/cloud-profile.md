@@ -83,14 +83,16 @@ import recovery among them).
   methods are static, every other model is closed), so each new one has to be
   thought through. The apply reads the catalog first and runs no DDL when the
   policies are exactly what it would write: each table's comment carries a stamp
-  (`smrt-app-shell:rls:<digest of the generated policy set>:<digest of the
-  catalog>`), and the catalog digest covers the RLS flags, EVERY policy on the
+  (`smrt-app-shell:rls:v<N>:<digest of the generated policy set>:<digest of
+  the catalog>`; `N` is `SHELL_RLS_POLICY_VERSION`, bumped whenever the policy
+  text changes, pinned by a digest test), and the catalog digest covers the RLS flags, EVERY policy on the
   table (name, command, roles, normalized USING / WITH CHECK) and the helper
   function bodies. A changed predicate, a removed slug, a dropped or extra
-  policy, a rewritten helper or a release that changes the expected set is not
-  current, so the policies are re-applied (extra policies dropped) and
-  re-stamped; an old replica restarting after a new release re-applies the old
-  set (last start wins). The apply is one transaction under an advisory lock
+  policy, a rewritten helper, an older or unversioned stamp is not current, so
+  the policies are re-applied (extra policies dropped) and re-stamped. A stamp
+  with a NEWER version on any table is left alone with a warning
+  (`shell-rls-policies-newer`): a restarting replica of a versioned release never
+  puts an older set back (releases before versioning cannot honor it). The apply is one transaction under an advisory lock
   with a lock timeout, so replicas starting together never interleave
   DROP/CREATE POLICY and no reader sees a table between them. A
   missing table says to run `smrt db:migrate`; every failure's reason goes to
