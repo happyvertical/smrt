@@ -44,6 +44,7 @@ export const SHELL_TENANT_MODELS = [
   'AssistantMessage',
   'ChangeBatch',
   'ChangeCard',
+  'ReceiveLink',
 ] as const;
 
 /** Qualified-name prefix of the shell's own classes (a same-named class elsewhere is not ours). */
