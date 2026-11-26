@@ -31,6 +31,14 @@ class PgIdConflictOwnedCollection extends SmrtCollection<PgIdConflictOwned> {
   static readonly _itemClass = PgIdConflictOwned;
 }
 
+@smrt({ tableName: 'pg_id_conflict_plain', conflictColumns: ['id'] })
+class PgIdConflictPlain extends SmrtObject {
+  @field({ type: 'text' }) body = '';
+}
+class PgIdConflictPlainCollection extends SmrtCollection<PgIdConflictPlain> {
+  static readonly _itemClass = PgIdConflictPlain;
+}
+
 /** Whether `transformJSON()` drops the owner column from the saved row. */
 let dropOwner = false;
 
@@ -66,16 +74,22 @@ describe.skipIf(!pgUrl)(
       } as Parameters<typeof getDatabase>[0])) as DatabaseInterface;
       await db.query(`DROP TABLE IF EXISTS "${TABLE}" CASCADE`);
       await db.query(`DROP TABLE IF EXISTS "pg_id_conflict_dropping" CASCADE`);
+      await db.query(`DROP TABLE IF EXISTS "pg_id_conflict_plain" CASCADE`);
       await getTestDatabase({
         type: 'postgres',
         db,
-        classes: ['PgIdConflictOwned', 'PgIdConflictDropping'],
+        classes: [
+          'PgIdConflictOwned',
+          'PgIdConflictDropping',
+          'PgIdConflictPlain',
+        ],
       });
     }, 60_000);
 
     afterAll(async () => {
       await db?.query(`DROP TABLE IF EXISTS "${TABLE}" CASCADE`);
       await db?.query(`DROP TABLE IF EXISTS "pg_id_conflict_dropping" CASCADE`);
+      await db?.query(`DROP TABLE IF EXISTS "pg_id_conflict_plain" CASCADE`);
       await db?.close?.();
     });
 
@@ -144,6 +158,20 @@ describe.skipIf(!pgUrl)(
         String(a.id),
       );
       expect(result.rows[0]).toEqual({ body: 'A', tenant_id: TENANT_A });
+    });
+
+    it('control: a model without an owner column still updates by id', async () => {
+      await db.query('TRUNCATE "pg_id_conflict_plain"');
+      const plain = await PgIdConflictPlainCollection.create({ db });
+      const a = await plain.create({ body: 'A' } as never);
+
+      await plain.create({ id: a.id, body: 'A again' } as never);
+
+      const result = await db.query(
+        'SELECT body FROM "pg_id_conflict_plain" WHERE id = $1',
+        String(a.id),
+      );
+      expect(result.rows[0]).toEqual({ body: 'A again' });
     });
 
     it('control: a same-tenant create with the id updates the row in place', async () => {

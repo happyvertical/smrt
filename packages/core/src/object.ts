@@ -5416,6 +5416,22 @@ export class SmrtObject extends SmrtClass {
     );
   }
 
+  /** This model's ownership columns that exist on its stored table. */
+  private async storedOwnershipColumns(): Promise<string[]> {
+    const result = await this.db.query(
+      'SELECT column_name FROM information_schema.columns WHERE table_schema = current_schema() AND table_name = $1',
+      this.tableName,
+    );
+    const present = new Set<string>(
+      (result?.rows ?? []).map((row: Record<string, unknown>) =>
+        String(row.column_name),
+      ),
+    );
+    return [
+      ...SmrtObject.ownershipColumnsFor(this.getResolvedQualifiedName()),
+    ].filter((column) => present.has(column));
+  }
+
   /**
    * PostgreSQL: `INSERT … ON CONFLICT (conflict) DO NOTHING RETURNING id`.
    * Values are serialized exactly as the SDK's insert does (undefined
@@ -5458,8 +5474,13 @@ export class SmrtObject extends SmrtClass {
     // assertSameNaturalKeyOwner); otherwise nothing is written.
     const normalizedOwner = (reference: string) =>
       `NULLIF(lower(regexp_replace(CAST(${reference} AS TEXT), '^\\s+|\\s+$', '', 'g')), '')`;
+    // Only ownership columns the table actually has take part: the registry
+    // always lists `tenant_id`, which an unscoped table does not carry.
+    const ownerColumns = updateUntrackedId
+      ? await this.storedOwnershipColumns()
+      : [];
     const ownerPredicate = updateUntrackedId
-      ? [...SmrtObject.ownershipColumnsFor(this.getResolvedQualifiedName())]
+      ? ownerColumns
           .map((column) =>
             // A column the save leaves out is an unset owner, i.e. NULL.
             Object.hasOwn(data, column)
