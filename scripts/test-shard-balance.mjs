@@ -30,9 +30,11 @@ export const TEST_SECONDS = {
   // time by a local run at two workers (default config 649 s over two
   // shards, pglite+dom+packed 175 s), scaled by 1200/824 to CI speed.
   // Refresh them from a merge-group log, as for every other entry.
-  '@happyvertical/smrt-app-shell#test:configs': 255,
-  '@happyvertical/smrt-app-shell#test:unit:1of2': 470,
-  '@happyvertical/smrt-app-shell#test:unit:2of2': 470,
+  // Re-weighed from merge-group run 45760975605: 939, 996 and 457 s measured
+  // against the 470, 470 and 255 above, which ran shards 3/5 and 4/5 28 and 24 min.
+  '@happyvertical/smrt-app-shell#test:configs': 457,
+  '@happyvertical/smrt-app-shell#test:unit:1of2': 940,
+  '@happyvertical/smrt-app-shell#test:unit:2of2': 995,
   '@happyvertical/smrt-assets': 49,
   '@happyvertical/smrt-bundle-gate': 82,
   '@happyvertical/smrt-chat': 392,
