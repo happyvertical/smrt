@@ -494,8 +494,8 @@ export function recordCascadeWrite<T>(db: DatabaseInterface, result: T): T {
 }
 
 /**
- * Run a cascade statement against a *referencing* table, tolerating the
- * table (or an expected column) not existing in this database.
+ * Run a cascade statement against a *referencing* table, tolerating that
+ * table not existing in this database.
  *
  * The cascade plan is built from the in-process registry, which can carry a
  * class from any imported package — including one whose table this specific
@@ -504,21 +504,39 @@ export function recordCascadeWrite<T>(db: DatabaseInterface, result: T): T {
  * other test file registered). A missing referencing table trivially has no
  * rows to act on, so the correct behaviour is identical to the table
  * existing and being empty — this must never abort an otherwise valid
- * delete. Any other failure (a real constraint violation, a lock timeout, a
- * genuine SQL error unrelated to the table's existence) still propagates.
+ * delete.
+ *
+ * Only a missing table named `context.table` is tolerated. A missing column
+ * in a table that exists is schema drift the cascade cannot act around, so it
+ * propagates, as does any other failure (a constraint violation, a lock
+ * timeout). On PostgreSQL a failed statement aborts the enclosing
+ * transaction, so the statement runs under a savepoint (a nested
+ * transaction, opened through the framework helper so the handle keeps the
+ * sync device id) and a tolerated failure rolls back to it, leaving the
+ * delete's transaction usable.
+ *
+ * @param operation - The statement(s), issued on the handle it receives
  */
 async function tolerateMissingTable<T>(
-  operation: () => Promise<T>,
+  db: DatabaseInterface,
+  operation: (bound: DatabaseInterface) => Promise<T>,
   fallback: T,
   context: { table: string; action: string },
 ): Promise<T> {
   try {
-    return await operation();
+    return usesPostgresDialect(db) &&
+      typeof (db as TransactionCapable).transaction === 'function'
+      ? await withEmbeddedWriteTransaction(
+          db,
+          isEmbeddedDatabase(db),
+          operation,
+        )
+      : await operation(db);
   } catch (error) {
-    if (classifyDatabaseError(error).kind === 'undefined_object') {
+    if (isMissingTableError(error, context.table)) {
       logger.warn(
         `Cascade delete skipped ${context.action} on '${context.table}': ` +
-          'table or column not found in this database.',
+          'table not found in this database.',
         { error: error instanceof Error ? error.message : String(error) },
       );
       return fallback;
@@ -528,10 +546,10 @@ async function tolerateMissingTable<T>(
 }
 
 /**
- * System-table cleanup may ignore an absent table for databases created before
- * that subsystem existed, but never a missing column in a table that does
- * exist. The shared `undefined_object` classification intentionally combines
- * both cases, so this security boundary must retain the narrower driver signal.
+ * Cascade statements (referencing tables and system-table cleanup) may ignore
+ * an absent table, but never a missing column in a table that does exist. The
+ * shared `undefined_object` classification intentionally combines both cases,
+ * so this boundary must retain the narrower driver signal.
  */
 function normalizeMissingTableName(value: string): string {
   const unquoted = value.replace(/["'`[\]]/g, '');
@@ -575,24 +593,6 @@ function isMissingTableError(error: unknown, expectedTable: string): boolean {
   );
 }
 
-async function tolerateMissingSystemTable<T>(
-  operation: () => Promise<T>,
-  fallback: T,
-  context: { table: string; action: string },
-): Promise<T> {
-  try {
-    return await operation();
-  } catch (error) {
-    if (!isMissingTableError(error, context.table)) throw error;
-    logger.warn(
-      `Cascade delete skipped ${context.action} on '${context.table}': ` +
-        'table not found in this database.',
-      { error: error instanceof Error ? error.message : String(error) },
-    );
-    return fallback;
-  }
-}
-
 /** A row selected for a CASCADE delete and the parent it referenced then. */
 interface ChildRow {
   id: string;
@@ -622,7 +622,9 @@ async function selectChildren(
       `CAST(${quoteIdent(column)} AS VARCHAR) AS "parent_id" ` +
       `FROM ${quoteIdent(tableName)} ${where.sql}`;
     const rows = await tolerateMissingTable(
-      () => db.query(sql, ...where.values).then((result) => result.rows),
+      db,
+      (bound) =>
+        bound.query(sql, ...where.values).then((result) => result.rows),
       [] as Record<string, unknown>[],
       { table: tableName, action: 'CASCADE select' },
     );
@@ -670,9 +672,10 @@ async function deleteChildren(
     ];
     if (parents.length === 0) continue;
     await tolerateMissingTable(
-      () =>
+      db,
+      (bound) =>
         deleteSyncRows(
-          db,
+          bound,
           identity,
           {
             ...idPredicate(
@@ -681,7 +684,7 @@ async function deleteChildren(
             ),
             ...idPredicate(column, parents),
           },
-          (affected) => recordCascadeWrite(db, { affected }),
+          (affected) => recordCascadeWrite(bound, { affected }),
         ),
       undefined,
       { table: tableName, action: 'CASCADE delete' },
@@ -770,14 +773,15 @@ async function deleteSystemRows(
     [EMBEDDINGS_TABLE, 'object_id', 'object_class'],
   ] as const) {
     for (const batch of chunkArray(ownerIds, IN_LIST_CHUNK_SIZE)) {
-      await tolerateMissingSystemTable(
-        () =>
-          db
+      await tolerateMissingTable(
+        db,
+        (bound) =>
+          bound
             .delete(table, {
               ...idPredicate(idColumn, batch),
               ...idPredicate(classColumn, classNames),
             })
-            .then((result) => recordCascadeWrite(db, result)),
+            .then((result) => recordCascadeWrite(bound, result)),
         undefined,
         { table, action: 'framework-owned row cleanup' },
       );
@@ -945,8 +949,9 @@ async function resolveReferences(
     let remaining = 0;
     for (const batch of chunkArray(pending, IN_LIST_CHUNK_SIZE)) {
       remaining += await tolerateMissingTable(
-        () =>
-          ctx.db.count(
+        ctx.db,
+        (bound) =>
+          bound.count(
             reference.tableName,
             idPredicate(reference.column, batch),
           ),
@@ -970,13 +975,14 @@ async function resolveReferences(
     if (reference.action === 'SET NULL') {
       for (const batch of chunkArray(pending, IN_LIST_CHUNK_SIZE)) {
         await tolerateMissingTable(
-          () =>
+          ctx.db,
+          (bound) =>
             nullSyncReference(
-              ctx.db,
+              bound,
               reference.tableName,
               reference.column,
               idPredicate(reference.column, batch),
-              (affected) => recordCascadeWrite(ctx.db, { affected }),
+              (affected) => recordCascadeWrite(bound, { affected }),
             ),
           undefined,
           { table: reference.tableName, action: 'SET NULL' },
@@ -1009,9 +1015,10 @@ async function resolveReferences(
         where['meta_type in'] = plan.metaTypes;
       }
       const result = await tolerateMissingTable(
-        () =>
+        ctx.db,
+        (bound) =>
           deleteSyncRows(
-            ctx.db,
+            bound,
             {
               tableName: association.tableName,
               model: toQualifiedClassName(ctx.registry, association.className),
@@ -1022,7 +1029,7 @@ async function resolveReferences(
                 ctx.registry.getTableStrategy(association.className) === 'sti',
             },
             where,
-            (affected) => recordCascadeWrite(ctx.db, { affected }),
+            (affected) => recordCascadeWrite(bound, { affected }),
           ),
         undefined,
         {

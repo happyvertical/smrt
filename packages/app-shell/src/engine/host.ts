@@ -2341,6 +2341,26 @@ export class AppHost extends EventEmitter {
     return out;
   }
 
+  /**
+   * Mark purged versions in the store. On a fenced host this is one claim
+   * transaction (proof, generation, then the rows), so a host that lost its
+   * claim marks nothing (#5630); otherwise one write per version.
+   */
+  private async markPurged(versions: number[]) {
+    const claim = this.fenceClaim;
+    const store = this.store;
+    if (claim && store.commitIn && store.markPurgedIn) {
+      const schema = schemaOf(this.database);
+      const fence = this.fence as number;
+      await claim.transaction(async (tx) => {
+        await holdFence(tx, schema, fence);
+        await store.markPurgedIn?.(tx, versions);
+      });
+      return;
+    }
+    for (const v of versions) await store.markPurged(v);
+  }
+
   private async analyseCleanUp(keep: number): Promise<Analysis> {
     if (!Number.isInteger(keep) || keep < 0)
       throw new EngineError('keep must be a whole number, zero or more');
@@ -2379,7 +2399,7 @@ export class AppHost extends EventEmitter {
           versions,
           tables,
         );
-        for (const v of versions) await this.store.markPurged(v);
+        await this.markPurged(versions);
         const snapshots = Number.isFinite(cutoff)
           ? await this.callApp<number>('pruneSnapshots', cutoff)
           : 0;
@@ -3157,8 +3177,12 @@ export class AppHost extends EventEmitter {
         ? sideSchemaName(schemaOf(this.database), 'd')
         : undefined;
       const liveSchema = schema ? schemaOf(this.database) : undefined;
+      let keepDir = false;
       try {
         if (schema) {
+          // The marker goes first: a draft schema is never without a record of
+          // it, so a failed start that cannot drop it leaves it findable (#5630).
+          writeDraftMarker(dir, this.dataDir, base.version, schema, liveSchema);
           await this.forkSchemaTo(schema);
           // The copy carries the live app's change journal (#5486): a draft
           // starts with none of its own.
@@ -3169,8 +3193,10 @@ export class AppHost extends EventEmitter {
                 deleteMeta(tx, schema, [CHANGE_KEY, APPLIED_KEY, REVERSED_KEY]),
               ),
           );
-        } else await this.callApp('copyTo', join(dir, 'app.db'));
-        writeDraftMarker(dir, this.dataDir, base.version, schema, liveSchema);
+        } else {
+          await this.callApp('copyTo', join(dir, 'app.db'));
+          writeDraftMarker(dir, this.dataDir, base.version);
+        }
         await opts.store.append(structuredClone(base));
         await opts.store.setCurrent(base.version);
         return await AppHost.open(dir, {
@@ -3189,8 +3215,17 @@ export class AppHost extends EventEmitter {
             : {}),
         });
       } catch (e) {
-        rmSync(dir, { recursive: true, force: true });
-        if (schema) await this.dropSideSchema(schema);
+        // A schema that cannot be dropped (this host lost its claim) keeps the
+        // directory and its marker: the next start or discard removes the
+        // orphan through the live claim (`discardOrphanDraft`). Removing the
+        // marker would strand the schema, which nothing else lists (#5630).
+        if (schema)
+          try {
+            await this.dropSideSchemaOrThrow(schema);
+          } catch {
+            keepDir = true;
+          }
+        if (!keepDir) rmSync(dir, { recursive: true, force: true });
         throw e;
       }
     });
