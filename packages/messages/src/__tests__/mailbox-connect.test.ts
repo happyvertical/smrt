@@ -14,7 +14,7 @@ import {
 } from '@happyvertical/smrt-tenancy';
 import type { DatabaseInterface } from '@happyvertical/sql';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { resetMailAccess } from '../access.js';
+import { resetMailAccess, runWithMailSystemAccess } from '../access.js';
 import {
   ConnectError,
   completeMailOAuthConnect,
@@ -282,9 +282,11 @@ describe('mailbox connect', () => {
           tenantId: TENANT,
           accountId: view.id,
           subject: 'synced',
+          messageId: '<synced@example.com>',
         });
         await email.initialize();
-        await email.save();
+        // Synced mail is stored by trusted work, as sync does.
+        await runWithMailSystemAccess(() => email.save());
       });
       expect((await owner.setAccountActive(view.id, false)).active).toBe(false);
       expect((await owner.setAccountActive(view.id, true)).active).toBe(true);
