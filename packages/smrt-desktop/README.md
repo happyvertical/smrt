@@ -932,3 +932,89 @@ environment check's `actions: read` token permission (it fails closed if
 GitHub refuses it). A builder without `updaterPublicKey` writes an invalid
 placeholder key into the installer (never the wrapper's own key), which the
 release preflight rejects.
+
+### Private PDF windows and native Save (Darwin arm64)
+
+Products opt in through `smrt-desktop.json` (the public
+`PrivateDocumentsPolicy` type is exported from `./bundler`):
+
+```json
+{
+  "privateDocuments": {
+    "routes": ["/admin/resume-assets/:id/pdf"]
+  }
+}
+```
+
+This policy is carried by both `smrt desktop build` and the normal built-app
+native packager. Omission disables private document windows. Only Darwin arm64
+is supported; other platforms deny these actions. Routes are exact templates:
+`:id` matches one nonempty ASCII alphanumeric, underscore or hyphen segment.
+There are no wildcards or prefix grants. Routes have at least two segments,
+are at most 256 characters, and cannot contain empty segments, dots, percent
+escapes, query strings or fragments. Reserved auth, login, logout, setup,
+owner (including compact/underscore spellings), sign-in/sign-out, OAuth,
+callback, session, secret, credential, onboarding, proof, token, `_runtime` and MCP segments are
+always denied, even if configured. The manifest's owner-claim route and its
+children are also denied. Policy objects reject unknown fields, duplicates,
+empty route lists and more than 16 routes.
+
+A normal same-origin PDF anchor in the main app frame with `target="_blank"`
+opens an independent
+native document window. The opener receives no scriptable child. A host initialization script captures
+trusted `_blank`/`download` anchor activations before WebKit can suppress them
+and passes an untrusted requested URL through a native-intercepted action.
+Primary pointer clicks and keyboard Enter are supported. Script-generated
+popups and browser context-menu opening are unsupported; right-clicking these
+anchors instead shows guidance to use the link and the preview Save action.
+PDF viewer toolbar/context-menu saving is unsupported; use **Save PDF…**.
+A random per-window action capability is kept in a main-frame-only closure
+and checked natively; forged actions from foreign frames or other windows are
+denied. The active native main-window URL must match the current supervisor
+origin. The native policy and authenticated server retrieval decide access; no renderer
+credentials, bytes or IPC capability are accepted. Native new-window requests without the main-frame action capability are denied
+with guidance in the main-window title. The WebKit download delegate stays
+unregistered, so WebKit cancels automatic downloads before issuing a request. Trusted main-frame `download` anchors use the same validated preview flow;
+they never write automatically. Other WebKit download requests are cancelled.
+Existing inline iframes stay in the application. The document window's explicit
+**Save PDF…** link opens the native destination/filename panel. Close the window
+to discard the preview. A product does not need renderer IPC or a downstream
+wrapper modification.
+
+Only the exact active supervisor HTTP origin (`127.0.0.1` and its allocated port)
+is permitted. Userinfo, other hosts, ports and schemes are refused. For opted-in products, main-window
+navigation is also restricted to that origin; products without the policy retain
+their existing navigation behavior. The host reads the main WebView's
+existing cookies, including HttpOnly cookies, natively, selects exact-host live
+non-Secure cookies whose RFC cookie path matches the document route, and performs
+one GET over the HTTP loopback origin. The preview window never receives these
+credentials.
+The server's existing resource/owner/tenant authorization still executes; this
+policy grants no server access. Redirects are never followed, proxy environment
+variables are ignored, and credentials/URLs/private bytes are never logged or
+sent to an external browser. Responses must be HTTP 200 with `application/pdf`,
+a PDF header and final EOF marker, and match the declared length when present.
+Transfers have a 20-second deadline and a 20 MiB limit. Login HTML, partial
+responses, failed authorization and invalid/truncated documents fail closed with
+retry guidance.
+
+Each preview uses an isolated incognito WebView and private in-memory bytes,
+bound to its native WebView identity by the custom protocol. Other app/document
+windows cannot read those bytes by guessing a URL. No preview file is created;
+closing a window drops its stored bytes. At most four document windows and one
+retrieval can exist at a time. Document windows deny external navigation,
+new windows and automatic downloads.
+
+Save rechecks the current native app session against the same resource before
+opening the destination panel; a signed-out or newly unauthorized session is
+denied. If the server PDF changed, close the preview and reopen it. Save uses
+the exact validated preview bytes. Choose a new plain filename ending
+`.pdf` (ASCII letters, digits, spaces, underscore, hyphen or dot; at most 128
+characters; no leading dot). **Existing files are never overwritten**, including
+symlinks, even if the native panel offers a Replace confirmation. Choose another
+filename and retry. The destination's parent directory is pinned by a file
+descriptor; a private exclusive sibling file is synced and published atomically
+with macOS `RENAME_EXCL`, which moves the temporary without replacing anything. A concurrent destination creation
+fails without replacing it. Direct symlink parent directories are refused.
+Cancellation writes nothing; invalid destinations and native failures display
+retry instructions. Open/preview/Save never approves or sends application data.

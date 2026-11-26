@@ -341,3 +341,40 @@ describe('runBuild', () => {
     );
   });
 });
+
+it('propagates the public private document policy to the native wrapper', async () => {
+  const fixture = createFixture({
+    config: { privateDocuments: { routes: ['/documents/:id/pdf'] } },
+  });
+  const originalRun = fixture.seams.run;
+  let policy: unknown;
+  const seams = {
+    ...fixture.seams,
+    run: async (request: Parameters<typeof originalRun>[0]) => {
+      if (request.command === 'tauri') {
+        const overlay = [...fixture.fs.files.entries()].find(([path]) =>
+          path.endsWith('tauri.build.json'),
+        );
+        if (overlay) {
+          policy = JSON.parse(new TextDecoder().decode(overlay[1])).plugins[
+            'smrt-desktop'
+          ].privateDocuments;
+        }
+      }
+      return originalRun(request);
+    },
+  };
+  await runBuild(plan(), seams);
+  expect(policy).toEqual({ routes: ['/documents/:id/pdf'] });
+});
+
+it('refuses private document policy on an unsupported native platform', async () => {
+  const fixture = createFixture({
+    config: { privateDocuments: { routes: ['/documents/:id/pdf'] } },
+  });
+  expect(
+    await code(
+      runBuild(plan({ target: 'x86_64-unknown-linux-gnu' }), fixture.seams),
+    ),
+  ).toBe('app_invalid');
+});
