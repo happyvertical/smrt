@@ -77,8 +77,8 @@ describe('wake and idle-close sampling', () => {
     expect(wake.source).toBe('app-shell.worker');
     expect(wake.getDimensions()).toMatchObject({ event: 'wake' });
 
-    const sampled = (await rows(h, a.tenantId, STORAGE_BYTES_METRIC)).length;
-    clock += 60 * 60 * 1000; // a new storage bucket, so the close's sample is its own row
+    clock += 60 * 60 * 1000; // a new storage bucket: only the close can fill it
+    const closeBucket = Math.floor(clock / (60 * 60 * 1000)) * 60 * 60 * 1000;
     await sleepApp();
     expect(hostMetrics().open).toBe(0);
     await vi.waitFor(async () =>
@@ -92,15 +92,17 @@ describe('wake and idle-close sampling', () => {
     });
     // the close sampled storage, tagged with the host's tenant
     await vi.waitFor(async () =>
-      expect((await rows(h, a.tenantId, STORAGE_BYTES_METRIC)).length).toBe(
-        sampled + 1,
-      ),
+      expect(
+        (await rows(h, a.tenantId, STORAGE_BYTES_METRIC)).filter(
+          (r) => r.windowStart.getTime() === closeBucket,
+        ),
+      ).toHaveLength(1),
     );
-    const latest = (await rows(h, a.tenantId, STORAGE_BYTES_METRIC)).sort(
-      (x, y) => y.windowStart.getTime() - x.windowStart.getTime(),
-    )[0];
-    expect(latest.quantity).toBe(4096);
-    expect(latest.getDimensions()).toMatchObject({ backend: 'sqlite' });
+    const latest = (await rows(h, a.tenantId, STORAGE_BYTES_METRIC)).find(
+      (r) => r.windowStart.getTime() === closeBucket,
+    );
+    expect(latest?.quantity).toBe(4096);
+    expect(latest?.getDimensions()).toMatchObject({ backend: 'sqlite' });
     // the other tenant never woke: nothing of it was written
     expect(await rows(h, b.tenantId, APP_WAKE_METRIC)).toHaveLength(0);
     expect(await rows(h, b.tenantId, APP_AWAKE_METRIC)).toHaveLength(0);
@@ -179,7 +181,7 @@ describe('wake and idle-close sampling', () => {
     await runAs(a, () => App.defineModel('Chore', { title: { type: 'text' } }));
     await runAs(a, () => applyWaiting(a));
     expect(await runAs(a, () => getHost())).toBeTruthy();
-    expect(meter.onWake).toHaveBeenCalled();
+    await vi.waitFor(() => expect(meter.onWake).toHaveBeenCalled());
     expect(await rows(h, a.tenantId, APP_WAKE_METRIC)).toHaveLength(0);
   });
 });
