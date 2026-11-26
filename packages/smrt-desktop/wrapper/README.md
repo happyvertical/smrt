@@ -580,13 +580,14 @@ matrix) and the signing half of #4836 are `status: blocked` on them.
    `latest.json` feed (smrt#4836) will be served. This workflow still publishes
    to this repository's `desktop-latest` release, so pointing the publish step at
    that repository is open, and so are the signing secrets and the updater key.
-5. **A gpg-verified Node pin.** The only pin, Node 26.8.1, is `unverified` (see
-   `../README.md`, Node pin provenance); a maintainer with `gpg` must run
-   `scripts/update-node-pins.mjs`. The signing job reads this committed record,
-   so a release cannot be signed until it says `gpg-verified`.
-6. **The product itself** for the `product_dir` and `bridge_path` inputs: a
+5. **The product itself** for the `product_dir` and `bridge_path` inputs: a
    standalone app with `smrt-desktop.json`, its lockfile and a pre-bundled MCP
    bridge.
+
+Node 26.12.1 has committed `gpg-verified` pins for all six supported targets
+(see `../README.md`, Node pin provenance). The signing job verifies the record
+for the bundle's selected version; the older Node 26.8.1 remains `unverified`
+and cannot pass that gate. Future pins use `scripts/update-node-pins.mjs`.
 
 ### Not verified
 

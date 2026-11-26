@@ -133,6 +133,15 @@ export {
   recordSuccessfulMigrate,
   type UnloadedBuildPackage,
 } from './migrate-record.js';
+// Closed migration failure reasons (#5425): what `MigrationTracker` returns
+// and throws for a failed statement, commit or rollback.
+export {
+  type FailurePhase,
+  type GeneratedStatement,
+  isMigrationStatementFailure,
+  MigrationStatementFailure,
+  type StatementKind,
+} from './migration-failure.js';
 // Cross-process serialization of db:migrate runs (#3634)
 export {
   type AcquireMigrationLockOptions,

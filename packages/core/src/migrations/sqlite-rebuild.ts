@@ -77,6 +77,7 @@ import {
 } from '../schema/sql-identifiers.js';
 import { sqliteUserObjectName } from '../schema/sqlite-internal-names.js';
 import type { SchemaChange, SQLDataType } from '../schema/types.js';
+import { frameworkGuardStatement } from './migration-failure.js';
 import { rebuildPlanStaleMessage } from './rebuild-plan-guard.js';
 import type { DatabaseInterface } from './types.js';
 
@@ -113,7 +114,11 @@ export function sqliteForeignKeyGuardStatements(): string[] {
     `CREATE TEMP TABLE ${guard} ("foreign_keys" INTEGER CONSTRAINT ${quoteIdentifier(SQLITE_REBUILD_GUARD_REASON)} CHECK ("foreign_keys" = 0))`,
     // The setting is read from `main`, where a temporary table of the same
     // name cannot answer for it, and a missing answer counts as "on".
-    `INSERT INTO temp.${guard} ("foreign_keys") SELECT coalesce((SELECT "foreign_keys" FROM main.pragma_foreign_keys), 1)`,
+    frameworkGuardStatement(
+      `INSERT INTO temp.${guard} ("foreign_keys") SELECT coalesce((SELECT "foreign_keys" FROM main.pragma_foreign_keys), 1)`,
+      'sqlite',
+      [SQLITE_REBUILD_GUARD_REASON],
+    ),
     `DROP TABLE temp.${guard}`,
   ];
 }
@@ -153,7 +158,11 @@ export function sqliteReferencedTableGuardStatements(
     `CREATE TEMP TABLE ${found} AS SELECT CASE WHEN (SELECT "foreign_keys" FROM main.pragma_foreign_keys) = 0 OR NOT ${referenced} THEN 1 ELSE 0 END AS "safe"`,
     `DROP TABLE IF EXISTS temp.${guard}`,
     `CREATE TEMP TABLE ${guard} ("safe" INTEGER CONSTRAINT ${quoteIdentifier(SQLITE_REBUILD_GUARD_REASON)} CHECK ("safe" = 1))`,
-    `INSERT INTO temp.${guard} ("safe") SELECT "safe" FROM temp.${found}`,
+    frameworkGuardStatement(
+      `INSERT INTO temp.${guard} ("safe") SELECT "safe" FROM temp.${found}`,
+      'sqlite',
+      [SQLITE_REBUILD_GUARD_REASON],
+    ),
     `DROP TABLE temp.${guard}`,
     `DROP TABLE temp.${found}`,
   ];
@@ -215,7 +224,11 @@ export function sqliteUnchangedTableGuardStatements(
     `CREATE TEMP TABLE ${found} AS SELECT (${unchanged.join(' AND ')}) AS "unchanged"`,
     `DROP TABLE IF EXISTS temp.${guard}`,
     `CREATE TEMP TABLE ${guard} ("unchanged" INTEGER CONSTRAINT ${quoteIdentifier(rebuildPlanStaleMessage(tableName))} CHECK ("unchanged" = 1))`,
-    `INSERT INTO temp.${guard} ("unchanged") SELECT "unchanged" FROM temp.${found}`,
+    frameworkGuardStatement(
+      `INSERT INTO temp.${guard} ("unchanged") SELECT "unchanged" FROM temp.${found}`,
+      'sqlite',
+      [rebuildPlanStaleMessage(tableName)],
+    ),
     `DROP TABLE temp.${guard}`,
     `DROP TABLE temp.${found}`,
   ];
