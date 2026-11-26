@@ -128,9 +128,29 @@ describe.skipIf(!pgUrl)(
       await db?.close?.();
     });
     afterAll(async () => {
-      for (const name of databases)
-        await admin?.query(`DROP DATABASE IF EXISTS ${name} WITH (FORCE)`);
-      await admin?.close?.();
+      // Every connection the test opened is closed by now (`afterEach`). Drop
+      // without FORCE: FORCE terminates every backend in the database, and the
+      // unprivileged CI role may not signal one owned by the bootstrap
+      // superuser (an autovacuum worker in the fresh database), which failed
+      // with 42501 (#5625). A plain drop cancels autovacuum workers itself;
+      // 55006 only means a just-closed pooled backend has not exited yet.
+      try {
+        for (const name of databases) {
+          for (let attempt = 0; ; attempt++) {
+            try {
+              await admin.query(`DROP DATABASE IF EXISTS ${name}`);
+              break;
+            } catch (error) {
+              const e = error as { code?: string; cause?: { code?: string } };
+              const code = e.code ?? e.cause?.code;
+              if (attempt >= 20 || code !== '55006') throw error;
+              await new Promise((resolve) => setTimeout(resolve, 250));
+            }
+          }
+        }
+      } finally {
+        await admin?.close?.();
+      }
     });
 
     it('upgrades a database whose system tables are older than the floor', async () => {
