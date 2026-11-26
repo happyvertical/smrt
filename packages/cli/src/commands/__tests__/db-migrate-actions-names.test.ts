@@ -382,3 +382,42 @@ describe('partitionSchemaChanges index + guard branches', () => {
     });
   });
 });
+
+describe('guard-bearing synthetic migrations', () => {
+  // A guard whose SQL text changes between releases (for example a new
+  // `USING ERRCODE` clause) gets a new tracker id, so a completed migration
+  // under the old id is never re-applied with a different checksum.
+  const guard = (raise: string) =>
+    `DO $$ BEGIN IF EXISTS (SELECT 1 FROM "w" WHERE "n" IS NOT NULL AND "n" <> trunc("n")) THEN RAISE EXCEPTION 'Cannot convert w.n to INTEGER: found non-integer values'${raise}; END IF; END $$`;
+  const typeUpgrade = (raise: string) => ({
+    type: 'type_upgrade' as const,
+    tableName: 'w',
+    column: { name: 'n', type: 'INTEGER' },
+    mismatch: { expected: 'INTEGER', actual: 'REAL' },
+    sqlStatements: [
+      guard(raise),
+      'ALTER TABLE "w" ALTER COLUMN "n" TYPE bigint USING "n"::bigint',
+    ],
+  });
+  const alterColumn = (raise: string) => ({
+    type: 'alter_column' as const,
+    tableName: 'w',
+    columnName: 'n',
+    alteration: 'type' as const,
+    sqlStatements: [guard(raise), 'ALTER TABLE "w" DROP COLUMN "n"'],
+  });
+
+  it('names a regenerated guard with new SQL differently from the completed one', () => {
+    const before = " USING ERRCODE = 'P0' || 'S01'";
+    expect(
+      getSyntheticMigrationNameForAction(typeUpgrade('') as never),
+    ).not.toBe(
+      getSyntheticMigrationNameForAction(typeUpgrade(before) as never),
+    );
+    expect(
+      getSyntheticMigrationNameForAction(alterColumn('') as never),
+    ).not.toBe(
+      getSyntheticMigrationNameForAction(alterColumn(before) as never),
+    );
+  });
+});

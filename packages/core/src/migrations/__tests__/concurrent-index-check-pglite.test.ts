@@ -252,16 +252,21 @@ describe.skipIf(process.env.SMRT_TEST_PGLITE !== '1')(
 
       it("keeps the old index when a later migration's create that would replace it cannot be checked", async () => {
         await db.query('CREATE INDEX jobs_status_idx ON jobs (status)');
-        await expect(
-          migrateEach(
-            definition('drop_jobs_status_idx', ['DROP INDEX jobs_status_idx']),
-            definition('add_jobs_status_idx', [
-              'CREATE INDEX jobs_status_idx ON jobs ((lower(no_such_column)))',
-            ]),
-          ),
-        ).rejects.toThrow(
-          'Migration add_jobs_status_idx: The CREATE INDEX statement',
+        const refusal = await migrateEach(
+          definition('drop_jobs_status_idx', ['DROP INDEX jobs_status_idx']),
+          definition('add_jobs_status_idx', [
+            'CREATE INDEX jobs_status_idx ON jobs ((lower(no_such_column)))',
+          ]),
+        ).then(
+          () => null,
+          (error: unknown) => error as Error,
         );
+        // A closed failure of the check, named for its migration; the
+        // statement's text and the database's message are withheld.
+        expect(refusal?.message).toMatch(
+          /^Migration add_jobs_status_idx: statement 1 \(create-index\) failed in the index-check phase \(SQLSTATE 42703; database message withheld\): its expressions or predicate cannot be checked against "jobs", so it was refused under --postgres-safe before any migration of the batch ran/,
+        );
+        expect(refusal?.message).not.toContain('no_such_column');
         expect(await indexes()).toEqual(['jobs_status_idx']);
       });
 
@@ -439,11 +444,12 @@ describe.skipIf(process.env.SMRT_TEST_PGLITE !== '1')(
           `INSERT INTO jobs (id, status) VALUES (1, 'same'), (2, 'same')`,
         );
         const [first] = await run();
-        expect(String(first.error)).toContain('jobs_owner_key');
+        expect(String(first.error)).toContain('SQLSTATE 23505');
 
         await db.query('DELETE FROM jobs WHERE id = 2');
         const [retry] = await run();
-        expect(String(retry.error)).toContain('already exists');
+        expect(String(retry.error)).toContain('(alter-table)');
+        expect(String(retry.error)).toContain('SQLSTATE 42701');
         const after = await record();
         expect(after.status).toBe('failed');
         expect(after.error_message).toMatch(

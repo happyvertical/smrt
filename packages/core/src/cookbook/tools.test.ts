@@ -495,9 +495,16 @@ describe(`installed recipe server tools (${databaseType}, in process)`, () => {
       .mockImplementation(async () => {
         throw new Error('injected activation DDL failure');
       });
+    // On SQLite the injected failure is raised inside the migration tracker
+    // and reaches the caller as its closed reason; on PGlite it is raised by
+    // the bootstrap transaction (`beginTransaction`), outside the tracker.
     await expect(enable()).rejects.toMatchObject({
       code: 'activation_failed',
-      publicMessage: expect.stringContaining('injected activation DDL failure'),
+      publicMessage: expect.stringContaining(
+        databaseType === 'pglite' && db.beginTransaction
+          ? 'injected activation DDL failure'
+          : 'the migration failed in the unknown phase (SQLSTATE unavailable; database message withheld)',
+      ),
     });
     const refused = await mcp().handleToolCall({
       method: 'tools/call',
