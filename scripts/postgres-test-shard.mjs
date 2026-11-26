@@ -6,7 +6,10 @@
  * Usage: postgres-test-shard.mjs <ingestion|remaining>[:<i>/<n>]
  *
  * `ingestion` is that one package; `remaining` is every other registered
- * suite. `remaining:<i>/<n>` is one of `n` duration-balanced groups of them.
+ * suite. The output is `<package>#<task>` units for `turbo run` (#5649): a
+ * package in SPLIT_POSTGRES_UNITS (core) is its real-PG and PGlite halves,
+ * balanced separately, since the PGlite half is in-process and shares no
+ * database with the real-PG files of its package. `remaining:<i>/<n>` is one of `n` duration-balanced groups of them.
  * `ingestion:<i>/<n>` is still the one package, with `-- --shard=<i>/<n>`
  * appended so Turbo hands Vitest that slice of its files: the package's files
  * share one database and run one at a time, so only separate jobs, each with
@@ -15,7 +18,13 @@
 import { readFile } from 'node:fs/promises';
 import { resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { balanceShards, POSTGRES_TEST_SECONDS } from './test-shard-balance.mjs';
+import {
+  balanceShards,
+  expandPostgresUnits,
+  POSTGRES_TEST_SECONDS,
+  SPLIT_POSTGRES_UNITS,
+  unitPackage,
+} from './test-shard-balance.mjs';
 import { discoverWorkspaces } from './workspaces.mjs';
 
 export const INGESTION = '@happyvertical/smrt-ingestion';
@@ -30,6 +39,15 @@ export function parsePostgresShard(shard) {
     throw new Error(`Invalid PostgreSQL shard "${shard}"; expected ingestion or remaining, optionally with :<i>/<n>`);
   }
   return { group: match[1], index, count };
+}
+
+/**
+ * Every package with a `test:postgres` script must be reachable from at least
+ * one unit; a split package's halves must each exist as scripts.
+ */
+export function uncoveredPostgresPackages(registered, units) {
+  const covered = new Set(units.map(unitPackage));
+  return registered.filter((name) => !covered.has(name));
 }
 
 export function selectPostgresShard(manifests, shard, only) {
@@ -53,14 +71,23 @@ export function selectPostgresShard(manifests, shard, only) {
       throw new Error(`Invalid test:postgres script in ${manifest.name}`);
     }
     registered.push(manifest.name);
+    for (const task of SPLIT_POSTGRES_UNITS[manifest.name] ?? []) {
+      if (typeof manifest.scripts?.[task] !== 'string' || manifest.scripts[task].trim() === '') {
+        throw new Error(`Missing ${task} script in ${manifest.name}`);
+      }
+    }
   }
   registered.sort();
   if (!registered.includes(INGESTION)) {
     throw new Error(`Required ingestion PostgreSQL suite is missing: ${INGESTION}`);
   }
-  const remaining = registered.filter((name) => name !== INGESTION);
+  const units = expandPostgresUnits(registered);
+  const missing = uncoveredPostgresPackages(registered, units);
+  if (missing.length > 0) throw new Error(`PostgreSQL suites in no unit: ${missing.join(', ')}`);
+  const ingestionUnits = units.filter((unit) => unitPackage(unit) === INGESTION);
+  const remaining = units.filter((unit) => unitPackage(unit) !== INGESTION);
   const selected = group === 'ingestion'
-    ? [INGESTION]
+    ? ingestionUnits
     : balanceShards(remaining, count, POSTGRES_TEST_SECONDS)[index - 1];
   if (selected.length === 0) throw new Error(`PostgreSQL shard ${shard} is empty; check the suite registry`);
   // Only the one-package ingestion group can hand Vitest a file slice: Turbo
@@ -74,10 +101,11 @@ export function selectPostgresShard(manifests, shard, only) {
       throw new Error('Affected PostgreSQL package list must be an array of names');
     }
     const affected = new Set(only);
-    const restricted = selected.filter((name) => affected.has(name));
-    return { registered, selected: restricted, vitestArgs: restricted.length > 0 ? vitestArgs : [] };
+    // A unit belongs to its owning package: affecting core selects both halves.
+    const restricted = selected.filter((unit) => affected.has(unitPackage(unit)));
+    return { registered, units, selected: restricted, vitestArgs: restricted.length > 0 ? vitestArgs : [] };
   }
-  return { registered, selected, vitestArgs };
+  return { registered, units, selected, vitestArgs };
 }
 
 export async function readPostgresManifests(repoRoot) {
@@ -98,9 +126,8 @@ async function main() {
   const affected = process.env.POSTGRES_AFFECTED;
   const only = affected === undefined || affected === '' || affected === 'all' ? undefined : JSON.parse(affected);
   const { registered, selected, vitestArgs } = selectPostgresShard(await readPostgresManifests(root), shard, only);
-  console.error(`PostgreSQL shard ${shard}: ${selected.length} of ${registered.length} registered suite(s)`);
-  const filters = selected.map((name) => `--filter=${name}`);
-  process.stdout.write([...filters, ...(vitestArgs.length > 0 ? ['--', ...vitestArgs] : [])].join(' '));
+  console.error(`PostgreSQL shard ${shard}: ${selected.length} unit(s) of ${registered.length} registered package suite(s)`);
+  process.stdout.write([...selected, ...(vitestArgs.length > 0 ? ['--', ...vitestArgs] : [])].join(' '));
 }
 
 if (process.argv[1] === fileURLToPath(import.meta.url)) {

@@ -26,10 +26,15 @@ test('selectAffectedTestPackages keeps every affected non-core test task once', 
       '@happyvertical/smrt-beta',
       '@happyvertical/smrt-zeta',
     ],
+    units: [
+      '@happyvertical/smrt-alpha#test',
+      '@happyvertical/smrt-beta#test',
+      '@happyvertical/smrt-zeta#test',
+    ],
     shard: [
-      '@happyvertical/smrt-alpha',
-      '@happyvertical/smrt-beta',
-      '@happyvertical/smrt-zeta',
+      '@happyvertical/smrt-alpha#test',
+      '@happyvertical/smrt-beta#test',
+      '@happyvertical/smrt-zeta#test',
     ],
   });
   // The trailing shard is reserved for the dedicated package, absent here.
@@ -38,9 +43,9 @@ test('selectAffectedTestPackages keeps every affected non-core test task once', 
     (index) => selectAffectedTestPackages(dryRun, { index, count: 3 }).shard,
   );
   assert.deepEqual(shared.flat().sort(), [
-    '@happyvertical/smrt-alpha',
-    '@happyvertical/smrt-beta',
-    '@happyvertical/smrt-zeta',
+    '@happyvertical/smrt-alpha#test',
+    '@happyvertical/smrt-beta#test',
+    '@happyvertical/smrt-zeta#test',
   ]);
 });
 
@@ -57,9 +62,9 @@ test('selectAffectedTestPackages gives the dedicated package its own trailing sh
     (index) => selectAffectedTestPackages(dryRun, { index, count: 3 }).shard,
   );
   assert.deepEqual(shards, [
-    ['@happyvertical/smrt-ingestion'],
-    ['@happyvertical/smrt-commerce', '@happyvertical/smrt-tags'],
-    ['@happyvertical/smrt-template-sveltekit'],
+    ['@happyvertical/smrt-ingestion#test'],
+    ['@happyvertical/smrt-commerce#test', '@happyvertical/smrt-tags#test'],
+    ['@happyvertical/smrt-template-sveltekit#test'],
   ]);
 });
 

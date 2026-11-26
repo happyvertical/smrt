@@ -104,7 +104,7 @@ function fixture({ wrongVersion = false, wrongBundle = false, wrongParent = fals
           if (args[0] === 'view') {
             const name = args[1].slice(0, args[1].lastIndexOf('@'));
             if (!published.has(name)) return null;
-            return args[2] === 'version' ? version : createHash('sha1').update(published.get(name)).digest('hex');
+            return args[2] === 'version' ? version : `sha512-${createHash('sha512').update(published.get(name)).digest('base64')}`;
           }
           assert.equal(args[0], 'publish', 'Recovery never installs or executes candidate tooling');
           const artifact = byPath.get(args[1]);

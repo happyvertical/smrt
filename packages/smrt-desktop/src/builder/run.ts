@@ -385,6 +385,15 @@ export async function runBuild(
     } catch {
       throw new BuildError('app_invalid', { stage: current });
     }
+    if (
+      config.privateDocuments !== undefined &&
+      plan.target !== 'aarch64-apple-darwin'
+    ) {
+      throw new BuildError('app_invalid', {
+        stage: current,
+        field: 'privateDocuments',
+      });
+    }
     if (config.icons === undefined || config.icons.length === 0) {
       throw new BuildError('identity_missing', {
         stage: current,
@@ -679,6 +688,11 @@ export async function runBuild(
       // Always written: the wrapper's own tauri.conf.json carries the
       // maintainers' updater key, which a product must never inherit.
       plugins: {
+        ...(config.privateDocuments === undefined
+          ? {}
+          : {
+              'smrt-desktop': { privateDocuments: config.privateDocuments },
+            }),
         updater: {
           pubkey: config.updaterPublicKey ?? MISSING_UPDATER_KEY_PLACEHOLDER,
         },
