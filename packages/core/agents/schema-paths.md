@@ -1976,6 +1976,60 @@ contributors disagree on a shared index has no stamp (generation warns).
 
 ## PostgreSQL migration execution
 
+A migration failure (any statement phase, the index check probes and catalog
+reads, the transaction's `COMMIT` such as a deferred constraint, a rollback's
+`down`, `MigrationTracker.initialize()`, the tracker's own bookkeeping, session
+and connection setup and cleanup, and the migrate-run ledger write
+`recordSuccessfulMigrate`) is returned, thrown, logged and persisted to `error_message` as a
+closed `MigrationStatementFailure` from `migrations/migration-failure.ts`:
+migration id, statement ordinal (1-based position in the authored `up` list,
+or in `down` for a rollback, also for statements planned into another phase;
+a synthesised unique-index swap statement says `generated swap close` at the
+drop it replaced; an INVALID-index repair reports the CREATE that needed it),
+fixed kind, phase (`regular`, `concurrent-index`, `index-check`,
+`catalog-read`, `commit`, `ledger-record`, `unknown`), SQLSTATE (`unavailable`
+on SQLite/DuckDB) and an optional fixed `explanation` (index checks, catalog
+reads; a failed ledger write says the run's schema changes are committed and
+its unrecorded confirmations must be recorded or audited by the operator). `.code` is the SQLSTATE or `null`. Closing is the
+default at every public executor entry (`apply`, `applyAll`, `rollback`,
+`initialize`): every error the executor did not raise itself is closed,
+including non-database errors thrown inside them (a caller's `onProgress`,
+a range check), which then read `failed in the unknown phase`; a closed
+failure keeps no reference to the original error (no `cause`). When cleanup
+(session release, SQLite PRAGMA restore) also fails, the first failure is
+kept and the cleanup failure, closed, is attached as `cleanupFailure` with a
+`(cleanup also failed: …)` suffix. If a failed SQLite rebuild cannot restore
+`PRAGMA foreign_keys`, that tracker refuses further migration work until the
+setting reads back as restored (restore it or reopen the connection). The
+`db:migrate` CLI prints no driver context for a closed failure. Authored SQL and database message text are
+withheld (they can echo a literal). Identifiers (index, table, migration
+names) may appear in messages; they are not secrets. Index refusals name the
+statement as `Statement N kind: K`, not its text. The persist-failure and
+INVALID-index repair log lines carry `(SQLSTATE …; database message
+withheld)`. A retry refusal of a `failed` migration does not repeat the
+stored `error_message`.
+
+A guard keeps a fixed message only when the framework generated it in this
+process (`frameworkGuardStatement`, provenance by exact text, never by shape)
+and it failed for its own reason: PostgreSQL guards raise with SQLSTATE
+`P0S01` (a `P0001` from an authored function inside a guard is closed),
+SQLite's CHECK named exactly by the reason, DuckDB's `error()` findings. The
+report is always a fresh plain `Error` built only from the registered
+reasons it matched (`.code` `P0S01` on PostgreSQL; DuckDB findings without
+their values); the driver's error is dropped. A guard loaded from a migration
+file written by another process, or evicted from the bounded registry, is
+closed like authored SQL. The `USING ERRCODE` clause changes the text, and
+so the checksum, of generated PostgreSQL guard statements; `db:migrate` names
+guard-bearing repairs with a fingerprint of their SQL (`type_upgrade_…`,
+`alter_column_…`) and `orchestrate` with a timestamp, so a regenerated guard
+gets a new migration id and never collides with a completed one. A caller
+that re-applies its own completed migration under the same id with
+regenerated SQL sees the usual checksum refusal. Rows written before this
+change may still hold driver text. `db:history` and `db:status` withhold all
+nonempty stored failure details, including text that resembles a current closed
+reason, because stored messages have no trusted provenance. Reporting leaves
+the historical rows intact.
+
 `MigrationTracker.applyAll({ atomic: true })` sets local lock/statement timeouts
 before any DDL. `postgresSafe: true` commits non-index DDL atomically, then runs
 indexes CONCURRENTLY on `db.acquireSession()` so settings and DDL share a
@@ -1986,8 +2040,9 @@ limit: the statements deferred to the concurrent phase (a foreign-key
 `VALIDATE CONSTRAINT` and every statement after it) commit as they run, and a
 retry runs all of them again. One that committed before the failure and
 cannot run twice (`ADD COLUMN` without `IF NOT EXISTS`, a plain `DROP INDEX`
-or rename) makes every retry fail loudly ("already exists" or "does not
-exist") and the row stays `failed`. To recover, check which deferred
+or rename) makes every retry fail loudly (the closed reason's SQLSTATE: 42701
+or 42P07 for "already exists", 42704 or 42703 for "does not exist"; match on
+`.code`, not message text) and the row stays `failed`. To recover, check which deferred
 statements committed, revert them by hand (for example drop the column the
 failed attempt added, while it holds no data), then rerun. Inspect
 `pg_index.indisvalid` and drop INVALID indexes before rebuild (`pg_indexes`

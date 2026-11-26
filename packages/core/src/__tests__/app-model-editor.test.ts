@@ -985,7 +985,7 @@ describe('durable app model editor', () => {
         expectedRevision: 1,
         requestId: 'retry-after-ddl',
       };
-      await expect(e.apply(command, context)).rejects.toThrow('does not exist');
+      await expect(e.apply(command, context)).rejects.toThrow('SQLSTATE 42P01');
       injection.mockRestore();
       expect(publish.mock.calls).toHaveLength(publications);
       expect(e.snapshot().revision).toBe(1);

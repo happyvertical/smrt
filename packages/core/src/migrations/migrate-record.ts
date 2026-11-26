@@ -18,6 +18,10 @@ import {
   resolveBuildSchema,
   resolveRetiredTables,
 } from './build-schema.js';
+import {
+  isDatabaseError,
+  MigrationStatementFailure,
+} from './migration-failure.js';
 import type { PackagesSeenInput } from './migration-run-decision.js';
 import { compareReleases } from './oldest-supported.js';
 import { computeSchemaFingerprint } from './schema-fingerprint.js';
@@ -230,10 +234,37 @@ export function packagesSeenInput(
   };
 }
 
-/** SELECT-only: an older or empty database is explicitly a first run. */
+/**
+ * Why a read of the migrate-run ledger failed: it runs before any schema
+ * change of the run that reads it.
+ */
+const LEDGER_READ_FAILED =
+  'the last migrate run could not be read or decoded; no schema change was applied';
+
+/**
+ * SELECT-only: an older or empty database is explicitly a first run.
+ *
+ * A failed read, and a stored row that does not decode, throw a closed
+ * {@link MigrationStatementFailure} (phase `ledger-read`): neither the
+ * database's text nor an excerpt of the stored value reaches the caller.
+ */
 export async function readLastMigrateRecord(
   db: DatabaseInterface,
   options: MigrateRecordOptions = {},
+): Promise<LastMigrateRecord> {
+  try {
+    return await readLastMigrateRow(db, options);
+  } catch (error) {
+    throw new MigrationStatementFailure(error, {
+      phase: 'ledger-read',
+      explanation: LEDGER_READ_FAILED,
+    });
+  }
+}
+
+async function readLastMigrateRow(
+  db: DatabaseInterface,
+  options: MigrateRecordOptions,
 ): Promise<LastMigrateRecord> {
   if (!(await tableExists(db, '_smrt_migrate_runs', options.engineHint))) {
     return { state: 'none' };
@@ -299,6 +330,9 @@ export async function readRecordedSystemSchema(
   }
   return highest;
 }
+/** Why a failed ledger write matters, and what the operator must do. */
+const LEDGER_WRITE_FAILED =
+  'schema changes this run applied are committed, but its run record was not written; confirmations from this run (retirements, recomputes) are not recorded and must be recorded or audited by the operator';
 
 /**
  * Append only when the successful migrate's declarations changed. Uses the
@@ -323,6 +357,39 @@ export async function recordSuccessfulMigrate(
   const packages = [...new Set(input.packages)].sort();
   const recomputes = options.recomputes ?? [];
   const confirmed = options.confirmedRetirements ?? [];
+  try {
+    return await recordMigrateRun(
+      db,
+      options,
+      input,
+      packages,
+      recomputes,
+      confirmed,
+    );
+  } catch (error) {
+    // Closed: the ledger's database text never reaches the caller. Schema
+    // changes the run applied are already committed, but a rerun cannot
+    // reconstruct this run's confirmations (the next diff no longer holds
+    // them), so the operator is told they are unrecorded. A failure that did
+    // not come from the database gets the closed reason without that advice.
+    throw new MigrationStatementFailure(error, {
+      phase: 'ledger-record',
+      explanation:
+        error instanceof MigrationStatementFailure || isDatabaseError(error)
+          ? LEDGER_WRITE_FAILED
+          : null,
+    });
+  }
+}
+
+function recordMigrateRun(
+  db: DatabaseInterface,
+  options: MigrateRecordOptions,
+  input: MigrateRecordInput,
+  packages: string[],
+  recomputes: readonly ConfirmedRecompute[],
+  confirmed: readonly ConfirmedRetirement[],
+): Promise<{ written: boolean; record: MigrateRecord }> {
   return withEmbeddedWriteQueue(
     db,
     getDatabaseEngine(db, options.engineHint) !== 'postgres',

@@ -1885,7 +1885,7 @@ describe('host design action durable boundary', () => {
         });
       try {
         await expect(call('app.addField', add, host())).rejects.toThrow(
-          'does not exist',
+          'SQLSTATE 42P01',
         );
       } finally {
         inject.mockRestore();
