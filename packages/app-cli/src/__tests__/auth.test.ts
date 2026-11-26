@@ -10,7 +10,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { Writable } from 'node:stream';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { runAuthLogin } from '../commands/auth.js';
+import { runAuthLogin, runAuthStatus } from '../commands/auth.js';
 import type { CliConfigContext } from '../config.js';
 
 function buf() {
@@ -191,6 +191,99 @@ describe('runAuthLogin polling resilience — #1311 review #2', () => {
           [],
         ),
       ).rejects.toThrow();
+    } finally {
+      global.fetch = realFetch;
+    }
+  });
+});
+
+describe('runAuthStatus with an agent credential', () => {
+  const env = ['AUTHTEST_TOKEN', 'AUTHTEST_SERVER_URL'] as const;
+  const saved: Record<string, string | undefined> = {};
+
+  beforeEach(() => {
+    for (const key of env) saved[key] = process.env[key];
+    process.env.AUTHTEST_TOKEN = 'hvwk_agent';
+    process.env.AUTHTEST_SERVER_URL = 'https://example.test';
+  });
+  afterEach(() => {
+    for (const key of env) {
+      if (saved[key] === undefined) delete process.env[key];
+      else process.env[key] = saved[key];
+    }
+  });
+
+  function statusFetch(agentStatus: number) {
+    return vi.fn(async (url: string) => {
+      const json = (status: number, body: unknown) =>
+        new Response(JSON.stringify(body), {
+          status,
+          headers: { 'content-type': 'application/json' },
+        });
+      if (url.endsWith('/api/cli/auth/session')) {
+        return json(403, {
+          message:
+            'Agent credentials authenticate tracker and MCP requests only.',
+        });
+      }
+      if (url.endsWith('/api/tracker/agent-credentials/self')) {
+        return agentStatus === 200
+          ? json(200, {
+              credential: {
+                agentSlug: 'magoo',
+                capabilities: ['tracker.work-item.read'],
+                expiresAt: '2027-01-01T00:00:00.000Z',
+              },
+            })
+          : json(agentStatus, { message: 'nope' });
+      }
+      throw new Error(`unexpected url ${url}`);
+    });
+  }
+
+  async function status(agentStatusPath: string | undefined) {
+    const stdout = buf();
+    await runAuthStatus({
+      context,
+      stdout: stdout as any,
+      stderr: buf() as any,
+      ...(agentStatusPath ? { agentStatusPath } : {}),
+    });
+    return JSON.parse(stdout.contents());
+  }
+
+  it('reports the agent credential through the configured introspection path', async () => {
+    const realFetch = global.fetch;
+    global.fetch = statusFetch(200) as any;
+    try {
+      const out = await status('/api/tracker/agent-credentials/self');
+      expect(out).toMatchObject({
+        authenticated: true,
+        kind: 'agent-credential',
+        serverUrl: 'https://example.test',
+        credential: {
+          agentSlug: 'magoo',
+          capabilities: ['tracker.work-item.read'],
+          expiresAt: '2027-01-01T00:00:00.000Z',
+        },
+      });
+    } finally {
+      global.fetch = realFetch;
+    }
+  });
+
+  it('keeps the session error when no path is configured or the path rejects the token', async () => {
+    const realFetch = global.fetch;
+    try {
+      global.fetch = statusFetch(200) as any;
+      expect(await status(undefined)).toMatchObject({
+        authenticated: false,
+        error: expect.stringMatching(/Agent credentials authenticate/),
+      });
+      global.fetch = statusFetch(401) as any;
+      expect(await status('/api/tracker/agent-credentials/self')).toMatchObject(
+        { authenticated: false },
+      );
     } finally {
       global.fetch = realFetch;
     }
