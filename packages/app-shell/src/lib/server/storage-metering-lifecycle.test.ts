@@ -184,4 +184,30 @@ describe('wake and idle-close sampling', () => {
     await vi.waitFor(() => expect(meter.onWake).toHaveBeenCalled());
     expect(await rows(h, a.tenantId, APP_WAKE_METRIC)).toHaveLength(0);
   });
+
+  it('an awake span across a window boundary is clipped to each window', async () => {
+    const meter = new StorageMeter({ probe: fakeProbe(), now: () => clock });
+    const h = await openCloud(() => meter);
+    const { a } = h;
+    // 23:59 to 00:01 across the October/November boundary: 2 minutes awake
+    const start = Date.UTC(2026, 9, 31, 23, 59);
+    const end = Date.UTC(2026, 10, 1, 0, 1);
+    await runAs(a, async () =>
+      (await TenantUsageMetricCollection.create({ db: h.db })).recordUsage({
+        tenantId: a.tenantId,
+        metricKey: APP_AWAKE_METRIC,
+        quantity: end - start,
+        windowStart: new Date(start),
+        windowEnd: new Date(end),
+        source: 'app-shell.worker',
+        sourceId: 'boundary',
+      }),
+    );
+    const month = (m: number) => monthWindow(new Date(Date.UTC(2026, m, 15)));
+    const oct = await runAs(a, () => meter.read(month(9)));
+    const nov = await runAs(a, () => meter.read(month(10)));
+    expect(oct.worker.awakeMs).toBe(60_000);
+    expect(nov.worker.awakeMs).toBe(60_000);
+    expect(oct.worker.awakeMs + nov.worker.awakeMs).toBe(end - start);
+  });
 });

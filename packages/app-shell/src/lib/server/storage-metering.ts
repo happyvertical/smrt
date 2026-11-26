@@ -405,7 +405,16 @@ export class StorageMeter {
     });
     for (const m of worker) {
       if (m.metricKey === APP_WAKE_METRIC) result.worker.wakes += m.quantity;
-      if (m.metricKey === APP_AWAKE_METRIC) result.worker.awakeMs += m.quantity;
+      if (m.metricKey === APP_AWAKE_METRIC) {
+        // A span that crosses the window's edge counts only the part inside.
+        const from = Math.max(m.windowStart.getTime(), window.start.getTime());
+        const to = Math.min(m.windowEnd.getTime(), window.end.getTime());
+        const span = m.windowEnd.getTime() - m.windowStart.getTime();
+        result.worker.awakeMs +=
+          span > 0
+            ? Math.round((m.quantity * Math.max(0, to - from)) / span)
+            : m.quantity;
+      }
     }
     return result;
   }
