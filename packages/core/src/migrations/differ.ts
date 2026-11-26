@@ -100,6 +100,10 @@ import {
   type DuckDbRebuildPlan,
   planDuckDbTableChanges,
 } from './duckdb-rebuild.js';
+import {
+  FRAMEWORK_GUARD_ERRCODE_SQL,
+  frameworkGuardStatement,
+} from './migration-failure.js';
 import { resolveRetirementContext } from './retire-context.js';
 import {
   planTableRetirements,
@@ -2057,7 +2061,7 @@ export class SchemaComparer {
     );
     const alterColumn = new RegExp(`^ALTER COLUMN (${ident}) ([\\s\\S]+)$`);
     const preflight =
-      /^DO \$\$ BEGIN IF ([\s\S]*?) THEN RAISE EXCEPTION '(?:[^']|'')*'; END IF; END \$\$$/;
+      /^DO \$\$ BEGIN IF ([\s\S]*?) THEN RAISE EXCEPTION '(?:[^']|'')*'(?: USING ERRCODE = [^;]+)?; END IF; END \$\$$/;
     const unprojectable = (statement: string) => ({
       unprojectable:
         statement.length > 160 ? `${statement.slice(0, 157)}...` : statement,
@@ -2742,12 +2746,20 @@ export class SchemaComparer {
       this.engine === 'postgres'
         ? [
             `LOCK TABLE ${table} IN SHARE ROW EXCLUSIVE MODE`,
-            `DO $$ BEGIN IF EXISTS (SELECT 1 FROM ${table} WHERE ${differs}) THEN RAISE EXCEPTION ${this.quoteLiteral(message)}; END IF; END $$`,
+            frameworkGuardStatement(
+              `DO $$ BEGIN IF EXISTS (SELECT 1 FROM ${table} WHERE ${differs}) THEN RAISE EXCEPTION ${this.quoteLiteral(message)} USING ERRCODE = ${FRAMEWORK_GUARD_ERRCODE_SQL}; END IF; END $$`,
+              'postgres',
+              [message],
+            ),
           ]
         : [
             `DROP TABLE IF EXISTS temp.${this.quoteIdentifier('_smrt_recompute_guard')}`,
             `CREATE TEMP TABLE ${this.quoteIdentifier('_smrt_recompute_guard')} ("differing" INTEGER CONSTRAINT ${this.quoteIdentifier(message)} CHECK ("differing" = 0))`,
-            `INSERT INTO temp.${this.quoteIdentifier('_smrt_recompute_guard')} ("differing") SELECT count(*) FROM ${table} WHERE ${differs}`,
+            frameworkGuardStatement(
+              `INSERT INTO temp.${this.quoteIdentifier('_smrt_recompute_guard')} ("differing") SELECT count(*) FROM ${table} WHERE ${differs}`,
+              'sqlite',
+              [message],
+            ),
             `DROP TABLE temp.${this.quoteIdentifier('_smrt_recompute_guard')}`,
           ];
     if (guard.some((sql) => sql.includes('$$') && !sql.startsWith('DO $$')))
@@ -6999,7 +7011,11 @@ export class SchemaComparer {
           : `${quotedCol} IS NOT NULL AND trim(${quotedCol}::text) !~ '^[+-]?[0-9]+$'`;
     const message = `Cannot convert ${tableName}.${colName} to INTEGER: found non-integer values`;
 
-    return `DO $$ BEGIN IF EXISTS (SELECT 1 FROM ${quotedTable} WHERE ${invalidCondition}) THEN RAISE EXCEPTION ${this.quoteLiteral(message)}; END IF; END $$`;
+    return frameworkGuardStatement(
+      `DO $$ BEGIN IF EXISTS (SELECT 1 FROM ${quotedTable} WHERE ${invalidCondition}) THEN RAISE EXCEPTION ${this.quoteLiteral(message)} USING ERRCODE = ${FRAMEWORK_GUARD_ERRCODE_SQL}; END IF; END $$`,
+      'postgres',
+      [message],
+    );
   }
 
   /**
@@ -7014,7 +7030,11 @@ export class SchemaComparer {
     const message =
       `Cannot convert ${tableName}.${colName} to TIMESTAMPTZ outside a UTC ` +
       'PostgreSQL session; confirm historical writers used UTC and SET TIME ZONE UTC';
-    return `DO $$ BEGIN IF upper(current_setting('TimeZone')) NOT IN ('UTC', 'ETC/UTC', 'GMT') THEN RAISE EXCEPTION ${this.quoteLiteral(message)}; END IF; END $$`;
+    return frameworkGuardStatement(
+      `DO $$ BEGIN IF upper(current_setting('TimeZone')) NOT IN ('UTC', 'ETC/UTC', 'GMT') THEN RAISE EXCEPTION ${this.quoteLiteral(message)} USING ERRCODE = ${FRAMEWORK_GUARD_ERRCODE_SQL}; END IF; END $$`,
+      'postgres',
+      [message],
+    );
   }
 
   private quoteLiteral(value: string): string {

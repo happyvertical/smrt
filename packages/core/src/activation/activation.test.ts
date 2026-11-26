@@ -487,9 +487,13 @@ describe(`${engine} lazy activation`, () => {
         transaction((tx) => callback(wrap(tx))),
       );
     }
-    await expect(coordinator.activate([INVOICE])).rejects.toThrow(
-      'Injected DDL failure',
+    // The migration failure is a closed reason; the injected driver text is
+    // withheld and not kept anywhere on the error (no `cause`).
+    const activation = coordinator.activate([INVOICE]);
+    await expect(activation).rejects.toThrow(
+      /\(create-table\) failed in the regular phase/,
     );
+    await expect(activation).rejects.not.toThrow('Injected DDL failure');
     expect(failed).toBe(true);
     expect(await applicationTables()).toEqual(['activation_host']);
     expect(

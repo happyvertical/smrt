@@ -673,7 +673,8 @@ export function readCreateIndexStatement(sql: string): CreateIndexReading {
 
 /**
  * Every token of `sql` as `kind` and stored value (strings and numbers have
- * none), or the reason it cannot be read. For tests of the lexer.
+ * none), or the reason it cannot be read. Shared by fixed-kind classification
+ * and the lexer tests.
  */
 export function readPostgresTokens(
   sql: string,

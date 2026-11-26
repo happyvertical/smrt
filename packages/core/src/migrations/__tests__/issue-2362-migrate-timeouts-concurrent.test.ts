@@ -620,7 +620,11 @@ describe('PostgreSQL concurrent-index mode (issue #2362)', () => {
     });
 
     expect(results[0].success).toBe(false);
-    expect(String(results[0].error)).toContain('lock timeout');
+    // The failure is a closed reason: the driver's message text is withheld.
+    expect(String(results[0].error)).toContain(
+      'statement 1 (create-index) failed in the concurrent-index phase',
+    );
+    expect(String(results[0].error)).not.toContain('lock timeout');
     expect(fake.rows.get('add_index_jobs_status_idx')?.status).toBe('failed');
 
     // Everything after the failure is left retryable too, not stuck 'running'
