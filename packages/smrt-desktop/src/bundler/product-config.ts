@@ -199,7 +199,13 @@ export interface NativeException {
   readonly reason: string;
 }
 
+/** Private PDF routing. Exact segments; :id matches one ASCII identifier. */
+export interface PrivateDocumentsPolicy {
+  readonly routes: readonly string[];
+}
+
 export interface ProductConfig {
+  readonly privateDocuments?: PrivateDocumentsPolicy;
   readonly version: 1;
   readonly productId: string;
   readonly bundleId: string;
@@ -384,6 +390,67 @@ function parseSidecar(value: unknown): ProductConfig['sidecar'] {
   return out;
 }
 
+/** Identical canonical route grammar to wrapper documents.rs. */
+export function isPrivateDocumentRoute(value: unknown): value is string {
+  if (typeof value !== 'string' || value.length > 256 || !value.startsWith('/'))
+    return false;
+  const segments = value.slice(1).split('/');
+  return (
+    segments.length >= 2 &&
+    segments.every(
+      (segment) =>
+        (segment === ':id' || /^[A-Za-z0-9_-]+$/.test(segment)) &&
+        ![
+          'auth',
+          'login',
+          'logout',
+          'setup',
+          'owner',
+          'owner-link',
+          'owner-claim',
+          'proof',
+          'token',
+          '_runtime',
+          'mcp',
+          'ownerlink',
+          'ownerclaim',
+          'owner_link',
+          'owner_claim',
+          'sign-in',
+          'sign-out',
+          'signin',
+          'signout',
+          '_auth',
+          '_owner',
+          'oauth',
+          'callback',
+          'session',
+          'sessions',
+          'secret',
+          'credential',
+          'credentials',
+          'onboarding',
+        ].includes(segment.toLowerCase()),
+    )
+  );
+}
+
+function parsePrivateDocuments(value: unknown): PrivateDocumentsPolicy {
+  if (
+    !isRecord(value) ||
+    !hasClosedKeys(value as Record<string, unknown>, ['routes'])
+  )
+    bad('privateDocuments');
+  const routes = stringArray(
+    (value as Record<string, unknown>).routes,
+    'privateDocuments.routes',
+    16,
+    isPrivateDocumentRoute,
+  );
+  if (routes.length === 0) bad('privateDocuments.routes');
+  return { routes };
+}
+
 function parseFeatures(value: unknown): ProductConfig['features'] {
   if (value === undefined) return { default: [], custom: {} };
   if (!isRecord(value)) bad('features');
@@ -506,6 +573,7 @@ export function parseProductConfig(text: string): ProductConfig {
       ['version', 'productId', 'bundleId', 'displayName'],
       [
         'bridge',
+        'privateDocuments',
         'sidecar',
         'features',
         'exclude',
@@ -574,6 +642,9 @@ export function parseProductConfig(text: string): ProductConfig {
     bundleId: record.bundleId as string,
     displayName: record.displayName as string,
     ...(bridge === undefined ? {} : { bridge }),
+    ...(record.privateDocuments === undefined
+      ? {}
+      : { privateDocuments: parsePrivateDocuments(record.privateDocuments) }),
     sidecar,
     features: parseFeatures(record.features),
     exclude,
