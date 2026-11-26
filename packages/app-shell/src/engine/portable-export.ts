@@ -499,6 +499,51 @@ export async function discardUnfilledImport(options: {
   }
 }
 
+/**
+ * The number of user rows an app's PostgreSQL schema holds (0 for a schema that
+ * does not exist or has no table). PostgreSQL only; a database that cannot be
+ * read throws.
+ */
+export async function countUserRows(options: {
+  dataDir: string;
+  database: DatabaseConfig;
+}): Promise<number> {
+  const { database } = options;
+  if (database.kind === 'sqlite')
+    throw new EngineError('this reads a PostgreSQL app', 'refused');
+  return inDatabase(options.dataDir, database, 'read', async (db) => {
+    let n = 0;
+    for (const name of await db.tables()) n += await db.count(name);
+    return n;
+  });
+}
+
+/**
+ * Drop an app's PostgreSQL schema after `check` passes, both under the app's
+ * claim (#5193 downgrade): while the claim is held no host can open the app, so
+ * what `check` saw is what is dropped. `check` throws to refuse; nothing is
+ * dropped then. PostgreSQL only. The drop is a claim transaction: a claim lost
+ * since the check drops nothing.
+ */
+export async function dropAppSchemaChecked(options: {
+  database: DatabaseConfig;
+  check: () => Promise<void>;
+}): Promise<void> {
+  const { database } = options;
+  if (database.kind === 'sqlite')
+    throw new EngineError('this drops a PostgreSQL app', 'refused');
+  const claim = await claimAppDatabase(database);
+  try {
+    await options.check();
+    const drop = (db: SqlDatabase) =>
+      dropSchema(db, database.schema, DEFAULT_LOCK_TIMEOUT_MS);
+    if (claim) await drop(claim.admin as unknown as SqlDatabase);
+    else await withSchemaAdmin(database, drop);
+  } finally {
+    await claim?.release();
+  }
+}
+
 /** True when the directory holds an app.db the engine has started. */
 export function hasUserAppDatabase(dataDir: string): boolean {
   return existsSync(join(dataDir, 'app.db'));
