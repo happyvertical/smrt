@@ -1,6 +1,6 @@
 # Local cookbook host
 
-The real-HTTP CLI fixture in `__tests__/cookbookHost.test.ts` models a compatible
+The real-HTTP CLI fixture in `__tests__/cookbookHost.part*.test.ts` (one suite in four files, see below) models a compatible
 app-tool host for both stream protocols: it accepts the secured flags, preflights
 successfully, and calls the app MCP endpoint. Claude has built-ins absent; native
 Codex 0.162.1 now enables its necessary code-mode host and confines incidental
@@ -15,6 +15,16 @@ settle and the host shuts down. Applied runtime subclasses must not leak into th
 next fixture's catalog. Native CLI approval tests await the actual streamed hold;
 revocation tests gate the real persisted MCP response before delivering it to the
 stub. They do not depend on CLI startup completing within a polling interval.
+
+The host suite is split over `cookbookHost.part1..4.test.ts` so the M5 gate can
+run them on different runners (#5694). The four files keep the original
+`describe` titles, so every test's full name is unchanged and the gate's name
+matching still holds. Each file repeats the `vi.mock('@happyvertical/smrt-workflows')`
+registration, the module state and the top-level and inner `beforeEach`/`afterEach`
+(tests reassign `host`, `permissions` and `response`, which an imported binding
+cannot do); only stateless fixtures live in `__tests__/support/cookbookHost*.ts`.
+A new test goes in the part that is lightest in `e2e/support/gateSpec.mjs`'s
+`SPLIT_FILE_MINIMUMS`, and a change to the shared setup must be made in all four.
 
 Cookbook/app workflow results return both text content and the same object as
 `structuredContent`, matching the bridge's declared object `outputSchema`.
@@ -151,7 +161,7 @@ collections. `assistant-fixture.svelte` only observes injected dock props.
 | `host/InferenceSettingsPage.svelte` | MCP template review; `rg` InferenceSettingsPanel/settings page in template and inference. Moves the existing template page to a reusable data-prop component backed by the same panel. |
 
 `cookbookSubclasses.test.ts` is a filesystem fixture proving regeneration preserves
-app edits and refuses path escapes. `cookbookHost.test.ts` reuses the inference stub
+app edits and refuses path escapes. `cookbookHost.part*.test.ts` reuses the inference stub
 CLI, runtime principal branding, users collections and SQLite.
 
 ## SQLite lazy host and live model publication
@@ -315,7 +325,7 @@ standalone component/recipe/intent search endpoints.
 | `cookbook-template/.pnpmfile.cjs` | The CLI-owned checkout hook; returns config unchanged for published installation. |
 | `cli/scripts/source-checkout.cjs` | Moved the existing product checkout integration intact except enabling the published-config path. `rg SMRT_ROOT/local checkout/npm_execpath` found no existing source-link service; build forwarding reuses createPackageManagerRunner. |
 
-New test `template-sveltekit/__tests__/cookbookApply.test.ts` uses the existing
+New tests `template-sveltekit/__tests__/cookbookApply.<name>.test.ts` use the existing
 apply engine and actual adapter Server with offline packages; it is not a new
 runtime or domain helper. ProfileIdentityRecipe extends SmrtRecipe in the
 existing profiles recipe file and reuses Profile/ProfileType; CustomersRecipe

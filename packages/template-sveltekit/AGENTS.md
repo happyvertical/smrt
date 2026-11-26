@@ -200,5 +200,6 @@ because the optional PostgreSQL suites share one disposable database.
 
 `e2e/` holds the milestone-M5 acceptance gate (#2579), run against a fresh copy
 of the generated app with its own database, handlers and registrations. Rules
-for the harness, `pnpm test:e2e`, `pnpm test:m5` and its artifacts:
+for the harness, `pnpm test:e2e`, `pnpm test:m5`, the per-part
+`pnpm test:m5:part <id>` CI runs and the artifacts:
 [agents/m5-browser-gate.md](agents/m5-browser-gate.md).
