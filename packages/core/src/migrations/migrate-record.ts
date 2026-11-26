@@ -18,7 +18,12 @@ import {
   resolveBuildSchema,
   resolveRetiredTables,
 } from './build-schema.js';
+import {
+  isDatabaseError,
+  MigrationStatementFailure,
+} from './migration-failure.js';
 import type { PackagesSeenInput } from './migration-run-decision.js';
+import { compareReleases } from './oldest-supported.js';
 import { computeSchemaFingerprint } from './schema-fingerprint.js';
 
 export interface MigrateRecordInput {
@@ -229,10 +234,37 @@ export function packagesSeenInput(
   };
 }
 
-/** SELECT-only: an older or empty database is explicitly a first run. */
+/**
+ * Why a read of the migrate-run ledger failed: it runs before any schema
+ * change of the run that reads it.
+ */
+const LEDGER_READ_FAILED =
+  'the last migrate run could not be read or decoded; no schema change was applied';
+
+/**
+ * SELECT-only: an older or empty database is explicitly a first run.
+ *
+ * A failed read, and a stored row that does not decode, throw a closed
+ * {@link MigrationStatementFailure} (phase `ledger-read`): neither the
+ * database's text nor an excerpt of the stored value reaches the caller.
+ */
 export async function readLastMigrateRecord(
   db: DatabaseInterface,
   options: MigrateRecordOptions = {},
+): Promise<LastMigrateRecord> {
+  try {
+    return await readLastMigrateRow(db, options);
+  } catch (error) {
+    throw new MigrationStatementFailure(error, {
+      phase: 'ledger-read',
+      explanation: LEDGER_READ_FAILED,
+    });
+  }
+}
+
+async function readLastMigrateRow(
+  db: DatabaseInterface,
+  options: MigrateRecordOptions,
 ): Promise<LastMigrateRecord> {
   if (!(await tableExists(db, '_smrt_migrate_runs', options.engineHint))) {
     return { state: 'none' };
@@ -257,6 +289,51 @@ export async function readLastMigrateRecord(
   };
 }
 
+/** A stamp in `_smrt_migrations.version`: `major.minor.patch`, optionally `+deferred-compat`. */
+const SYSTEM_SCHEMA_STAMP = /^(\d+\.\d+\.\d+)(?:\+deferred-compat)?$/;
+
+/**
+ * The highest system-table schema version stamped in `_smrt_migrations`, or
+ * `null` when the database has no such table or no readable stamp.
+ * SELECT-only.
+ *
+ * Every smrt release stamps its `SMRT_SCHEMA_VERSION` here when it prepares a
+ * database, so this dates a database that predates migrate records. It can
+ * only say "at least this new": a stamp is evidence that some release at that
+ * system schema ran against the database, never that an older one did not.
+ * Read it before anything in the run prepares system tables, or the run's own
+ * stamp is what it finds.
+ */
+export async function readRecordedSystemSchema(
+  db: DatabaseInterface,
+  options: MigrateRecordOptions = {},
+): Promise<string | null> {
+  if (!(await tableExists(db, '_smrt_migrations', options.engineHint)))
+    return null;
+  let rows: Record<string, unknown>[];
+  try {
+    const result = await db.query('SELECT version FROM _smrt_migrations');
+    rows = Array.isArray(result) ? result : result.rows;
+  } catch {
+    // Unreadable is unknown, and unknown never refuses a run.
+    return null;
+  }
+  let highest: string | null = null;
+  for (const row of rows) {
+    // The whole stored value must be a stamp this framework writes: a
+    // version, or one with the deferred-compatibility suffix
+    // (`1.15.0+deferred-compat`). A value with any other tail
+    // (`9.0.0garbage`) is not a stamp, and must not outrank a real one.
+    const version = SYSTEM_SCHEMA_STAMP.exec(String(row.version ?? ''))?.[1];
+    if (version && (highest === null || compareReleases(version, highest) > 0))
+      highest = version;
+  }
+  return highest;
+}
+/** Why a failed ledger write matters, and what the operator must do. */
+const LEDGER_WRITE_FAILED =
+  'schema changes this run applied are committed, but its run record was not written; confirmations from this run (retirements, recomputes) are not recorded and must be recorded or audited by the operator';
+
 /**
  * Append only when the successful migrate's declarations changed. Uses the
  * supplied handle (and any caller-held migration lock); no tracker required.
@@ -280,6 +357,39 @@ export async function recordSuccessfulMigrate(
   const packages = [...new Set(input.packages)].sort();
   const recomputes = options.recomputes ?? [];
   const confirmed = options.confirmedRetirements ?? [];
+  try {
+    return await recordMigrateRun(
+      db,
+      options,
+      input,
+      packages,
+      recomputes,
+      confirmed,
+    );
+  } catch (error) {
+    // Closed: the ledger's database text never reaches the caller. Schema
+    // changes the run applied are already committed, but a rerun cannot
+    // reconstruct this run's confirmations (the next diff no longer holds
+    // them), so the operator is told they are unrecorded. A failure that did
+    // not come from the database gets the closed reason without that advice.
+    throw new MigrationStatementFailure(error, {
+      phase: 'ledger-record',
+      explanation:
+        error instanceof MigrationStatementFailure || isDatabaseError(error)
+          ? LEDGER_WRITE_FAILED
+          : null,
+    });
+  }
+}
+
+function recordMigrateRun(
+  db: DatabaseInterface,
+  options: MigrateRecordOptions,
+  input: MigrateRecordInput,
+  packages: string[],
+  recomputes: readonly ConfirmedRecompute[],
+  confirmed: readonly ConfirmedRetirement[],
+): Promise<{ written: boolean; record: MigrateRecord }> {
   return withEmbeddedWriteQueue(
     db,
     getDatabaseEngine(db, options.engineHint) !== 'postgres',

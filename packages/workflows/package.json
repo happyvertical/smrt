@@ -1,6 +1,6 @@
 {
   "name": "@happyvertical/smrt-workflows",
-  "version": "0.68.0",
+  "version": "0.71.0",
   "description": "Durable workflow runs for SMRT: ordered host steps over registered prompts, tracked calls, checkpoints, repair, approval and budgets",
   "type": "module",
   "main": "./dist/index.js",

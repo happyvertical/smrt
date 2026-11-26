@@ -5,9 +5,11 @@
 // two tenants in one shell database. WHAT IT DOES NOT: PostgreSQL, a real
 // memory ceiling (the cap is a count derived from the ceiling; a worker keeps
 // what it grew to, see agents/engine.md), or handing apps to another process.
+
 import { types } from 'node:util';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { AppHost } from '../../engine/index.ts';
+import { hostOwner } from '../../test/engine-principal.ts';
 import { App } from '../objects/App.ts';
 import { ownerTenantFor } from './accounts.ts';
 import { type CloudHarness, openCloudShell } from './cloud-test-support.ts';
@@ -87,7 +89,7 @@ function holdCall(host: Awaited<ReturnType<typeof getHost>>) {
     await gate;
     return real(...args);
   });
-  return { call: host.list('Chore'), finish };
+  return { call: host.list(hostOwner(host), 'Chore'), finish };
 }
 
 /**
@@ -115,10 +117,14 @@ async function refusal(request: Promise<unknown>): Promise<string> {
 const settled = () => new Promise((r) => setTimeout(r, 60));
 
 const add = (o: CloudHarness['a'], model: string, title: string) =>
-  runAs(o, async () => (await getHost()).create(model, { title }));
+  runAs(o, async () =>
+    (await getHost()).create(hostOwner(await getHost()), model, { title }),
+  );
 const titles = (o: CloudHarness['a'], model: string) =>
   runAs(o, async () =>
-    (await (await getHost()).list(model)).map((r) => r.title),
+    (await (await getHost()).list(hostOwner(await getHost()), model)).map(
+      (r) => r.title,
+    ),
   );
 
 describe('idle eviction and wake', () => {
@@ -163,7 +169,9 @@ describe('idle eviction and wake', () => {
     const { a } = await twoOwners();
     const host = await runAs(a, () => getHost());
     clock += IDLE * 2;
-    const writing = host.create('Chore', { title: 'in flight' });
+    const writing = host.create(hostOwner(host), 'Chore', {
+      title: 'in flight',
+    });
     expect(await sweepIdleHosts()).toBe(0); // the call is inside the app
     await writing;
     // The call finished just now, so the app counts as used just now.
@@ -288,7 +296,7 @@ describe('a burst of wakes under a cap', () => {
         runAs(i % 2 ? a : b, async () => {
           const host = await getHost();
           seen.add(host);
-          await host.list(i % 2 ? 'Chore' : 'Invoice');
+          await host.list(hostOwner(host), i % 2 ? 'Chore' : 'Invoice');
         }),
       ),
     );
@@ -316,7 +324,7 @@ describe('leases', () => {
     // Another app demands the only place: refused, never taken from the caller.
     expect(await refusal(runAs(b, () => getHost()))).toMatch(/no room/);
     expect(host.appAlive).toBe(true);
-    expect(await host.list('Chore')).toEqual([]); // the first call still works
+    expect(await host.list(hostOwner(host), 'Chore')).toEqual([]); // the first call still works
   });
 
   it('an operation outlasting every timer keeps its app; others wait, then are refused', async () => {
@@ -336,7 +344,7 @@ describe('leases', () => {
   it('a call that throws gives its lease back', async () => {
     const { a } = await twoOwners({ minIdleMs: 0 });
     const host = await runAs(a, () => getHost());
-    await expect(host.list('NoSuchModel')).rejects.toThrow();
+    await expect(host.list(hostOwner(host), 'NoSuchModel')).rejects.toThrow();
     await new Promise((r) => setTimeout(r, 40)); // hand-out over
     clock += IDLE;
     expect(await sweepIdleHosts()).toBe(1);
@@ -350,7 +358,7 @@ describe('leases', () => {
     vi.spyOn(host, 'list').mockImplementationOnce(() => {
       throw new Error('synchronous');
     });
-    expect(() => host.list('Chore')).toThrow('synchronous');
+    expect(() => host.list(hostOwner(host), 'Chore')).toThrow('synchronous');
     // An abort that lands while the call is inside the app.
     const abort = new AbortController();
     let aborted: () => void = () => {};
@@ -362,7 +370,7 @@ describe('leases', () => {
       abort.signal.throwIfAborted();
       return [];
     });
-    const call = host.list('Chore');
+    const call = host.list(hostOwner(host), 'Chore');
     expect(await sweepIdleHosts()).toBe(0); // inside: protected
     abort.abort();
     aborted();
@@ -390,7 +398,7 @@ describe('a workflow keeps its app open', () => {
     const starting = runAs(a, () =>
       startDraftWith(
         async ({ dir, store, live }) => {
-          const draft = await live.forkDraft(dir, { store });
+          const draft = await live.forkDraft(hostOwner(live), dir, { store });
           forked();
           await gate; // the slow step after the fork
           return draft;
@@ -468,7 +476,7 @@ describe('drain', () => {
   it('waits for calls inside, then closes everything and takes no new app', async () => {
     const { a } = await twoOwners();
     const host = await runAs(a, () => getHost());
-    const writing = host.create('Chore', { title: 'last' });
+    const writing = host.create(hostOwner(host), 'Chore', { title: 'last' });
     const drained = drainShell(5000);
     await writing;
     expect(await drained).toEqual({ closed: 1, busy: 0 });
@@ -576,7 +584,8 @@ describe('a wake that finds no connections for its draft (#5464)', () => {
     const { a } = await twoOwners();
     await runAs(a, () =>
       startDraftWith(
-        async ({ dir, store, live }) => live.forkDraft(dir, { store }),
+        async ({ dir, store, live }) =>
+          live.forkDraft(hostOwner(live), dir, { store }),
         'kept',
         a.id,
       ),

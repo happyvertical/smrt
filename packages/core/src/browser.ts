@@ -494,6 +494,8 @@ export {
   inferenceBlockedUsageRecord,
   inferenceGateRequest,
   isHostedInferenceTarget,
+  isInferenceGateRequired,
+  requireInferenceGate,
   setInferenceGate,
 } from './inference-gate';
 export {
@@ -694,8 +696,21 @@ export {
   applyUpdateInput,
   assertCreateInput,
   assertUpdateInput,
+  prepareWriteInput,
   updateInputRulesFor,
 } from './request-input';
+// The request tenancy policy source and bound member policy smrt-tenancy's
+// interceptor reads (#5375); the resolver and decisions stay server-only.
+export {
+  boundMemberTenancy,
+  getTenantPolicySource,
+  type MemberTenancy,
+  type RequestTenancyContext,
+  setTenantPolicySource,
+  type TenantPolicyConfig,
+  type TenantPolicyLookup,
+  type TenantPolicySource,
+} from './request-tenancy';
 // How `where` keys resolve to columns, shared by the collection and by anything
 // that inspects a filter before it runs (interceptors, generated routes).
 // Request tenant context hooks (installed by smrt-tenancy, which browser
@@ -847,11 +862,19 @@ export {
 export {
   assignUpdateInput,
   classifyUpdateKey,
+  FIELD_NOT_WRITABLE_CODE,
+  FieldNotWritableError,
+  isServerManagedWriteKey,
   isWriteInputError,
+  notWritableFieldOf,
   resolveUpdateInput,
+  resolveWriteBody,
+  SERVER_MANAGED_WRITE_KEYS,
   STRUCTURAL_UPDATE_RULES,
+  sameStoredValue,
   type UpdateInputRules,
   type UpdateKeyKind,
+  type WriteBodyPolicy,
   WriteInputError,
 } from './write-input';
 
@@ -892,14 +915,17 @@ export {
   packagesSeenInput,
   readConfirmedRetirements,
   readLastMigrateRecord,
+  readRecordedSystemSchema,
   recordSuccessfulMigrate,
   type UnloadedBuildPackage,
 } from './migrations/migrate-record.js';
 export * from './migrations/migration-run-decision.js';
 export {
   checkOldestSupportedRelease,
+  checkUnrecordedDatabaseAge,
   compareReleases,
   OLDEST_SUPPORTED_RELEASE,
+  OLDEST_SUPPORTED_SYSTEM_SCHEMA,
 } from './migrations/oldest-supported.js';
 export {
   computeManifestSchemaFingerprint,

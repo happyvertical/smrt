@@ -15,14 +15,16 @@
  *   than an error — means the cursor cannot be served incrementally (pruned
  *   out of the retained window, or foreign/reset) and the client must
  *   re-fetch its data in full, then resume from `resyncCursor`.
- * - **Auth is fail-closed** (#1540 posture): the route requires the
- *   generator's `authMiddleware`. Without one configured, every request is
+ * - **Auth is fail-closed** (#1540 posture): a principal the host resolved
+ *   (`APIConfig.resolvePrincipal`) must be signed in, and without one the
+ *   generator's `authMiddleware` is required. Otherwise every request is
  *   refused with 401 — the feed spans all tables, so per-model
  *   `api: { public }` opt-outs deliberately do NOT apply to it.
  * - **Tenant scoping** follows the active tenant context through the same
  *   dependency-inversion hook the DispatchBus uses: with tenancy enabled, a
  *   request only ever sees its own tenant's changes plus global rows; with
  *   tenancy enabled but no active tenant, only global rows (fail-closed).
+ *   `rest.ts` runs the route inside a host-resolved principal's tenant.
  * - **Table/row authorization** (#3020): the read additionally applies the
  *   consumer-supplied `authorizeChangeFeed`/`isChangeFeedEntryVisible` hooks,
  *   if registered (`change-feed-authz.ts`), via
@@ -56,11 +58,46 @@ export type ChangesAuthMiddleware = (
   action: string,
 ) => (req: Request) => Promise<Request | Response>;
 
-export interface ChangesRouteOptions {
-  /** The generator's configured auth middleware, if any. */
-  authMiddleware?: ChangesAuthMiddleware;
+export interface ChangesRouteOptions extends FeedAuthenticationOptions {
   /** The generator's `APIContext.db` (instance, config object, or URL string). */
   db?: unknown;
+}
+
+/** How a feed route (`_changes`, `_events`) authenticates a request. */
+export interface FeedAuthenticationOptions {
+  /** The generator's configured auth middleware, if any. */
+  authMiddleware?: ChangesAuthMiddleware;
+  /**
+   * Whether the principal the host resolved for this request is signed in
+   * (`APIConfig.resolvePrincipal`). When set, it decides, and
+   * `authMiddleware` runs on top when configured. When unset, an
+   * `authMiddleware` must be configured and decides alone.
+   */
+  principalAuthenticated?: boolean;
+}
+
+/**
+ * Authenticate a feed request. Feeds span every table, so they are never
+ * public (#1540): a host-resolved principal must be signed in, and without
+ * one an auth middleware must be configured and must pass. Returns the
+ * admitted request, or the refusal.
+ */
+export async function authenticateFeedRequest(
+  req: Request,
+  objectName: string,
+  options: FeedAuthenticationOptions,
+): Promise<Request | Response> {
+  if (options.principalAuthenticated === false) {
+    return errorResponse(401, 'Authentication required');
+  }
+  if (!options.authMiddleware) {
+    return options.principalAuthenticated === true
+      ? req
+      : errorResponse(401, 'Authentication required');
+  }
+  // The action is the lowercased HTTP method, matching the generator's other
+  // call sites.
+  return options.authMiddleware(objectName, req.method.toLowerCase())(req);
 }
 
 /**
@@ -142,8 +179,8 @@ function errorResponse(status: number, message: string): Response {
 /**
  * Handle a request against the generated `_changes` route.
  *
- * Returns 401 when no auth middleware is configured (fail-closed) or the
- * middleware rejects; 405 for non-GET methods; 400 for malformed `since`/
+ * Returns 401 when the request is not authenticated
+ * ({@link authenticateFeedRequest}: fail-closed) or the middleware rejects; 405 for non-GET methods; 400 for malformed `since`/
  * `limit`; 503 when the generator has no database; otherwise a
  * `{ changes, cursor }` page scoped to the active tenant context.
  */
@@ -156,16 +193,12 @@ export async function handleChangesRoute(
   }
 
   // Fail-closed (#1540): the change feed spans every table, so it is never
-  // public — an auth middleware must be configured and must pass. The action
-  // is the lowercased HTTP method, matching the generator's other call sites.
-  if (!options.authMiddleware) {
-    return errorResponse(401, 'Authentication required');
-  }
-  const authCheck = options.authMiddleware(
+  // public.
+  const authResult = await authenticateFeedRequest(
+    req,
     CHANGES_ROUTE_OBJECT_NAME,
-    req.method.toLowerCase(),
+    options,
   );
-  const authResult = await authCheck(req);
   if (authResult instanceof Response) {
     return authResult;
   }

@@ -5,7 +5,9 @@
 // thread to add two example chores: the second turn sends the app's generated
 // tools (chore_*) to the provider, which rejected the request when a tool
 // schema carried a top-level anyOf.
+
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
+import { hostOwner } from '../../../test/engine-principal.ts';
 import { getHost } from '../host.ts';
 import { openShell, type ShellHarness } from '../test-support.ts';
 import { createAiModelFactory } from './model.ts';
@@ -31,7 +33,7 @@ describe.skipIf(!real)('a real provider with an app model present', () => {
     expect(first.stop).toBe('complete');
     const host = await getHost();
     expect(host.describe().models.Chore).toBeTruthy();
-    const before = (await host.list('Chore')).length;
+    const before = (await host.list(hostOwner(host), 'Chore')).length;
     expect(before).toBeGreaterThanOrEqual(2);
     const second = await drive({
       principal: h.owner,
@@ -39,8 +41,8 @@ describe.skipIf(!real)('a real provider with an app model present', () => {
       text: 'Add two example chores.',
     });
     expect(second.stop).toBe('complete');
-    expect((await host.list('Chore')).length).toBeGreaterThanOrEqual(
-      before + 2,
-    );
+    expect(
+      (await host.list(hostOwner(host), 'Chore')).length,
+    ).toBeGreaterThanOrEqual(before + 2);
   }, 240_000);
 });

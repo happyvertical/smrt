@@ -1,6 +1,7 @@
 // The generated REST path for the builder operations (`POST /api/apps/<op>`):
 // the same owner check as MCP, structural operations wait as changes for the
 // owner (nothing reaches live), and failures that are logged.
+
 import {
   afterAll,
   afterEach,
@@ -10,6 +11,7 @@ import {
   it,
   vi,
 } from 'vitest';
+import { hostOwner } from '../../test/engine-principal.ts';
 import { App } from '../objects/App.ts';
 import { appsRestHandle } from './apps-rest.ts';
 import { discardChanges } from './changes.ts';
@@ -28,8 +30,8 @@ beforeAll(async () => {
   });
   await applyWaiting(h.owner);
   const host = await getHost();
-  await host.create('Chore', { title: 'a', points: '3' });
-  await host.create('Chore', { title: 'b', points: 'lots' });
+  await host.create(hostOwner(host), 'Chore', { title: 'a', points: '3' });
+  await host.create(hostOwner(host), 'Chore', { title: 'b', points: 'lots' });
 });
 afterAll(async () => {
   await h.close();

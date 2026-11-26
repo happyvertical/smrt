@@ -15,6 +15,7 @@ import {
   it,
   vi,
 } from 'vitest';
+import { hostOwner } from '../../../test/engine-principal.ts';
 import type { TurnEvent, TurnStop } from '../../assistant/events.ts';
 import { nodeDir } from '../agent-cli/env.ts';
 import { installStub, tempDir } from '../agent-cli/test-support.ts';
@@ -188,7 +189,10 @@ describe.each(['claude-code', 'codex'] as const)('%s engine', (tool) => {
     });
     const result = events.find((e) => e.type === 'tool_result');
     expect(result).toMatchObject({ name: 'chore_create', ok: true });
-    const rows = await (await getHost()).list('Chore');
+    const rows = await (await getHost()).list(
+      hostOwner(await getHost()),
+      'Chore',
+    );
     expect(rows.some((r) => r.title === 'mop the floor')).toBe(true);
     expect(textOf(events)).toContain('All done.');
   });
@@ -234,7 +238,7 @@ describe.each(['claude-code', 'codex'] as const)('%s engine', (tool) => {
   it('holds a risky call for approval: the card shows, nothing is applied', async () => {
     const host = await getHost();
     await callTool(h.owner, 'chore_create', { title: `risky-${tool}` });
-    const row = (await host.list('Chore')).find(
+    const row = (await host.list(hostOwner(host), 'Chore')).find(
       (r) => r.title === `risky-${tool}`,
     );
     const id = row?.id as string;
@@ -251,12 +255,16 @@ describe.each(['claude-code', 'codex'] as const)('%s engine', (tool) => {
     expect(ask.name).toBe('chore_delete');
     expect(stop).toBe('waiting');
     // still there, approval still pending
-    expect((await host.list('Chore')).some((r) => r.id === id)).toBe(true);
+    expect(
+      (await host.list(hostOwner(host), 'Chore')).some((r) => r.id === id),
+    ).toBe(true);
     expect((await getApprovalView(ask.approvalId))?.status).toBe('pending');
     // only the owner's decision applies it
-    const outcome = await decideApproval(ask.approvalId, true, h.owner.id);
+    const outcome = await decideApproval(ask.approvalId, true, h.owner);
     expect(outcome.status).toBe('approved');
-    expect((await host.list('Chore')).some((r) => r.id === id)).toBe(false);
+    expect(
+      (await host.list(hostOwner(host), 'Chore')).some((r) => r.id === id),
+    ).toBe(false);
   });
 
   it('cancel kills the CLI and its helpers', async () => {

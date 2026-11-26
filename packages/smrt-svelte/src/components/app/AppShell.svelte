@@ -180,6 +180,8 @@ interface Props {
   panelResize?: boolean | ShellPanelResize;
   /** Width in px until the user resizes the panel (default 400). */
   panelSize?: number;
+  /** Which side of the content the docked panel sits on (default `start`). */
+  panelSide?: 'start' | 'end';
   /**
    * The built-in item `item:panel-toggle`: an icon button with `aria-pressed`
    * that opens and closes the docked panel. Default slot `leftSidebar.footer`,
@@ -377,6 +379,7 @@ let {
   panelLabel,
   panelResize,
   panelSize,
+  panelSide,
   panelToggle = false,
   voiceToggle = false,
   slots: hostSlots,
@@ -1215,6 +1218,7 @@ const EDGE_OF_REGION: Record<ShellRegion, PanelEdge> = {
       {panelLabel}
       {panelResize}
       {panelSize}
+      {panelSide}
     >
       {#snippet appPanel()}
         <AppScopePanel

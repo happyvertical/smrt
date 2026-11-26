@@ -1,5 +1,83 @@
 # @happyvertical/smrt-personas
 
+## 0.71.0
+
+### Patch Changes
+
+- Updated dependencies
+  - @happyvertical/smrt-core@0.71.0
+  - @happyvertical/smrt-agents@0.71.0
+  - @happyvertical/smrt-messages@0.71.0
+  - @happyvertical/smrt-prompts@0.71.0
+  - @happyvertical/smrt-tenancy@0.71.0
+  - @happyvertical/smrt-users@0.71.0
+  - @happyvertical/smrt-ui@0.71.0
+
+## 0.70.3
+
+### Patch Changes
+
+- Updated dependencies
+  - @happyvertical/smrt-core@0.70.3
+  - @happyvertical/smrt-agents@0.70.3
+  - @happyvertical/smrt-messages@0.70.3
+  - @happyvertical/smrt-prompts@0.70.3
+  - @happyvertical/smrt-tenancy@0.70.3
+  - @happyvertical/smrt-users@0.70.3
+  - @happyvertical/smrt-ui@0.70.3
+
+## 0.70.2
+
+### Patch Changes
+
+- Updated dependencies
+  - @happyvertical/smrt-core@0.70.2
+  - @happyvertical/smrt-agents@0.70.2
+  - @happyvertical/smrt-messages@0.70.2
+  - @happyvertical/smrt-prompts@0.70.2
+  - @happyvertical/smrt-tenancy@0.70.2
+  - @happyvertical/smrt-users@0.70.2
+  - @happyvertical/smrt-ui@0.70.2
+
+## 0.70.1
+
+### Patch Changes
+
+- Updated dependencies
+  - @happyvertical/smrt-core@0.70.1
+  - @happyvertical/smrt-agents@0.70.1
+  - @happyvertical/smrt-messages@0.70.1
+  - @happyvertical/smrt-prompts@0.70.1
+  - @happyvertical/smrt-tenancy@0.70.1
+  - @happyvertical/smrt-users@0.70.1
+  - @happyvertical/smrt-ui@0.70.1
+
+## 0.70.0
+
+### Patch Changes
+
+- Updated dependencies
+  - @happyvertical/smrt-core@0.70.0
+  - @happyvertical/smrt-agents@0.70.0
+  - @happyvertical/smrt-messages@0.70.0
+  - @happyvertical/smrt-prompts@0.70.0
+  - @happyvertical/smrt-tenancy@0.70.0
+  - @happyvertical/smrt-users@0.70.0
+  - @happyvertical/smrt-ui@0.70.0
+
+## 0.69.0
+
+### Patch Changes
+
+- Updated dependencies
+  - @happyvertical/smrt-core@0.69.0
+  - @happyvertical/smrt-agents@0.69.0
+  - @happyvertical/smrt-messages@0.69.0
+  - @happyvertical/smrt-prompts@0.69.0
+  - @happyvertical/smrt-tenancy@0.69.0
+  - @happyvertical/smrt-users@0.69.0
+  - @happyvertical/smrt-ui@0.69.0
+
 ## 0.68.0
 
 ### Patch Changes

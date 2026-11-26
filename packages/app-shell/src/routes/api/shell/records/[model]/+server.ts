@@ -18,22 +18,24 @@
 
 import { hostFor } from '$lib/server/host';
 import { guarded, ident, json, ownerOf, readJson } from '$lib/server/http';
+import { principalFor } from '$lib/server/owner';
 import { orderRows } from '$lib/ui/columns';
 import { FILTER_SCAN_LIMIT, matchLink } from '$lib/ui/related';
 import type { RequestHandler } from './$types';
 
 export const GET: RequestHandler = guarded(async (event) => {
-  await ownerOf(event);
+  const owner = await ownerOf(event);
   const limit = Math.min(
     1000,
     Math.max(1, Number(event.url.searchParams.get('limit') ?? 200) || 200),
   );
   const host = await hostFor('live');
+  const caller = principalFor(owner, host.def);
   const model = ident(event.params.model, 'model');
   const field = event.url.searchParams.get('field');
   if (field !== null) {
     // One row past the limit tells a table of exactly the limit from a longer one.
-    const all = await host.list(model, FILTER_SCAN_LIMIT + 1);
+    const all = await host.list(caller, model, FILTER_SCAN_LIMIT + 1);
     // Newest first by the model's main date, so the page the limit keeps is
     // the latest rows, not the first imported.
     const rows = orderRows(
@@ -48,12 +50,19 @@ export const GET: RequestHandler = guarded(async (event) => {
     );
     return json({ ...hits, truncated: all.length > FILTER_SCAN_LIMIT });
   }
-  return json({ records: await host.list(model, limit) });
+  return json({ records: await host.list(caller, model, limit) });
 });
 
 export const POST: RequestHandler = guarded(async (event) => {
-  await ownerOf(event);
+  const owner = await ownerOf(event);
   const data = await readJson(event.request);
   const host = await hostFor('live');
-  return json(await host.create(ident(event.params.model, 'model'), data), 201);
+  return json(
+    await host.create(
+      principalFor(owner, host.def),
+      ident(event.params.model, 'model'),
+      data,
+    ),
+    201,
+  );
 });

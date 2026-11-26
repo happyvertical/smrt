@@ -88,6 +88,10 @@ export const RUNTIME_MANAGED_DIALECT_PATHS = [
     'packages/app-shell/src/engine/db/postgres-portable.ts',
     "installs a portable export (#5193) into the runtime-managed app schema: a table the definition no longer names (archived for undo) and a hidden field's column come back from the typed column descriptors of the bundle, with the database's own types; it declares no shape of its own",
   ],
+  [
+    'packages/app-shell/src/engine/db/policies.ts',
+    "gives a table that predates its tenant column (#5189) the column core's tenant-scoped model declares, in three steps (nullable, every row the app's tenant, NOT NULL), because the planner's single NOT NULL add fails on rows that exist; the column's shape is the model's, and it declares no other",
+  ],
 ];
 
 const STATEMENT =

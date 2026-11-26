@@ -131,6 +131,36 @@ describe.skipIf(!pgUrl)(
       expect(await hasColumn('note')).toBe(true);
     });
 
+    it('wraps an adapter inspection failure without applying or recording changes', async () => {
+      registerVersion(1);
+      await migrate(db);
+      const recordBefore = await readLastMigrateRecord(db, {
+        engineHint: 'postgres',
+      });
+      registerVersion(2);
+      const cause = new Error('catalog unavailable');
+      const handle = new Proxy(db, {
+        get(target, key, receiver) {
+          if (key === 'getTableSchema')
+            return async () => {
+              throw cause;
+            };
+          const value = Reflect.get(target, key, receiver);
+          return typeof value === 'function' ? value.bind(target) : value;
+        },
+      });
+      await expect(migrate(handle)).rejects.toMatchObject({
+        name: 'TableSchemaUnreadableError',
+        table,
+        engine: 'postgres',
+        cause,
+      });
+      expect(await hasColumn('note')).toBe(false);
+      expect(
+        await readLastMigrateRecord(db, { engineHint: 'postgres' }),
+      ).toEqual(recordBefore);
+    });
+
     it('a transaction handle without an inspector refuses a listed relation it cannot describe, and records nothing', async () => {
       registerVersion(1);
       await migrate(db);

@@ -39,7 +39,9 @@ import {
   wireHostEvents,
   withAppLease,
   withDraftConnections,
+  withDraftRows,
 } from './host.ts';
+import { type Principal, principalFor } from './owner.ts';
 import type { Target } from './target.ts';
 import { createTenantQueue } from './tenant-queue.ts';
 import { DraftVersionStore } from './version-store.ts';
@@ -187,7 +189,7 @@ export function startDraftWith(
     const pin = await getStorePin();
     // A leftover copy no row refers to (host.ts removes these at start): the
     // engine only removes a directory that is one of its own drafts.
-    if (existsSync(dir)) await discardStaleDraft(dir);
+    if (existsSync(dir)) await discardStaleDraft(dir, live);
     const drafts = await AppDraftCollection.create({ db });
     const row = await drafts.create({
       name: clean(name),
@@ -212,20 +214,25 @@ export function startDraftWith(
         }),
       );
       // The draft's store moved the row's pointer: re-read it before updating.
-      const fresh = (await drafts.get(id)) ?? row;
-      fresh.status = 'open';
-      fresh.baseVersion = host.draft?.baseVersion ?? live.version;
-      await fresh.save();
+      const base = host.draft?.baseVersion ?? live.version;
+      await withDraftRows(live, async (coll) => {
+        const fresh = (await coll.get(id)) ?? row;
+        fresh.status = 'open';
+        fresh.baseVersion = base;
+        await fresh.save();
+      });
     } catch (e) {
       live.setFrozen(false);
       if (host) await host.discard().catch(() => {});
-      const failed = await drafts.get(id).catch(() => null);
-      if (failed) {
-        failed.status = 'discarded';
-        failed.note = 'the start failed';
-        failed.endedAt = new Date().toISOString();
-        await failed.save().catch(() => {});
-      }
+      await withDraftRows(live, async (coll) => {
+        const failed = await coll.get(id).catch(() => null);
+        if (failed) {
+          failed.status = 'discarded';
+          failed.note = 'the start failed';
+          failed.endedAt = new Date().toISOString();
+          await failed.save();
+        }
+      }).catch(() => {});
       throw e;
     }
     wireHostEvents(host, 'draft', tenantId);
@@ -238,14 +245,15 @@ export function startDraftWith(
 /** Start an empty working copy (a plain fork of live). */
 export function startDraft(
   name: unknown,
-  ownerId: string,
+  owner: Principal,
   beforeFork?: (id: string) => Promise<void>,
   hold?: string,
 ): Promise<DraftInfo> {
   return startDraftWith(
-    ({ dir, store, live }) => live.forkDraft(dir, { store }),
+    ({ dir, store, live }) =>
+      live.forkDraft(principalFor(owner, live.def), dir, { store }),
     name,
-    ownerId,
+    owner.id,
     beforeFork,
     hold,
   );
@@ -413,16 +421,16 @@ export function discardNow(
       if (!slot.host || !(await slot.host.discardIfEmpty()))
         throw new EngineError('this draft has changes', 'refused');
     } else if (slot.host) await slot.host.discard();
-    else if (existsSync(slot.dir)) await discardStaleDraft(slot.dir);
-    const row = await (
-      await AppDraftCollection.create({ db: await getShellDb() })
-    ).get(slot.id);
-    if (row) {
-      row.status = 'discarded';
-      row.note = options.rebuilding ? 'rebuilt' : 'discarded';
-      row.endedAt = new Date().toISOString();
-      await row.save();
-    }
+    else if (existsSync(slot.dir)) await discardStaleDraft(slot.dir, live);
+    await withDraftRows(live, async (coll) => {
+      const row = await coll.get(slot.id);
+      if (row) {
+        row.status = 'discarded';
+        row.note = options.rebuilding ? 'rebuilt' : 'discarded';
+        row.endedAt = new Date().toISOString();
+        await row.save();
+      }
+    });
     setDraftSlot(null);
     if (options.rebuilding) return { discarded: slot.name };
     live.setFrozen(false);

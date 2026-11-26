@@ -5,8 +5,9 @@
 
 import type { MessagePort } from 'node:worker_threads';
 import type { FieldType } from '../definition.ts';
+import type { AppRoles } from './roles.ts';
 
-/** The part of a PGlite instance the engine's bridge drives (see `pglite-bridge.ts`). */
+/** The part of a PGlite instance the engine's bridge drives (see `broker.ts`). */
 export interface PGliteClient {
   query(sql: string, params?: unknown[]): Promise<any>;
   exec(sql: string): Promise<any[]>;
@@ -22,7 +23,11 @@ export interface PostgresConnection {
   database?: string;
   user?: string;
   password?: string;
-  /** Pool size of each app worker. */
+  /**
+   * Pool size of each app worker. Used only by a worker that has no shared
+   * `BrokerPool` (a self-hosted single-owner process without a lifecycle); the
+   * hosted profile sizes one pool for the whole process instead.
+   */
   max?: number;
 }
 
@@ -42,8 +47,19 @@ export type DatabaseConfig =
       kind: 'postgres';
       schema: string;
       connection: PostgresConnection;
+      /**
+       * The deployment's admin credentials (the role that owns the app
+       * schemas), when they differ from the runtime login in `connection`.
+       * Everything that is not a user operation uses them: the ownership
+       * claim, copies and swaps, the owner lane (boot, migration, snapshots,
+       * archive purge, which run under `SET LOCAL ROLE <schema>_o`). Absent
+       * (the self-hosted single-owner profile): `connection` does it all.
+       */
+      admin?: PostgresConnection;
       /** Ownership generation this host holds (#5190); set by the host, not the caller. */
       fence?: number;
+      /** The app's roles (`roles.ts`), once provisioned: user work runs as `app`, boot and dumps as `owner`. */
+      roles?: AppRoles;
     }
   | {
       /**
@@ -57,29 +73,30 @@ export type DatabaseConfig =
       client: PGliteClient;
       /** Ownership generation this host holds (#5190); set by the host, not the caller. */
       fence?: number;
+      /** The app's roles (`roles.ts`), once provisioned. */
+      roles?: AppRoles;
     };
 
-/** What reaches a worker thread: the config with the instance replaced by a port. */
+/**
+ * What reaches a worker thread: plain data and one end of a MessagePort whose
+ * other end the host's broker serves (`broker.ts`). The worker holds no
+ * connection, credential or connection details, for either database.
+ */
 export type WorkerDatabaseConfig =
   | { kind: 'sqlite' }
   | {
+      /** A server PostgreSQL, reached through the broker. */
       kind: 'postgres';
       schema: string;
-      connection: PostgresConnection;
-      /** Cancel any one statement running longer (ms); from `WorkerLimits`. */
-      statementTimeoutMs?: number;
+      port: MessagePort;
       /** Longest a schema dump (snapshot, copy) waits for table locks (ms); from the host. */
       lockTimeoutMs?: number;
-      /** Every transaction checks the schema's ownership generation equals this (#5190). */
-      fence?: number;
     }
   | {
       kind: 'pglite';
       schema: string;
       port: MessagePort;
-      statementTimeoutMs?: number;
       lockTimeoutMs?: number;
-      fence?: number;
     };
 
 /**
@@ -96,7 +113,7 @@ export interface AppClaim {
   /** The claim is gone: every call refuses with a `ClaimLostError`. */
   readonly lost: boolean;
   /** Called once, when the claim is lost. */
-  onLost(fn: (e: Error) => void): void;
+  onLost(fn: (e: Error) => void): () => void;
   /** Give the lock back and close the connection. */
   release(): Promise<void>;
 }

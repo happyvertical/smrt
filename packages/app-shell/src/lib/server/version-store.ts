@@ -32,6 +32,7 @@ import {
   type AppVersion,
   AppVersionCollection,
 } from '../objects/AppVersion.ts';
+import { bindAmbientShellScope, isPostgresHandle } from './shell-tenancy.ts';
 
 export const APP_SLUG = 'app';
 
@@ -58,6 +59,20 @@ function inTenant<T>(
     return Promise.reject(new Error('this store belongs to another tenant'));
   if (ambient?.tenantId === tenantId) return fn();
   return withTenant({ tenantId, permissions: new Set<string>() }, fn);
+}
+
+/**
+ * The hosted claim's transaction is not one the shell's handle opened, so on
+ * PostgreSQL the shell's rows inside it (forced row-level security) need the
+ * ambient tenant published to it first. A no-op for a store with no tenant (the
+ * desktop) and when the shell's own database is not PostgreSQL (SQLite tests).
+ */
+async function bindClaimTx(
+  db: DatabaseInterface,
+  tenantId: string | null,
+  tx: unknown,
+): Promise<void> {
+  if (tenantId && isPostgresHandle(db)) await bindAmbientShellScope(tx);
 }
 
 function toRecord(row: VersionRow): VersionRecord {
@@ -272,6 +287,7 @@ export class ShellVersionStore implements VersionStore {
     markDraft = false,
   ): Promise<void> {
     return this.scoped(async () => {
+      await bindClaimTx(this.db, this.tenantId, tx);
       const txDb = tx as DatabaseInterface;
       for (const r of records) await this.insert(r, txDb);
       const app = await this.appRow(txDb);
@@ -314,9 +330,37 @@ export class ShellVersionStore implements VersionStore {
     });
   }
 
+  /**
+   * Take back versions this caller has just appended (a receive whose import
+   * then refused, #5193): delete exactly `versions` and point back at
+   * `restore` (`null`: no version yet), in ONE transaction.
+   */
+  unstage(versions: number[], restore: number | null): Promise<void> {
+    return this.scoped(async () => {
+      const db = this.db;
+      if (typeof db.transaction !== 'function')
+        throw new Error('the shell database cannot run transactions');
+      await db.transaction(async (tx) => {
+        const txDb = tx as unknown as DatabaseInterface;
+        for (const v of versions)
+          await txDb.query(
+            `DELETE FROM app_versions WHERE version = ?${this.tenantClause}`,
+            [v, ...this.tenantParam],
+          );
+        if (restore !== null) return this.point(restore, txDb);
+        const app = await this.appRow(txDb);
+        await txDb.query(
+          `UPDATE apps SET current_version = -1, definition = '' WHERE id = ?${this.tenantClause}`,
+          [app.id, ...this.tenantParam],
+        );
+      });
+    });
+  }
+
   reachable(tx: unknown): Promise<boolean> {
     return this.scoped(async () => {
       const id = this.appId ?? ((await this.appRow()).id as string);
+      await bindClaimTx(this.db, this.tenantId, tx);
       const found = await (tx as DatabaseInterface).query(
         `SELECT id FROM apps WHERE id = ?${this.tenantClause}`,
         [id, ...this.tenantParam],
@@ -379,8 +423,16 @@ export class DraftVersionStore implements VersionStore {
     return inTenant(this.tenantId, fn);
   }
 
-  private versions() {
-    return AppDraftVersionCollection.create({ db: this.db });
+  private versions(db: DatabaseInterface = this.db) {
+    return AppDraftVersionCollection.create({ db });
+  }
+
+  /** Raw SQL bypasses the tenancy interceptor: a hosted store names its tenant itself. */
+  private get tenantClause() {
+    return this.tenantId ? ' AND tenant_id = ?' : '';
+  }
+  private get tenantParam(): string[] {
+    return this.tenantId ? [this.tenantId] : [];
   }
 
   private async draftRow() {
@@ -391,12 +443,54 @@ export class DraftVersionStore implements VersionStore {
     return row;
   }
 
-  private async row(version: number): Promise<AppDraftVersion | null> {
-    const rows = await (await this.versions()).list({
+  private async row(
+    version: number,
+    db: DatabaseInterface = this.db,
+  ): Promise<AppDraftVersion | null> {
+    const rows = await (await this.versions(db)).list({
       where: { draftId: this.draftId, version },
       limit: 1,
     });
     return rows[0] ?? null;
+  }
+
+  /**
+   * Append `records` and point the draft at `current` inside the hosted
+   * engine's claim transaction `tx` (#5486), like `ShellVersionStore.commitIn`.
+   * The pointer moves only if it is still `expected` AND the draft is still
+   * being worked on (`starting` or `open`: a published or discarded draft takes
+   * no writes); otherwise nothing is written. Only `tx` is used.
+   */
+  commitIn(
+    tx: unknown,
+    records: VersionRecord[],
+    current: number,
+    expected: number | null,
+  ): Promise<void> {
+    return this.scoped(async () => {
+      await bindClaimTx(this.db, this.tenantId, tx);
+      const txDb = tx as DatabaseInterface;
+      for (const r of records) {
+        if (await this.row(r.version, txDb))
+          throw new Error(`version ${r.version} already exists`);
+        const created = await (await this.versions(txDb)).create({
+          draftId: this.draftId,
+          ...columnsOf(r),
+        });
+        await created.save();
+      }
+      if (!(await this.row(current, txDb)))
+        throw new Error(`version ${current} is not stored`);
+      const hit = await txDb.query(
+        `UPDATE app_drafts SET current_version = ? WHERE id = ? AND current_version = ? AND status IN ('starting', 'open')${this.tenantClause} RETURNING id`,
+        [current, this.draftId, expected ?? -1, ...this.tenantParam],
+      );
+      if (!rowsOf(hit).length)
+        throw new StaleStoreError(
+          `the draft's stored current version is no longer ${expected ?? 'empty'}, or the draft has ended; nothing was written. Reopen the app.`,
+          { expected },
+        );
+    });
   }
 
   current(): Promise<number | null> {

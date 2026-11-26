@@ -556,17 +556,38 @@ describe('update input', () => {
       expect((await keyRow(id)).label).toBe('round trip');
     });
 
-    it('a model with an api.writable allowlist keeps dropping other keys', async () => {
+    it('a model with an api.writable allowlist refuses a change to another key, and a hidden key whatever its value', async () => {
       const created = await listed.create({ label: 'a', secretHash: SECRET });
-      const response = await patch(`${segment.listed}/${created.id}`, {
+      const refused = await patch(`${segment.listed}/${created.id}`, {
         label: 'b',
-        toPublicJSON: 0,
         secretHash: 'replaced',
       });
-      expect(response.status).toBe(200);
-      const text = await response.text();
+      expect(refused.status).toBe(400);
+      expect((await refused.json()).error).toMatchObject({
+        code: 'VALIDATION_FIELD_NOT_WRITABLE',
+        details: { field: 'secretHash' },
+      });
+
+      // The hidden field is never compared: the right value is refused as the
+      // wrong one was, so a guess is not confirmed.
+      const same = await patch(`${segment.listed}/${created.id}`, {
+        label: 'b',
+        secretHash: SECRET,
+      });
+      expect(same.status).toBe(400);
+      const text = await same.text();
       expect(text).not.toContain(SECRET);
-      expect(JSON.parse(text).label).toBe('b');
+      expect(JSON.parse(text).error).toMatchObject({
+        code: 'VALIDATION_FIELD_NOT_WRITABLE',
+        details: { field: 'secretHash' },
+      });
+
+      // A body without the hidden field still writes.
+      const response = await patch(`${segment.listed}/${created.id}`, {
+        label: 'b',
+      });
+      expect(response.status).toBe(200);
+      expect(JSON.parse(await response.text()).label).toBe('b');
     });
 
     it('serialises through the class when an instance carries its own property', async () => {

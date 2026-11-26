@@ -31,7 +31,8 @@ server's machine.
 ## Tenant scoping
 
 Every shell model that holds one owner's data is `tenantScoped: { mode:
-'optional' }` (static decorator literal, both profiles):
+'optional' }` (static decorator literal, both profiles; cloud runs them as
+`required`, below):
 
 | Model | Table | Holds |
 |---|---|---|
@@ -53,38 +54,76 @@ store and AI usage rows belong to `smrt-preferences`/`smrt-inference`/
 (its `tenantId` is an explicit field the batch lookup filters on, there was
 nothing to adopt, and the change feed does not offer it).
 
-Why `optional`, not `required`: `required` makes every no-context read throw,
-and the desktop still has background paths with no tenant context (import
-recovery). Cloud fail-closed is enforced by the shell instead:
+## `required` mode and row-level security (#5191)
 
-- `getShellDb()` refuses (401) with no tenant context in cloud; the sign-in
-  flow uses `getAccountsDb()`, only for the global user/tenant/membership tables.
-- Stores are pinned: `ShellVersionStore` / `DraftVersionStore` take the tenant,
-  run every operation inside it (`inTenant`) and refuse a different ambient
-  tenant.
-- `host.ts` keys the live host, version store and draft slot by tenant
-  (`holders`), from the verified session's tenant context only. App directories
-  come from validated UUIDs (`tenantAppDirs`), never from input.
-- The event bus carries a tenant on every event; cloud subscribers get only
-  their tenant's (an untenanted event reaches nobody).
-- `approval-store.ts` takes the tenant from the request in cloud and its raw
-  `UPDATE` adds `AND tenant_id = ?` (raw SQL bypasses the interceptor).
-- Process-wide state is per tenant or keyed by globally unique ids, never one
-  shared slot: the changes queue (`changes.ts`) and the draft lifecycle queue
-  (`drafts.ts`) are `createTenantQueue()`s (one job at a time per tenant, so a
-  slow check for one tenant never stalls another); the check scheduler and its
-  `owners` / `importIndex` maps are keyed by batch id (a UUID of exactly one
-  tenant) and `runChecksJob` re-enters the owner's tenant (`runAs`) whatever
-  timer fired it; the assistant's comment-turn slot is keyed by the owner's user id (unique across tenants; an owner has one tenant).
-  `apply-now.ts` and `template-records.ts` are pure (no state); the
-  `setAfterChecks` / `setWorkingCopyReplaced` hooks are data-only, set once.
-- `owner.ts`: the owner check runs inside the principal's own tenant; a user
-  who owns tenant A is not the owner of B.
+`shell-tenancy.ts`. Cloud only; the desktop never calls it and its decorators
+stay `optional` (the desktop still has background paths with no tenant context,
+import recovery among them).
 
-Moving to `required` (and PostgreSQL RLS policies for these tables) needs the
-desktop's no-context paths audited first, and core's `PostgresPermissionPolicies`
-pass over the shell's registry. NOT done here; the shell tables are not
-RLS-enforced.
+- **Mode.** `shellProfile()` resolving to `cloud` calls `requireShellTenancy()`:
+  core's `ObjectRegistry.registerOverride(name, { tenancy: { mode: 'required' } })`
+  for every model in `SHELL_TENANT_MODELS` (process-wide, monotonic, no schema
+  change). A read or write with no tenant context now throws instead of reading
+  across tenants. `AppImport` is not in the list: it declares no tenancy and
+  workbook import is refused in cloud, so its table stays empty there; the
+  import service refuses to touch it in cloud (`requireLocalProfile`), so a
+  write there fails loudly.
+- **Policies.** At cloud start `prepareDatabase` runs `protectShellTables`:
+  `smrt-users`' scoped policy generator over the shell classes (the tables'
+  current schema), row-level security ENABLED and FORCED (so it holds for the
+  table owner, the single-login profile), four policies per table: a row is
+  visible when `tenant_id` equals `smrt.tenant_id` and `smrt.permissions` holds
+  `SHELL_STORE_PERMISSION` (a marker for a connection the shell's stores opened,
+  not an owner permission: owner-only is `assertOwner`). `Approval`'s SELECT
+  also admits `approvals.read` (`shellPolicySlugs`): the generated
+  `POST /api/approvals/[id]/decide` loads the row through the request's own RLS
+  database, which carries the session's permissions and never the marker, before
+  `assertOwner()` runs. `shell-routes.test.ts` pins that `Approval.decide` is the
+  only generated route or tool of a shell model that loads a row by id (App's
+  methods are static, every other model is closed), so each new one has to be
+  thought through. The apply reads the catalog first and runs no DDL when the
+  policies are exactly what it would write: each table's comment carries a stamp
+  (`smrt-app-shell:rls:<digest of the generated policy set>:<digest of the
+  catalog>`), and the catalog digest covers the RLS flags, EVERY policy on the
+  table (name, command, roles, normalized USING / WITH CHECK) and the helper
+  function bodies. A changed predicate, a removed slug, a dropped or extra
+  policy, a rewritten helper or a release that changes the expected set is not
+  current, so the policies are re-applied (extra policies dropped) and
+  re-stamped; an old replica restarting after a new release re-applies the old
+  set (last start wins). The apply is one transaction under an advisory lock
+  with a lock timeout, so replicas starting together never interleave
+  DROP/CREATE POLICY and no reader sees a table between them. A
+  missing table says to run `smrt db:migrate`; every failure's reason goes to
+  stderr (`app-shell.database.rls-incomplete`) because the runtime reports a
+  failed start generically. A table that cannot be
+  protected refuses the start (reason on stderr). So does a login that is a
+  superuser or has BYPASSRLS: many owners share the database and such a login
+  silently removes every boundary (`app-shell.database.rls-bypass`). The one
+  opt-out is `SMRT_UNSAFE_ALLOW_RLS_BYPASS=1` (tests, local development), which
+  logs `rls-bypass-allowed` loudly. Default: refuse. Desktop and self-hosted
+  single-owner are unchanged.
+- **Long-lived stores.** They outlive the request that made them and run in the
+  engine's queues, so they cannot use the request's RLS transaction. In cloud on
+  PostgreSQL `getShellDb()` returns `tenantBoundDb(base)`: every operation (and
+  every `transaction()`) runs in a transaction that first publishes the ambient
+  tenant and the store marker as `smrt.*` settings. The tenant is read when the
+  operation runs, never when the handle was made, and with none the call
+  refuses. Inside such a transaction the handle reuses it (no second
+  connection). `table()`, `acquireSession()` and `beginTransaction()` are refused
+  on it. The hosted claim's transaction (`commitIn`, `reachable`, `withDraftRows`)
+  is not one the handle opened, so those bind the ambient tenant to it
+  (`bindAmbientShellScope`). There is no system path: no shell code reads across
+  tenants. SQLite (cloud tests) has no policies; the application layer holds there.
+- **Raw SQL** bypasses the tenancy interceptor and not the policies: the stores'
+  raw `UPDATE`s still add `AND tenant_id = ?`, and the policy is the second line.
+
+Test: `shell-rls.postgres.test.ts` (registered `test:postgres` lane: PGlite and a
+real server). The login is a NOSUPERUSER NOBYPASSRLS role that owns the tables;
+two owners go through the real stores, then the assertions go around the
+application layer (raw SQL for the other owner's row id) and fail when the
+policies are removed. It also runs the generated decide route for two owners
+(the owner decides their own approval, the other gets a 404; the generated route is a build output, so the test performs its three steps and `shell-routes.test.ts` generates the real route from the real manifest and pins those steps, in order). The hosted claim's
+binding runs only on the real-server lane (`claimAppDatabase` is PostgreSQL only).
 
 Desktop (tenancy interceptor ON in the local runtime): optional-mode rows
 written with no context get a NULL tenant and are then invisible to reads made
@@ -138,6 +177,22 @@ Tests: `routes/settings/inference/cloud-inference.test.ts`,
 `change-feed` cases in `cloud-change-feed.test.ts`, and the local-profile
 case in `inference-settings.test.ts`.
 
+**Settings page.** `routes/settings/inference/+page.server.ts` returns, in cloud,
+`hideDeploymentRows(page)` (`inference-hosted-view.ts`): the operator's tier
+targets, aliases, fusions and the app-wide transcript setting are removed (the
+owner's interim decision: hide, not show read-only); what stays is the tenant's
+own tier overrides and default tier, its allow-list (what THIS tenant may choose;
+the panel enables its choices from it), key state and usage. The panel runs with
+`scope="tenant"` and no app edit controls. Test: `cloud-inference.test.ts` ("the
+operator's deployment-wide rows are not shown").
+
+**Welcome and Connect AI.** The state route already answers `hosted: true` in
+cloud; `ConnectAiState.hosted` (smrt-svelte) makes the shared component drop the
+ChatGPT row, the CLI rows and the ChatGPT preview note, leaving the owner's own
+API key. The welcome page (and Settings > Assistant) ask the profile (`+page.server.ts`)
+and, hosted, say "your own API key" and offer no spreadsheet start (workbook
+import is refused in cloud).
+
 ## Accounts
 
 `accounts.ts`: `ownerTenantFor(db, user)` is the whole sign-up. Idempotent,
@@ -155,8 +210,9 @@ comes from the request. The App row is created on the tenant's first request.
 events, directories, sign-up, sessions), `cloud-surfaces.test.ts` (what must
 not exist in cloud; local unchanged), `local-tenant-scope.test.ts` (desktop
 upgrade and tenancy ON). Harness: `cloud-test-support.ts`. They run on SQLite
-with the real tenancy interceptor; PostgreSQL, the deployed runtime's startup
-(version probe), RLS and a live OIDC provider are NOT exercised.
+with the real tenancy interceptor; the deployed runtime's startup
+(version probe) and a live OIDC provider are NOT exercised; the shell tables' RLS
+is `shell-rls.postgres.test.ts` (above).
 
 ## Many apps in one process (#5192)
 
@@ -182,31 +238,33 @@ never a timer, never an eviction (`host-lifecycle.test.ts`, "desktop is unchange
   (`refused`, "no room"), never cutting a call. A worker keeps the memory it grew
   to, so the ceiling is a count, not a reading of the process.
 - `maxConcurrentWakes` (default 2) queues a burst of wakes.
-- Connection budget (#5464): `WorkerLimits.connections`, set by `host.ts` on
-  every host it opens. EVERY worker on a server PostgreSQL reserves its pool in
-  `AppWorker`'s constructor and returns it when the thread exits, so a swap's new
-  worker, a report worker and a publish rehearsal are counted while they live;
-  the pool is created at exactly the size reserved (`connection.max`, else
-  `POOL_SIZE` = 2, set explicitly, never the adapter default). A host also reserves
-  `HOST_OVERHEAD` (live 2: the claim connection, one connection that also carries its
-  transactions and heartbeat (#5470), + one admin connection in flight; draft
-  1), returned on `close`, a successful `discardIfEmpty`, and a failed open
-  (`withConnections`). `maxAppConnections` caps the total held by the process;
-  unset, it is `maxOpenApps` x `appAllowance(pool)` (live + draft + one transient
-  worker pool, plus both overheads; `pool` follows the largest pool a config asks
-  for, so a bigger `connection.max` scales it), and with no cap at all there is no budget.
-  A refusal is immediate (`ConnectionBudgetError`, a `CapacityError`: `refused`; a publish check rethrows it instead of storing a "does not fit your data" blocker), never queued, so a
-  swap or report that finds no room fails and can be retried. A swap that
-  stops the old worker first (migration, restore, publish) keeps its pool's
-  share across the gap (`retireApp`), so nothing can take it and the
-  replacement or the rollback is never refused. The handed-over reservation stays the
-  host's until the replacement is ready (a thread that dies first does not
-  release it). A refusal while a wake adopts its draft fails the wake for a retry; it
-  is never stored as a draft problem. Transient admin
-  connections beyond the one in `HOST_OVERHEAD` and the shell's own pool are not
-  counted. SQLite and PGlite are not counted. A budget below the derived one
-  refuses rather than evicts. `hostMetrics()` reports `connections` and
-  `maxConnections`.
+- Connection budget (#5464, reshaped by #5188): `WorkerLimits.connections`, set by
+  `host.ts` on every host it opens when PostgreSQL holds the apps (or a lifecycle
+  policy is set). Every PostgreSQL app worker's operations go through the
+  process's ONE shared `BrokerPool` (engine.md "The shared pool"): its slots and
+  one reserved cancel connection are taken from the budget once, when the first
+  PostgreSQL worker starts, and a swap's new worker, a report worker or a
+  rehearsal costs nothing more. A host also reserves `HOST_OVERHEAD` (live 2: the
+  claim connection, which also carries its transactions and heartbeat (#5470), + one
+  admin connection in flight; draft 1), returned on `close`, a successful
+  `discardIfEmpty`, and a failed open (`withConnections`). `maxAppConnections`
+  caps the total held by the process; unset, it is `maxOpenApps` x
+  `appAllowance()` (live + draft overhead) plus the pool, and with no cap at all
+  there is no budget. The pool's own size is `brokerPoolSize`, else what
+  `maxAppConnections` leaves, else 10 (`SMRT_APP_SHELL_BROKER_POOL_SIZE`,
+  `_PER_APP_TRANSACTIONS`, `_MAX_QUEUED_OPERATIONS`, `_POOL_ACQUIRE_TIMEOUT_MS`;
+  `SMRT_APP_SHELL_OP_TIMEOUT_MS` is the per-operation deadline). A budget refusal
+  is immediate (`ConnectionBudgetError`, a `CapacityError`: `refused`; a publish
+  check rethrows it instead of storing a "does not fit your data" blocker); a
+  saturated pool answers a call with `DatabaseBusyError` (`unavailable`, 503):
+  retry. A worker with no shared pool (a budget without `pool()`: the self-hosted
+  per-worker path) still reserves its own pool with `take`, and a swap that stops
+  the old worker first keeps that share across the gap (`retireApp`). A refusal
+  while a wake adopts its draft fails the wake for a retry; it is never stored as a
+  draft problem. Transient admin connections beyond the one in `HOST_OVERHEAD` and
+  the shell's own pool are not counted. SQLite and PGlite are not counted. A budget
+  below the derived one refuses rather than evicts. `hostMetrics()` reports
+  `connections`, `maxConnections` and `brokerPool` (`inUse`, `queued`, `max`).
 - `drainShell(timeoutMs)`: refuse new apps, wait for calls, close all; for
   recycling a process. `hostMetrics()`: open, queued wakes, wakes, failed wakes,
   evictions by cause, wake times, cap, RSS.
@@ -240,18 +298,41 @@ or snapshot restore with the shell's `App`/`AppVersion` rows in one transaction
 cannot see the shell's own `App` row, so a deployment that put the shell and
 the apps on different databases is refused, not silently unfenced.
 
-Needs a PostgreSQL role that may `CREATE SCHEMA` (the hosted role and policies
-are #5188/#5189). The portable export/import work on a PostgreSQL app (#5419).
+Needs a PostgreSQL role that may `CREATE SCHEMA` (the admin, `DATABASE_URL`). The
+portable export/import work on a PostgreSQL app (#5419).
+
+**Two credentials (#5188).** With `SMRT_APP_SHELL_RUNTIME_DATABASE_URL` set to a
+second login, `appDatabase` (`app-database.ts`) keeps `DATABASE_URL` as the admin
+(shell tables, schema ownership, the claim, copies and swaps, and the owner lane's
+boot and migration under `SET LOCAL ROLE <schema>_o`) and runs every user
+operation as the runtime login after `SET LOCAL ROLE <schema>_r` (the broker). The
+login must be NOSUPERUSER NOBYPASSRLS NOCREATEROLE NOCREATEDB, own no table, hold
+nothing on the app schemas or TEMP/CREATE on the database, and be a member of the
+app roles only WITH INHERIT FALSE: `provision(schema)` creates and grants the roles
+(`provisionAppRoles`; the owner role goes to the admin) and refuses to start the app
+(`assertRuntimeLogin`) otherwise. Unset, the deployment is single-owner (one login,
+no app roles), as before, and startup logs one structured warning
+(`app-shell.database.no-role-isolation`: "no database-level role isolation: set
+`SMRT_APP_SHELL_RUNTIME_DATABASE_URL`") because nothing in the database then
+separates one app from another. User tables carry forced row-level-security policies (#5189, engine.md); guests are still refused.
 
 An app still in an `app.db` is refused until `migrateOwnAppToPostgres()` (host.ts;
 engine.md "SQLite to PostgreSQL in place") has moved it. v1 decisions:
 
-- **Trigger**: an explicit operator action, never a boot job and no owner-facing
-  route. Today the function is not wired to anything: the operator command needs
-  the shell context over the hosted database (the CLI has none), so it waits with
-  the caller/principal hand-off (#5188/#5195/#5375). The function runs as the
-  app's owner (tenant from the verified principal, never an argument), so a
-  command must supply that principal.
+- **Trigger**: an explicit operator command, never a boot job and no owner-facing
+  route: `smrt-app-shell migrate-to-postgres --tenant <id> --user <owner id> [--json]`
+  (`src/lib/server/operator.ts`, `build/operator.js`), run on the host with the
+  server's own environment. It starts the shell the way `./embed` does (listening
+  on nothing, no background job runner), checks that the user is the tenant's
+  owner (`requireOwner`: an ACTIVE membership with the system `owner` role, looked
+  up in shell.db; a non-owner, another tenant's owner and unknown ids are one
+  refusal that writes nothing), then runs `migrateOwnAppToPostgres` as that
+  verified owner (tenant from the verified principal, never an argument). No
+  principal is built from the operator's say-so. Exit 0 migrated or
+  already-migrated, 1 refused or failed (a shell that fails to start exits 1 with its
+  startup error, before the arguments are read), 2 usage once the shell started.
+  A database that cannot be reached is reported as such, not as "not the owner".
+  Hosted profile only.
 - **Refuses** (nothing written) while there is an open draft, waiting changes, or
   an unsettled approval (pending, accepted, executing, or approved with no result), each named in the message.
 - **The kept `app.db`** stays until an operator removes it; it is a snapshot as of
@@ -270,13 +351,57 @@ engine.md "SQLite to PostgreSQL in place") has moved it. v1 decisions:
   tamper-evident against the same database role: a role that can write the schema
   can forge or remove it.
 
+### Receiving a desktop app (#5193)
+
+`POST /api/shell/app/receive` (`receiveOwnUserApp`, `src/lib/server/receive-user-app.ts`)
+installs a desktop bundle (`exportUserApp`, `smrt app export`) as the signed-in
+owner's app in the shared PostgreSQL, in the schema the host names for that
+tenant's app. Owner session and same origin only (an operator or a link token
+is not a caller here yet). v1:
+
+- **Tenant** is the verified owner's, never a field of the request or bundle.
+- **Target** is an app that never held content: no history, or only the engine's
+  own empty version 0 (`isEmptyStart`) with no row anywhere. Any other app, a
+  SQLite file or an open draft is refused with nothing written (409); the
+  engine treats its own untouched first start (version 0, no model, no row) as
+  empty (`importPostgres`).
+- **Resumable and idempotent**: the version history and the pointer go in first
+  (one shell transaction; versions already stored are skipped), then the rows in
+  one transaction with a completion fact (`user-app-received`) and a verification
+  before the commit (engine). A crash between them converges on rerun; an app
+  opened in the gap boots at the bundle's version on empty tables (the engine's
+  own migration) and the rerun still fills it, but rows written there first make
+  the rerun refuse (nothing is lost: the desktop file is kept). The same bundle
+  again is `already-received`. A failure inside the import is settled by what it left: the completion
+  fact is written with the rows, so with it the rows are in and the history
+  stays (a rerun converges); without it, and with the schema holding a row (not
+  this call's), only the history goes back (`ShellVersionStore.unstage`); without
+  it and with an empty schema, the half-built schema goes too (engine `discardUnfilledImport`: under the
+  app's claim, so refused while another host has the app open, and only with no
+  completion fact and no row; the schema is provisioned again on the next use) and the history goes back, so
+  the tenant is left as found. A state that cannot be read is left alone. Before anything is staged the app's claim is probed (`assertAppUnclaimed`): a
+  process that holds the tenant's app open (the close below reaches only this
+  one's) refuses the receive with nothing written; a claim taken in the gap
+  after the probe keeps the history (that host may already run on it) and asks
+  to retry, and a rerun once it is closed converges. The tenant's open app is closed first (refused
+  while a call is inside it); do not use the app during a receive.
+- **Refuses** (named, nothing written) while the tenant has an open draft,
+  waiting changes or an unsettled approval, as the SQLite migration does
+  (`assertNothingPending`).
+- **Verification pass** (`verified: true` in the answer): per-table counts and
+  digests, the recorded version and definition, and the version history
+  (number, parent, definition, migration) against the bundle, after the commit.
+- Approvals and drafts are not carried (engine.md "Approvals and drafts in a move").
+- v1 defaults, revisit: the SQLite file on the desktop stays; the hosted app
+  cannot be moved back once it has taken writes; waiting changes and drafts refuse a move.
+- The CLI side (`runSharedCloudMigration`, `SharedCloudTransport.receiveUserApp`)
+  is wired; an HTTP transport that authenticates a cloud link to this route is not.
+
 ## Remaining (not in this slice)
 
 - Supplying a hosted identity provider's config is the operator's
   (`packages.users.auth.oidc` in smrt.config; the shell only reads it): no live
-  provider was exercised. The welcome/connect-AI UI still shows desktop options.
-- `required` mode and RLS policies for the shell tables (above); the
-  `database-rls` request transaction is not used by the shell's long-lived stores.
+  provider was exercised.
 - Hosted inference: gate, entitlement and provisioning landed (#5194, `hosted-inference.md`); the caller-aware parts wait for #5188/#5189/#5375. Workbook import in cloud, a statement timeout per
   operation (the database layer, not the registry), a cross-process lock for the first sign-in of one account (the insert-only
   ids already prevent a second tenant).

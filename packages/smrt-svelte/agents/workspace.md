@@ -187,7 +187,9 @@ beside `<main>`, so `PANEL_EDGES`, `ShellLayout.panels` and the four regions do
 not change. It stays mounted while closed (`hidden`), so chat state survives a
 toggle. Props: `panelOpen` (host-owned; `AppShell` `bind:panelOpen`),
 `panelLabel`, `panelResize` (`true`, limits, or `false`), `panelSize` (px until
-resized, default 400), `panelEnabled` (`AppShell`; turn it off without
+resized, default 400), `panelSide` (`'start'` default; `'end'` docks it after the
+content at the inline end, with its separator, arrow keys, drag and border
+flipped), `panelEnabled` (`AppShell`; turn it off without
 removing the snippet, e.g. plugin mode). The content keeps
 `--smrt-admin-shell-panel-main-min` (20rem) via CSS.
 

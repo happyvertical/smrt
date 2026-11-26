@@ -57,6 +57,32 @@ registry paths, and through `getAllSchemasAsDefinitions()`, asserting identical
 column and index sets. Extend that fixture with every generator change; a
 divergence is a bug in the generator, not an exception to add to the test.
 
+### Physical FK targets through STI (#5622)
+
+Build-time FK reconciliation resolves the declared model identity in the local
+and dependency manifests before choosing a physical table. An STI descendant,
+including a multilevel or external descendant with no schema of its own, targets
+the oldest STI ancestor's schema. Qualified references select only the named
+package; simple names prefer the declaring package and reject ambiguous peers.
+Qualified ancestors outside that view load through their owning manifests,
+including transitive packages hidden by pnpm. The public manifest loader's
+`fromManifest` option uses recorded load provenance; it does not substitute the
+app's cached installation. Qualified ancestors prefer that owning installation
+even when the app directly aggregates another installation of the same package; a
+missing contextual ancestor never borrows the app's aggregate. Current caller-supplied local definitions outrank prior own-package manifests
+before any owning-manifest lookup. Initial app target references retain app
+resolution. Unknown load provenance refuses. Ancestry is bounded
+by qualified identity and owning
+manifests are memoized during traversal. Missing manifests do not authorize a
+guessed table or constraint. Optional `Model.column` suffixes are parsed after the package qualifier, so dotted package
+names retain their identity. Target id types, explicit SQL type overrides,
+constraint engine restrictions and delete/update actions retain their meaning.
+
+The static manifest, runtime generator and registry aggregation must yield the
+same FK metadata and schema fingerprint. The built-core regression migrates and
+queries in separate production processes using the same immutable artifact;
+repair belongs in schema generation, never in stamp rewriting or startup bypasses.
+
 ### Field inheritance: one rule, one module (#4922, #4940, #4942)
 
 "What fields does a class have, counting what it inherits" is decided in ONE
@@ -1169,7 +1195,8 @@ A table the catalog lists that still cannot be described throws
 `TableSchemaUnreadableError` from `compare()` and `compareTable()`, before
 anything is planned, applied or recorded: a handle without an inspector on an
 engine core does not read itself (DuckDB, say), an inspector that returns
-nothing for the table, a PostgreSQL view standing where the table should be
+nothing for the table, an inspector that throws (retained as the error cause),
+an empty column description on SQLite or DuckDB, or a PostgreSQL view standing where the table should be
 when read through a handle without an inspector. Such a table used to compare
 as "no changes", so the rest of the plan applied and the run was recorded as a
 migrate of a schema it never read. `getLiveSchema()` returning `undefined`
@@ -1191,6 +1218,8 @@ change nothing:
   it was. The reader's `main`-qualified pragmas keep inspection on the
   permanent table; the refusal keeps the DDL there too.
 
+Name resolution is checked afresh on every comparison, including direct
+`compareTable()` calls; an unreadable SQLite temporary catalog fails closed.
 An exact-name match is unaffected. Rename the table (or the declaration) or drop
 the temporary table.
 
@@ -1851,7 +1880,8 @@ definition mismatch always appends, with `confirmed_retirements` (system schema
 1.18.0; JSON, one entry per table: table, package, last owner, release, `by`
 flag or code, the differences confirmed); other rows leave it NULL. This permanent ledger has no retention/prune task.
 `readLastMigrateRecord` is SELECT-only and returns `state: 'none'` for an absent
-or empty table: the first run under this scheme, not a schema mismatch. The latest
+or empty table: no record, not a schema mismatch (the release floor then warns
+from the database's system tables, see "Release upgrade gate"). The latest
 row orders by `created_at`, then `id`. Call the writer on the caller's database
 handle while its migration lock is held; it also works without a tracker.
 
@@ -1994,6 +2024,60 @@ contributors disagree on a shared index has no stamp (generation warns).
 
 ## PostgreSQL migration execution
 
+A migration failure (any statement phase, the index check probes and catalog
+reads, the transaction's `COMMIT` such as a deferred constraint, a rollback's
+`down`, `MigrationTracker.initialize()`, the tracker's own bookkeeping, session
+and connection setup and cleanup, and the migrate-run ledger write
+`recordSuccessfulMigrate`) is returned, thrown, logged and persisted to `error_message` as a
+closed `MigrationStatementFailure` from `migrations/migration-failure.ts`:
+migration id, statement ordinal (1-based position in the authored `up` list,
+or in `down` for a rollback, also for statements planned into another phase;
+a synthesised unique-index swap statement says `generated swap close` at the
+drop it replaced; an INVALID-index repair reports the CREATE that needed it),
+fixed kind, phase (`regular`, `concurrent-index`, `index-check`,
+`catalog-read`, `commit`, `ledger-record`, `unknown`), SQLSTATE (`unavailable`
+on SQLite/DuckDB) and an optional fixed `explanation` (index checks, catalog
+reads; a failed ledger write says the run's schema changes are committed and
+its unrecorded confirmations must be recorded or audited by the operator). `.code` is the SQLSTATE or `null`. Closing is the
+default at every public executor entry (`apply`, `applyAll`, `rollback`,
+`initialize`): every error the executor did not raise itself is closed,
+including non-database errors thrown inside them (a caller's `onProgress`,
+a range check), which then read `failed in the unknown phase`; a closed
+failure keeps no reference to the original error (no `cause`). When cleanup
+(session release, SQLite PRAGMA restore) also fails, the first failure is
+kept and the cleanup failure, closed, is attached as `cleanupFailure` with a
+`(cleanup also failed: …)` suffix. If a failed SQLite rebuild cannot restore
+`PRAGMA foreign_keys`, that tracker refuses further migration work until the
+setting reads back as restored (restore it or reopen the connection). The
+`db:migrate` CLI prints no driver context for a closed failure. Authored SQL and database message text are
+withheld (they can echo a literal). Identifiers (index, table, migration
+names) may appear in messages; they are not secrets. Index refusals name the
+statement as `Statement N kind: K`, not its text. The persist-failure and
+INVALID-index repair log lines carry `(SQLSTATE …; database message
+withheld)`. A retry refusal of a `failed` migration does not repeat the
+stored `error_message`.
+
+A guard keeps a fixed message only when the framework generated it in this
+process (`frameworkGuardStatement`, provenance by exact text, never by shape)
+and it failed for its own reason: PostgreSQL guards raise with SQLSTATE
+`P0S01` (a `P0001` from an authored function inside a guard is closed),
+SQLite's CHECK named exactly by the reason, DuckDB's `error()` findings. The
+report is always a fresh plain `Error` built only from the registered
+reasons it matched (`.code` `P0S01` on PostgreSQL; DuckDB findings without
+their values); the driver's error is dropped. A guard loaded from a migration
+file written by another process, or evicted from the bounded registry, is
+closed like authored SQL. The `USING ERRCODE` clause changes the text, and
+so the checksum, of generated PostgreSQL guard statements; `db:migrate` names
+guard-bearing repairs with a fingerprint of their SQL (`type_upgrade_…`,
+`alter_column_…`) and `orchestrate` with a timestamp, so a regenerated guard
+gets a new migration id and never collides with a completed one. A caller
+that re-applies its own completed migration under the same id with
+regenerated SQL sees the usual checksum refusal. Rows written before this
+change may still hold driver text. `db:history` and `db:status` withhold all
+nonempty stored failure details, including text that resembles a current closed
+reason, because stored messages have no trusted provenance. Reporting leaves
+the historical rows intact.
+
 `MigrationTracker.applyAll({ atomic: true })` sets local lock/statement timeouts
 before any DDL. `postgresSafe: true` commits non-index DDL atomically, then runs
 indexes CONCURRENTLY on `db.acquireSession()` so settings and DDL share a
@@ -2004,8 +2088,9 @@ limit: the statements deferred to the concurrent phase (a foreign-key
 `VALIDATE CONSTRAINT` and every statement after it) commit as they run, and a
 retry runs all of them again. One that committed before the failure and
 cannot run twice (`ADD COLUMN` without `IF NOT EXISTS`, a plain `DROP INDEX`
-or rename) makes every retry fail loudly ("already exists" or "does not
-exist") and the row stays `failed`. To recover, check which deferred
+or rename) makes every retry fail loudly (the closed reason's SQLSTATE: 42701
+or 42P07 for "already exists", 42704 or 42703 for "does not exist"; match on
+`.code`, not message text) and the row stays `failed`. To recover, check which deferred
 statements committed, revert them by hand (for example drop the column the
 failed attempt added, while it holds no data), then rerun. Inspect
 `pg_index.indisvalid` and drop INVALID indexes before rebuild (`pg_indexes`
@@ -2354,8 +2439,81 @@ declaring package. A table the code simply stopped declaring, with no
 declaration, still fails as an old column that holds data.
 
 Migrate refuses a database whose last migrate record is older than the floor.
-It names the supported release and the first upgrade to run. A database without
-a record is a first run under this scheme and proceeds. To move the floor, run
+It names the supported release and the first upgrade to run.
+
+**A database without a record is checked against its system tables, with a
+warning only.** Migrate records start at 0.61.4, later than the floor, so the
+databases the floor exists for never have one. Releases stamp their
+`SMRT_SCHEMA_VERSION` in `_smrt_migrations` when they prepare system tables
+(`smrt db:migrate`, the first model use), but not when an app migrates through
+`migrateSmrtSchemas`. `oldest-supported.json` names the floor release's value
+(`systemSchema`; 1.15.0 for 0.60.17, first shipped in 0.60.16), and
+`readRecordedSystemSchema()` reads the highest stamp, SELECT-only and before
+the run prepares anything. With no record and a highest stamp below the
+floor's, `checkUnrecordedDatabaseAge()` returns a warning, and
+`migrateSmrtSchemas` (logger), `smrt db:migrate` (stderr) and
+`smrt doctor --db` ("Database release") print it; the run proceeds. No record
+and no stamp, or a stamp at or above the floor's, is silent.
+
+**What the warning can decide, and what it cannot.** A stamp is evidence that
+some release at that system schema prepared the system tables. It is never
+evidence about the application tables, and never proof that an older release
+did not run later. The warning fires only when every stamp is below the
+floor's, so:
+
+| History | Highest stamp | Warns? | Supported? |
+|---|---|---|---|
+| Last prepared and migrated by 0.60.15 or earlier | below 1.15.0 | Yes | No |
+| Prepared by 0.60.15 or earlier, application tables last migrated by 0.60.16 through `migrateSmrtSchemas` only | below 1.15.0 | Yes | No (still below the floor) |
+| Prepared by 0.60.15 or earlier, application tables migrated by 0.60.17 to 0.61.3 through `migrateSmrtSchemas` only | below 1.15.0 | Yes (a false alarm) | Yes |
+| Last migrated by 0.60.16 | 1.15.0 | No (a miss) | No |
+| Older database that model code of a newer build started before its migrate | that build's | No (a miss) | Not proven |
+| Older database that this build's `smrt db:migrate` prepared, with no record written (the run ended with manual interventions or table errors) | this build's | No from then on (a miss) | Not proven |
+| No `_smrt_migrations` table, or no complete stamp | none | No | Not proven |
+
+The cutoff for the first upgrade hop is the last application migration, not
+the stamp: if the application tables were last migrated by a release below
+0.60.17, upgrade with smrt 0.60.17 first.
+
+Nothing in the database tells these apart, so the check is a warning and the
+run proceeds; it can raise a false alarm on the third row and misses the
+fourth to seventh. `smrt doctor --db` says "age not proven" when there is no
+record and the stamp does not warn, never a pass. The tracker table `_smrt_schema_migrations` has the
+same shape from 0.60.0 to 0.61.3, its rows carry the app's version rather than
+smrt's, and the core system schema did not change between 0.60.16 and 0.60.17,
+so neither tells these apart. Refusing on the stamp refused a supported
+database (the third row); admitting with a warning is the chosen trade. The
+warning's closing sentence ("an app on smrt 0.60.17 to 0.61.3 ... is safe to
+continue") is derived from the floor: it names the supported releases up to
+0.61.3, the last release without migrate records, and is left out once the
+floor is past it. Only
+a migrate record, which exists from 0.61.4, can refuse a run:
+`checkOldestSupportedRelease()` is unchanged and decides only from one. Once a
+run has written its record the stamp is never read again.
+
+`readRecordedSystemSchema` reads a stamp only when the whole stored value is
+`major.minor.patch` or that with `+deferred-compat`; any other value
+(`9.0.0garbage`, `9.1.0-beta`) is not a stamp and never outranks one.
+
+Tests (`oldest-supported.test.ts`, SQLite and DuckDB; the PostgreSQL file
+also asserts the logged warning): the seeded-stamp cases
+stand in for the releases that cannot run here (0.60.15 and earlier, 0.60.16,
+0.60.17 to 0.61.3). The entry points of this build are exercised directly:
+`ensureSystemTables` stamps this build's schema before migrate and leaves the
+run silent (fifth row); `migrateSmrtSchemas` reads the stamp before its own
+run stamps, warns once, and writes the record that ends the check.
+
+Each snapshot records its release's `systemSchema` (`capture` reads
+`SMRT_SCHEMA_VERSION` of the built checkout); `move-oldest` copies the new
+floor's into `oldest-supported.json`, and the gate fails when the two differ
+or the value is missing or not `major.minor.patch`. The same check runs when a
+release is captured (`capture` refuses a build with no `SMRT_SCHEMA_VERSION`),
+on every snapshot in `check` (with the table-count rule), and in `save` on the
+`systemSchema` of every snapshot already saved, before it writes the new one or
+prunes (the release being saved again is skipped, so saving that release again
+repairs a non-floor snapshot; an undated floor snapshot must be corrected by
+hand, follow-up #5544), and
+before `move-oldest` writes the floor. To move the floor, run
 `node scripts/release-upgrade-gate.mjs move-oldest --to <release>
 --upgrade-first-to <release> --reason "<why old upgrade code can be removed>"`
 on one shell line. Both releases must have saved snapshots. The command appends

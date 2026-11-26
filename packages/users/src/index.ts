@@ -232,6 +232,10 @@ export {
 } from './models/tenant-hierarchy.js';
 // Deployed self-hosted password provider readiness (#4158)
 export { checkReadiness } from './password-readiness.js';
+export {
+  type PostgresPrincipalSettingsInput,
+  postgresPrincipalSettings,
+} from './postgres-settings.js';
 // Credential retention — expired sessions and tokens (#2375)
 export {
   CLI_AUTH_RETENTION_TASK,
@@ -265,6 +269,7 @@ export {
   type ApproveAccessRequestOptions,
   type ApproveCliAuthRequestInput,
   applyPostgresPermissionPolicies,
+  applyScopedPostgresPermissionPolicies,
   assertOperationPermission,
   type BeginPasskeyRegistrationInput,
   type CancelAccessRequestOptions,
@@ -456,6 +461,7 @@ export {
   type PostgresPermissionBinding,
   type PostgresPermissionPolicyReportItem,
   type PostgresPermissionPolicyTarget,
+  type PostgresPolicyScope,
   type PrincipalPermissionRuntimeOptions,
   type RemoveAllPasskeysInput,
   type RemovePasskeyInput,
@@ -487,6 +493,7 @@ export {
   type SmrtOAuthAuthorizationServiceOptions,
   SmrtOAuthAuthorizationStorage,
   type SmrtOAuthAuthorizationStorageOptions,
+  type SmrtOAuthConsentScopes,
   type SmrtOAuthGrantSummary,
   type SwitchTenantResult,
   syncPermissionCatalog,

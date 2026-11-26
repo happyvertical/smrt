@@ -106,6 +106,10 @@ import {
   type DuckDbRebuildPlan,
   planDuckDbTableChanges,
 } from './duckdb-rebuild.js';
+import {
+  FRAMEWORK_GUARD_ERRCODE_SQL,
+  frameworkGuardStatement,
+} from './migration-failure.js';
 import { resolveRetirementContext } from './retire-context.js';
 import {
   planTableRetirements,
@@ -740,9 +744,6 @@ export class SchemaComparer {
    * back in the same run. Set by `compareColumns`, reset by `compareTable`.
    */
   private checksDroppedWithColumn = new Map<string, Set<string>>();
-
-  /** Declared names already checked against the catalog spelling this run. */
-  private readonly checkedNames = new Set<string>();
 
   private liveSchemas = new Map<
     string,
@@ -1388,9 +1389,27 @@ export class SchemaComparer {
   private async introspectTable(
     tableName: string,
   ): Promise<SqlTableSchemaInfo | null | undefined> {
-    const schema = unquoteIndexColumns(
-      await inspectTableSchema(this.db, tableName, this.engine),
-    );
+    let schema: SqlTableSchemaInfo | null;
+    try {
+      schema =
+        unquoteIndexColumns(
+          await inspectTableSchema(this.db, tableName, this.engine),
+        ) ?? null;
+      // SQLite and DuckDB cannot have a table without columns. An empty
+      // adapter description is therefore a failed inspection, not a schema.
+      if (
+        schema &&
+        (!schema.columns ||
+          typeof schema.columns !== 'object' ||
+          Array.isArray(schema.columns) ||
+          (this.engine !== 'postgres' &&
+            Object.keys(schema.columns).length === 0))
+      )
+        throw new TableSchemaUnreadableError(tableName, this.engine);
+    } catch (cause) {
+      if (cause instanceof TableSchemaUnreadableError) throw cause;
+      throw new TableSchemaUnreadableError(tableName, this.engine, { cause });
+    }
     if (
       schema &&
       this.engine === 'duckdb' &&
@@ -2113,7 +2132,7 @@ export class SchemaComparer {
     );
     const alterColumn = new RegExp(`^ALTER COLUMN (${ident}) ([\\s\\S]+)$`);
     const preflight =
-      /^DO \$\$ BEGIN IF ([\s\S]*?) THEN RAISE EXCEPTION '(?:[^']|'')*'; END IF; END \$\$$/;
+      /^DO \$\$ BEGIN IF ([\s\S]*?) THEN RAISE EXCEPTION '(?:[^']|'')*'(?: USING ERRCODE = [^;]+)?; END IF; END \$\$$/;
     const unprojectable = (statement: string) => ({
       unprojectable:
         statement.length > 160 ? `${statement.slice(0, 157)}...` : statement,
@@ -2798,12 +2817,20 @@ export class SchemaComparer {
       this.engine === 'postgres'
         ? [
             `LOCK TABLE ${table} IN SHARE ROW EXCLUSIVE MODE`,
-            `DO $$ BEGIN IF EXISTS (SELECT 1 FROM ${table} WHERE ${differs}) THEN RAISE EXCEPTION ${this.quoteLiteral(message)}; END IF; END $$`,
+            frameworkGuardStatement(
+              `DO $$ BEGIN IF EXISTS (SELECT 1 FROM ${table} WHERE ${differs}) THEN RAISE EXCEPTION ${this.quoteLiteral(message)} USING ERRCODE = ${FRAMEWORK_GUARD_ERRCODE_SQL}; END IF; END $$`,
+              'postgres',
+              [message],
+            ),
           ]
         : [
             `DROP TABLE IF EXISTS temp.${this.quoteIdentifier('_smrt_recompute_guard')}`,
             `CREATE TEMP TABLE ${this.quoteIdentifier('_smrt_recompute_guard')} ("differing" INTEGER CONSTRAINT ${this.quoteIdentifier(message)} CHECK ("differing" = 0))`,
-            `INSERT INTO temp.${this.quoteIdentifier('_smrt_recompute_guard')} ("differing") SELECT count(*) FROM ${table} WHERE ${differs}`,
+            frameworkGuardStatement(
+              `INSERT INTO temp.${this.quoteIdentifier('_smrt_recompute_guard')} ("differing") SELECT count(*) FROM ${table} WHERE ${differs}`,
+              'sqlite',
+              [message],
+            ),
             `DROP TABLE temp.${this.quoteIdentifier('_smrt_recompute_guard')}`,
           ];
     if (guard.some((sql) => sql.includes('$$') && !sql.startsWith('DO $$')))
@@ -6727,7 +6754,7 @@ export class SchemaComparer {
     existingTables: Set<string>,
   ): Promise<void> {
     if (this.engine === 'postgres') return;
-    const unchecked = declared.filter((name) => !this.checkedNames.has(name));
+    const unchecked = declared;
     if (!unchecked.length) return;
     for (const name of unchecked) {
       if (existingTables.has(name)) continue;
@@ -6743,8 +6770,10 @@ export class SchemaComparer {
           "SELECT name FROM sqlite_temp_master WHERE type = 'table'",
         );
         temporary = result.rows.map((row) => String(row.name));
-      } catch {
-        // A handle that reads as SQLite but has no temp catalog has no temp tables.
+      } catch (cause) {
+        throw new TableSchemaUnreadableError(unchecked[0], this.engine, {
+          cause,
+        });
       }
       for (const name of unchecked) {
         const lower = asciiLower(name);
@@ -6752,7 +6781,6 @@ export class SchemaComparer {
           throw new TemporaryTableShadowError(name);
       }
     }
-    for (const name of unchecked) this.checkedNames.add(name);
   }
 
   /**
@@ -7097,7 +7125,11 @@ export class SchemaComparer {
           : `${quotedCol} IS NOT NULL AND trim(${quotedCol}::text) !~ '^[+-]?[0-9]+$'`;
     const message = `Cannot convert ${tableName}.${colName} to INTEGER: found non-integer values`;
 
-    return `DO $$ BEGIN IF EXISTS (SELECT 1 FROM ${quotedTable} WHERE ${invalidCondition}) THEN RAISE EXCEPTION ${this.quoteLiteral(message)}; END IF; END $$`;
+    return frameworkGuardStatement(
+      `DO $$ BEGIN IF EXISTS (SELECT 1 FROM ${quotedTable} WHERE ${invalidCondition}) THEN RAISE EXCEPTION ${this.quoteLiteral(message)} USING ERRCODE = ${FRAMEWORK_GUARD_ERRCODE_SQL}; END IF; END $$`,
+      'postgres',
+      [message],
+    );
   }
 
   /**
@@ -7112,7 +7144,11 @@ export class SchemaComparer {
     const message =
       `Cannot convert ${tableName}.${colName} to TIMESTAMPTZ outside a UTC ` +
       'PostgreSQL session; confirm historical writers used UTC and SET TIME ZONE UTC';
-    return `DO $$ BEGIN IF upper(current_setting('TimeZone')) NOT IN ('UTC', 'ETC/UTC', 'GMT') THEN RAISE EXCEPTION ${this.quoteLiteral(message)}; END IF; END $$`;
+    return frameworkGuardStatement(
+      `DO $$ BEGIN IF upper(current_setting('TimeZone')) NOT IN ('UTC', 'ETC/UTC', 'GMT') THEN RAISE EXCEPTION ${this.quoteLiteral(message)} USING ERRCODE = ${FRAMEWORK_GUARD_ERRCODE_SQL}; END IF; END $$`,
+      'postgres',
+      [message],
+    );
   }
 
   private quoteLiteral(value: string): string {

@@ -37,6 +37,7 @@ import {
   quoteStringLiteral,
 } from '../schema/sql-identifiers.js';
 import type { SchemaChange, SQLDataType } from '../schema/types.js';
+import { frameworkGuardStatement } from './migration-failure.js';
 import {
   rebuildPlanStaleMessage,
   TableChangedSincePlanError,
@@ -297,6 +298,8 @@ export interface DuckDbPlanResult extends SqliteRebuildPlanResult {
 
 const stagingName = (name: string) =>
   quoteIdentifier(`${DUCKDB_REBUILD_TABLE_PREFIX}${name}`);
+/** Every finding of the rebuild check starts with this fixed text. */
+const REBUILD_CHECK_FAILED = 'table rebuild check failed:';
 /** The temporary table the rebuild check writes its findings to. */
 const CHECK_TABLE = quoteIdentifier('_smrt_check_rebuild');
 /** The temporary table the plan guard writes its findings to. */
@@ -335,15 +338,21 @@ function checkStatements(
   const where = (table: string) =>
     `database_name = current_database() AND schema_name = current_schema() AND table_name = ${quoteStringLiteral(table)}`;
   const problems: string[] = [];
+  // The fixed part of each finding (table and what differed) is the reason
+  // a failure is reported with; the values it lists are not.
+  const reasons: string[] = [];
   const problem = (
     table: string,
     what: string,
     built: string,
     planned: string,
-  ) =>
-    `SELECT CASE WHEN ${built} IS DISTINCT FROM ${planned} THEN ${quoteStringLiteral(
-      `table rebuild check failed: ${quoteIdentifier(table)} has ${what} `,
+  ) => {
+    const reason = `${REBUILD_CHECK_FAILED} ${quoteIdentifier(table)} has ${what}`;
+    reasons.push(reason);
+    return `SELECT CASE WHEN ${built} IS DISTINCT FROM ${planned} THEN ${quoteStringLiteral(
+      `${reason} `,
     )} || CAST(${built} AS VARCHAR) || ${quoteStringLiteral(', the plan built ')} || CAST(${planned} AS VARCHAR) END AS problem`;
+  };
   for (const item of expected) {
     problems.push(
       problem(
@@ -374,7 +383,11 @@ function checkStatements(
   }
   return [
     `CREATE TEMP TABLE ${CHECK_TABLE} AS SELECT problem FROM (${problems.join(' UNION ALL ')}) WHERE problem IS NOT NULL`,
-    `SELECT error(CAST(list(problem) AS VARCHAR)) FROM temp.${CHECK_TABLE} HAVING count(*) > 0`,
+    frameworkGuardStatement(
+      `SELECT error(CAST(list(problem) AS VARCHAR)) FROM temp.${CHECK_TABLE} HAVING count(*) > 0`,
+      'duckdb',
+      reasons,
+    ),
     `DROP TABLE temp.${CHECK_TABLE}`,
   ];
 }
@@ -396,12 +409,14 @@ function planGuardStatements(tables: TableInfo[]): string[] {
   const where = (table: string) =>
     `database_name = current_database() AND schema_name = current_schema() AND table_name = ${quoteStringLiteral(table)}`;
   const problems: string[] = [];
+  const stale: string[] = [];
   for (const info of tables) {
     if (!info.catalog) continue;
     const changed = [
       `(SELECT sql FROM duckdb_tables() WHERE ${where(info.name)}) IS DISTINCT FROM ${quoteStringLiteral(info.catalog.tableSql)}`,
       `list_sort(coalesce((SELECT list(sql) FROM duckdb_indexes() WHERE ${where(info.name)} AND sql IS NOT NULL), []::VARCHAR[])) IS DISTINCT FROM list_sort(${literalList(info.catalog.indexSql)})`,
     ].join(' OR ');
+    stale.push(rebuildPlanStaleMessage(info.name));
     problems.push(
       `SELECT CASE WHEN ${changed} THEN ${quoteStringLiteral(rebuildPlanStaleMessage(info.name))} END AS problem`,
     );
@@ -409,7 +424,11 @@ function planGuardStatements(tables: TableInfo[]): string[] {
   if (problems.length === 0) return [];
   return [
     `CREATE TEMP TABLE ${PLAN_GUARD_TABLE} AS SELECT problem FROM (${problems.join(' UNION ALL ')}) WHERE problem IS NOT NULL`,
-    `SELECT error(CAST(list(problem) AS VARCHAR)) FROM temp.${PLAN_GUARD_TABLE} HAVING count(*) > 0`,
+    frameworkGuardStatement(
+      `SELECT error(CAST(list(problem) AS VARCHAR)) FROM temp.${PLAN_GUARD_TABLE} HAVING count(*) > 0`,
+      'duckdb',
+      stale,
+    ),
     `DROP TABLE temp.${PLAN_GUARD_TABLE}`,
   ];
 }

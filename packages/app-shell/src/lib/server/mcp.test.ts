@@ -1,4 +1,5 @@
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
+import { hostOwner } from '../../test/engine-principal.ts';
 import { decideApproval, listApprovalViews } from './approvals.ts';
 import { discardChanges } from './changes.ts';
 import { getHost } from './host.ts';
@@ -110,15 +111,18 @@ describe('merged catalog and policy', () => {
     await expect(
       callTool(h.member, 'chore_create', { title: 'x' }),
     ).rejects.toBeInstanceOf(PolicyError);
-    expect((await (await getHost()).list('Chore')).length).toBe(1);
+    expect(
+      (await (await getHost()).list(hostOwner(await getHost()), 'Chore'))
+        .length,
+    ).toBe(1);
   });
 
   it('gates risky tools: delete becomes an approval, risky builder methods too', async () => {
     const host = await getHost();
-    const id = (await host.list('Chore'))[0].id as string;
+    const id = (await host.list(hostOwner(host), 'Chore'))[0].id as string;
     const del = await callTool(h.owner, 'chore_delete', { id });
     expect(JSON.stringify(del.content)).toContain('pending_approval');
-    expect((await host.list('Chore')).length).toBe(1);
+    expect((await host.list(hostOwner(host), 'Chore')).length).toBe(1);
     // a risky builder method is not an approval any more: it waits as a change
     const rm = await callTool(h.owner, 'app_removefield', {
       model: 'Chore',
@@ -161,10 +165,10 @@ describe('merged catalog and policy', () => {
       (r) => r.action.kind === 'tool',
     ) as (typeof rows)[number];
     const host = await getHost();
-    expect((await host.list('Chore')).length).toBe(1);
-    const approved = await decideApproval(tool.id, true, h.owner.id);
+    expect((await host.list(hostOwner(host), 'Chore')).length).toBe(1);
+    const approved = await decideApproval(tool.id, true, h.owner);
     expect(approved.status).toBe('approved');
-    expect((await host.list('Chore')).length).toBe(0);
+    expect((await host.list(hostOwner(host), 'Chore')).length).toBe(0);
     // members cannot reach any of it
     await expect(
       callTool(h.member, 'approval_pending', {}),

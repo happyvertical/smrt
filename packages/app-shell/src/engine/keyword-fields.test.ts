@@ -4,13 +4,14 @@ import { join } from 'node:path';
 import type { GeneratedExpression } from '@happyvertical/smrt-core';
 import { parseRuntimeReportSpec } from '@happyvertical/smrt-reports';
 import { expect, it } from 'vitest';
+import { hostOwner } from '../test/engine-principal.ts';
 import { AppHost, type Command, MemoryVersionStore } from './index.ts';
 
 it('defines, writes, updates, lists, bulk-loads, reports and calculates keyword fields #4917', async () => {
   const dir = mkdtempSync(join(tmpdir(), 'keywords-4917-'));
   const host = await AppHost.open(dir, { store: new MemoryVersionStore() });
   const run = (cmd: Command) =>
-    host.execute(cmd, { author: 'test', approved: true });
+    host.execute(hostOwner(host), cmd, { author: 'test', approved: true });
   const names = [
     'order',
     'group',
@@ -31,13 +32,13 @@ it('defines, writes, updates, lists, bulk-loads, reports and calculates keyword 
         names.map((name) => [name, { type: 'integer' }]),
       ),
     });
-    const first = await host.create('Keyword', values(1));
+    const first = await host.create(hostOwner(host), 'Keyword', values(1));
     expect(first).toMatchObject(values(1));
-    await host.update('Keyword', String(first.id), values(10));
-    expect(await host.get('Keyword', String(first.id))).toMatchObject(
-      values(10),
-    );
-    expect(await host.list('Keyword')).toEqual([
+    await host.update(hostOwner(host), 'Keyword', String(first.id), values(10));
+    expect(
+      await host.get(hostOwner(host), 'Keyword', String(first.id)),
+    ).toMatchObject(values(10));
+    expect(await host.list(hostOwner(host), 'Keyword')).toEqual([
       expect.objectContaining(values(10)),
     ]);
     await run({
@@ -53,9 +54,10 @@ it('defines, writes, updates, lists, bulk-loads, reports and calculates keyword 
       key: ['order'],
       rows: [{ ...values(20), group: 99 }],
     });
-    expect(await host.list('Keyword')).toHaveLength(3);
+    expect(await host.list(hostOwner(host), 'Keyword')).toHaveLength(3);
     for (const name of names) {
       const report = await host.runReport(
+        hostOwner(host),
         parseRuntimeReportSpec({
           version: 1,
           title: name,
@@ -87,12 +89,18 @@ it('defines, writes, updates, lists, bulk-loads, reports and calculates keyword 
       field: 'total',
       definition: { type: 'integer', calculated },
     });
-    expect((await host.get('Keyword', String(first.id))).total).toBe(108);
-    await host.update('Keyword', String(first.id), { order: 100 });
-    expect((await host.get('Keyword', String(first.id))).total).toBe(198);
-    await expect(host.create('Keyword', { total: 0 })).rejects.toThrow(
-      /read-only/,
-    );
+    expect(
+      (await host.get(hostOwner(host), 'Keyword', String(first.id))).total,
+    ).toBe(108);
+    await host.update(hostOwner(host), 'Keyword', String(first.id), {
+      order: 100,
+    });
+    expect(
+      (await host.get(hostOwner(host), 'Keyword', String(first.id))).total,
+    ).toBe(198);
+    await expect(
+      host.create(hostOwner(host), 'Keyword', { total: 0 }),
+    ).rejects.toThrow(/read-only/);
   } finally {
     await host.close();
     rmSync(dir, { recursive: true, force: true });

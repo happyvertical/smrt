@@ -26,8 +26,9 @@ import {
   importFieldName,
   importModelName,
 } from '../../engine/import-target.ts';
+import { hostOwner } from '../../test/engine-principal.ts';
 import { AppDraftCollection } from '../objects/AppDraft.ts';
-import { AppImportCollection } from '../objects/AppImport.ts';
+import { AppImport, AppImportCollection } from '../objects/AppImport.ts';
 import { applyOwnBatch } from './approvals.ts';
 import { runCommand } from './builder.ts';
 import {
@@ -43,6 +44,7 @@ import {
   previewDraft,
   startDraft,
 } from './drafts.ts';
+import { subscribe } from './events.ts';
 import {
   closeHost,
   configureShell,
@@ -68,23 +70,56 @@ let texts: string[];
 let testEngine: 'api' | 'codex';
 let offeredTools: unknown[][];
 let release: (() => void) | undefined;
+let stopWaking: () => void;
 const request = async (bad = false, badCache = false) =>
   new Request('http://shell/api/shell/import', {
     method: 'POST',
     body: (await businessBytes(bad, badCache)) as BodyInit,
   });
-const pause = (ms = 10) => new Promise((resolve) => setTimeout(resolve, ms));
 // The two full-lifecycle tests below (load, exact checks, rebuilds, Apply) pass a
 // 180s timeout: a chain of engine rebuilds, seconds each on a loaded host.
 // Measured 45s at host load ~33 and 52s on a CI runner (the Apply test); the
 // Remove/Put back test hit the 60s default on CI three times. 3x headroom.
-async function until(check: () => Promise<boolean>) {
-  for (let n = 0; n < 1000; n++) {
-    if (await check()) return;
-    await pause();
-  }
-  throw new Error('Import did not reach the expected state');
+//
+// `until` waits on what actually moves an import, not on a budget of polls
+// (#5542: the old 1000 x 10 ms budget ran out under host load while the work
+// was still progressing, and its polling competed with that work). It
+// re-checks when a test runner emits any event (a job started, progressed,
+// completed, failed, ...), when the shell publishes an event, when an import
+// row is saved, and when work reaches a test gate. The test's own timeout bounds the
+// wait. A slow re-check covers a transition no signal follows, such as a
+// stopped runner's late return releasing its job slot.
+const RECHECK_MS = 250;
+let wakes = 0;
+const sleepers = new Set<() => void>();
+function wake() {
+  wakes += 1;
+  for (const sleeper of [...sleepers]) sleeper();
 }
+function nextWake() {
+  return new Promise<void>((resolve) => {
+    const done = () => {
+      clearTimeout(timer);
+      sleepers.delete(done);
+      resolve();
+    };
+    const timer = setTimeout(done, RECHECK_MS);
+    sleepers.add(done);
+  });
+}
+async function until(check: () => Promise<boolean>) {
+  for (;;) {
+    const seen = wakes;
+    if (await check()) return;
+    if (wakes === seen) await nextWake();
+  }
+}
+/** Hold the caller until the test calls `release`; reaching the gate wakes `until`. */
+const hold = () =>
+  new Promise<void>((resolve) => {
+    release = resolve;
+    wake();
+  });
 const install = () =>
   createShellImportService({
     db: h.db,
@@ -139,6 +174,18 @@ async function worker(extra: ConstructorParameters<typeof TaskRunner>[0] = {}) {
     retention: false,
     ...extra,
   });
+  for (const event of [
+    'job:started',
+    'job:progress',
+    'job:event',
+    'job:completed',
+    'job:retrying',
+    'job:failed',
+    'job:unclaimed',
+    'runner:error',
+    'runner:stopped',
+  ])
+    runner.on(event, wake);
   runners.push(runner);
   await runner.initialize(h.db);
   await runner.start();
@@ -161,9 +208,22 @@ beforeEach(async () => {
   texts = [];
   release = undefined;
   answer = () => businessWorkbook().plan;
+  stopWaking = subscribe(wake);
+  const save = AppImport.prototype.save;
+  vi.spyOn(AppImport.prototype, 'save').mockImplementation(async function (
+    this: AppImport,
+    ...args: Parameters<AppImport['save']>
+  ) {
+    try {
+      return await save.apply(this, args);
+    } finally {
+      wake();
+    }
+  });
   service = install();
 });
 afterEach(async () => {
+  stopWaking();
   release?.();
   for (const runner of runners) await runner.stop();
   service.dispose();
@@ -200,7 +260,10 @@ it.each([
   expect((await draftInfo())?.publishable).toBe(true);
   expect(Object.keys((await getHost()).describe().models)).toEqual([]);
   expect(
-    await (await hostFor('draft')).countRows(importModelName('orders')),
+    await (await hostFor('draft')).countRows(
+      hostOwner(await hostFor('draft')),
+      importModelName('orders'),
+    ),
   ).toBe(size === 'realistic' ? 42 : 2);
   expect(current.progress?.map(({ stage }) => stage)).toEqual([
     'reading',
@@ -327,7 +390,10 @@ it.each([
   expect(current.id).not.toBe(first.id);
   expect((await getAiRun(h.db, current.id!))?.retryOfRunId).toBe(first.id);
   expect(
-    await (await hostFor('draft')).countRows(importModelName('orders')),
+    await (await hostFor('draft')).countRows(
+      hostOwner(await hostFor('draft')),
+      importModelName('orders'),
+    ),
   ).toBe(2);
   await service.action(h.owner, 'discard');
   expect(existsSync(file)).toBe(false);
@@ -403,7 +469,10 @@ it.each([
     ).rows,
   ).toHaveLength(1);
   expect(
-    await (await hostFor('draft')).countRows(importModelName('orders')),
+    await (await hostFor('draft')).countRows(
+      hostOwner(await hostFor('draft')),
+      importModelName('orders'),
+    ),
   ).toBe(2);
 });
 it('recovers a saved retry id that names another tenant run without reading that run', async () => {
@@ -506,15 +575,14 @@ it('holds edits and publishing during a partial load; a repeated check discards 
     'execute',
   ).mockImplementation(async function (
     this: import('../../engine/host.ts').AppHost,
+    principal,
     command,
     options,
   ) {
-    const result = await original.call(this, command, options);
+    const result = await original.call(this, principal, command, options);
     if (once && command.type === 'loadRecords') {
       once = false;
-      await new Promise<void>((resolve) => {
-        release = resolve;
-      });
+      await hold();
     }
     return result;
   });
@@ -534,7 +602,10 @@ it('holds edits and publishing during a partial load; a repeated check discards 
   expect(current.draftId).not.toBe(firstId);
   expect(current.id).toBe(run.id);
   expect(
-    await (await hostFor('draft')).countRows(importModelName('orders')),
+    await (await hostFor('draft')).countRows(
+      hostOwner(await hostFor('draft')),
+      importModelName('orders'),
+    ),
   ).toBe(2);
 });
 it.each([
@@ -546,9 +617,7 @@ it.each([
   answer = async () => {
     if (once) {
       once = false;
-      await new Promise<void>((resolve) => {
-        release = resolve;
-      });
+      await hold();
     }
     return businessWorkbook().plan;
   };
@@ -586,13 +655,19 @@ it.each([
     );
   }
   expect(
-    await (await hostFor('draft')).countRows(importModelName('orders')),
+    await (await hostFor('draft')).countRows(
+      hostOwner(await hostFor('draft')),
+      importModelName('orders'),
+    ),
   ).toBe(2);
   release?.();
   await until(async () => first.activeJobCount() === 0);
   expect((await service.current(h.owner))?.state).toBe('done');
   expect(
-    await (await hostFor('draft')).countRows(importModelName('orders')),
+    await (await hostFor('draft')).countRows(
+      hostOwner(await hostFor('draft')),
+      importModelName('orders'),
+    ),
   ).toBe(2);
 });
 it.each([
@@ -601,9 +676,7 @@ it.each([
 ] as const)('cancels a %s planning turn finally and removes the owned file and draft', async (engine) => {
   testEngine = engine;
   answer = async () => {
-    await new Promise<void>((resolve) => {
-      release = resolve;
-    });
+    await hold();
     return businessWorkbook().plan;
   };
   await service.start(h.owner, await request());
@@ -621,10 +694,7 @@ it.each([
 it('stops and resumes CLI planning without opening a draft from the stopped child', async () => {
   testEngine = 'codex';
   answer = async (index) => {
-    if (!index)
-      await new Promise<void>((resolve) => {
-        release = resolve;
-      });
+    if (!index) await hold();
     return businessWorkbook().plan;
   };
   await service.start(h.owner, await request());
@@ -638,7 +708,10 @@ it('stops and resumes CLI planning without opening a draft from the stopped chil
   expect((await end()).state).toBe('done');
   expect(offeredTools).toEqual([[], []]);
   expect(
-    await (await hostFor('draft')).countRows(importModelName('orders')),
+    await (await hostFor('draft')).countRows(
+      hostOwner(await hostFor('draft')),
+      importModelName('orders'),
+    ),
   ).toBe(2);
 });
 it('refuses nonowners, invalid uploads, occupied draft and simultaneous imports', async () => {
@@ -654,7 +727,7 @@ it('refuses nonowners, invalid uploads, occupied draft and simultaneous imports'
       }),
     ),
   ).rejects.toMatchObject({ status: 415 });
-  await startDraft('My draft', h.owner.id);
+  await startDraft('My draft', h.owner);
   await runAs(h.owner, () =>
     runCommand(
       {
@@ -662,7 +735,7 @@ it('refuses nonowners, invalid uploads, occupied draft and simultaneous imports'
         name: 'Scratch',
         fields: { note: { type: 'text' } },
       },
-      h.owner.id,
+      h.owner,
       'draft',
     ),
   );
@@ -683,7 +756,7 @@ it('refuses nonowners, invalid uploads, occupied draft and simultaneous imports'
   expect(await service.current(h.member).catch(() => null)).toBeNull();
 });
 it('reuses an open draft that has no changes', async () => {
-  const unused = await startDraft('Never used', h.owner.id);
+  const unused = await startDraft('Never used', h.owner);
   await service.start(h.owner, await request());
   expect(
     (await (await AppDraftCollection.create({ db: h.db })).get(unused.id))
@@ -691,7 +764,7 @@ it('reuses an open draft that has no changes', async () => {
   ).toBe('discarded');
 });
 it('keeps a draft whose edit lands as the unused discard begins (#5122)', async () => {
-  await startDraft('Edited during discard', h.owner.id);
+  await startDraft('Edited during discard', h.owner);
   const host = await hostFor('draft');
   let edit: Promise<string> | undefined;
   // The edit is issued the moment the discard starts, after the caller's own
@@ -699,6 +772,7 @@ it('keeps a draft whose edit lands as the unused discard begins (#5122)', async 
   const landEdit = () => {
     edit ??= host
       .execute(
+        hostOwner(host),
         {
           type: 'defineModel',
           name: 'Pets',
@@ -877,9 +951,18 @@ it('applies imported records only through the owner Apply, then removes the file
   expect(Object.keys((await getHost()).describe().models)).toEqual([]);
   const result = await runAs(h.owner, () => applyOwnBatch(state.digest));
   expect(result.status).toBe('approved');
-  expect(await (await getHost()).countRows(importModelName('orders'))).toBe(2);
   expect(
-    (await (await getHost()).list(importModelName('orders')))
+    await (await getHost()).countRows(
+      hostOwner(await getHost()),
+      importModelName('orders'),
+    ),
+  ).toBe(2);
+  expect(
+    (
+      await (
+        await getHost()
+      ).list(hostOwner(await getHost()), importModelName('orders'))
+    )
       .map((r) => r[importFieldName('total')])
       .sort(),
   ).toEqual([1500, 2500]);
@@ -919,7 +1002,12 @@ it('records the import as cards by table and keeps the review through a Remove a
   await until(
     async () => (await service.current(h.owner))?.status === 'published',
   );
-  expect(await (await getHost()).countRows(importModelName('orders'))).toBe(2);
+  expect(
+    await (await getHost()).countRows(
+      hostOwner(await getHost()),
+      importModelName('orders'),
+    ),
+  ).toBe(2);
 }, 180_000);
 it('repairs a crash between job admission and saving the import run id with idempotent start', async () => {
   const started = await service.start(h.owner, await request());
@@ -939,7 +1027,7 @@ it('repairs a crash between job admission and saving the import run id with idem
 });
 it('never discards an unrelated draft if it opens while an import job is still pending', async () => {
   await service.start(h.owner, await request());
-  const other = await startDraft('Other draft', h.owner.id);
+  const other = await startDraft('Other draft', h.owner);
   await worker();
   expect((await end()).state).toBe('failed');
   expect((await getDraftSlot())?.id).toBe(other.id);
@@ -1023,7 +1111,10 @@ it('imports unrepresentable formulas as cached values and lists them for review'
     ],
   });
   expect(
-    await (await hostFor('draft')).countRows(importModelName('orders')),
+    await (await hostFor('draft')).countRows(
+      hostOwner(await hostFor('draft')),
+      importModelName('orders'),
+    ),
   ).toBe(2);
 });
 
@@ -1068,9 +1159,7 @@ it('keeps a late Cancel on a completed import ready for review until an explicit
 });
 it('uses the authoritative result when completion races a Stop request', async () => {
   answer = async () => {
-    await new Promise<void>((resolve) => {
-      release = resolve;
-    });
+    await hold();
     return businessWorkbook().plan;
   };
   await service.start(h.owner, await request());
@@ -1085,6 +1174,7 @@ it('uses the authoritative result when completion races a Stop request', async (
       stop: async (id: string) => {
         await new Promise<void>((resolve) => {
           finishStop = resolve;
+          wake();
         });
         return api.stop(id);
       },
@@ -1168,7 +1258,12 @@ it.each([
   await service.action(h.owner, 'retry');
   await worker();
   expect((await end()).status).toBe('review');
-  expect(await (await hostFor('draft')).countRows('Orders')).toBe(2);
+  expect(
+    await (await hostFor('draft')).countRows(
+      hostOwner(await hostFor('draft')),
+      'Orders',
+    ),
+  ).toBe(2);
   await service.action(h.owner, 'discard');
 });
 it.each([

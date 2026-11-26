@@ -4,7 +4,9 @@
 // back: the page learns only whether one is stored.
 import type { InferenceSettingsOutcome } from '@happyvertical/smrt-inference/server';
 import { error, fail } from '@sveltejs/kit';
+import { shellProfile } from '$lib/server/host';
 import { asOwner, shellInferenceController } from '$lib/server/inference';
+import { hideDeploymentRows } from '$lib/server/inference-hosted-view';
 import { PolicyError } from '$lib/server/owner';
 import type { Actions, PageServerLoad } from './$types';
 
@@ -39,11 +41,16 @@ async function readPayload(request: Request): Promise<unknown> {
   }
 }
 
-export const load: PageServerLoad = ({ locals, url, depends }) => {
+export const load: PageServerLoad = async ({ locals, url, depends }) => {
   depends('smrt:inference-settings');
-  return owned(locals, (_owner, session) =>
+  const page = await owned(locals, (_owner, session) =>
     shellInferenceController().load(session, url.searchParams.get('by')),
   );
+  // Cloud: an owner owns one tenant, not the deployment, so the operator's
+  // tiers, aliases and fusions are not theirs to see (and are not theirs to
+  // write: `tenantOnlyInCloud`).
+  const hosted = (await shellProfile()) === 'cloud';
+  return { ...(hosted ? hideDeploymentRows(page) : page), hosted };
 };
 
 type Writer = (

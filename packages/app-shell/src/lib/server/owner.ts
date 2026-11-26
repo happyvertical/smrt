@@ -18,6 +18,13 @@ import {
   MembershipStatus,
   RoleCollection,
 } from '@happyvertical/smrt-users';
+import {
+  type AppDefinition,
+  appPermissionSlugs,
+  type EnginePrincipal,
+  enginePrincipal,
+  OWNER_SLUG,
+} from '../../engine/index.ts';
 import { getShellDb } from './host.ts';
 
 export interface Principal {
@@ -134,4 +141,41 @@ export function runAs<T>(
     },
     fn,
   );
+}
+
+/**
+ * The engine principal of a VERIFIED owner (#5188): their tenant and user, and
+ * every permission of the app's definition (the owner holds all of them). Built
+ * only from a `Principal` that `requireOwner` or `ownerOf` returned; nothing in
+ * a request body or header reaches it. Guests are not built here (no RLS yet).
+ */
+export function principalFor(
+  owner: Principal,
+  def: AppDefinition,
+): EnginePrincipal {
+  return enginePrincipal({
+    kind: 'user',
+    tenantId: owner.tenantId,
+    userId: owner.id,
+    permissions: [OWNER_SLUG, ...appPermissionSlugs(def)],
+  });
+}
+
+/** `principalFor` for the owner of the running async scope, against `host`'s current definition. */
+export async function callerFor(host: {
+  def: AppDefinition;
+}): Promise<EnginePrincipal> {
+  return principalFor(await assertOwner(), host.def);
+}
+
+/**
+ * The engine principal of a verified owner, for a caller that holds the
+ * verified `Principal` but no async scope (a builder call). The tenant is the
+ * principal's own, never the host's: a host of another tenant refuses it.
+ */
+export function authorCaller(
+  owner: Principal,
+  host: { def: AppDefinition },
+): EnginePrincipal {
+  return principalFor(owner, host.def);
 }

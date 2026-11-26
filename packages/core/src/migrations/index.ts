@@ -135,9 +135,19 @@ export {
   packagesSeenInput,
   readConfirmedRetirements,
   readLastMigrateRecord,
+  readRecordedSystemSchema,
   recordSuccessfulMigrate,
   type UnloadedBuildPackage,
 } from './migrate-record.js';
+// Closed migration failure reasons (#5425): what `MigrationTracker` returns
+// and throws for a failed statement, commit or rollback.
+export {
+  type FailurePhase,
+  type GeneratedStatement,
+  isMigrationStatementFailure,
+  MigrationStatementFailure,
+  type StatementKind,
+} from './migration-failure.js';
 // Cross-process serialization of db:migrate runs (#3634)
 export {
   type AcquireMigrationLockOptions,
@@ -178,8 +188,10 @@ export {
 } from './null-equal-indexes.js';
 export {
   checkOldestSupportedRelease,
+  checkUnrecordedDatabaseAge,
   compareReleases,
   OLDEST_SUPPORTED_RELEASE,
+  OLDEST_SUPPORTED_SYSTEM_SCHEMA,
 } from './oldest-supported.js';
 // High-level schema orchestration over ObjectRegistry
 export {

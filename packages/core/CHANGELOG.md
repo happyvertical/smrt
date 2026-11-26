@@ -1,5 +1,133 @@
 # @happyvertical/smrt-core
 
+## 0.71.0
+
+### Minor Changes
+
+- ### Breaking Changes
+  
+  - restrict attachment file paths to a configured storage root (#5654) (messages)
+  
+  ### Bug Fixes
+  
+  - name source-compiled workspace classes by owner package (#5655) (#5656) (core)
+
+### Patch Changes
+
+- @happyvertical/smrt-config@0.71.0
+  - @happyvertical/smrt-scanner@0.71.0
+  - @happyvertical/smrt-types@0.71.0
+
+## 0.70.3
+
+### Patch Changes
+
+- ### Features
+  
+  - indexed requesterKey on SupportCase (#5644) (support)
+  - required tenancy and forced RLS for the cloud shell tables (#5191) (#5634) (app-shell)
+  - hosted receiver and per-tenant placement of a desktop user app (#5193) (#5637) (app-shell)
+  - cloud welcome offers only the API key; hide operator inference rows (#5191) (#5636) (app-shell)
+  - operator command to move a tenant's SQLite app to PostgreSQL (#5193) (#5632) (app-shell)
+  - per-user attribution and fail-closed hosted gate (#5194) (#5633) (app-shell)
+  
+  ### Bug Fixes
+  
+  - preserve qualified STI foreign-key build schemas (#5627) (core)
+  - check the draft scope on message writes (#5617) (messages)
+- @happyvertical/smrt-config@0.70.3
+  - @happyvertical/smrt-scanner@0.70.3
+  - @happyvertical/smrt-types@0.70.3
+
+## 0.70.2
+
+### Patch Changes
+
+- ### Features
+  
+  - fence a draft's boot, ownership bump and schema drops on the claim (#5486) (#5631) (app-shell)
+  - fence draft store writes and draft row updates on the claim (#5486) (#5629) (app-shell)
+  - fence change and undo store writes on the claim (#5486) (#5624) (app-shell)
+  - gate app method code on the app.methods entitlement (#5194) (#5623) (app-shell)
+  - flag setters that read a hidden field (#5603) (#5621) (scanner)
+  - carry the owner principal into change-queue entry points (#5609) (#5618) (app-shell)
+  
+  ### Bug Fixes
+  
+  - refuse reserved method names on add or rename (#5194) (#5628) (app-shell)
+  - allow self-review on the desktop-release environment guard (#5619) (#5620) (smrt-desktop)
+- @happyvertical/smrt-config@0.70.2
+  - @happyvertical/smrt-scanner@0.70.2
+  - @happyvertical/smrt-types@0.70.2
+
+## 0.70.1
+
+### Patch Changes
+
+- ### Features
+  
+  - tenant-scoped run-time models with row-level-security policies (#5610) (app-shell)
+  
+  ### Bug Fixes
+  
+  - header at phone width, truthful Auto wording; docs and comment fixes (#5613) (planner)
+  - assistant chat follow-ups from #5601 QA (#5614) (app-shell)
+- @happyvertical/smrt-config@0.70.1
+  - @happyvertical/smrt-scanner@0.70.1
+  - @happyvertical/smrt-types@0.70.1
+
+## 0.70.0
+
+### Minor Changes
+
+- ### Breaking Changes
+  
+  - refuse writes that change a field the caller may not write (#5604) (core)
+  - route late AI usage to its call; take row id, run and user from trusted sources (#5600) (core)
+  - return a cut run event payload only under the rules that redacted it (#5595) (core)
+  - runtime REST acts for a principal its host resolves once per request (#5588) (core)
+  - resolve tenancy for the effective row model on every request path (#5568) (core)
+  
+  ### Features
+  
+  - carry the caller into the engine, one transaction per operation (#5607) (app-shell)
+  - assistant chat pass — one scroll, action said once, quieter steps (#5601) (app-shell)
+  - narrow OAuth consent to held scopes and check scopes per tool (#5587) (users,app-mcp)
+  - opt-in legacy MCP protocol support for 2025-era clients (#5586) (app-mcp)
+  - warn when a database without a migrate record has old system tables (#5582) (core)
+  
+  ### Bug Fixes
+  
+  - junction adopt exact id and late-parent chain derivation (#5598) (core)
+  - load smrt-features manifest from source in device-entitlements tests (#5602) (app-runtime)
+  - registry and object-runtime fixes for same-named classes and more (#5589) (core)
+  - make two slow test setups fast (#5573)
+
+### Patch Changes
+
+- @happyvertical/smrt-config@0.70.0
+  - @happyvertical/smrt-scanner@0.70.0
+  - @happyvertical/smrt-types@0.70.0
+
+## 0.69.0
+
+### Minor Changes
+
+- ### Breaking Changes
+  
+  - async generated client fetchers; list() sends its params (#5565) (core)
+  
+  ### Features
+  
+  - embed entry with handler and drain; build ./start on them (#5550) (app-shell)
+  - hosted engine follow-ups: caps wiring, hosted keys, migration (#5183) (#5540) (app-shell)
+
+### Patch Changes
+
+- @happyvertical/smrt-config@0.69.0
+  - @happyvertical/smrt-scanner@0.69.0
+  - @happyvertical/smrt-types@0.69.0
+
 ## 0.68.0
 
 ### Minor Changes

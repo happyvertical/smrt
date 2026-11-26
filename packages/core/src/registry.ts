@@ -2982,6 +2982,7 @@ export class ObjectRegistry {
     ObjectRegistry.getDiscoveryAttemptCache().clear();
 
     for (const registered of ObjectRegistry.classes.values()) {
+      registered.inheritanceChain = undefined;
       registered.inheritedFields = undefined;
       registered.inheritedMethods = undefined;
     }
@@ -4101,6 +4102,19 @@ export class ObjectRegistry {
       return null;
     }
 
+    return ObjectRegistry.buildObjectMetadata(registered, className);
+  }
+
+  /**
+   * Metadata for one already-resolved registration. `lookupName` is what the
+   * relationship queries resolve the class by; callers holding a registration
+   * pass its qualified name so a same-named class in another package is never
+   * substituted.
+   */
+  private static buildObjectMetadata(
+    registered: RegisteredClass,
+    lookupName: string,
+  ): ObjectMetadata {
     return {
       name: registered.name,
       constructor: registered.constructor,
@@ -4110,8 +4124,8 @@ export class ObjectRegistry {
       methods: new Map(registered.methods), // Return copy to prevent mutations
       schema: registered.schema,
       validators: registered.validators || [],
-      relationships: ObjectRegistry.getRelationships(className),
-      inverseRelationships: ObjectRegistry.getInverseRelationships(className),
+      relationships: ObjectRegistry.getRelationships(lookupName),
+      inverseRelationships: ObjectRegistry.getInverseRelationships(lookupName),
       tools: registered.tools,
     };
   }
@@ -4162,12 +4176,21 @@ export class ObjectRegistry {
   static getAllObjectMetadata(): ObjectMetadata[] {
     const allMetadata: ObjectMetadata[] = [];
 
-    // Issue #951: Use simple names (map keys may be qualified)
-    for (const [_key, entry] of ObjectRegistry.classes) {
-      const metadata = ObjectRegistry.getObjectMetadata(entry.name || _key);
-      if (metadata) {
-        allMetadata.push(metadata);
-      }
+    // Build each entry's metadata from the entry itself: resolving by simple
+    // name would return the first of two same-named classes for both. One
+    // entry per registration, as getQualifiedClassNames() does: a manifest
+    // merge can leave a simple key and a qualified key pointing at the same
+    // RegisteredClass, which is still one class.
+    const seen = new Set<RegisteredClass>();
+    for (const [key, entry] of ObjectRegistry.classes) {
+      if (seen.has(entry)) continue;
+      seen.add(entry);
+      allMetadata.push(
+        ObjectRegistry.buildObjectMetadata(
+          entry,
+          entry.qualifiedName || entry.name || key,
+        ),
+      );
     }
 
     return allMetadata;

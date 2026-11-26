@@ -173,6 +173,117 @@ describe('an existing table that cannot be read stops the migrate', () => {
     ]);
   });
 
+  it.each([
+    'sqlite',
+    'duckdb',
+  ] as const)('%s: an inspector exception or empty column description fails with the named error before DDL', async (engine) => {
+    const db = await open(engine);
+    registerVersion(1);
+    await migrate(db, engine);
+    const before = await readLastMigrateRecord(db, { engineHint: engine });
+    registerVersion(2);
+    for (const broken of ['throw', 'empty'] as const) {
+      const handle = new Proxy(db, {
+        get(target, key) {
+          if (key === 'getTableSchema')
+            return async (name: string) => {
+              if (name !== 'unreadable_items')
+                return target.getTableSchema?.(name);
+              if (broken === 'throw') throw new Error('catalog unavailable');
+              return {
+                tableName: name,
+                columns: {},
+                indexes: [],
+                foreignKeys: [],
+              };
+            };
+          const value = Reflect.get(target, key);
+          return typeof value === 'function' ? value.bind(target) : value;
+        },
+      });
+      await expect(migrate(handle, engine)).rejects.toMatchObject({
+        name: 'TableSchemaUnreadableError',
+        table: 'unreadable_items',
+        engine,
+      });
+      expect(await tableNames(db)).toEqual(['unreadable_items']);
+      expect(await readLastMigrateRecord(db, { engineHint: engine })).toEqual(
+        before,
+      );
+    }
+  });
+
+  it('SQLite: a reused comparer checks for a newly introduced temporary shadow on every run', async () => {
+    const db = await open('sqlite');
+    registerVersion(1);
+    await migrate(db, 'sqlite');
+    const comparer = new SchemaComparer(db, { engineHint: 'sqlite' });
+    const schemas = ObjectRegistry.getAllSchemasAsDefinitions();
+    await comparer.compare(schemas);
+    await db.query(
+      'CREATE TEMP TABLE unreadable_items (id TEXT PRIMARY KEY, title TEXT)',
+    );
+    await expect(comparer.compare(schemas)).rejects.toBeInstanceOf(
+      TemporaryTableShadowError,
+    );
+  });
+
+  it.each([
+    'sqlite',
+    'duckdb',
+  ] as const)('%s: an inspector exception is named and keeps the original cause without applying a plan', async (engine) => {
+    const db = await open(engine);
+    registerVersion(1);
+    await migrate(db, engine);
+    const record = await readLastMigrateRecord(db, { engineHint: engine });
+    registerVersion(2);
+    const cause = new Error('inspection unavailable');
+    const broken = new Proxy(db, {
+      get(target, key, receiver) {
+        if (key === 'getTableSchema')
+          return async () => {
+            throw cause;
+          };
+        const value = Reflect.get(target, key, receiver);
+        return typeof value === 'function' ? value.bind(target) : value;
+      },
+    });
+    await expect(migrate(broken, engine)).rejects.toMatchObject({
+      name: 'TableSchemaUnreadableError',
+      table: 'unreadable_items',
+      engine,
+      cause,
+    });
+    expect(await tableNames(db)).toEqual(['unreadable_items']);
+    expect(await readLastMigrateRecord(db, { engineHint: engine })).toEqual(
+      record,
+    );
+  });
+
+  it('SQLite: an unreadable temporary catalog cannot bypass the safety check', async () => {
+    const db = await open('sqlite');
+    registerVersion(1);
+    await migrate(db, 'sqlite');
+    registerVersion(2);
+    const handle = new Proxy(db, {
+      get(target, key, receiver) {
+        if (key === 'query')
+          return async (...args: Parameters<DatabaseInterface['query']>) => {
+            if (String(args[0]).includes('sqlite_temp_master'))
+              throw new Error('catalog unavailable');
+            return target.query(...args);
+          };
+        const value = Reflect.get(target, key, receiver);
+        return typeof value === 'function' ? value.bind(target) : value;
+      },
+    });
+    await expect(migrate(handle, 'sqlite')).rejects.toMatchObject({
+      name: 'TableSchemaUnreadableError',
+      table: 'unreadable_items',
+    });
+    expect(await tableNames(db)).toEqual(['unreadable_items']);
+  });
+
   it('SQLite: a caller-owned transaction handle without an inspector is read through the handle, so the existing table is compared', async () => {
     const db = await open('sqlite');
     registerVersion(1);

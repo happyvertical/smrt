@@ -11,7 +11,7 @@
 import type { DatabaseInterface } from '@happyvertical/sql';
 import { getDatabase } from '@happyvertical/sql';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
-import { AiUsagePersistenceHandler } from '../adapters/ai-usage';
+import { insertAiUsageRow } from '../adapters/ai-usage';
 import {
   compareAiPromptRuns,
   listAiPromptTemplateHistory,
@@ -59,18 +59,24 @@ describe.skipIf(!pgUrl)('Prompt comparison on PostgreSQL (#4782)', () => {
     duration: number,
     extra: Record<string, string> = {},
   ): Promise<void> {
-    await new AiUsagePersistenceHandler(db).handle({
-      provider: 'openai',
-      model: 'gpt-test',
-      operation: 'message',
-      usage: { promptTokens: 1, completionTokens: 1, totalTokens: 2 },
-      duration,
-      timestamp: new Date(),
-      className: 'Pg4782',
-      tenantId,
-      estimatedCost: 0.001,
-      tags: { promptKey: prompt, templateHash, callId, ...extra },
-    });
+    // A `runId` tag on an untracked event no longer places a row in a run;
+    // a tracked call's settlement names the run explicitly.
+    await insertAiUsageRow(
+      db,
+      {
+        provider: 'openai',
+        model: 'gpt-test',
+        operation: 'message',
+        usage: { promptTokens: 1, completionTokens: 1, totalTokens: 2 },
+        duration,
+        timestamp: new Date(),
+        className: 'Pg4782',
+        tenantId,
+        estimatedCost: 0.001,
+        tags: { promptKey: prompt, templateHash, callId, ...extra },
+      },
+      { runId: extra.runId ?? null },
+    );
   }
 
   it('compares two template hashes in one tenant', async () => {

@@ -6,6 +6,7 @@ import { parseRuntimeReportSpec } from '@happyvertical/smrt-reports';
 import { reportCsv } from '@happyvertical/smrt-reports/display';
 import { afterAll, beforeAll, expect, it } from 'vitest';
 import { reportCell } from '../lib/ui/reports.ts';
+import { hostOwner } from '../test/engine-principal.ts';
 import { AppHost, type Command, MemoryVersionStore } from './index.ts';
 import { onPglite } from './pglite-env.ts';
 
@@ -13,7 +14,7 @@ const dir = mkdtempSync(join(tmpdir(), 'reports-4916-'));
 const store = new MemoryVersionStore();
 let host: AppHost;
 const run = (cmd: Command) =>
-  host.execute(cmd, { author: 't', approved: true });
+  host.execute(hostOwner(host), cmd, { author: 't', approved: true });
 const spec = (extra: Record<string, unknown> = {}) =>
   parseRuntimeReportSpec({
     version: 1,
@@ -48,13 +49,18 @@ beforeAll(async () => {
       },
     },
   });
-  const c = await host.create('Customer', { name: 'Ada' });
+  const c = await host.create(hostOwner(host), 'Customer', { name: 'Ada' });
   for (const [day, qty, price] of [
     ['2026-01-05', 2, 100],
     ['2026-01-15', 1, 200],
     ['2026-02-01', 3, 100],
   ] as const)
-    await host.create('Sale', { day, qty, price, customer: c.id });
+    await host.create(hostOwner(host), 'Sale', {
+      day,
+      qty,
+      price,
+      customer: c.id,
+    });
 });
 afterAll(async () => {
   await host.close();
@@ -70,12 +76,13 @@ it('runs monthly/filter/calculated reports and enriches reference dimensions', a
   expect((await host.plan(command)).summary).toBe(
     ((await run(command)) as { summary: string }).summary,
   );
-  const result = await host.runReport('sales');
+  const result = await host.runReport(hostOwner(host), 'sales');
   expect(result.rows.map((r) => r.revenue).sort()).toEqual([300, 400]);
   expect(result.columns.find((c) => c.id === 'revenue')?.format).toBe('money');
   expect(
     (
       await host.runReport(
+        hostOwner(host),
         spec({ filters: [{ field: 'qty', op: 'gt', value: 1 }] }),
       )
     ).rows
@@ -83,12 +90,15 @@ it('runs monthly/filter/calculated reports and enriches reference dimensions', a
       .sort(),
   ).toEqual([200, 300]);
   const grouped = await host.runReport(
+    hostOwner(host),
     spec({ dimensions: [{ field: 'customer', as: 'customer' }] }),
   );
   expect(grouped.rows).toHaveLength(1);
   expect(grouped.rows[0].customerLabel).toBe('Ada');
   expect(grouped.rows[0].revenue).toBe(700);
-  expect((await host.runReport('sales', { maxRows: 1 })).rows).toHaveLength(1);
+  expect(
+    (await host.runReport(hostOwner(host), 'sales', { maxRows: 1 })).rows,
+  ).toHaveLength(1);
 });
 
 it('refuses hidden/foreign fields and dependent mutations; rename and undo rewrite reports', async () => {
@@ -119,7 +129,7 @@ it('refuses hidden/foreign fields and dependent mutations; rename and undo rewri
   ).rejects.toThrow(/report sales/);
   await run({ type: 'renameField', model: 'Sale', from: 'day', to: 'soldAt' });
   expect(host.def.reports?.sales.spec.dimensions[0].field).toBe('soldAt');
-  expect((await host.runReport('sales')).rowCount).toBe(2);
+  expect((await host.runReport(hostOwner(host), 'sales')).rowCount).toBe(2);
   await run({ type: 'undo' });
   expect(host.def.reports?.sales.spec.dimensions[0].field).toBe('day');
 });
@@ -129,7 +139,9 @@ it('renames/removes/replaces with undo, survives restart and runs frozen and dra
 }, async () => {
   await run({ type: 'renameReport', from: 'sales', to: 'monthly' });
   await run({ type: 'removeReport', name: 'monthly' });
-  await expect(host.runReport('monthly')).rejects.toThrow(/unknown report/);
+  await expect(host.runReport(hostOwner(host), 'monthly')).rejects.toThrow(
+    /unknown report/,
+  );
   await run({ type: 'undo' });
   await run({ type: 'undo' });
   await run({
@@ -141,32 +153,35 @@ it('renames/removes/replaces with undo, survives restart and runs frozen and dra
   await host.close();
   host = await AppHost.open(dir, { store });
   host.setFrozen(true);
-  expect((await host.runReport('sales')).title).toBe('Sales');
-  await expect(host.runReport('sales', { maxRows: 1001 })).rejects.toThrow(
-    /limits/,
-  );
-  await expect(host.runReport('sales', { timeoutMs: 0 })).rejects.toThrow(
-    /limits/,
-  );
+  expect((await host.runReport(hostOwner(host), 'sales')).title).toBe('Sales');
+  await expect(
+    host.runReport(hostOwner(host), 'sales', { maxRows: 1001 }),
+  ).rejects.toThrow(/limits/);
+  await expect(
+    host.runReport(hostOwner(host), 'sales', { timeoutMs: 0 }),
+  ).rejects.toThrow(/limits/);
   host.setFrozen(false);
-  const draft = await host.forkDraft(`${dir}-draft`, {
+  const draft = await host.forkDraft(hostOwner(host), `${dir}-draft`, {
     store: new MemoryVersionStore(),
   });
   try {
     await draft.execute(
+      hostOwner(draft),
       { type: 'renameReport', from: 'sales', to: 'monthly' },
       { author: 't' },
     );
-    expect((await draft.runReport('monthly')).rowCount).toBe(2);
+    expect((await draft.runReport(hostOwner(draft), 'monthly')).rowCount).toBe(
+      2,
+    );
     const p = await host.previewPublish(draft);
-    await host.publishDraft(draft, {
+    await host.publishDraft(hostOwner(host), draft, {
       author: 't',
       approved: true,
       expect: p.digest,
     });
-    expect((await host.runReport('monthly')).rowCount).toBe(2);
+    expect((await host.runReport(hostOwner(host), 'monthly')).rowCount).toBe(2);
     await run({ type: 'undo' });
-    expect((await host.runReport('sales')).rowCount).toBe(2);
+    expect((await host.runReport(hostOwner(host), 'sales')).rowCount).toBe(2);
   } finally {
     await draft.discard();
   }
@@ -174,6 +189,7 @@ it('renames/removes/replaces with undo, survives restart and runs frozen and dra
 
 it('keeps display label aliases distinct and rejects prototype names', async () => {
   const result = await host.runReport(
+    hostOwner(host),
     spec({
       dimensions: [
         { field: 'customer', as: 'a' },
@@ -218,11 +234,11 @@ it('terminates a timed-out aggregate without stopping the live worker', {
     source: 'Slow',
     measures: [{ fn: 'sum', field: 'amount' }],
   });
-  await expect(host.runReport(report, { timeoutMs: 1 })).rejects.toThrow(
-    /time limit/,
-  );
+  await expect(
+    host.runReport(hostOwner(host), report, { timeoutMs: 1 }),
+  ).rejects.toThrow(/time limit/);
   expect(host.appAlive).toBe(true);
-  expect((await host.runReport('sales')).rowCount).toBe(2);
+  expect((await host.runReport(hostOwner(host), 'sales')).rowCount).toBe(2);
 });
 
 it('normalizes omitted spec defaults and compiles template reports against their proposed models', async () => {
@@ -276,10 +292,13 @@ it('normalizes omitted spec defaults and compiles template reports against their
       measures: [{ fn: 'count', as: 'orders' }],
     });
     await imported.execute(
+      hostOwner(imported),
       { type: 'importTemplate', data: { format: 1, definition } },
       { author: 't' },
     );
-    expect((await imported.runReport('invalid')).rows[0].orders).toBe(0);
+    expect(
+      (await imported.runReport(hostOwner(imported), 'invalid')).rows[0].orders,
+    ).toBe(0);
   } finally {
     await imported.close();
     rmSync(`${dir}-import`, { recursive: true, force: true });
@@ -293,6 +312,7 @@ it.each([
   ['countDistinct', 'day', 3],
 ] as const)('keeps %s of %s unitless in display and CSV', async (fn, field, count) => {
   const result = await host.runReport(
+    hostOwner(host),
     spec({ dimensions: [], measures: [{ fn, field, as: 'count' }] }),
   );
   expect(result.columns).toHaveLength(1);
@@ -311,6 +331,7 @@ it.each([
   ['avg', 400 / 3, '$1.33'],
 ] as const)('keeps money units for %s in display and CSV', async (fn, amount, display) => {
   const result = await host.runReport(
+    hostOwner(host),
     spec({ dimensions: [], measures: [{ fn, field: 'price', as: 'amount' }] }),
   );
   const column = result.columns[0];
@@ -324,6 +345,7 @@ it.each([
 
 it('retains money/date dimension formats and the compiler bucket metadata', async () => {
   const result = await host.runReport(
+    hostOwner(host),
     spec({
       dimensions: [
         { field: 'price', as: 'price' },
@@ -340,6 +362,7 @@ it('retains money/date dimension formats and the compiler bucket metadata', asyn
 
 it('fills every column of a top-N count by a linked record, with a cell for each header (#5172)', async () => {
   const result = await host.runReport(
+    hostOwner(host),
     spec({
       title: 'Top customers',
       dimensions: [{ field: 'customer', as: 'customer' }],

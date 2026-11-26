@@ -67,6 +67,7 @@ export {
   requireFeature,
 } from './require-feature.js';
 export {
+  FEATURE_APP_METHODS,
   FEATURE_BACKUP_VAULT,
   FEATURE_CLOUD_HOSTED,
   FEATURE_INFERENCE_HOSTED,

@@ -24,6 +24,7 @@ import {
   writeAiRunStatusTx,
 } from './ai-run-lifecycle.js';
 import {
+  type AiCallActuals,
   AiCallLimitError,
   type AiRunBudgetLimit,
   type AiRunClaimFence,
@@ -36,6 +37,7 @@ import {
   AiRunTransitionError,
   type AiRunTx,
   type AiRunTxOptions,
+  actualsOf,
   aiRunActiveTime,
   aiRunQuery,
   dateOrNull,
@@ -437,48 +439,11 @@ async function assertAiCallReservedTx(
 // Settle, release, abandon
 // ---------------------------------------------------------------------------
 
-/** The amounts one call is charged. */
-interface Actuals {
-  tokens: number;
-  cost: number | null;
-}
-
-function actualsOf(
-  usage: {
-    promptTokens?: number | null;
-    completionTokens?: number | null;
-    totalTokens?: number | null;
-    estimatedCost?: number | null;
-  },
-  reservedTokens: number,
-): Actuals {
-  const total = usage.totalTokens;
-  const prompt = usage.promptTokens;
-  const completion = usage.completionTokens;
-  let tokens: number;
-  if (typeof total === 'number' && Number.isFinite(total)) tokens = total;
-  else if (
-    (typeof prompt === 'number' && Number.isFinite(prompt)) ||
-    (typeof completion === 'number' && Number.isFinite(completion))
-  ) {
-    tokens = (prompt ?? 0) + (completion ?? 0);
-  } else {
-    // Answered without reporting tokens: charged what it reserved.
-    tokens = reservedTokens;
-  }
-  const cost =
-    typeof usage.estimatedCost === 'number' &&
-    Number.isFinite(usage.estimatedCost)
-      ? usage.estimatedCost
-      : null;
-  return { tokens: Math.max(0, Math.round(tokens)), cost };
-}
-
 /** Apply one call's charge (and the return of its reservation) to a chain. */
 async function chargeChain(
   tx: AiRunTx,
   chain: AiRunRow[],
-  actuals: Actuals | null,
+  actuals: AiCallActuals | null,
   returned: { tokens: number; cost: number } | null,
 ): Promise<void> {
   const caller = chain[chain.length - 1] as AiRunRow;

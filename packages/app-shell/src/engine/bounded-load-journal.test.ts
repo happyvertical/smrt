@@ -1,6 +1,7 @@
 import { DatabaseSync } from 'node:sqlite';
 import { ObjectRegistry } from '@happyvertical/smrt-core';
 import { expect, it, vi } from 'vitest';
+import { hostOwner } from '../test/engine-principal.ts';
 import {
   applyLoad,
   JOURNAL_LIMITS,
@@ -292,6 +293,7 @@ it('agrees with real SDK metadata and preserves undo through restart', async () 
   let host = await AppHost.open(dir, { store });
   try {
     await host.execute(
+      hostOwner(host),
       {
         type: 'defineModel',
         name: 'Memo',
@@ -313,12 +315,18 @@ it('agrees with real SDK metadata and preserves undo through restart', async () 
       rows: [{ body: 'é😀' }],
     };
     expect((await host.plan(input)).preview).toMatchObject({ insert: 1 });
-    await host.execute(input, { author: 't', approved: true });
-    expect(await host.list('Memo')).toMatchObject([{ body: 'é😀', len: 3 }]);
+    await host.execute(hostOwner(host), input, { author: 't', approved: true });
+    expect(await host.list(hostOwner(host), 'Memo')).toMatchObject([
+      { body: 'é😀', len: 3 },
+    ]);
     await host.close();
     host = await AppHost.open(dir, { store });
-    await host.execute({ type: 'undo' }, { author: 't', approved: true });
-    expect(await host.list('Memo')).toEqual([]);
+    await host.execute(
+      hostOwner(host),
+      { type: 'undo' },
+      { author: 't', approved: true },
+    );
+    expect(await host.list(hostOwner(host), 'Memo')).toEqual([]);
   } finally {
     await host.close();
     rmSync(dir, { recursive: true, force: true });

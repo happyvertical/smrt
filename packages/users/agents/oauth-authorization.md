@@ -8,11 +8,20 @@ connection; public catalog roles must not read them.
 
 `SmrtOAuthAuthorizationService.create({ db, scopePermissions })` supplies the
 session boundary. `approve(server, parsedRequest, sessionId)` loads the existing
-session again, checks its active user and tenant membership, verifies every
-scope's configured permissions, and records consent. Existing magic-link,
+session again, checks its active user and tenant membership, and records
+consent for the requested scopes whose configured permissions the session holds
+(requested ∩ held, #5110). The stored grant, the SDK code, the token response
+`scope` (RFC 6749 section 3.3) and both tokens carry only that subset, passed by
+approving `{ ...request, scopes: granted }`; the SDK refresh path refuses any
+scope beyond the grant (`invalid_scope`); a role that lost a mapped permission
+gets the whole refresh refused (no partial clamp), so refresh never widens. A
+request with no `scope` parameter now yields `access_denied` (it used to store
+an empty grant). No held scope: `access_denied`. `refuseUnheldScopes: true`
+restores all-or-nothing consent. `consentScopes()` and the `authorize` handler
+report the narrowed `scopes` (and `requestedScopes` when different). Existing magic-link,
 password and OIDC sessions work without a separate identity mapping. Parent
 session validity and session permission ceilings are enforced by SessionService.
-Unknown scopes fail closed. An empty permission mapping explicitly permits a
+Unmapped scopes are never granted. An empty permission mapping explicitly permits a
 scope for any valid session. OAuth does not grant super-admin bypass.
 
 Pass `service.identity` to the SDK server. It revalidates the stored consent on
@@ -122,6 +131,7 @@ pnpm --filter @happyvertical/smrt-users typecheck
 | Consent/grant ownership | Own grant can list/revoke | Other subject, tenant, scope deny; no session bearer in projection | Owner A/B × grant A/B | Live session + consent reads; atomic cascade | Integration |
 | Live identity and ceiling | Current permission allows | Inactive user/membership, changed session ceiling, destroyed session | Active vs revoked context | SessionService and current RBAC | Integration |
 | Code/live revoke cascade | Valid code exchanges | Membership loss before exchange; refresh revoke kills access | Original subject/tenant | SDK revalidateConsent callback | Integration |
+| Scope narrowing (#5110) | Held subset in grant, token `scope`, consent data; full holder gets all; strict option refuses | Nothing held `access_denied`; refresh expansion `invalid_scope`; revoked grant | Role holding fewer permissions than requested | SDK `approve` with narrowed request | Integration |
 | Consent snapshot / tenant | Original mapped scope | Later permission mapping expansion; inactive tenant | Owner × current tenant | Stored upper bound plus live permission checks | Integration |
 | Layered session / expiry | Parent and child valid | Parent destroyed or child expired | Person session on device parent | Existing session controls | Integration |
 | Consent route | Same-origin explicit approval | Missing/foreign Origin, denial, revoked session | Browser session / untrusted POST | Fetch request and SDK parsing | Route + DB |

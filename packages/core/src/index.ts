@@ -428,6 +428,8 @@ export {
   inferenceBlockedUsageRecord,
   inferenceGateRequest,
   isHostedInferenceTarget,
+  isInferenceGateRequired,
+  requireInferenceGate,
   setInferenceGate,
 } from './inference-gate';
 export {
@@ -542,14 +544,17 @@ export {
   packagesSeenInput,
   readConfirmedRetirements,
   readLastMigrateRecord,
+  readRecordedSystemSchema,
   recordSuccessfulMigrate,
   type UnloadedBuildPackage,
 } from './migrations/migrate-record.js';
 export * from './migrations/migration-run-decision.js';
 export {
   checkOldestSupportedRelease,
+  checkUnrecordedDatabaseAge,
   compareReleases,
   OLDEST_SUPPORTED_RELEASE,
+  OLDEST_SUPPORTED_SYSTEM_SCHEMA,
 } from './migrations/oldest-supported.js';
 export {
   computeManifestSchemaFingerprint,
@@ -679,6 +684,23 @@ export {
   type SubclassExposureEscalation,
   surfaceOpensOperation,
 } from './registry/subclass-exposure';
+// Request tenancy (#5375): the one resolver and decision set every request
+// path uses, the actor rule, and the policy source smrt-tenancy installs.
+export {
+  enterRequestTenancy,
+  type LocalsPrincipal,
+  principalFromLocals,
+  type RequestActorInput,
+  type RequestTenancyEntryInput,
+  type RequestTenancyOperation,
+  RequestTenantConflictError,
+  resolveRequestActor,
+  resolveTenancyForRequest,
+  runInRequestTenancy,
+  runToolInRequestTenancy,
+  type SettledRequestPrincipal,
+  tenancyReadScope,
+} from './request-actor';
 // What an update body may set on a loaded object: declared fields and
 // settable accessors. Every request-facing update path assigns through
 // `applyUpdateInput`.
@@ -686,8 +708,53 @@ export {
   applyUpdateInput,
   assertCreateInput,
   assertUpdateInput,
+  prepareWriteInput,
   updateInputRulesFor,
 } from './request-input';
+// The principal of the current REST request (#5195): read-only, and
+// `undefined` outside one.
+export {
+  getRequestPrincipal,
+  RequestPrincipalScopeError,
+} from './request-principal-scope';
+export {
+  boundMemberTenancy,
+  boundTenancyCacheScoped,
+  boundTenancyEtagDiscriminator,
+  type CustomActionShape,
+  cachePolicy,
+  customActionScope,
+  ensureRequestTenancyInterceptor,
+  enterResolvedTenancy,
+  etagDiscriminator,
+  getResolvedTenancy,
+  getTenantPolicySource,
+  listMixedTenancyFamilies,
+  type MemberTenancy,
+  type MixedTenancyFamily,
+  memberTenancyOf,
+  type ReadDecision,
+  type RequestActor,
+  type RequestTenancy,
+  type RequestTenancyContext,
+  RequestTenancyError,
+  type ResolveRequestTenancyInput,
+  readScope,
+  resolveRequestTenancy,
+  resolveStrictModelKey,
+  scopeActionOptions,
+  scopedOptionProperties,
+  servesTenantScopedRows,
+  setTenantPolicySource,
+  type TenancyRefusal,
+  TenantPolicyChangedError,
+  type TenantPolicyConfig,
+  type TenantPolicyLookup,
+  type TenantPolicySource,
+  throwIfRefused,
+  withResolvedTenancy,
+  writeGate,
+} from './request-tenancy';
 // The tenant scope request-facing reads add when no interceptor narrows them,
 // and the request tenant context hooks smrt-tenancy installs.
 export {
@@ -859,11 +926,19 @@ export {
 export {
   assignUpdateInput,
   classifyUpdateKey,
+  FIELD_NOT_WRITABLE_CODE,
+  FieldNotWritableError,
+  isServerManagedWriteKey,
   isWriteInputError,
+  notWritableFieldOf,
   resolveUpdateInput,
+  resolveWriteBody,
+  SERVER_MANAGED_WRITE_KEYS,
   STRUCTURAL_UPDATE_RULES,
+  sameStoredValue,
   type UpdateInputRules,
   type UpdateKeyKind,
+  type WriteBodyPolicy,
   WriteInputError,
 } from './write-input';
 // Preserve the synchronous build API without importing the Vite/scanner graph

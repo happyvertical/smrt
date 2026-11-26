@@ -19,13 +19,13 @@ import {
 } from './definition.ts';
 import { EngineError } from './errors.ts';
 import type { AppHost } from './host.ts';
-
 import {
   type ImportNames,
   importNames,
   WORKBOOK_LOOKUP,
   WORKBOOK_ROW,
 } from './import-names.ts';
+import type { EnginePrincipal } from './principal.ts';
 
 export { importFieldName, importModelName } from './import-names.ts';
 
@@ -108,7 +108,7 @@ function wholeResult(
  * to (none for a report). `run` executes the command on the import's copy.
  */
 export type ImportCommandHook = (input: {
-  command: Parameters<AppHost['execute']>[0];
+  command: Parameters<AppHost['execute']>[1];
   table?: string;
   run: () => Promise<unknown>;
 }) => Promise<unknown>;
@@ -121,6 +121,8 @@ export interface EngineImportTarget extends ImportTarget {
 
 export function createEngineImportTarget(
   host: AppHost,
+  /** Who runs the import; read at each call, since the definition (and the owner's slugs) grow as it runs. */
+  caller: () => EnginePrincipal,
   beforeCommand: () => Promise<void> = async () => {},
   retainNames: (names: ImportNames) => Promise<void> = async () => {},
   onCommand?: ImportCommandHook,
@@ -138,11 +140,12 @@ export function createEngineImportTarget(
     return found;
   };
   const run = async (
-    command: Parameters<AppHost['execute']>[0],
+    command: Parameters<AppHost['execute']>[1],
     table?: string,
   ) => {
     await beforeCommand();
-    const execute = () => host.execute(command, { author: 'workbook import' });
+    const execute = () =>
+      host.execute(caller(), command, { author: 'workbook import' });
     return onCommand ? onCommand({ command, table, run: execute }) : execute();
   };
   const target: EngineImportTarget = {
@@ -369,7 +372,7 @@ export function createEngineImportTarget(
     },
     async count(key) {
       table(key);
-      return host.countRows(modelName(key));
+      return host.countRows(caller(), modelName(key));
     },
     async sum(key, field) {
       const fd = definitions.get(key)?.get(field);
@@ -401,6 +404,7 @@ export function createEngineImportTarget(
         if (!definitions.get(key)?.has(field))
           throw new EngineImportError(key, field);
       const rows = await host.readStoredRows(
+        caller(),
         modelName(key),
         [SOURCE_ROW, ...fields.map((field) => fieldName(key, field))],
         SOURCE_ROW,

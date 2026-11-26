@@ -5,14 +5,16 @@
 //
 // WHAT THIS PROVES: the shell's own code and models, on the real tenancy
 // interceptor, over one SQLite database, with two tenants in it. WHAT IT DOES
-// NOT: PostgreSQL (dialect, `database-rls` row-level-security policies: the
-// shell tables are not RLS-enforced in this slice), the deployed runtime's
-// startup and its PostgreSQL version probe, a live OIDC provider. Isolation
-// here is APPLICATION-level: tenant context plus tenant-pinned stores.
+// NOT: PostgreSQL (dialect, row-level-security policies: those are
+// `shell-rls.postgres.test.ts`), the deployed runtime's startup and its
+// PostgreSQL version probe, a live OIDC provider. Isolation here is
+// APPLICATION-level: `required` tenancy plus tenant-pinned stores.
+
 import { existsSync, readdirSync } from 'node:fs';
 import { join } from 'node:path';
 import { SessionService, TenantCollection } from '@happyvertical/smrt-users';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
+import { hostOwner } from '../../test/engine-principal.ts';
 import { App } from '../objects/App.ts';
 import { Approval } from '../objects/Approval.ts';
 import { AppVersionCollection } from '../objects/AppVersion.ts';
@@ -73,29 +75,41 @@ describe('two owners in one deployment', () => {
     await applyWaiting(h.a);
     await applyWaiting(h.b);
     await runAs(h.a, async () =>
-      (await getHost()).create('Chore', { title: 'ann-secret' }),
+      (await getHost()).create(hostOwner(await getHost()), 'Chore', {
+        title: 'ann-secret',
+      }),
     );
     await runAs(h.b, async () =>
-      (await getHost()).create('Invoice', { number: 'bob-0001' }),
+      (await getHost()).create(hostOwner(await getHost()), 'Invoice', {
+        number: 'bob-0001',
+      }),
     );
 
     expect(names(await runAs(h.a, () => App.describe()))).toEqual(['Chore']);
     expect(names(await runAs(h.b, () => App.describe()))).toEqual(['Invoice']);
-    const aRows = await runAs(h.a, async () => (await getHost()).list('Chore'));
+    const aRows = await runAs(h.a, async () =>
+      (await getHost()).list(hostOwner(await getHost()), 'Chore'),
+    );
     expect(aRows.map((r) => r.title)).toEqual(['ann-secret']);
     // The other owner's model does not exist in this app: no read, no write.
     await expect(
-      runAs(h.b, async () => (await getHost()).list('Chore')),
+      runAs(h.b, async () =>
+        (await getHost()).list(hostOwner(await getHost()), 'Chore'),
+      ),
     ).rejects.toThrow();
     await expect(
       runAs(h.b, async () =>
-        (await getHost()).create('Chore', { title: 'planted' }),
+        (await getHost()).create(hostOwner(await getHost()), 'Chore', {
+          title: 'planted',
+        }),
       ),
     ).rejects.toThrow();
     expect(
-      (await runAs(h.b, async () => (await getHost()).list('Invoice'))).map(
-        (r) => r.number,
-      ),
+      (
+        await runAs(h.b, async () =>
+          (await getHost()).list(hostOwner(await getHost()), 'Invoice'),
+        )
+      ).map((r) => r.number),
     ).toEqual(['bob-0001']);
   });
 
@@ -147,10 +161,12 @@ describe('two owners in one deployment', () => {
 
   it('keeps approvals apart: not listed, not decided, not run', async () => {
     const record = await runAs(h.a, async () =>
-      (await getHost()).create('Chore', { title: 'to-delete' }),
+      (await getHost()).create(hostOwner(await getHost()), 'Chore', {
+        title: 'to-delete',
+      }),
     );
     const pending = (await runAs(h.a, () =>
-      requestRecordDelete('Chore', record.id as string, h.a.id, 'live'),
+      requestRecordDelete('Chore', record.id as string, h.a, 'live'),
     )) as { status: string; approvalId: string };
     expect(pending.status).toBe('pending_approval');
     expect(await runAs(h.b, () => Approval.pending())).toEqual([]);
@@ -161,11 +177,15 @@ describe('two owners in one deployment', () => {
     ).toEqual([pending.approvalId]);
     // B names A's approval id: refused, and A's model is untouched.
     await expect(
-      runAs(h.b, () => decideApproval(pending.approvalId, true, h.b.id)),
+      runAs(h.b, () => decideApproval(pending.approvalId, true, h.b)),
     ).rejects.toThrow();
     expect(
       await runAs(h.a, async () =>
-        (await getHost()).get('Chore', record.id as string),
+        (await getHost()).get(
+          hostOwner(await getHost()),
+          'Chore',
+          record.id as string,
+        ),
       ),
     ).toBeTruthy();
     // The raw conditional UPDATE names the tenant too.
@@ -180,7 +200,7 @@ describe('two owners in one deployment', () => {
       ),
     ).toEqual([pending.approvalId]);
     // The owner of the approval decides it.
-    await runAs(h.a, () => decideApproval(pending.approvalId, false, h.a.id));
+    await runAs(h.a, () => decideApproval(pending.approvalId, false, h.a));
   });
 
   it('keeps changes waiting apart: batches, cards, freeze, check and apply', async () => {
@@ -234,6 +254,7 @@ describe('two owners in one deployment', () => {
     await expect(
       runAs(h.a, async () =>
         (await getHost()).execute(
+          hostOwner(await getHost()),
           { type: 'defineModel', name: 'Direct', fields: {} },
           { author: h.a.id, approved: true },
         ),
@@ -294,7 +315,9 @@ describe('two owners in one deployment', () => {
     const offB = subscribe((e) => seenB.push(e.type), h.b.tenantId);
     try {
       await runAs(h.a, async () =>
-        (await getHost()).create('Chore', { title: 'event' }),
+        (await getHost()).create(hostOwner(await getHost()), 'Chore', {
+          title: 'event',
+        }),
       );
       expect(seenA).toContain('records');
       expect(seenB).toEqual([]);

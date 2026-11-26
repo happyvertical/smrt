@@ -18,6 +18,18 @@ import { type SessionContext, SessionService } from './SessionService.js';
 /** Every scope needs an explicit permission mapping; empty mappings allow any live session. */
 export interface SmrtOAuthAuthorizationServiceOptions extends SmrtClassOptions {
   scopePermissions: Readonly<Record<string, readonly string[]>>;
+  /**
+   * Default `false`: consent grants the requested scopes the user holds
+   * (requested ∩ held) and refuses only when none remain. `true` restores
+   * all-or-nothing consent: a request for any scope the user cannot hold is
+   * refused with `access_denied`.
+   */
+  refuseUnheldScopes?: boolean;
+}
+/** What consent would grant for a request: the requested scopes the user holds. */
+export interface SmrtOAuthConsentScopes {
+  requested: string[];
+  granted: string[];
 }
 /** Safe account-settings projection; excludes session credentials and token hashes. */
 export interface SmrtOAuthGrantSummary {
@@ -90,21 +102,55 @@ export class SmrtOAuthAuthorizationService {
         ),
     );
   }
-  /** Call only after an explicit user consent action; the session is loaded again. */
+  /**
+   * Requested scopes the session may be granted: those whose mapped permissions
+   * it holds (unmapped scopes never), or all-or-nothing with `refuseUnheldScopes`.
+   */
+  private grantable(
+    context: SessionContext,
+    requested: readonly string[],
+  ): string[] {
+    const held = requested.filter((scope) => this.permits(context, [scope]));
+    return this.options.refuseUnheldScopes && held.length !== requested.length
+      ? []
+      : held;
+  }
+  /**
+   * The scopes consent would grant, for the host's consent screen. Throws
+   * `access_denied` for a dead session or when nothing can be granted.
+   */
+  async consentScopes(
+    request: OAuthAuthorizationRequest,
+    sessionId: string,
+  ): Promise<SmrtOAuthConsentScopes> {
+    const context = await this.liveSession(sessionId);
+    if (!context)
+      throw new OAuthServerError('access_denied', 'Sign in required.', 401);
+    const granted = this.grantable(context, request.scopes);
+    if (granted.length === 0)
+      throw new OAuthServerError('access_denied', 'Authorization denied.', 403);
+    return { requested: [...request.scopes], granted };
+  }
+  /**
+   * Call only after an explicit user consent action; the session is loaded
+   * again. Grants requested ∩ held, so the stored grant, the code, the tokens
+   * and the token response `scope` (RFC 6749 §3.3) carry only the narrowed set.
+   */
   async approve(
     server: OAuthAuthorizationServer,
     request: OAuthAuthorizationRequest,
     sessionId: string,
   ) {
     const context = await this.liveSession(sessionId);
-    if (!context || !this.permits(context, request.scopes))
+    const scopes = context ? this.grantable(context, request.scopes) : [];
+    if (!context || scopes.length === 0)
       throw new OAuthServerError('access_denied', 'Authorization denied.', 403);
     const row = await this.grants.create({
       subject: context.user.id as string,
       sessionId,
       clientId: request.clientId,
       tenantId: context.tenantId,
-      scopes: JSON.stringify(request.scopes),
+      scopes: JSON.stringify(scopes),
       permissionCeiling: JSON.stringify(context.permissions),
       resource: request.resource ?? null,
       revokedAt: null,
@@ -112,11 +158,14 @@ export class SmrtOAuthAuthorizationService {
     });
     await row.save();
     try {
-      return await server.approve(request, {
-        subject: context.user.id as string,
-        ...(context.tenantId ? { tenantId: context.tenantId } : {}),
-        claims: { [SMRT_OAUTH_GRANT_CLAIM]: row.id as string },
-      });
+      return await server.approve(
+        { ...request, scopes },
+        {
+          subject: context.user.id as string,
+          ...(context.tenantId ? { tenantId: context.tenantId } : {}),
+          claims: { [SMRT_OAUTH_GRANT_CLAIM]: row.id as string },
+        },
+      );
     } catch (error) {
       await this.revokeOwned(context.user.id as string, row.id as string);
       throw error;

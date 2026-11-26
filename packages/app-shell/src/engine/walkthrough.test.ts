@@ -1,9 +1,11 @@
 // An end-to-end walk through the engine, after the spike's demo.ts.
+
 import { existsSync, mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { DatabaseSync } from 'node:sqlite';
 import { afterAll, describe, expect, it } from 'vitest';
+import { hostOwner } from '../test/engine-principal.ts';
 import { toRuntimeModel } from './definition.ts';
 import {
   type AppDefinition,
@@ -32,8 +34,9 @@ const store = new MemoryVersionStore();
 const events: string[] = [];
 let host: AppHost;
 const run = (cmd: Command, approved = true) =>
-  host.execute(cmd, { author: 'walk', approved });
-const toolNames = async () => (await host.appTools()).map((t) => t.name);
+  host.execute(hostOwner(host), cmd, { author: 'walk', approved });
+const toolNames = async () =>
+  (await host.appTools(hostOwner(host))).map((t) => t.name);
 const sql = (file: string, q: string) => {
   const db = new DatabaseSync(file, { readOnly: true });
   try {
@@ -77,36 +80,46 @@ describe('walk-through', () => {
 
   it('creates, lists, updates and validates records', async () => {
     c1 = (
-      await host.create('Chore', {
+      await host.create(hostOwner(host), 'Chore', {
         title: 'Take out the bins',
         due: '2026-11-13T18:00:00Z',
       })
     ).id as string;
-    c2 = (await host.create('Chore', { title: 'Empty the dishwasher' }))
-      .id as string;
-    expect(await host.list('Chore')).toHaveLength(2);
-    expect((await host.get('Chore', c1)).due).toBe('2026-11-13T18:00:00.000Z');
+    c2 = (
+      await host.create(hostOwner(host), 'Chore', {
+        title: 'Empty the dishwasher',
+      })
+    ).id as string;
+    expect(await host.list(hostOwner(host), 'Chore')).toHaveLength(2);
+    expect((await host.get(hostOwner(host), 'Chore', c1)).due).toBe(
+      '2026-11-13T18:00:00.000Z',
+    );
     await expect(
-      host.create('Chore', { title: 'x', mood: 'happy' }),
+      host.create(hostOwner(host), 'Chore', { title: 'x', mood: 'happy' }),
     ).rejects.toThrow(/no field 'mood'/);
-    await expect(host.create('Chore', {})).rejects.toThrow(/title is required/);
+    await expect(host.create(hostOwner(host), 'Chore', {})).rejects.toThrow(
+      /title is required/,
+    );
     await expect(
-      host.create('Chore', { title: 'x', done: 'maybe' }),
+      host.create(hostOwner(host), 'Chore', { title: 'x', done: 'maybe' }),
     ).rejects.toThrow(/true or false/);
     expect(events).toContain('records:Chore');
   });
 
   it('lists through the worker generated REST', async () => {
-    const r = await host.rest({ method: 'GET', url: '/api/chores' });
+    const r = await host.rest(hostOwner(host), {
+      method: 'GET',
+      url: '/api/chores',
+    });
     expect(r.status).toBe(200);
     expect(JSON.parse(r.body)).toHaveLength(2);
-    const post = await host.rest({
+    const post = await host.rest(hostOwner(host), {
       method: 'POST',
       url: '/api/chores',
       body: JSON.stringify({ title: 'via rest' }),
     });
     expect(post.status).toBeLessThan(300);
-    expect(await host.list('Chore')).toHaveLength(3);
+    expect(await host.list(hostOwner(host), 'Chore')).toHaveLength(3);
   });
 
   it('adds a field; the existing field cannot be re-added', async () => {
@@ -137,15 +150,17 @@ describe('walk-through', () => {
       },
     });
     expect(await toolNames()).toContain('chore_complete');
-    const out = await host.runMethod('Chore', 'complete', c1);
+    const out = await host.runMethod(hostOwner(host), 'Chore', 'complete', c1);
     expect(out.result).toBe('done: Take out the bins');
     expect(out.applied).toBe(1);
     expect(out.snapshot && existsSync(out.snapshot)).toBe(true);
-    expect((await host.get('Chore', c1)).done).toBe(true);
+    expect((await host.get(hostOwner(host), 'Chore', c1)).done).toBe(true);
 
-    const viaTool = await host.callAppTool('chore_complete', { id: c2 });
+    const viaTool = await host.callAppTool(hostOwner(host), 'chore_complete', {
+      id: c2,
+    });
     expect(viaTool.isError).toBe(false);
-    expect((await host.get('Chore', c2)).done).toBe(true);
+    expect((await host.get(hostOwner(host), 'Chore', c2)).done).toBe(true);
   });
 
   it('runs a read-only method that returns a result and writes nothing', async () => {
@@ -159,26 +174,32 @@ describe('walk-through', () => {
         params: { bonus: { type: 'integer', required: true } },
       },
     });
-    const out = await host.runMethod('Chore', 'score', null, { bonus: 10 });
+    const out = await host.runMethod(hostOwner(host), 'Chore', 'score', null, {
+      bonus: 10,
+    });
     expect(out.result).toBe(12);
     expect(out.applied).toBe(0);
     expect(out.snapshot).toBeNull();
-    await expect(host.runMethod('Chore', 'score', null, {})).rejects.toThrow(
-      /bonus is required/,
-    );
+    await expect(
+      host.runMethod(hostOwner(host), 'Chore', 'score', null, {}),
+    ).rejects.toThrow(/bonus is required/);
   });
 
   it('hides a field and undoes back; the tools follow the definition', async () => {
     await run({ type: 'hideField', model: 'Chore', field: 'due' });
-    expect(Object.keys(await host.get('Chore', c1))).not.toContain('due');
+    expect(
+      Object.keys(await host.get(hostOwner(host), 'Chore', c1)),
+    ).not.toContain('due');
     await run({ type: 'undo' });
-    expect(Object.keys(await host.get('Chore', c1))).toContain('due');
+    expect(Object.keys(await host.get(hostOwner(host), 'Chore', c1))).toContain(
+      'due',
+    );
     await run({ type: 'undo' }); // score
     await run({ type: 'undo' }); // complete
     expect(await toolNames()).not.toContain('chore_complete');
-    await expect(host.runMethod('Chore', 'complete', c1)).rejects.toThrow(
-      /no method/,
-    );
+    await expect(
+      host.runMethod(hostOwner(host), 'Chore', 'complete', c1),
+    ).rejects.toThrow(/no method/);
     expect((await host.versions()).filter((v) => v.current)).toHaveLength(1);
   });
 
@@ -202,15 +223,15 @@ describe('walk-through', () => {
       field: 'assignee',
       definition: { type: 'reference', ref: 'Profile', label: 'Who' },
     });
-    const sam = await host.create('Profile', {
+    const sam = await host.create(hostOwner(host), 'Profile', {
       name: 'Sam',
       nickname: 'Sammy',
     });
-    await host.create('Profile', { name: 'Alex' });
+    await host.create(hostOwner(host), 'Profile', { name: 'Alex' });
     expect(sam.nickname).toBe('Sammy');
-    await host.update('Chore', c1, { assignee: sam.id });
+    await host.update(hostOwner(host), 'Chore', c1, { assignee: sam.id });
     await expect(
-      host.update('Chore', c1, { assignee: 'nope' }),
+      host.update(hostOwner(host), 'Chore', c1, { assignee: 'nope' }),
     ).rejects.toThrow(/no Profile with id/);
 
     const file = join(dir, 'app.db');
@@ -303,28 +324,35 @@ describe('walk-through', () => {
     // the template carries method code, so importing it needs approval
     await expect(
       other.execute(
+        hostOwner(other),
         { type: 'importTemplate', data: template },
         { author: 'imp' },
       ),
     ).rejects.toBeInstanceOf(ApprovalRequiredError);
     expect(other.version).toBe(0);
     await other.execute(
+      hostOwner(other),
       { type: 'importTemplate', data: template },
       { author: 'imp', approved: true },
     );
     expect(other.def).toEqual(host.def);
     expect(other.describe().models).toEqual(host.describe().models);
-    const chores = await other.list('Chore');
+    const chores = await other.list(hostOwner(other), 'Chore');
     expect(chores.map((c) => c.id).sort()).toEqual(
-      (await host.list('Chore')).map((c) => c.id).sort(),
+      (await host.list(hostOwner(host), 'Chore')).map((c) => c.id).sort(),
     );
-    const sam = (await other.list('Profile')).find((p) => p.name === 'Sam');
+    const sam = (await other.list(hostOwner(other), 'Profile')).find(
+      (p) => p.name === 'Sam',
+    );
     expect(sam?.nickname).toBe('Sammy');
     // references survive because ids are kept
-    expect((await other.get('Chore', c1)).assignee).toBe(sam?.id);
+    expect((await other.get(hostOwner(other), 'Chore', c1)).assignee).toBe(
+      sam?.id,
+    );
     // a second import is refused: the app is not empty
     await expect(
       other.execute(
+        hostOwner(other),
         { type: 'importTemplate', data: template },
         { author: 'imp', approved: true },
       ),
@@ -338,7 +366,11 @@ describe('walk-through', () => {
     hosts.push(other);
     const bad = { format: 2, definition: {} } as unknown as Template;
     await expect(
-      other.execute({ type: 'importTemplate', data: bad }, { author: 'x' }),
+      other.execute(
+        hostOwner(other),
+        { type: 'importTemplate', data: bad },
+        { author: 'x' },
+      ),
     ).rejects.toThrow(/format/);
     const evil = structuredClone(template);
     (evil.definition as AppDefinition).models.Chore.methods = {
@@ -346,6 +378,7 @@ describe('walk-through', () => {
     };
     await expect(
       other.execute(
+        hostOwner(other),
         { type: 'importTemplate', data: evil },
         { author: 'x', approved: true },
       ),
@@ -357,7 +390,7 @@ describe('walk-through', () => {
     const h = await AppHost.open(tmp(), { store: new MemoryVersionStore() });
     hosts.push(h);
     const go = (cmd: Command) =>
-      h.execute(cmd, { author: 'x', approved: true });
+      h.execute(hostOwner(h), cmd, { author: 'x', approved: true });
     await go({ type: 'enableRecipe', recipe: 'profiles' });
     await go({
       type: 'addField',
@@ -365,12 +398,15 @@ describe('walk-through', () => {
       field: 'nickname',
       definition: { type: 'text' },
     });
-    await h.create('Profile', { name: 'Sam', nickname: 'Sammy' });
-    const rest = await h.rest({ method: 'GET', url: '/api/profiles' });
+    await h.create(hostOwner(h), 'Profile', { name: 'Sam', nickname: 'Sammy' });
+    const rest = await h.rest(hostOwner(h), {
+      method: 'GET',
+      url: '/api/profiles',
+    });
     expect(JSON.parse(rest.body)).toHaveLength(1);
     await go({ type: 'undo' });
     await go({ type: 'undo' });
-    await expect(h.list('Profile')).rejects.toThrow(/no model/);
+    await expect(h.list(hostOwner(h), 'Profile')).rejects.toThrow(/no model/);
     await go({ type: 'enableRecipe', recipe: 'profiles' });
     await go({
       type: 'addField',
@@ -378,7 +414,7 @@ describe('walk-through', () => {
       field: 'nickname',
       definition: { type: 'text' },
     });
-    expect((await h.list('Profile'))[0].nickname).toBe('Sammy');
+    expect((await h.list(hostOwner(h), 'Profile'))[0].nickname).toBe('Sammy');
   });
 
   it('keeps the history and swaps quickly', async () => {

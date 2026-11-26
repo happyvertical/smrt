@@ -1,0 +1,10 @@
+{
+  "about": "Core built-in redaction rules (ai-transcripts.ts, between the built-in-redaction-rules markers) pinned to CORE_REDACTION_RULES_VERSION. Append a row with a higher version for any change; never edit an earlier row (pnpm check:redaction-ledgers compares with the base branch).",
+  "rows": [
+    {
+      "version": 1,
+      "rulesDigest": "ddd3e9adcb7b6d04cb78513b46cbff2a076752940897c1a84683944ff30d62ca",
+      "corpusDigest": "445b8317e051f279ddbb164f4e04f36f9792efc8d5325ed5179a7b8409080fa2"
+    }
+  ]
+}

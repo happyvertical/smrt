@@ -29,7 +29,7 @@ import type { SmartObjectManifest } from '../scanner/types.js';
 import { isServiceOptionInput } from '../service-options.js';
 import { snapshotObjectRegistryState } from '../test-utils.js';
 import { applyWhereScope, WhereClauseError } from '../where-keys.js';
-import { assignUpdateInput } from '../write-input.js';
+import { assignUpdateInput, resolveWriteBody } from '../write-input.js';
 import { generateClientModule } from './generated-client.js';
 import { generateSvelteKitRoutes } from './sveltekit-generator.js';
 
@@ -65,6 +65,25 @@ function createManifest(
     },
     packageName: '@test/generated-helper-app',
   };
+}
+
+/**
+ * Tell the core shim the tenancy each manifest model has at request time
+ * (#5375): its `decoratorConfig.tenantScoped`, by registry key.
+ */
+function declareTenancy(manifest: SmartObjectManifest): void {
+  const state = globalThis as Record<string, unknown>;
+  state.__smrtGeneratedTenantPolicies ??= {};
+  const policies = state.__smrtGeneratedTenantPolicies as Record<
+    string,
+    unknown
+  >;
+  for (const [key, object] of Object.entries(manifest.objects)) {
+    const tenantScoped = (
+      object.decoratorConfig as { tenantScoped?: unknown } | undefined
+    )?.tenantScoped;
+    if (tenantScoped) policies[object.qualifiedName ?? key] = tenantScoped;
+  }
 }
 
 function writeWorkspaceTenancyShim(projectRoot: string): void {
@@ -226,13 +245,55 @@ function writeWorkspaceCoreShim(projectRoot: string): void {
       'export const parseRestListWhere = (...args) => globalThis.__smrtGeneratedRequestHelpers.parseRestListWhere(...args);',
       // The real scope helper: the emitted tenant-scoped list route calls it.
       'export const applyWhereScope = globalThis.__smrtGeneratedApplyWhereScope;',
-      // Every emitted read resolves its tenant scope at request time; a test
-      // that needs one installs `__smrtGeneratedReadScope`.
-      'export function resolveAnonymousTenantReadScope(name) { return globalThis.__smrtGeneratedReadScope?.(name); }',
-      'export function scopeTenantReadOptions(name, options) { return globalThis.__smrtGeneratedScopeOptions ? globalThis.__smrtGeneratedScopeOptions(name, options) : options; }',
-      // Request-time tenancy: a model is tenant-scoped now only when a test
-      // says so; the request tenant context is the tenancy shim's.
-      'export function isTenantScopedModel(name) { return globalThis.__smrtGeneratedTenantScopedModel?.(name) === true; }',
+      // Request tenancy (#5375): every emitted handler resolves it with one
+      // core call. The shim records each call; a test that needs a decision
+      // installs \`__smrtGeneratedTenancy(input)\`, which returns the
+      // resolved tenancy (\`readScope\`, \`scopeOptions\`) or throws the
+      // typed refusal. The real rule runs in smrt-tenancy's
+      // effective-tenancy suites.
+      'export function enterRequestTenancy(input) {',
+      '  (globalThis.__smrtGeneratedTenancyCalls ??= []).push(input);',
+      '  if (globalThis.__smrtGeneratedTenancy) return globalThis.__smrtGeneratedTenancy(input);',
+      // Core's actor rule over the tenancy shim's context, and its write
+      // and action decisions for the model's tenancy as the fixture registry
+      // reports it at request time (`getConfig(name).tenantScoped`).
+      '  const refuse = (status, message) => { throw Object.assign(new Error(message), { status, publicMessage: message }); };',
+      "  const record = (value) => value && typeof value === 'object' ? value : undefined;",
+      "  const text = (value) => typeof value === 'string' && value ? value : undefined;",
+      '  const l = record(input.locals) ?? {};',
+      '  const user = record(l.user); const session = record(l.session); const context = record(l.tenantContext);',
+      '  const tenantId = text(l.tenantId ?? user?.tenantId ?? session?.tenantId ?? context?.tenantId);',
+      '  const userId = text(l.userId ?? user?.id ?? user?.userId ?? session?.userId ?? context?.userId);',
+      '  const raw = l.permissions ?? l.permissionSet ?? l.smrtPermissions ?? context?.permissions;',
+      "  const permissions = raw instanceof Set ? raw : Array.isArray(raw) && raw.every((v) => typeof v === 'string') ? new Set(raw) : undefined;",
+      '  const authenticated = !!user || !!session || l.smrtAuth === true;',
+      "  if (input.requirePrincipal && (!tenantId || !userId || !permissions)) refuse(403, 'Authenticated principal context is incomplete');",
+      '  const active = globalThis.__smrtGeneratedActiveTenantContext;',
+      '  let actorTenant = tenantId;',
+      '  if (active) {',
+      '    const userMismatch = input.requirePrincipal ? active.userId !== userId : !!userId && !!active.userId && active.userId !== userId;',
+      "    if ((tenantId && active.tenantId !== tenantId) || userMismatch) refuse(403, 'Tenant context does not match authenticated principal');",
+      '    actorTenant = active.tenantId;',
+      '    if (input.requirePrincipal) enterRequestTenantContext({ ...active, tenantId, userId, permissions });',
+      '  }',
+      '  const policy = globalThis.__smrtGeneratedTenantPolicies?.[input.model] ?? globalThis.__smrtGeneratedRegistry?.getConfig?.(input.model)?.tenantScoped;',
+      '  const system = globalThis.__smrtGeneratedSystemContext === true;',
+      '  const bypass = context?.superAdminBypass === true && !!policy && policy.allowSuperAdminBypass === true;',
+      "  const mutating = input.operation === 'action' ? input.action?.mutating === true : input.operation !== 'list' && input.operation !== 'get';",
+      "  const receivesScope = input.action?.itemScoped === true || (Array.isArray(input.action?.parameters) && input.action.parameters.length === 1 && input.action.parameters[0] === 'options');",
+      "  const needsTenant = !!policy && !system && !actorTenant && !bypass && (mutating || (input.operation === 'action' && !receivesScope));",
+      "  if (needsTenant) refuse(authenticated ? 403 : 401, 'Tenant context required');",
+      '  if (!active && actorTenant) enterRequestTenantContext(input.requirePrincipal ? { tenantId, userId, permissions } : { tenantId });',
+      '  return { model: input.model, readScope: globalThis.__smrtGeneratedReadScope?.(input.model) };',
+      '}',
+      'export function tenancyReadScope(tenancy) { return tenancy?.readScope; }',
+      'export function scopeActionOptions(tenancy, options) { return tenancy?.scopeOptions ? tenancy.scopeOptions(options) : options; }',
+      'export function boundTenancyCacheScoped() { return globalThis.__smrtGeneratedTenancyCacheScoped === true; }',
+      'export function boundTenancyEtagDiscriminator() { return undefined; }',
+      'export async function runInRequestTenancy(input, fn) {',
+      '  const tenancy = enterRequestTenancy(input);',
+      '  return fn(tenancy);',
+      '}',
       'export function getRequestTenantContext() { return globalThis.__smrtGeneratedActiveTenantContext; }',
       'export function enterRequestTenantContext(context) { globalThis.__smrtGeneratedActiveTenantContext = context; (globalThis.__smrtGeneratedTenantContexts ??= []).push(context); }',
       // The real request helpers. `applyUpdateInput` runs the real update
@@ -245,6 +306,16 @@ function writeWorkspaceCoreShim(projectRoot: string): void {
       // The real create-target rule, over the registry the test installs.
       'export const assertCreateTargetSurface = (...args) => globalThis.__smrtGeneratedRequestHelpers.assertCreateTargetSurface(...args);',
       'export const assertCreateInput = (...args) => globalThis.__smrtGeneratedRequestHelpers.assertCreateInput(...args);',
+      // The real write-body rule over the fixture registry's field policy.
+      'export const prepareWriteInput = (name, data, stored) => {',
+      '  const fields = globalThis.__smrtGeneratedRegistry?.getFields(name) ?? new Map();',
+      '  const api = (globalThis.__smrtGeneratedRegistry?.getConfig(name) ?? {}).api;',
+      "  const writable = api && typeof api === 'object' && Array.isArray(api.writable) ? api.writable : null;",
+      '  return globalThis.__smrtGeneratedRequestHelpers.resolveWriteBody(data, {',
+      "    isProtected: (key) => key.startsWith('_') || (writable !== null && !writable.includes(key)) || fields.get(key)?.readonly === true || fields.get(key)?._meta?.readonly === true,",
+      '    isSkipped: (key) => ObjectRegistry.isServiceOptionInput(name, key),',
+      '  }, stored);',
+      '};',
       'export const applyUpdateInput = (instance, data, name) => {',
       '  const fields = globalThis.__smrtGeneratedRegistry?.getFields(name) ?? new Map();',
       '  return globalThis.__smrtGeneratedRequestHelpers.assignUpdateInput(instance, data, {',
@@ -310,6 +381,7 @@ describe('generated SvelteKit helper runtime', () => {
       assignUpdateInput,
       parseRestListWhere,
       publicSerializerOf,
+      resolveWriteBody,
       toPublicJSONValue,
     };
     (globalThis as Record<string, unknown>).__smrtGeneratedHelperCalls = [];
@@ -359,6 +431,10 @@ describe('generated SvelteKit helper runtime', () => {
 
   afterEach(() => {
     setRuntimeExposureGate(undefined);
+    delete (globalThis as Record<string, unknown>)
+      .__smrtGeneratedTenantPolicies;
+    delete (globalThis as Record<string, unknown>).__smrtGeneratedTenancyCalls;
+    delete (globalThis as Record<string, unknown>).__smrtGeneratedTenancy;
     delete (globalThis as Record<string, unknown>).__smrtGeneratedReportError;
     delete (globalThis as Record<string, unknown>)
       .__smrtGeneratedApplyWhereScope;
@@ -498,6 +574,9 @@ describe('generated SvelteKit helper runtime', () => {
       },
       ...(tenantScoped ? { tenantScoped: { mode: 'optional' } } : {}),
     } as never;
+    // The model's tenancy at request time (#5375); the manifest flag above
+    // no longer selects anything in the emitted route.
+    if (tenantScoped) declareTenancy(manifest);
 
     await generateSvelteKitRoutes(projectRoot, manifest, {
       configFileName: 'smrt.ts',
@@ -535,6 +614,7 @@ describe('generated SvelteKit helper runtime', () => {
       },
       tenantScoped: { mode: 'optional' },
     } as never;
+    declareTenancy(manifest);
 
     await generateSvelteKitRoutes(projectRoot, manifest, {
       configFileName: 'smrt.ts',
@@ -849,6 +929,18 @@ describe('generated SvelteKit helper runtime', () => {
           }),
         });
       expect((await call({ name: 'base', type: 'article' })).status).toBe(201);
+      // The selected subtype's read-only field is refused on a create.
+      const locked = await call({
+        name: 'selected',
+        createType: child,
+        type: 'article',
+        detail: 'own field',
+        locked: 'forbidden',
+      });
+      expect(locked.status).toBe(400);
+      expect((await locked.json()).error).toMatchObject({
+        code: 'VALIDATION_FIELD_NOT_WRITABLE',
+      });
       expect(
         (
           await call({
@@ -856,7 +948,6 @@ describe('generated SvelteKit helper runtime', () => {
             createType: child,
             type: 'article',
             detail: 'own field',
-            locked: 'forbidden',
           })
         ).status,
       ).toBe(201);
@@ -1409,7 +1500,7 @@ describe('generated SvelteKit helper runtime', () => {
       // a mocked factory. It must construct and initialize against this DB.
       writeFileSync(
         join(projectRoot, 'node_modules/@happyvertical/smrt-core/index.js'),
-        `export const { ObjectRegistry, isRuntimeModelEnabled, hasRuntimeExposureGate, createGeneratedCollectionAccess, normalizeCustomActionFailure, normalizeTypedHttpError, reportUnexpectedHttpError, canonicalReadRepresentation, computeTableVersionEtag, getTableVersion, ifNoneMatchHasConcreteMatch, ifNoneMatchSatisfied, parseRestListWhere, applyWhereScope, resolveAnonymousTenantReadScope, scopeTenantReadOptions, publicSerializerOf, toPublicJSONValue, assertQueryAccess, assertCreateTargetSurface, assertCreateInput, isTenantScopedModel, enterRequestTenantContext, getRequestTenantContext, resolveTenantEtagDiscriminator } = globalThis.__smrt4320Core;`,
+        `export const { ObjectRegistry, isRuntimeModelEnabled, hasRuntimeExposureGate, createGeneratedCollectionAccess, normalizeCustomActionFailure, normalizeTypedHttpError, reportUnexpectedHttpError, canonicalReadRepresentation, computeTableVersionEtag, getTableVersion, ifNoneMatchHasConcreteMatch, ifNoneMatchSatisfied, parseRestListWhere, applyWhereScope, resolveAnonymousTenantReadScope, scopeTenantReadOptions, publicSerializerOf, toPublicJSONValue, assertQueryAccess, assertCreateTargetSurface, assertCreateInput, isTenantScopedModel, enterRequestTenantContext, getRequestTenantContext, resolveTenantEtagDiscriminator, enterRequestTenancy, tenancyReadScope, scopeActionOptions, boundTenancyCacheScoped, boundTenancyEtagDiscriminator, runInRequestTenancy } = globalThis.__smrt4320Core;`,
       );
       const objectFilePath = join(projectRoot, 'src/lib/objects/Widget.ts');
       writeFileSync(
@@ -1864,6 +1955,7 @@ describe('generated SvelteKit helper runtime', () => {
         api: { include: ['create', 'update', 'delete'], ...api },
         tenantScoped,
       } as never;
+      declareTenancy(manifest);
       await generateSvelteKitRoutes(projectRoot, manifest, {
         configFileName: 'smrt.ts',
         configPath: 'src/lib/server',
@@ -1939,7 +2031,7 @@ describe('generated SvelteKit helper runtime', () => {
       }
       // Refused before the collection was reached.
       expect(touched).toEqual([]);
-      expect(state.__smrtGeneratedTenantContexts).toEqual([]);
+      expect(state.__smrtGeneratedTenantContexts ?? []).toEqual([]);
     });
 
     it('refuses an anonymous write to a public model with a 401', async () => {
@@ -2831,13 +2923,17 @@ describe('generated SvelteKit helper runtime', () => {
       'sanitization',
       'signals',
     ];
+    const CONTROL_KEYS = {
+      _insertOnly: true,
+      _skipLoad: false,
+      _className: 'Other',
+    };
+    let withControls = false;
     const body = () => ({
       name: 'Widget',
       ...Object.fromEntries(SERVICE_KEYS.map((key) => [key, { from: key }])),
       options: { db: 'file:/elsewhere.db' },
-      _insertOnly: true,
-      _skipLoad: false,
-      _className: 'Other',
+      ...(withControls ? CONTROL_KEYS : {}),
     });
     const declareFields = (...names: string[]) => {
       (globalThis as Record<string, unknown>).__smrtGeneratedRegistry = {
@@ -2919,10 +3015,32 @@ describe('generated SvelteKit helper runtime', () => {
       return { item, response };
     }
 
+    afterEach(() => {
+      withControls = false;
+    });
+
     it('POST passes only field values to create', async () => {
       const { created, response } = await post();
       expect(response.status).toBe(201);
       expect(created).toEqual([{ name: 'Widget' }]);
+    });
+
+    it('POST refuses underscore control keys and creates nothing', async () => {
+      withControls = true;
+      const { created, response } = await post();
+      expect(response.status).toBe(400);
+      expect((await response.json()).error.code).toBe(
+        'VALIDATION_FIELD_NOT_WRITABLE',
+      );
+      expect(created).toEqual([]);
+    });
+
+    it('PUT refuses underscore control keys that change the item', async () => {
+      withControls = true;
+      const { item, response } = await put();
+      expect(response.status).toBe(400);
+      expect(item.name).toBe('Before');
+      expect(Object.hasOwn(item, '_insertOnly')).toBe(false);
     });
 
     it('POST keeps a service-named key the model declares as a field', async () => {

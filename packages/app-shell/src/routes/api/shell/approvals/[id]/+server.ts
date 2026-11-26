@@ -4,7 +4,8 @@
  * `Approval.decide` -> `decideApproval`, the only place the engine's
  * `approved` flag is set (its one other caller is the owner's review-page
  * Publish, `publishOwnDraft`).
- * -> { id, status: 'approved' | 'denied' | 'failed', result?, error? }
+ * -> { id, status: 'approved' | 'denied' | 'failed' | 'unknown', result?, error? }
+ * (`unknown`: the change's outcome could not be told; the app's next open settles it)
  * 404 unknown id, 409 already decided.
  */
 

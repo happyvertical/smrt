@@ -120,8 +120,24 @@ Read this before you upgrade a deployed app.
   dropped column stops; and the JSON adapter cannot rebuild. The list is in
   [`schema-paths.md`](https://github.com/happyvertical/smrt/blob/main/packages/core/agents/schema-paths.md).
 - **Migrate refuses a database older than the oldest supported release.** That
-  release is 0.60.17. The error names it and the first upgrade to run. A
-  database with no migrate record is not refused. Every release upgrades the
+  release is 0.60.17. The error names it and the first upgrade to run. Migrate
+  records start at smrt 0.61.4, so an older database has none and is not
+  refused. When such a database's system tables carry a version stamp older
+  than the one 0.60.17 writes (system schema 1.15.0), migrate prints a warning,
+  "This database has no migrate record, and its system tables were last
+  prepared by a smrt release older than 0.60.17 ...", and proceeds: if the
+  application tables were last migrated by a smrt release older than 0.60.17,
+  stop and upgrade it with smrt 0.60.17 first (that includes a database a
+  0.60.16 app migrated through `migrateSmrtSchemas`). The warning cannot decide more than that. It can be
+  a false alarm: an app on 0.60.17 to 0.61.3 that migrated through
+  `migrateSmrtSchemas` leaves the old stamp in place, and that database is
+  supported. It can also miss: 0.60.16 writes the same stamp as 0.60.17, newer
+  model code stamps its own version when it first starts, `smrt db:migrate`
+  stamps this build's version even when its run ends without writing a record,
+  and a database with no stamp says nothing. `smrt doctor --db` then says the
+  age is not proven. A missing warning is not a statement that the database
+  is supported; if you are unsure which release last migrated it, check that
+  before you upgrade. Every release upgrades the
   previous release and the oldest supported one, and the pull request job
   `pnpm check:release-upgrade` rehearses both. The release workflow does not
   run that gate yet; the maintainer saves each release's schema with

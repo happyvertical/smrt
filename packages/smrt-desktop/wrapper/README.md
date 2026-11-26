@@ -332,7 +332,9 @@ these hold:
    `deployment-branch-policies` with the job's own token and refuses unless:
    the environment exists; admins cannot bypass its rules
    (`can_admins_bypass: false`); a `required_reviewers` rule has at least one
-   reviewer and `prevent_self_review: true`; deployment branches are "selected
+   reviewer (`prevent_self_review` is not required: this is a single-owner
+   repository, so the owner approves his own dispatch; the branch rule and the
+   required-reviewer approval are the controls); deployment branches are "selected
    branches" (`custom_branch_policies: true`, `protected_branches: false`) and
    the rule list is exactly one entry, the branch `main` (no tag, no pattern, no
    second branch). GitHub's permission table for fine-grained tokens lists
@@ -508,8 +510,11 @@ and the controls around it. Do these **in this order**:
 2. **Deployment branches and tags: selected branches, `main` only, no tags.**
    Add exactly one rule, the branch `main`. A dispatch from any other branch,
    or a pull request, then cannot read anything in the environment.
-3. **Required reviewers**, with **prevent self-review** on and **no admin
-   bypass** ("Allow administrators to bypass configured protection rules" off).
+3. **Required reviewers** (at least one) and **no admin
+   bypass**. Leave **prevent self-review** off: this is a single-owner
+   repository, so the owner must be able to approve the run he dispatched; the
+   branch rule above and the required-reviewer approval are the controls
+   (owner decision 2026-11-24, #5619). ("Allow administrators to bypass configured protection rules" off).
    Expect an approval prompt for the preflight, one for the signing legs and one
    for the publish job.
 4. **Protect `main` with a ruleset that requires review.** `.github/CODEOWNERS`
@@ -575,13 +580,14 @@ matrix) and the signing half of #4836 are `status: blocked` on them.
    `latest.json` feed (smrt#4836) will be served. This workflow still publishes
    to this repository's `desktop-latest` release, so pointing the publish step at
    that repository is open, and so are the signing secrets and the updater key.
-5. **A gpg-verified Node pin.** The only pin, Node 26.8.1, is `unverified` (see
-   `../README.md`, Node pin provenance); a maintainer with `gpg` must run
-   `scripts/update-node-pins.mjs`. The signing job reads this committed record,
-   so a release cannot be signed until it says `gpg-verified`.
-6. **The product itself** for the `product_dir` and `bridge_path` inputs: a
+5. **The product itself** for the `product_dir` and `bridge_path` inputs: a
    standalone app with `smrt-desktop.json`, its lockfile and a pre-bundled MCP
    bridge.
+
+Node 26.12.1 has committed `gpg-verified` pins for all six supported targets
+(see `../README.md`, Node pin provenance). The signing job verifies the record
+for the bundle's selected version; the older Node 26.8.1 remains `unverified`
+and cannot pass that gate. Future pins use `scripts/update-node-pins.mjs`.
 
 ### Not verified
 

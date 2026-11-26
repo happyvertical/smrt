@@ -69,7 +69,7 @@ const FIELD_EXAMPLE = "{type: 'integer'}";
  */
 async function run(command: Command): Promise<BuilderResult> {
   const owner = await assertOwner();
-  return runCommand(command, owner.id, 'live', currentScope().source ?? 'api');
+  return runCommand(command, owner, 'live', currentScope().source ?? 'api');
 }
 
 /**

@@ -27,7 +27,9 @@ chart and report results both consume it.
   report's page): a Chart/Table switch, a measure switch, headline figures
   (total for sums and counts, average per bucket, peak) and a tall smrt-ui
   `Chart` with a value axis and keyboard/pointer readout. `compact` (preview
-  card): a quiet table toggle. Tables format money and time buckets. Money
+  card): a quiet table toggle. `fit` (a narrow column such as a chat): the
+  table only, cells wrap, never scrolls sideways; the host passes the columns
+  to show. Tables format money and time buckets. Money
   fields use integer minor units and the host's ISO currency (default USD).
 - Hosts can pass `ReportResult.formatCell(value, column, row)` for display labels
   and formatting in tables and chart group labels, and `cellHref(column, row)`

@@ -180,11 +180,10 @@ created by `prepareShellSchema` on first start (`consumer.packages` in
 The chat column (`src/lib/assistant/AssistantPanel.svelte`, the `panel` of
 smrt-svelte's `AppShell` in `src/routes/+layout.svelte`, mounted for the owner)
 talks to `mountAssistantRoutes` (`src/lib/server/assistant/`). The layout is
-left sidebar, chat, content; the voice and assistant toggles and the user menu
+left sidebar, content, chat (the chat sits at the right of the page, 400px by default); the voice and assistant toggles and the user menu
 sit in the sidebar footer. Each model gets its own sidebar icon, picked from its name and fields (`src/lib/ui/model-icon.ts`) and stable across reloads. The sidebar collapses to an icon rail (nav icons with
 tooltips, the footer controls as icons) from the chevron above the footer; the
-choice is remembered per owner, and the footer has no divider line (it would sit
-beside the chat composer's top border). The boundary between chat and content is a draggable
+choice is remembered per owner, and the footer has no divider line. The boundary between chat and content is a draggable
 separator (arrow keys, double-click resets); its width and the open state are
 remembered per owner. As a plugin view (iframe, or `?embed=plugin`) there is no
 chat and no toggles: the host app is the chat. Voice mode shows as not
@@ -532,16 +531,18 @@ later replay the draft's changes onto live. Rules and failure behaviour are in
 
 ```ts
 const live = await AppHost.open(dir, { store });
-const draft = await live.forkDraft(draftDir, { store: emptyDraftStore }); // autoApprove on
+// `owner`: enginePrincipal({ kind: 'user', tenantId: live.tenantId, userId,
+//   permissions: [OWNER_SLUG, ...appPermissionSlugs(live.def)] }); execute/forkDraft/publishDraft/restoreSnapshot refuse anyone else
+const draft = await live.forkDraft(owner, draftDir, { store: emptyDraftStore }); // autoApprove on
 live.setFrozen(true); // live keeps serving records; structural commands are refused
-// ...build in `draft` (draft.execute / draft.create ...)...
+// ...build in `draft` (draft.execute(owner, ...) / draft.create ...)...
 const preview = await live.previewPublish(draft); // diff, archives, all method code, digest
-await live.publishDraft(draft, {
+await live.publishDraft(owner, draft, {
   author, approved: true, expect: preview.digest, draftName: 'Spring cleanup',
 }); // N ordinary live versions; any failure leaves live's app.db untouched
 live.setFrozen(false);
 await draft.discard(); // closes it and deletes only the directory fork made
-await live.execute({ type: 'undoTo', version: base, from: live.version }, { author });
+await live.execute(owner, { type: 'undoTo', version: base, from: live.version }, { author });
 ```
 
 `AppHost.open(dir, { store, autoApprove: true })` only works on a directory the

@@ -65,26 +65,37 @@ describe('Issue #1540 (2b): REST runtime mass-assignment guard', () => {
     await collection.db?.close?.();
   });
 
-  it('drops tenantId and read-only fields supplied in a create body', async () => {
-    const res = await handler(
+  const post = (body: Record<string, unknown>) =>
+    handler(
       new Request('http://local/api/v1/restwritablewidgets', {
         method: 'POST',
         headers: { 'content-type': 'application/json' },
-        body: JSON.stringify({
-          name: 'legit',
-          tenantId: 'attacker-tenant',
-          internalCode: 'forged',
-        }),
+        body: JSON.stringify(body),
       }),
     );
+
+  it('ignores a tenantId supplied in a create body', async () => {
+    const res = await post({ name: 'legit', tenantId: 'attacker-tenant' });
     expect(res.status).toBe(201);
 
     const created = await collection.list({ where: { name: 'legit' } });
     expect(created).toHaveLength(1);
-    // Forged framework/read-only fields were stripped before create.
+    // The server-managed tenant is never taken from the body.
     expect(created[0].tenantId).toBeNull();
     expect(created[0].internalCode).toBe('');
     expect(created[0].name).toBe('legit');
+  });
+
+  it('refuses a read-only field supplied with a value in a create body', async () => {
+    const res = await post({ name: 'refused', internalCode: 'forged' });
+    expect(res.status).toBe(400);
+    expect(((await res.json()) as { error: unknown }).error).toMatchObject({
+      code: 'VALIDATION_FIELD_NOT_WRITABLE',
+      details: { field: 'internalCode' },
+    });
+    expect(await collection.list({ where: { name: 'refused' } })).toHaveLength(
+      0,
+    );
   });
 });
 

@@ -20,9 +20,9 @@
  * |-------------------------------------|----------------------------------------|
  * | `applied`                           | remove → `synced`                      |
  * | `conflict` (stale_write/create_conflict) | remove + fire onConflict → `synced` (a RESOLVED outcome) |
- * | `rejected` `write_failed`           | keep, attempts++, backoff → `pending`  |
+ * | `rejected` `write_failed`/`rate_limited` | keep, attempts++, backoff → `pending`  |
  * | `rejected` `auth_required`/`forbidden` | PAUSE the loop, keep queued → `pending` |
- * | `rejected` other (`invalid_*`/`unknown_object`/`not_found`/`op_not_allowed`/`id_conflict`) | remove → `failed` (terminal) |
+ * | `rejected` other (`invalid_*`/`unknown_object`/`not_found`/`op_not_allowed`/`id_conflict`, or a reason the engine does not know) | remove → `failed` (terminal) |
  * | network reject / non-200 / lost response | whole batch stays `pending`, drain stops behind it (blind replay is safe by construction — idempotency) |
  *
  * Because items carry client-generated UUIDs and the endpoint is idempotent
@@ -884,9 +884,10 @@ export class OutboxEngine {
       return false;
     }
 
-    if (reason === 'write_failed') {
-      // Retryable: keep, count an attempt, back off.
-      await this.requeueRow(row, 'sync write_failed');
+    if (reason === 'write_failed' || reason === 'rate_limited') {
+      // Retryable: keep, count an attempt, back off. `rate_limited`: the
+      // host throttled the item and applied none of it.
+      await this.requeueRow(row, `sync ${reason}`);
       return false;
     }
 
@@ -1108,7 +1109,7 @@ function commandResultToApplyResult(
   }
   if (status === 'rejected' && typeof reason === 'string' && reason) {
     // Unknown reasons are carried verbatim; `applyResult` treats anything that
-    // is not write_failed / auth_required / forbidden as terminal.
+    // is not write_failed / rate_limited / auth_required / forbidden as terminal.
     return { ...base, status, reason: reason as SyncApplyReason };
   }
   return undefined;

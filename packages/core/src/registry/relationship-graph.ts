@@ -7,6 +7,7 @@
  * @see https://github.com/happyvertical/smrt/issues/1006
  */
 
+import { parseForeignKeyReference } from '../schema/foreign-key-policy.js';
 import { getInheritanceChain } from './inheritance-resolver';
 import {
   findClass,
@@ -76,7 +77,9 @@ export function resolveRelationshipTarget(
     if (registered && field) {
       return resolveTarget(registered, {
         ...field,
-        related: field.related?.split('.')[0],
+        related: field.related
+          ? parseForeignKeyReference(field.related).target
+          : undefined,
       });
     }
   }

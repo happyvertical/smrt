@@ -14,6 +14,7 @@ import { changesState, flushChecks } from '../lib/server/changes.ts';
 import { getHost } from '../lib/server/host.ts';
 import { callTool } from '../lib/server/policy.ts';
 import { openShell, runAs } from '../lib/server/test-support.ts';
+import { hostOwner } from '../test/engine-principal.ts';
 import { GET } from './api/shell/reports/[name]/+server.ts';
 import { GET as csv } from './api/shell/reports/[name]/csv/+server.ts';
 import { load } from './reports/[name]/+page.server.ts';
@@ -25,7 +26,7 @@ async function importSeed(
   await runAs(h.owner, async () => {
     const waiting = await runCommand(
       { type: 'importTemplate', data } as never,
-      h.owner.id,
+      h.owner,
     );
     expect(waiting).toMatchObject({ status: 'change_waiting' });
     await changesState();
@@ -48,11 +49,19 @@ it('the production QA seed imports into an empty app and exercises report states
     // The template's records travel with its card and arrive on Apply.
     await importSeed(h, seed.data);
     const host = await getHost();
-    expect((await host.runReport('salesByCustomer')).rows).toHaveLength(3);
-    expect((await host.runReport('salesByMonth')).chart.type).toBe('line');
-    expect((await host.runReport('emptyOrders')).rows).toHaveLength(0);
-    expect((await host.runReport('limitedCustomers')).truncated).toBe(true);
-    const rows = await host.list('Order');
+    expect(
+      (await host.runReport(hostOwner(host), 'salesByCustomer')).rows,
+    ).toHaveLength(3);
+    expect(
+      (await host.runReport(hostOwner(host), 'salesByMonth')).chart.type,
+    ).toBe('line');
+    expect(
+      (await host.runReport(hostOwner(host), 'emptyOrders')).rows,
+    ).toHaveLength(0);
+    expect(
+      (await host.runReport(hostOwner(host), 'limitedCustomers')).truncated,
+    ).toBe(true);
+    const rows = await host.list(hostOwner(host), 'Order');
     expect(
       rows.map((r) => r.total).sort((a, b) => Number(a) - Number(b)),
     ).toEqual([1250, 5000, 11250]);
@@ -73,8 +82,8 @@ it('explains an unsafe seeded total consistently across the worker, page, CSV an
     // The template's records travel with its card and arrive on Apply.
     await importSeed(h, seed.data);
     const host = await getHost();
-    const [order] = await host.list('Order');
-    const huge = await host.create('Order', {
+    const [order] = await host.list(hostOwner(host), 'Order');
+    const huge = await host.create(hostOwner(host), 'Order', {
       title: 'Large order',
       customer: order.customer,
       issuedAt: order.issuedAt,
@@ -83,13 +92,15 @@ it('explains an unsafe seeded total consistently across the worker, page, CSV an
       price: Number.MAX_SAFE_INTEGER,
     });
     expect(huge.price).toBe(Number.MAX_SAFE_INTEGER);
-    await expect(host.runReport('salesByCustomer')).rejects.toMatchObject({
+    await expect(
+      host.runReport(hostOwner(host), 'salesByCustomer'),
+    ).rejects.toMatchObject({
       code: 'invalid_result',
       path: 'total',
     });
-    await expect(host.runReport('salesByCustomer')).rejects.toBeInstanceOf(
-      RuntimeReportError,
-    );
+    await expect(
+      host.runReport(hostOwner(host), 'salesByCustomer'),
+    ).rejects.toBeInstanceOf(RuntimeReportError);
     const message =
       'The total of Total is too large to show exactly. One of the Orders probably has a mistyped Quantity or Price.';
     const event = {

@@ -232,6 +232,12 @@ function buildLayoutStyle(shell: ModuleShellState): string {
     panelResize?: boolean | ShellPanelResize;
     /** The panel's width in px until the user resizes it (default 400). */
     panelSize?: number;
+    /**
+     * Which side of the content the docked panel sits on: `start` (default,
+     * between the left sidebar and the content) or `end` (after the content,
+     * at the inline end). Its resize handle, arrow keys and border follow.
+     */
+    panelSide?: 'start' | 'end';
     children: Snippet;
   }
 
@@ -287,6 +293,7 @@ function buildLayoutStyle(shell: ModuleShellState): string {
     panelLabel,
     panelResize = true,
     panelSize = 400,
+    panelSide = 'start',
     children,
   }: Props = $props();
 
@@ -840,9 +847,11 @@ function buildLayoutStyle(shell: ModuleShellState): string {
     const limits = shell.resizeLimits(edge);
     if (!limits) return;
     const step = limits.step * (event.shiftKey ? 4 : 1);
-    // The left sidebar and the docked panel grow toward the inline end.
-    const grow = edge !== 'right' ? 'ArrowRight' : 'ArrowLeft';
-    const shrink = edge !== 'right' ? 'ArrowLeft' : 'ArrowRight';
+    // The left sidebar and a start-side docked panel grow toward the inline
+    // end; the right sidebar and an end-side panel grow toward the start.
+    const growsStart = edge === 'right' || (edge === 'panel' && panelSide === 'end');
+    const grow = growsStart ? 'ArrowLeft' : 'ArrowRight';
+    const shrink = growsStart ? 'ArrowRight' : 'ArrowLeft';
     let next: number | null;
     if (event.key === grow) next = currentSize(edge) + step;
     else if (event.key === shrink) next = currentSize(edge) - step;
@@ -878,7 +887,8 @@ function buildLayoutStyle(shell: ModuleShellState): string {
 
     function onMove(move: PointerEvent): void {
       const dx = move.clientX - startX;
-      latest = startSize + (edge !== 'right' ? dx : -dx);
+      const growsStart = edge === 'right' || (edge === 'panel' && panelSide === 'end');
+      latest = startSize + (growsStart ? -dx : dx);
       shell.setPanelSize(edge, latest, { persist: false });
     }
 
@@ -1358,6 +1368,25 @@ function buildLayoutStyle(shell: ModuleShellState): string {
   </main>
 {/snippet}
 
+{#snippet dockPanel()}
+  {#if panel}
+    <aside
+      id="smrt-admin-shell-panel-panel"
+      class="smrt-admin-shell__dock-panel"
+      aria-label={panelName}
+      data-testid="admin-shell-panel"
+      hidden={!panelShown}
+      inert={!panelShown || overlayEdge !== null}
+      style={`--smrt-admin-shell-panel-width: ${currentSize('panel')}px`}
+    >
+      <div class="smrt-admin-shell__dock-panel-body" data-smrt-part="body">
+        {@render panel({ viewport, open: panelShown })}
+      </div>
+      {@render resizer('panel')}
+    </aside>
+  {/if}
+{/snippet}
+
 {#snippet resizer(edge: SideEdge | 'panel')}
   {#if canResize(edge)}
     {@const limits = shell.resizeLimits(edge)}
@@ -1620,22 +1649,10 @@ function buildLayoutStyle(shell: ModuleShellState): string {
   {/if}
 
   {#if panel}
-    <div class="smrt-admin-shell__body" data-panel-open={panelShown ? '' : undefined}>
-      <aside
-        id="smrt-admin-shell-panel-panel"
-        class="smrt-admin-shell__dock-panel"
-        aria-label={panelName}
-        data-testid="admin-shell-panel"
-        hidden={!panelShown}
-        inert={!panelShown || overlayEdge !== null}
-        style={`--smrt-admin-shell-panel-width: ${currentSize('panel')}px`}
-      >
-        <div class="smrt-admin-shell__dock-panel-body" data-smrt-part="body">
-          {@render panel({ viewport, open: panelShown })}
-        </div>
-        {@render resizer('panel')}
-      </aside>
+    <div class="smrt-admin-shell__body" data-panel-open={panelShown ? '' : undefined} data-panel-side={panelSide}>
+      {#if panelSide === 'start'}{@render dockPanel()}{/if}
       {@render mainRegion()}
+      {#if panelSide === 'end'}{@render dockPanel()}{/if}
     </div>
   {:else}
     {@render mainRegion()}
@@ -3351,6 +3368,10 @@ function buildLayoutStyle(shell: ModuleShellState): string {
   .smrt-admin-shell__resizer--panel {
     inset-inline-end: -0.375rem;
   }
+  .smrt-admin-shell__body[data-panel-side='end'] .smrt-admin-shell__resizer--panel {
+    inset-inline-end: auto;
+    inset-inline-start: -0.375rem;
+  }
   @media (max-width: 48rem) {
     .smrt-admin-shell__dock-panel {
       position: absolute;
@@ -3373,6 +3394,10 @@ function buildLayoutStyle(shell: ModuleShellState): string {
     border-inline-end: var(--smrt-hairline);
     background: var(--smrt-surface-raised);
     color: var(--smrt-color-on-surface);
+  }
+  .smrt-admin-shell__body[data-panel-side='end'] .smrt-admin-shell__dock-panel {
+    border-inline-end: 0;
+    border-inline-start: var(--smrt-hairline);
   }
   @media (max-width: 48rem) {
     .smrt-admin-shell__dock-panel {

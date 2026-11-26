@@ -2,6 +2,7 @@ import { mkdtempSync, readdirSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
+import { hostOwner } from '../test/engine-principal.ts';
 import { EMPTY_APP } from './definition.ts';
 import {
   AppHost,
@@ -229,6 +230,7 @@ describe('sandbox through the host', () => {
   const snapshots = () => readdirSync(join(dir, 'snapshots')).length;
   const add = (name: string, code: string) =>
     host.execute(
+      hostOwner(host),
       {
         type: 'addMethod',
         model: 'Chore',
@@ -241,6 +243,7 @@ describe('sandbox through the host', () => {
   beforeAll(async () => {
     host = await AppHost.open(dir, { store: new MemoryVersionStore() });
     await host.execute(
+      hostOwner(host),
       {
         type: 'defineModel',
         name: 'Chore',
@@ -248,7 +251,9 @@ describe('sandbox through the host', () => {
       },
       { author: 't' },
     );
-    id = (await host.create('Chore', { title: 'a', points: 1 })).id as string;
+    id = (
+      await host.create(hostOwner(host), 'Chore', { title: 'a', points: 1 })
+    ).id as string;
   });
   afterAll(async () => {
     await host.close();
@@ -281,10 +286,10 @@ describe('sandbox through the host', () => {
     );
     const snaps = snapshots();
     for (const m of ['badModel', 'badField', 'badType', 'badId'])
-      await expect(host.runMethod('Chore', m, id)).rejects.toThrow(
-        /bad writes, none applied/,
-      );
-    expect((await host.get('Chore', id)).points).toBe(1); // the valid first write was not applied either
+      await expect(
+        host.runMethod(hostOwner(host), 'Chore', m, id),
+      ).rejects.toThrow(/bad writes, none applied/);
+    expect((await host.get(hostOwner(host), 'Chore', id)).points).toBe(1); // the valid first write was not applied either
     expect(snapshots()).toBe(snaps);
   });
 
@@ -297,13 +302,13 @@ describe('sandbox through the host', () => {
       `app.update('Chore', record.id, { points: record.points + 1 }); return 'ok';`,
     );
     const snaps = snapshots();
-    const noop = await host.runMethod('Chore', 'noop', id);
+    const noop = await host.runMethod(hostOwner(host), 'Chore', 'noop', id);
     expect(noop.snapshot).toBeNull();
     expect(snapshots()).toBe(snaps);
-    const bump = await host.runMethod('Chore', 'bump', id);
+    const bump = await host.runMethod(hostOwner(host), 'Chore', 'bump', id);
     expect(bump.applied).toBe(1);
     expect(snapshots()).toBe(snaps + 1);
-    expect((await host.get('Chore', id)).points).toBe(2);
+    expect((await host.get(hostOwner(host), 'Chore', id)).points).toBe(2);
     // the snapshot holds the state from before the write
     const { DatabaseSync } = await import('node:sqlite');
     const db = new DatabaseSync(bump.snapshot as string, { readOnly: true });
@@ -319,26 +324,28 @@ describe('sandbox through the host', () => {
       'flood',
       `for (let i = 0; i < 1500; i++) app.create('Chore', { title: 'x' + i }); return 1;`,
     );
-    const before = (await host.list('Chore')).length;
-    await expect(host.runMethod('Chore', 'flood', null)).rejects.toThrow(
-      /at most 1000 writes/,
-    );
-    expect((await host.list('Chore')).length).toBe(before);
+    const before = (await host.list(hostOwner(host), 'Chore')).length;
+    await expect(
+      host.runMethod(hostOwner(host), 'Chore', 'flood', null),
+    ).rejects.toThrow(/at most 1000 writes/);
+    expect((await host.list(hostOwner(host), 'Chore')).length).toBe(before);
   });
 
   it('a runaway method fails cleanly and the app keeps serving', async () => {
     await add('spin', `while (true) {}`);
-    await expect(host.runMethod('Chore', 'spin', id)).rejects.toThrow(
-      /ran too long/,
+    await expect(
+      host.runMethod(hostOwner(host), 'Chore', 'spin', id),
+    ).rejects.toThrow(/ran too long/);
+    expect((await host.list(hostOwner(host), 'Chore')).length).toBeGreaterThan(
+      0,
     );
-    expect((await host.list('Chore')).length).toBeGreaterThan(0);
     expect(host.appAlive).toBe(true);
   });
 
   it('errors are EngineErrors the shell can show', async () => {
-    await expect(host.runMethod('Chore', 'spin', id)).rejects.toBeInstanceOf(
-      EngineError,
-    );
+    await expect(
+      host.runMethod(hostOwner(host), 'Chore', 'spin', id),
+    ).rejects.toBeInstanceOf(EngineError);
   });
 });
 

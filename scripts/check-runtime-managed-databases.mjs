@@ -23,6 +23,8 @@ import { fileURLToPath } from 'node:url';
 export const ALLOWED_CALLERS = {
   'packages/app-shell/src/engine/app-runtime.ts':
     "The app-shell engine opens each app's app.db here (live, drafts, publish rehearsal, the read-only report worker) and builds its schema from the app definition; core's migrate never runs against it.",
+  'packages/app-shell/src/engine/db/postgres.ts':
+    "The engine's broker-backed PostgreSQL handle builds the app schema from the app definition with its own versioned steps (_app_meta.version), as app-runtime.ts does for SQLite; core's migrate never runs against it.",
 };
 
 /** Core's definition and its one re-export (the `/migrations` subpath); these name the API without using it. */

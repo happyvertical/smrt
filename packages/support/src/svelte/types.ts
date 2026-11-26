@@ -26,6 +26,7 @@ export interface SupportCaseView {
   channelKind: string;
   clientProfileId: string | null;
   projectId: string | null;
+  requesterKey?: string | null;
   assignedSpecialistId: string | null;
   assignedSpecialistName: string | null;
   reopenCount: number;
@@ -83,6 +84,7 @@ export function toSupportCaseView(
     channelKind: supportCase.channelKind,
     clientProfileId: supportCase.clientProfileId,
     projectId: supportCase.projectId,
+    requesterKey: supportCase.requesterKey ?? null,
     assignedSpecialistId: supportCase.assignedSpecialistId,
     assignedSpecialistName: options.assignedSpecialistName ?? null,
     reopenCount: supportCase.reopenCount,

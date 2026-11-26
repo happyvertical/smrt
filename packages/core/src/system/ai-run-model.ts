@@ -798,6 +798,50 @@ export async function lockAiRun(
   return rows[0] ? toAiRunRow(rows[0]) : null;
 }
 
+/** The amounts one call is charged. */
+export interface AiCallActuals {
+  tokens: number;
+  cost: number | null;
+}
+
+/**
+ * The amounts a call is charged from its usage (page section 6.4): tokens
+ * reported, else the reserved tokens; cost recorded, else none.
+ *
+ * @internal Not part of the package surface (`system/browser.ts` lists
+ * this module's exports by name).
+ */
+export function actualsOf(
+  usage: {
+    promptTokens?: number | null;
+    completionTokens?: number | null;
+    totalTokens?: number | null;
+    estimatedCost?: number | null;
+  },
+  reservedTokens: number,
+): AiCallActuals {
+  const total = usage.totalTokens;
+  const prompt = usage.promptTokens;
+  const completion = usage.completionTokens;
+  let tokens: number;
+  if (typeof total === 'number' && Number.isFinite(total)) tokens = total;
+  else if (
+    (typeof prompt === 'number' && Number.isFinite(prompt)) ||
+    (typeof completion === 'number' && Number.isFinite(completion))
+  ) {
+    tokens = (prompt ?? 0) + (completion ?? 0);
+  } else {
+    // Answered without reporting tokens: charged what it reserved.
+    tokens = reservedTokens;
+  }
+  const cost =
+    typeof usage.estimatedCost === 'number' &&
+    Number.isFinite(usage.estimatedCost)
+      ? usage.estimatedCost
+      : null;
+  return { tokens: Math.max(0, Math.round(tokens)), cost };
+}
+
 const MAX_CHAIN_DEPTH = 64;
 
 /**

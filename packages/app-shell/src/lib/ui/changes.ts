@@ -4,6 +4,7 @@
 // (`routes/api/shell/changes/**`) are the contract. The server module
 // `lib/server/changes.ts` owns the batch; nothing here decides anything.
 import { api } from './api.ts';
+import { plainStep } from './command-summary.ts';
 import type { ChangeCardView, ChangesState } from './types.ts';
 
 /** The working copy's name: History titles an applied batch from it. */
@@ -354,6 +355,8 @@ export interface ReplyBlock {
   more: number;
   /** Questions still unanswered: Review leads while any are open. */
   questions: number;
+  /** The open questions' text, shown when the pill opens (answered in Review). */
+  questionTexts: string[];
   /** `review`: Review is the main button; `apply`: Apply is. */
   lead: 'review' | 'apply';
   /** One small change the owner asked for: the main button reads "Apply now". */
@@ -370,18 +373,22 @@ export function planReplyBlock(
 ): ReplyBlock | null {
   if (!changes || changes.count <= 0) return null;
   const active = changes.cards.filter((c) => c.status === 'active');
-  const questions = active.reduce(
-    (n, c) => n + c.questions.filter((q) => q.state === 'open').length,
-    0,
+  const open = active.flatMap((c) =>
+    c.questions.filter((q) => q.state === 'open'),
   );
-  const lines = active.slice(0, 4).map((c) => c.summary || 'A change');
+  const questions = open.length;
+  const lines = active
+    .slice(0, 4)
+    .map((c) => plainStep(c.summary || 'A change'));
   return {
     count: changes.count,
     lines,
     more: Math.max(0, active.length - lines.length),
     questions,
+    questionTexts: open.map((q) => q.text),
     lead: questions > 0 || !changes.canApply ? 'review' : 'apply',
-    applyNow: changes.applyNow,
+    // A question open means Review leads, even for a small addition.
+    applyNow: changes.applyNow && questions === 0,
     canApply: changes.canApply,
     label: `${plural(changes.count, 'change')} waiting`,
   };

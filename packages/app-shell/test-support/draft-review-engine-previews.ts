@@ -3,23 +3,24 @@ import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { AppHost, type Command, MemoryVersionStore } from '../src/engine/index.ts';
+import { hostOwner } from '../src/test/engine-principal.ts';
 import { versionSummary } from '../src/lib/ui/command-summary.ts';
 
 const dir = mkdtempSync(join(tmpdir(), 'draft-review-engine-'));
 const live = await AppHost.open(join(dir, 'live'), { store: new MemoryVersionStore() });
 let draft: AppHost | undefined;
 try {
-  await live.execute({ type: 'defineModel', name: 'Order', label: 'Orders', fields: {
+  await live.execute(hostOwner(live), { type: 'defineModel', name: 'Order', label: 'Orders', fields: {
     name: { type: 'text' }, legacyField: { type: 'text', label: 'Previous reference' }, rating: { type: 'text', label: 'Customer rating' }, notes: { type: 'text' }, quantity: { type: 'integer', label: 'Quantity' }, price: { type: 'integer' },
     total: { type: 'integer', label: 'Total', calculated: { op: 'mul', left: { col: 'quantity' }, right: { col: 'price' } } },
   } }, { author: 'owner', approved: true });
-  await live.create('Order', { name: 'Existing', quantity: 2, price: 4, rating: '5', legacyField: 'kept for undo' });
-  await live.execute({ type: 'addMethod', model: 'Order', name: 'showTotal', method: { description: 'Show the saved total', code: 'return { result: record.total };' } }, { author: 'owner', approved: true });
-  await live.execute({ type: 'addMethod', model: 'Order', name: 'rebuildSummary', method: { description: 'Old summary', code: 'return { result: 1 };' } }, { author: 'owner', approved: true });
-  await live.execute({ type: 'defineModel', name: 'RetiredContact', label: 'Retired contacts', fields: { name: { type: 'text' } } }, { author: 'owner', approved: true });
-  await live.create('RetiredContact', { name: 'Earlier customer' });
-  draft = await live.forkDraft(join(dir, 'draft'), { store: new MemoryVersionStore() });
-  const execute = (command: Command) => draft!.execute(command, { author: 'owner', approved: true });
+  await live.create(hostOwner(live), 'Order', { name: 'Existing', quantity: 2, price: 4, rating: '5', legacyField: 'kept for undo' });
+  await live.execute(hostOwner(live), { type: 'addMethod', model: 'Order', name: 'showTotal', method: { description: 'Show the saved total', code: 'return { result: record.total };' } }, { author: 'owner', approved: true });
+  await live.execute(hostOwner(live), { type: 'addMethod', model: 'Order', name: 'rebuildSummary', method: { description: 'Old summary', code: 'return { result: 1 };' } }, { author: 'owner', approved: true });
+  await live.execute(hostOwner(live), { type: 'defineModel', name: 'RetiredContact', label: 'Retired contacts', fields: { name: { type: 'text' } } }, { author: 'owner', approved: true });
+  await live.create(hostOwner(live), 'RetiredContact', { name: 'Earlier customer' });
+  draft = await live.forkDraft(hostOwner(live), join(dir, 'draft'), { store: new MemoryVersionStore() });
+  const execute = (command: Command) => draft!.execute(hostOwner(draft!), command, { author: 'owner', approved: true });
   await execute({ type: 'loadRecords', model: 'Order', mode: 'insert', rows: [{ name: 'Loaded', quantity: 3, price: 5 }] });
   await execute({ type: 'renameField', model: 'Order', from: 'quantity', to: 'units' });
   async function preview() {

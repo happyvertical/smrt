@@ -10,6 +10,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { afterAll, describe, expect, it } from 'vitest';
+import { hostOwner } from '../test/engine-principal.ts';
 import { AppHost, bundledWorkerUrl, MemoryVersionStore } from './index.ts';
 
 // The bundle exists after the package build (`tools/bundle-worker.mjs`). The
@@ -53,12 +54,13 @@ describe.skipIf(!bundle)('bundled worker (#5213)', () => {
     try {
       for (const name of ['Chore', 'Chorus'])
         await host.execute(
+          hostOwner(host),
           { type: 'defineModel', name, fields: { title: { type: 'text' } } },
           { author: 't' },
         );
-      await host.create('Chore', { title: 'a' });
-      await host.create('Chorus', { title: 'b' });
-      expect(await host.list('Chore')).toHaveLength(1);
+      await host.create(hostOwner(host), 'Chore', { title: 'a' });
+      await host.create(hostOwner(host), 'Chorus', { title: 'b' });
+      expect(await host.list(hostOwner(host), 'Chore')).toHaveLength(1);
       expect(Object.keys(host.describe().models).sort()).toEqual([
         'Chore',
         'Chorus',
@@ -85,6 +87,7 @@ describe.skipIf(!bundle)('bundled worker (#5213)', () => {
       const url = (host as unknown as { workerUrl: URL }).workerUrl;
       expect(fileURLToPath(url)).toBe(fileURLToPath(bundle as URL));
       await host.execute(
+        hostOwner(host),
         {
           type: 'defineModel',
           name: 'Chore',
@@ -92,10 +95,10 @@ describe.skipIf(!bundle)('bundled worker (#5213)', () => {
         },
         { author: 't' },
       );
-      await host.create('Chore', { title: 'written' });
-      expect((await host.list('Chore')).map((r) => r.title)).toEqual([
-        'written',
-      ]);
+      await host.create(hostOwner(host), 'Chore', { title: 'written' });
+      expect(
+        (await host.list(hostOwner(host), 'Chore')).map((r) => r.title),
+      ).toEqual(['written']);
     } finally {
       await host.close();
     }

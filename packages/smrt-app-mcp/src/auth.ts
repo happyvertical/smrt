@@ -504,7 +504,14 @@ export function createMcpResourceAuth(
         const granted = payload.scope === '' ? [] : payload.scope.split(' ');
         if (granted.some((scope) => !scopePattern.test(scope)))
           return deny('invalid_token');
-        if (scopes.some((scope) => !granted.includes(scope)))
+        // A token may carry only part of what the resource advertises (consent
+        // narrows to the scopes the user holds). It needs at least one of them;
+        // which tools it may call is decided per tool by `toolScopes` and the
+        // workflow `requiredScopes`, never by requiring every advertised scope.
+        if (
+          scopes.length > 0 &&
+          !scopes.some((scope) => granted.includes(scope))
+        )
           return deny('insufficient_scope');
         const mapping = await resolvePrincipal(
           Object.freeze({
@@ -550,6 +557,8 @@ export function createMcpResourceAuth(
               kind: fields.kind as string | undefined,
               roles,
               scopes: [...granted],
+              // Tools without a scope mapping need every advertised scope.
+              ...(scopes.length ? { unmappedToolScopes: [...scopes] } : {}),
               tenantBinding:
                 (fields.tenantBinding as McpTenantBinding | undefined) ??
                 'direct-or-inherited',

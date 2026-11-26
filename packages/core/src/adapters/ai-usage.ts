@@ -2,6 +2,7 @@
  * In-memory AI usage tracking adapters.
  */
 
+import { createLogger } from '@happyvertical/logger';
 import type {
   AiUsageHandler,
   AiUsageSnapshot,
@@ -9,6 +10,8 @@ import type {
   SmrtAiUsageEvent,
 } from '@happyvertical/smrt-types';
 import type { DatabaseInterface } from '@happyvertical/sql';
+
+const logger = createLogger({ level: 'info' });
 
 function emptyStats(timestamp: number): AiUsageStats {
   return {
@@ -120,6 +123,150 @@ export const AI_USAGE_TAG_COLUMNS = Object.freeze({
  */
 export const AI_OWN_CALL_ID_TAG = 'aiCallId';
 
+// ---------------------------------------------------------------------------
+// Tracked calls' usage, wherever it is delivered (#5005)
+// ---------------------------------------------------------------------------
+
+const settledRunEvents = new WeakSet<object>();
+
+/**
+ * Mark the event a tracked call's settlement wrote, which the usage handlers
+ * then receive: it is the call's own record, never routed back to the call
+ * or reconciled again.
+ *
+ * @internal Called by the settlement only.
+ */
+export function markAiRunSettledUsageEvent(event: SmrtAiUsageEvent): void {
+  settledRunEvents.add(event);
+}
+
+/** Late usage of tracked calls (`system/ai-run-late-usage.ts` installs it). */
+interface AiRunLateUsageHooks {
+  /** Hand the event to its call's route; whether the route took it. */
+  route(event: SmrtAiUsageEvent, db: DatabaseInterface): Promise<boolean>;
+  /** Settle a released call whose route is gone; whether it did. */
+  reconcile(event: SmrtAiUsageEvent, db: DatabaseInterface): Promise<boolean>;
+  /** Whether the event names a tracked call core minted, in its tenant. */
+  isTrackedCall(
+    event: SmrtAiUsageEvent,
+    db: DatabaseInterface,
+  ): Promise<boolean>;
+}
+
+let lateUsageHooks: AiRunLateUsageHooks | undefined;
+
+/** @internal Installed once by `system/ai-run-late-usage.ts`. */
+export function setAiRunLateUsageHooks(hooks: AiRunLateUsageHooks): void {
+  lateUsageHooks = hooks;
+}
+
+/** The database each persistence handler writes to. */
+const persistenceDatabases = new WeakMap<object, DatabaseInterface>();
+
+function lateUsageCandidate(event: SmrtAiUsageEvent): boolean {
+  return (
+    !settledRunEvents.has(event) &&
+    typeof event.tags?.[AI_OWN_CALL_ID_TAG] === 'string' &&
+    typeof event.tags?.runId === 'string'
+  );
+}
+
+/**
+ * Hand a usage event of a tracked call to that call's route, when the
+ * pipeline writes to a database (its persistence handler) the route can be
+ * checked against. Returns whether the route took it; an event it does not
+ * take goes to every handler as usual.
+ *
+ * @internal Used by `dispatchAiUsageEvent`.
+ */
+export async function routeAiRunCallUsage(
+  event: SmrtAiUsageEvent,
+  handlers: readonly AiUsageHandler[],
+): Promise<boolean> {
+  if (!lateUsageHooks || !lateUsageCandidate(event)) return false;
+  for (const handler of handlers) {
+    const db = persistenceDatabases.get(handler as object);
+    if (db) return lateUsageHooks.route(event, db);
+  }
+  return false;
+}
+
+/**
+ * The tags that make a usage row a call of a run: its run and its step.
+ * Only a tracked call's settlement writes them (`aiRunCallTags`).
+ */
+const RUN_MEMBERSHIP_TAGS = [
+  'runId',
+  'stepIndex',
+  'stepName',
+  'stepInstanceId',
+  'attempt',
+] as const;
+
+/** Row ids minted for events whose `aiCallId` tag was not core's. */
+const mintedRowIds = new WeakMap<object, string>();
+const warnedTags = new Set<string>();
+
+function warnOnce(tag: string): void {
+  if (warnedTags.has(tag)) return;
+  warnedTags.add(tag);
+  logger.warn(
+    `[smrt] The "${tag}" usage tag is written by core's tracked calls only; a usage event carrying it from elsewhere is recorded without it`,
+  );
+}
+
+/**
+ * The row an event the persistence handler writes, and its id. A tracked
+ * call's event (the settled event, or one naming a tracked call core
+ * minted in the event's tenant on this database, by its route or its
+ * persisted `call` event, such as a recorder the host attached to its own
+ * client) is
+ * written as it is: `aiCallId` is its row id and its run tags place it in
+ * its run. Any other event is a call on its own: a caller's or binding's
+ * `aiCallId` is not its id (it gets a fresh one, so a reused value can
+ * never make another call's row be skipped by `ON CONFLICT (id) DO
+ * NOTHING`), and its `runId` and step tags do not make it a call of a run.
+ * Those tags are dropped (warned once each). The same event object saved
+ * again keeps the id it got the first time (a retried save writes one row).
+ */
+async function rowIdentity(
+  event: SmrtAiUsageEvent,
+  db: DatabaseInterface,
+): Promise<{
+  event: SmrtAiUsageEvent;
+  overrides: AiUsageRowOverrides;
+}> {
+  const callId = event.tags?.[AI_OWN_CALL_ID_TAG];
+  if (
+    settledRunEvents.has(event) ||
+    (callId !== undefined &&
+      lateUsageHooks &&
+      (await lateUsageHooks.isTrackedCall(event, db)))
+  ) {
+    return { event, overrides: {} };
+  }
+  if (!event.tags) return { event, overrides: { runId: null } };
+  const tags = { ...event.tags };
+  for (const tag of [AI_OWN_CALL_ID_TAG, ...RUN_MEMBERSHIP_TAGS]) {
+    if (tag in tags) {
+      delete tags[tag];
+      warnOnce(tag);
+    }
+  }
+  let id: string | undefined;
+  if (callId !== undefined) {
+    id = mintedRowIds.get(event);
+    if (!id) {
+      id = crypto.randomUUID();
+      mintedRowIds.set(event, id);
+    }
+  }
+  return {
+    event: { ...event, tags },
+    overrides: { runId: null, ...(id ? { id } : {}) },
+  };
+}
+
 /** A lifted tag value: a non-empty string, else NULL. */
 function liftedTag(
   tags: Record<string, string> | undefined,
@@ -211,15 +358,29 @@ export async function insertAiUsageRow(
 }
 
 /**
- * Persists normalized AI usage events into the framework system table.
- * Deduplicates on the call id (`aiCallId` tag) when the call carries one.
+ * Persists normalized AI usage events into the framework system table. A
+ * tracked call's event keeps its core-minted call id (`aiCallId`) as the row
+ * id, so its row is written once; see {@link rowIdentity} for any other.
  */
 export class AiUsagePersistenceHandler implements AiUsageHandler {
-  constructor(private readonly db: DatabaseInterface) {}
+  constructor(private readonly db: DatabaseInterface) {
+    persistenceDatabases.set(this, db);
+  }
 
   async handle(event: SmrtAiUsageEvent): Promise<void> {
     try {
-      await insertAiUsageRow(this.db, event);
+      // A released tracked call whose route this process no longer has is
+      // settled from its persisted reservation, so its row and its run's
+      // totals agree.
+      if (
+        lateUsageHooks &&
+        lateUsageCandidate(event) &&
+        (await lateUsageHooks.reconcile(event, this.db))
+      ) {
+        return;
+      }
+      const { event: row, overrides } = await rowIdentity(event, this.db);
+      await insertAiUsageRow(this.db, row, overrides);
     } catch (error) {
       throw new Error(
         `Failed to persist AI usage event for ${event.provider}:${event.model}: ${

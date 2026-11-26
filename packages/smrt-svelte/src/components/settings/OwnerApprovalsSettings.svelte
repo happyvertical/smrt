@@ -1,3 +1,8 @@
+<!--
+  OwnerApprovalsSettings: every assistant action waiting for the owner's
+  approval, as AssistantApprovalCards. It keeps polling while a hold is
+  unsettled, and finds new ones while the list is empty.
+-->
 <script lang="ts">
 import {
   type AssistantApprovalView,
@@ -17,8 +22,11 @@ let {
   ondecided,
   onsettled,
 }: {
+  /** Server-loaded approvals to show first; the list then refreshes through `transport`. */
   approvals?: AssistantApprovalView[];
+  /** Connection used to list approvals and send the owner's decision. */
   transport: AssistantTransport;
+  /** Called after an owner decision is accepted, to refresh the surrounding page. */
   ondecided?: () => void | Promise<void>;
   /** A known unsettled hold succeeded; invoked once before its card is removed. */
   onsettled?: () => void | Promise<void>;

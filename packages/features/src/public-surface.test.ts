@@ -48,6 +48,7 @@ describe('package entry', () => {
       'FEATURE_BACKUP_VAULT',
       'FEATURE_CLOUD_HOSTED',
       'FEATURE_PLUGINS_REMOTE',
+      'FEATURE_APP_METHODS',
       'STANDARD_FEATURE_KEYS',
       'STANDARD_FEATURES',
       'defineFrameworkFeature',

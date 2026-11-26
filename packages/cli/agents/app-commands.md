@@ -219,9 +219,14 @@ Agent docs (#4878): `install` runs `docs:agents`, `dev` refreshes a missing or s
   (`inspectUserApp`: integrity and a valid recorded definition) and fails
   closed when the engine is missing. The cloud plan carries the section
   (`plan.bundle.userApp`, in the bundle digest; `verifyCloudMigration` compares
-  digests); `runSharedCloudMigration` refuses it (the shared sync/apply stream has
-  no receiver for run-time tables; a per-tenant receiver needs the caller
-  hand-off, #5188).
+  digests); `runSharedCloudMigration` hands it to the transport's
+  `receiveUserApp` (the hosted receiver, `POST /api/shell/app/receive`,
+  app-shell `agents/cloud-profile.md`) after the rows and assets, records the
+  digest in the journal once the receiver reports it verified (counts and
+  digests of every table and the version history), and refuses a transport
+  without one before anything is sent. The shipped HTTP transport and the
+  link-token authentication the shell would need for it are not built: the
+  receiver accepts an owner session only.
 - **Cloud migration** (#4806, `cloud-migration.ts`, library only; hosted
   routes and `smrt app cloud` commands are follow-ups): built on a
   `smrt-cloud-link-v1` link (app-runtime README). `planCloudMigration`
