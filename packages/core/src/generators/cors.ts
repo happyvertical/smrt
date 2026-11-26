@@ -86,14 +86,18 @@ export function resolveCorsOrigin(
 
 /**
  * Headers for an actual (non-preflight) response to `requestOrigin`. Empty when
- * the origin is not allowed.
+ * CORS is off; only `Vary: Origin` when the origin is absent or not allowed.
  */
 export function corsResponseHeaders(
   requestOrigin: string | null | undefined,
   config: CorsConfig | undefined,
 ): Record<string, string> {
+  // With CORS on, the answer depends on the request's Origin, so every
+  // response varies on it, an absent or disallowed Origin included: a shared
+  // cache must not serve a header-less copy to an allowed origin.
+  if (!isCorsEnabled(config)) return {};
   const origin = resolveCorsOrigin(requestOrigin, config);
-  if (!origin) return {};
+  if (!origin) return { Vary: 'Origin' };
   const headers: Record<string, string> = {
     'Access-Control-Allow-Origin': origin,
     Vary: 'Origin',
@@ -120,10 +124,10 @@ export function corsPreflightHeaders(
     'Access-Control-Allow-Headers': CORS_ALLOWED_HEADERS,
     'Access-Control-Max-Age': CORS_MAX_AGE,
   };
+  if (isCorsEnabled(config)) headers.Vary = 'Origin';
   const origin = resolveCorsOrigin(requestOrigin, config);
   if (origin) {
     headers['Access-Control-Allow-Origin'] = origin;
-    headers.Vary = 'Origin';
     if (config?.allowCredentials === true) {
       headers['Access-Control-Allow-Credentials'] = 'true';
     }
@@ -144,7 +148,8 @@ export function corsPreflightResponse(
 
 /**
  * Add the CORS headers for `request`'s origin to `response`. Returns the
- * response untouched when the origin is not allowed. An existing `Vary` is
+ * response untouched only when CORS is off; otherwise `Vary: Origin` is always
+ * added. An existing `Vary` is
  * extended, not replaced.
  */
 export function applyCorsHeaders(

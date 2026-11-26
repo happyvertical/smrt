@@ -180,7 +180,11 @@ listed verbatim (never `*`; a `*` entry is dropped), with `Vary: Origin`;
 `Access-Control-Allow-Credentials: true` only for an echoed origin and only
 with `allowCredentials`, so an empty list never carries credentials; a
 preflight (`corsPreflightResponse`, 200) answers with the allowed methods,
-headers and max-age; an existing `Vary` is extended, not replaced. REST
+headers and max-age; an existing `Vary` is extended, not replaced. With a
+non-empty allow-list every response (no Origin, disallowed, allowed; 304, error,
+preflight) carries `Vary: Origin`, so a shared cache never serves one origin's
+answer to another; only an allowed origin gets `Access-Control-Allow-Origin`
+and credentials. REST
 (`enableCors` + `allowedOrigins` + `allowCredentials`) and generated SvelteKit
 routes (`sveltekit.cors: { allowedOrigins, allowCredentials }`) both decide
 through it, so one origin gets identical headers on both. SvelteKit default is

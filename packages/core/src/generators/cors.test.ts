@@ -57,9 +57,9 @@ describe('isCorsEnabled', () => {
 });
 
 describe('corsResponseHeaders', () => {
-  it('is empty for a disallowed or absent origin', () => {
-    expect(corsResponseHeaders(EVIL, config)).toEqual({});
-    expect(corsResponseHeaders(null, config)).toEqual({});
+  it('is empty when CORS is off, only Vary for a disallowed or absent origin', () => {
+    expect(corsResponseHeaders(EVIL, config)).toEqual({ Vary: 'Origin' });
+    expect(corsResponseHeaders(null, config)).toEqual({ Vary: 'Origin' });
     expect(corsResponseHeaders(APP, undefined)).toEqual({});
   });
   it('echoes the origin with Vary and no credentials by default', () => {
@@ -75,7 +75,7 @@ describe('corsResponseHeaders', () => {
     expect(
       corsResponseHeaders(APP, creds)['Access-Control-Allow-Credentials'],
     ).toBe('true');
-    expect(corsResponseHeaders(EVIL, creds)).toEqual({});
+    expect(corsResponseHeaders(EVIL, creds)).toEqual({ Vary: 'Origin' });
     expect(
       corsResponseHeaders(APP, {
         allowedOrigins: ['*'],
@@ -107,7 +107,7 @@ describe('corsPreflightHeaders', () => {
       allowCredentials: true,
     });
     expect(headers).not.toHaveProperty('Access-Control-Allow-Origin');
-    expect(headers).not.toHaveProperty('Vary');
+    expect(headers.Vary).toBe('Origin');
     expect(headers).not.toHaveProperty('Access-Control-Allow-Credentials');
     expect(headers['Access-Control-Allow-Methods']).toBe(CORS_ALLOWED_METHODS);
   });
@@ -120,10 +120,22 @@ describe('corsPreflightHeaders', () => {
 });
 
 describe('applyCorsHeaders', () => {
-  it('returns the same response for a disallowed origin', () => {
+  it('returns the same response when CORS is off', () => {
     const res = new Response('x');
-    expect(applyCorsHeaders(res, req(EVIL), config)).toBe(res);
-    expect(applyCorsHeaders(res, req(), config)).toBe(res);
+    expect(applyCorsHeaders(res, req(APP), undefined)).toBe(res);
+    expect(applyCorsHeaders(res, req(APP), { allowedOrigins: [] })).toBe(res);
+  });
+  it('adds only Vary: Origin for a disallowed or absent origin', () => {
+    for (const origin of [EVIL, undefined]) {
+      const out = applyCorsHeaders(
+        new Response(null, { status: 304 }),
+        req(origin),
+        config,
+      );
+      expect(out.status).toBe(304);
+      expect(out.headers.get('Vary')).toBe('Origin');
+      expect(out.headers.get('Access-Control-Allow-Origin')).toBeNull();
+    }
   });
   it('copies status, body and headers and adds the CORS set', async () => {
     const res = new Response('{"a":1}', {

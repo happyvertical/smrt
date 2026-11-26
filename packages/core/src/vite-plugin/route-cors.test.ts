@@ -137,10 +137,11 @@ describe('emitted CORS wrapper at run time', () => {
     expect(res.headers.get('Access-Control-Allow-Credentials')).toBe('true');
   });
 
-  it('adds no CORS headers for another origin or none', async () => {
+  it('adds no CORS headers, only Vary, for another origin or none', async () => {
     for (const origin of [EVIL, undefined]) {
       const res = await route.GET(event(origin));
       expect(res.status).toBe(200);
+      expect(res.headers.get('Vary')).toBe('Origin');
       expect(res.headers.get('Access-Control-Allow-Origin')).toBeNull();
       expect(res.headers.get('Access-Control-Allow-Credentials')).toBeNull();
     }
@@ -154,6 +155,9 @@ describe('emitted CORS wrapper at run time', () => {
     const other = await route.GET(event(EVIL, '?boom=1'));
     expect(other.status).toBe(401);
     expect(other.headers.get('Access-Control-Allow-Origin')).toBeNull();
+    expect(other.headers.get('Vary')).toBe('Origin');
+    const none = await route.GET(event(undefined, '?boom=1'));
+    expect(none.headers.get('Vary')).toBe('Origin');
   });
 
   it('rethrows anything that is not an HTTP error', async () => {
