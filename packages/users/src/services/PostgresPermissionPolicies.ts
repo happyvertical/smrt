@@ -320,6 +320,13 @@ function buildDeletePolicySql(
   ];
 }
 
+function buildForceRlsStatements(qualifiedTable: string): string[] {
+  return [
+    `ALTER TABLE ${qualifiedTable} ENABLE ROW LEVEL SECURITY`,
+    `ALTER TABLE ${qualifiedTable} FORCE ROW LEVEL SECURITY`,
+  ];
+}
+
 /**
  * Guest audit sink (#5196): the one INSERT policy a guest's own context gets
  * on the audit table. A guest has no user row, so its audit rows carry
@@ -362,11 +369,9 @@ export function generateGuestAuditInsertPolicySql(
   const tenant = quoteIdent(options.tenantField ?? 'tenant_id');
   const kind = quoteIdent(options.actorKindField ?? 'actor_kind');
   const condition = `${kind} = 'guest' AND ${tenant}::text = smrt_current_tenant_id()`;
-  const statements: string[] = [];
-  if (options.enableRls) {
-    statements.push(`ALTER TABLE ${qualifiedTable} ENABLE ROW LEVEL SECURITY`);
-    statements.push(`ALTER TABLE ${qualifiedTable} FORCE ROW LEVEL SECURITY`);
-  }
+  const statements: string[] = options.enableRls
+    ? buildForceRlsStatements(qualifiedTable)
+    : [];
   statements.push(
     `DROP POLICY IF EXISTS ${quoteIdent(policyName)} ON ${qualifiedTable}`,
     `CREATE POLICY ${quoteIdent(policyName)} ON ${qualifiedTable} FOR INSERT WITH CHECK (${condition})`,
@@ -652,8 +657,7 @@ export function generatePostgresPermissionSql(
 
   for (const target of Array.from(candidateTargets.values())) {
     const qualifiedTable = `${quoteIdent(target.schemaName)}.${quoteIdent(target.tableName)}`;
-    statements.push(`ALTER TABLE ${qualifiedTable} ENABLE ROW LEVEL SECURITY`);
-    statements.push(`ALTER TABLE ${qualifiedTable} FORCE ROW LEVEL SECURITY`);
+    statements.push(...buildForceRlsStatements(qualifiedTable));
 
     const selectPermissions = Array.from(
       target.actions.get('SELECT') ?? [],
