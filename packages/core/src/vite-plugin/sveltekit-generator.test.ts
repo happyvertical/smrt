@@ -308,7 +308,7 @@ describe('SvelteKit Route Generator', () => {
           String(path).includes(`reports/[id]/${action}/+server.ts`),
         );
       expect(write?.[1]).toContain(
-        `requireRoutePermission(locals, "${permission}");`,
+        `requireRouteAccess(locals, "${action}", true, "${permission}");`,
       );
       expect(write?.[1]).toContain(`action: '${action}',`);
     }
@@ -648,7 +648,7 @@ describe('SvelteKit Route Generator', () => {
       // item's collection, matching the permission catalog (#2977).
       expect(content).toContain('const PERMISSION_COLLECTION = "widgets";');
       expect(content).toContain(
-        'requireRoutePermission(locals, "restoreSpecial");',
+        'requireRouteAccess(locals, "restoreSpecial", true, "restoreSpecial");',
       );
     });
 
@@ -715,7 +715,7 @@ describe('SvelteKit Route Generator', () => {
       const content = route?.[1] as string;
       expect(content).toContain('const PERMISSION_COLLECTION = "gadgets";');
       expect(content).toContain(
-        'requireRoutePermission(locals, "importBatch");',
+        'requireRouteAccess(locals, "importBatch", true, "importBatch");',
       );
     });
 
@@ -1759,7 +1759,7 @@ describe('SvelteKit Route Generator', () => {
         'export const GET: RequestHandler = async ({ locals, params, request }) => {',
       );
       // Fail-closed auth guard (#1540): reads do not require auth as a mutation.
-      expect(content).toContain('requireRouteAuth(locals, false);');
+      expect(content).toMatch(/requireRouteAccess\(locals, "\w+", false\);/);
       expect(content).toContain(
         "type ActionArgs = Parameters<Document['evaluateReviewProfileAction']>;",
       );
@@ -2183,7 +2183,9 @@ describe('SvelteKit Route Generator', () => {
         'export const POST: RequestHandler = async ({ locals, params, request }) => {',
       );
       // Fail-closed auth guard (#1540): POST is a mutating verb.
-      expect(content).toContain('requireRouteAuth(locals, true);');
+      expect(content).toMatch(
+        /requireRouteAccess\(locals, "\w+", true, "\w+"\);/,
+      );
       expect(content).not.toContain('{ params, request }');
     });
 

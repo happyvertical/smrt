@@ -17,6 +17,11 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { SmrtCollection } from '../collection.js';
 import { assertCreateTargetSurface } from '../create-target.js';
 import { field } from '../decorators/index.js';
+import {
+  apiPrincipalFromLocals,
+  authorize,
+  stripTenantFilters,
+} from '../generators/route-authz.js';
 import { reportUnexpectedHttpError } from '../generators/route-error';
 import { clearManifestCache } from '../manifest/manifest-loader.js';
 import { SmrtObject } from '../object.js';
@@ -298,6 +303,10 @@ function writeWorkspaceCoreShim(projectRoot: string): void {
       'export function enterRequestTenantContext(context) { globalThis.__smrtGeneratedActiveTenantContext = context; (globalThis.__smrtGeneratedTenantContexts ??= []).push(context); }',
       // The real request helpers. `applyUpdateInput` runs the real update
       // rule over the fixture registry's fields.
+      // The real shared authorization decision (#5195).
+      'export const authorize = (input) => globalThis.__smrtGeneratedRequestHelpers.authorize(input);',
+      'export const apiPrincipalFromLocals = (locals, tenant) => globalThis.__smrtGeneratedRequestHelpers.apiPrincipalFromLocals(locals, tenant);',
+      'export const stripTenantFilters = (principal, columns, where) => globalThis.__smrtGeneratedRequestHelpers.stripTenantFilters(principal, columns, where);',
       'export const publicSerializerOf = (value) => globalThis.__smrtGeneratedRequestHelpers.publicSerializerOf(value);',
       'export const toPublicJSONValue = (value, options) => globalThis.__smrtGeneratedRequestHelpers.toPublicJSONValue(value, options);',
       // The fixture registry declares no field policy, so a list query passes
@@ -376,6 +385,9 @@ describe('generated SvelteKit helper runtime', () => {
       globalThis as Record<string, unknown>
     ).__smrtGeneratedIsServiceOptionInput = isServiceOptionInput;
     (globalThis as Record<string, unknown>).__smrtGeneratedRequestHelpers = {
+      apiPrincipalFromLocals,
+      authorize,
+      stripTenantFilters,
       assertCreateInput,
       assertCreateTargetSurface,
       assignUpdateInput,
@@ -1366,7 +1378,6 @@ describe('generated SvelteKit helper runtime', () => {
       },
       request: new Request('http://localhost/api/widgets', {
         body: JSON.stringify({
-          tenantId: 'forged-tenant',
           userId: 'forged-user',
         }),
         method: 'POST',
@@ -1387,6 +1398,39 @@ describe('generated SvelteKit helper runtime', () => {
       'widgets.create',
     ]);
     expect(JSON.stringify(contexts[0])).not.toContain('forged');
+  });
+
+  it('refuses a create body that names another tenant (#5195)', async () => {
+    const route = await importGeneratedCollectionPost(true);
+    const created: unknown[] = [];
+    (globalThis as Record<string, unknown>).__smrtGeneratedRouteCollection = {
+      create: async (data: unknown) => {
+        created.push(data);
+        return { toPublicJSON: () => ({ id: 'x' }) };
+      },
+    };
+    const locals = {
+      permissions: ['fields.policy.manage', 'widgets.create'],
+      tenantId: 'trusted-tenant',
+      user: { id: 'trusted-user' },
+    };
+    const post = (body: unknown) =>
+      route.POST({
+        locals,
+        request: new Request('http://localhost/api/widgets', {
+          body: JSON.stringify(body),
+          method: 'POST',
+        }),
+      });
+    await expect(post({ tenantId: 'forged-tenant' })).rejects.toMatchObject({
+      status: 403,
+      body: { code: 'TENANT_MISMATCH' },
+    });
+    await expect(post({ tenant_id: null })).rejects.toMatchObject({
+      status: 403,
+    });
+    expect(created).toEqual([]);
+    expect((await post({ tenantId: 'trusted-tenant' })).status).toBe(201);
   });
 
   it.each([
@@ -1500,7 +1544,7 @@ describe('generated SvelteKit helper runtime', () => {
       // a mocked factory. It must construct and initialize against this DB.
       writeFileSync(
         join(projectRoot, 'node_modules/@happyvertical/smrt-core/index.js'),
-        `export const { ObjectRegistry, isRuntimeModelEnabled, hasRuntimeExposureGate, createGeneratedCollectionAccess, normalizeCustomActionFailure, normalizeTypedHttpError, reportUnexpectedHttpError, canonicalReadRepresentation, computeTableVersionEtag, getTableVersion, ifNoneMatchHasConcreteMatch, ifNoneMatchSatisfied, parseRestListWhere, applyWhereScope, resolveAnonymousTenantReadScope, scopeTenantReadOptions, publicSerializerOf, toPublicJSONValue, assertQueryAccess, assertCreateTargetSurface, assertCreateInput, isTenantScopedModel, enterRequestTenantContext, getRequestTenantContext, resolveTenantEtagDiscriminator, enterRequestTenancy, tenancyReadScope, scopeActionOptions, boundTenancyCacheScoped, boundTenancyEtagDiscriminator, runInRequestTenancy } = globalThis.__smrt4320Core;`,
+        `export const { apiPrincipalFromLocals, authorize, stripTenantFilters, ObjectRegistry, isRuntimeModelEnabled, hasRuntimeExposureGate, createGeneratedCollectionAccess, normalizeCustomActionFailure, normalizeTypedHttpError, reportUnexpectedHttpError, canonicalReadRepresentation, computeTableVersionEtag, getTableVersion, ifNoneMatchHasConcreteMatch, ifNoneMatchSatisfied, parseRestListWhere, applyWhereScope, resolveAnonymousTenantReadScope, scopeTenantReadOptions, publicSerializerOf, toPublicJSONValue, assertQueryAccess, assertCreateTargetSurface, assertCreateInput, isTenantScopedModel, enterRequestTenantContext, getRequestTenantContext, resolveTenantEtagDiscriminator, enterRequestTenancy, tenancyReadScope, scopeActionOptions, boundTenancyCacheScoped, boundTenancyEtagDiscriminator, runInRequestTenancy } = globalThis.__smrt4320Core;`,
       );
       const objectFilePath = join(projectRoot, 'src/lib/objects/Widget.ts');
       writeFileSync(
@@ -2060,7 +2104,10 @@ describe('generated SvelteKit helper runtime', () => {
 
     it('refuses a super-admin bypass on a model that does not opt in', async () => {
       const routes = await importTenantWrites();
+      // The bypass does not stand in for the permission here either, so the
+      // caller holds the write permissions and the tenancy gate is what refuses.
       const superAdmin = {
+        permissions: WRITES,
         tenantContext: { superAdminBypass: true },
         user: { id: 'operator' },
       };
@@ -2268,12 +2315,59 @@ describe('generated SvelteKit helper runtime', () => {
           tenantContext: { permissions: new Set(['widgets.create']) },
           user: { id: 'user-1' },
         },
-        { tenantContext: { superAdminBypass: true }, user: { id: 'admin-1' } },
       ]) {
         const response = await route.POST({ locals, request: postRequest() });
         expect(response.status).toBe(201);
       }
-      expect(calls).toHaveLength(6);
+      expect(calls).toHaveLength(5);
+    });
+
+    it('takes permissions from the first defined source only, never a union (#5195)', async () => {
+      const route = await importGeneratedWrite(
+        ['create'],
+        'src/routes/api/widgets/+server.ts',
+        'perm-post-first-source-route.mjs',
+      );
+      const calls = trackCreate();
+      for (const locals of [
+        {
+          permissions: [],
+          smrtPermissions: ['widgets.create'],
+          user: { id: 'user-1' },
+        },
+        {
+          permissionSet: ['widgets.read'],
+          tenantContext: { permissions: ['widgets.create'] },
+          user: { id: 'user-1' },
+        },
+      ]) {
+        await expect(
+          route.POST({ locals, request: postRequest() }),
+        ).rejects.toMatchObject({
+          status: 403,
+          body: { code: 'PERMISSION_DENIED' },
+        });
+      }
+      expect(calls).toHaveLength(0);
+    });
+
+    it('does not let a super-admin bypass stand in for the permission on a model that does not opt in', async () => {
+      const route = await importGeneratedWrite(
+        ['create'],
+        'src/routes/api/widgets/+server.ts',
+        'perm-post-bypass-route.mjs',
+      );
+      const calls = trackCreate();
+      await expect(
+        route.POST({
+          locals: {
+            tenantContext: { superAdminBypass: true },
+            user: { id: 'admin-1' },
+          },
+          request: postRequest(),
+        }),
+      ).rejects.toMatchObject({ status: 403 });
+      expect(calls).toHaveLength(0);
     });
 
     it('requires update for PUT and delete for DELETE', async () => {
@@ -3162,18 +3256,15 @@ describe('generated SvelteKit helper runtime', () => {
       expect(countCalls[0].where).toEqual({ title: 'kept', tenantId: null });
     });
 
-    it('passes the caller filter through unchanged when a tenant context is active', async () => {
+    it('strips the caller filter on a tenant column when a tenant context is active (#5195)', async () => {
       const { invoke, listCalls } = await listWithQuery(
         '?tenantId=tenant-a&tenant_id=tenant-b',
         { tenantId: 'tenant-a', user: { id: 'user-1' } },
       );
       await invoke();
-      // The collection and the tenant interceptor decide what to do with it;
-      // the route adds no scope of its own here.
-      expect(listCalls[0].where).toEqual({
-        tenantId: 'tenant-a',
-        tenant_id: 'tenant-b',
-      });
+      // The tenant a read acts in comes from the principal, never from a
+      // query parameter: the shared rule drops every filter on a tenant column.
+      expect(listCalls[0].where).toEqual({});
     });
 
     it('answers a where clause the collection refuses with its 4xx status', async () => {

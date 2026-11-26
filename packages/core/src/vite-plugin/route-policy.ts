@@ -14,6 +14,7 @@
 
 import type { ApiConfig } from '../registry/types.js';
 import type { SmartObjectDefinition } from '../scanner/types';
+import { toSnakeCase } from '../utils/naming';
 
 export function getApiConfigObject(apiConfig: unknown): ApiConfig | null {
   if (!apiConfig || typeof apiConfig !== 'object') {
@@ -62,6 +63,49 @@ export function manifestOwnershipProperties(
       ? (config as { field?: unknown }).field
       : undefined;
   return [typeof field === 'string' && field.length > 0 ? field : 'tenantId'];
+}
+
+/**
+ * The snake_case columns a model's manifest says record a row's tenant. The
+ * shared decision (`route-authz.ts`) always checks `tenant_id` as well.
+ */
+export function manifestTenantColumns(
+  objectDef: SmartObjectDefinition,
+): string[] {
+  return manifestOwnershipProperties(objectDef).map((name) =>
+    toSnakeCase(name),
+  );
+}
+
+/**
+ * Emit the request-principal helpers of a generated route: the principal is
+ * derived from `locals` by the shared `apiPrincipalFromLocals` (#5195), the
+ * same derivation every operation decision, tenant lookup and permission
+ * projection of the route reads. The tenant context the host already entered
+ * stands in when `locals` names no tenant.
+ *
+ * Expects `getCurrentTenant` (`getRequestTenantContext`) and
+ * `apiPrincipalFromLocals` imported from `@happyvertical/smrt-core`.
+ */
+export function generateRoutePrincipalHelper(): string {
+  return `
+// The principal of this request, by the rule REST shares (#5195).
+function routePrincipal(locals: unknown) {
+  const active = (getCurrentTenant() as { tenantId?: unknown } | undefined)?.tenantId;
+  return apiPrincipalFromLocals(locals, typeof active === 'string' && active ? active : null);
+}
+
+// The tenant the request acts for.
+function requestTenantOf(locals: unknown): string | undefined {
+  return routePrincipal(locals).tenantId ?? undefined;
+}
+
+// The permissions a caller's responses are projected with: the principal's one
+// permission source, so a protected field is shown by the grants that guard writes.
+function getPublicJsonOptions(locals: unknown): { permissions?: Iterable<string> } {
+  return { permissions: routePrincipal(locals).permissions };
+}
+`;
 }
 
 /**

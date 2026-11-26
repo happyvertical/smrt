@@ -164,7 +164,7 @@ describe('Issue #1540 (facet 2): tenant-context establishment', () => {
     );
     expect(collectionRoute).toContain('enterTenancy(locals, "create");');
     // Auth guard is still present (every route is fail-closed).
-    expect(collectionRoute).toContain('requireRouteAuth(locals,');
+    expect(collectionRoute).toContain('requireRouteAccess(locals,');
   });
 
   it('publishes only a complete trusted principal for opted-in non-tenant routes', async () => {
