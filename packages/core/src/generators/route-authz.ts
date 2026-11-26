@@ -199,8 +199,10 @@ export function stripTenantFilters<T extends Record<string, unknown>>(
  * generated guard has always used (`principalFromLocals`): signed in when
  * `user` or `session` is an object or `smrtAuth === true` (never a callable
  * `locals.auth`); tenant from `tenantId`, then `user`, `session`,
- * `tenantContext`; permissions from `permissions`, `permissionSet`,
- * `smrtPermissions` and `tenantContext.permissions` together; a super-admin
+ * `tenantContext`; permissions from the first defined of `permissions`, `permissionSet`,
+ * `smrtPermissions`, `tenantContext.permissions` (an empty list is defined and
+ * grants nothing; only string entries count; a deliberate narrowing of the old
+ * any-source guard); a super-admin
  * bypass only from `tenantContext.superAdminBypass === true`. `locals` has no
  * cross-tenant marker, so `allowCrossTenant` is false.
  *
@@ -222,13 +224,15 @@ export function apiPrincipalFromLocals(
       ? (context as Record<string, unknown>).permissions
       : undefined;
   const permissions = new Set<string>();
-  for (const source of [
+  // One authoritative source, as REST's single `principal.permissions`: the
+  // first defined one. An empty list is defined and grants nothing.
+  const source = [
     l.permissions,
     l.permissionSet,
     l.smrtPermissions,
     contextPermissions,
-  ]) {
-    if (!Array.isArray(source) && !(source instanceof Set)) continue;
+  ].find((candidate) => candidate !== undefined && candidate !== null);
+  if (Array.isArray(source) || source instanceof Set) {
     for (const slug of source as Iterable<unknown>) {
       if (typeof slug === 'string') permissions.add(slug);
     }

@@ -228,22 +228,28 @@ describe('apiPrincipalFromLocals', () => {
       'a',
     );
   });
-  it('unions every permission source', () => {
-    const p = apiPrincipalFromLocals({
-      permissions: ['a.create'],
-      tenantContext: { permissions: new Set(['b.update']) },
-    });
-    expect([...(p.permissions ?? [])].sort()).toEqual(['a.create', 'b.update']);
-  });
-  it('reads a grant from any source, even when permissions is empty', () => {
+  it('takes the first defined permission source', () => {
     const grants = (locals: Record<string, unknown>) => [
       ...(apiPrincipalFromLocals(locals).permissions ?? []),
     ];
-    expect(grants({ permissions: [], permissionSet: ['x.create'] })).toEqual([
-      'x.create',
-    ]);
-    expect(grants({ smrtPermissions: new Set(['y.update']) })).toEqual([
-      'y.update',
+    const ctx = { permissions: ['t.all'] };
+    expect(
+      grants({
+        permissions: [],
+        permissionSet: ['x.create'],
+        tenantContext: ctx,
+      }),
+    ).toEqual([]);
+    expect(grants({ permissions: new Set(), tenantContext: ctx })).toEqual([]);
+    expect(grants({ permissionSet: ['x.create'], tenantContext: ctx })).toEqual(
+      ['x.create'],
+    );
+    expect(
+      grants({ smrtPermissions: new Set(['y.update']), tenantContext: ctx }),
+    ).toEqual(['y.update']);
+    expect(grants({ tenantContext: ctx })).toEqual(['t.all']);
+    expect(grants({ permissions: null, permissionSet: ['n.get'] })).toEqual([
+      'n.get',
     ]);
     expect(grants({ permissions: ['a.b', 5, null, 'c.d'] })).toEqual([
       'a.b',
