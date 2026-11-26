@@ -15,6 +15,7 @@ import { SmrtCollection } from '../collection';
 import { field, foreignKey } from '../decorators';
 import { SmrtObject } from '../object';
 import { ObjectRegistry, smrt } from '../registry';
+import { setDatabaseSyncDeviceId } from '../sync-device';
 import { snapshotObjectRegistryState } from '../test-utils';
 import { getTestDatabase } from '../testing/database';
 
@@ -396,6 +397,30 @@ describe.each(engines)('cascade delete of a moved child on %s', (engine) => {
       expect(await stepBill(String(step.id))).toBe(billB.id);
       expect(await count('cascade_moved_notes', String(note.id))).toBe(1);
       expect(await count('cascade_moved_bills', String(billA.id))).toBe(0);
+    },
+  );
+
+  it.runIf(engine === 'pglite')(
+    'tombstones synced children of a savepointed cascade under the local device',
+    async () => {
+      const device = randomUUID();
+      setDatabaseSyncDeviceId(db, device);
+      const billA = await bills.create({ title: 'A' } as never);
+      const step = await steps.create({
+        billId: billA.id,
+        label: 's',
+      } as never);
+      await db.query(
+        `UPDATE cascade_moved_steps SET _sync_origin_device_id = '${device}', _sync_revision = 1 WHERE id = '${step.id}'`,
+      );
+
+      await billA.delete();
+
+      expect(await count('cascade_moved_steps', String(step.id))).toBe(0);
+      const tombstones = await db.query(
+        `SELECT row_id FROM _smrt_sync_tombstones WHERE row_id = '${step.id}'`,
+      );
+      expect(tombstones.rows).toHaveLength(1);
     },
   );
 

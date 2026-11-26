@@ -837,8 +837,9 @@ async function cascadeChildren(
       const tables = new Set(ctx.affectedTables);
       const classes = new Map(ctx.affectedTableClasses);
       try {
-        await (ctx.db as TransactionCapable).transaction?.call(
+        await withEmbeddedWriteTransaction(
           ctx.db,
+          isEmbeddedDatabase(ctx.db),
           (savepoint) => drive(savepoint, true),
         );
       } catch (error) {

@@ -154,7 +154,8 @@ describe.skipIf(!pgUrl)(
         await sleep(50);
         const result = await observer.query(
           `SELECT query FROM pg_stat_activity
-            WHERE wait_event_type = 'Lock' AND datname = current_database()`,
+            WHERE wait_event_type = 'Lock' AND datname = current_database()
+              AND query LIKE 'DELETE FROM "${STEPS}"%'`,
         );
         blockedSql = String(result.rows[0]?.query ?? '');
       }
