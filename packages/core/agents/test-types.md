@@ -27,3 +27,13 @@ test project separately from the source project when reporting compiler cost.
 Before claiming that drift is caught, add a temporary included test referencing
 a deleted type-only import, a missing member, and an invalid argument; confirm
 the normal package `typecheck` command fails, then remove the probe and rerun it.
+
+## Core coverage in CI
+
+The Coverage Gate does not re-run this suite (#5648). The three core shards
+write `--coverage --reporter=blob` blobs, and `scripts/core-coverage-merge.mjs`
+merges them, failing unless exactly n/n blobs exist and their test files equal
+`vitest list --filesOnly`. Anything that changes which files that command lists
+(`include`, `exclude`, a new test directory) changes what the gate requires;
+the coverage `include`/`exclude` in `vitest.config.ts` stays the single source
+for both the shards and the merge. See `.github/CI.md` (Coverage Gate).

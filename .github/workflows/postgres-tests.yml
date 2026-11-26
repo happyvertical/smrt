@@ -141,7 +141,8 @@ jobs:
       max-parallel: 5
       matrix:
         # scripts/postgres-test-shard.mjs: ingestion as two file slices, and
-        # every other registered suite in three duration-balanced groups.
+        # every other registered unit (core as two) in three duration-balanced
+        # groups.
         shard: ['ingestion:1/2', 'ingestion:2/2', 'remaining:1/3', 'remaining:2/3', 'remaining:3/3']
     # Each shard owns its service. CI_POSTGRES_BASE_URL keeps
     # scripts/run-with-ci-postgres.mjs on its managed path, so each package
@@ -207,8 +208,10 @@ jobs:
       - name: Run registered PostgreSQL suites
         run: |
           set -euo pipefail
+          # The selector prints `<package>#<task>` units (core's real-PG and
+          # PGlite halves are separate units, #5649).
           node scripts/postgres-test-shard.mjs "$POSTGRES_SHARD" | \
-            xargs -r pnpm turbo run test:postgres --concurrency=2 --continue --summarize
+            xargs -r pnpm turbo run --concurrency=2 --continue --summarize=true
         env:
           POSTGRES_SHARD: ${{ matrix.shard }}
           POSTGRES_AFFECTED: ${{ needs.scope.outputs.affected }}
