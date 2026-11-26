@@ -6,7 +6,7 @@
  * Turbo's GitHub log mode prints each task as one `##[group]<package>:<task>`
  * block when the task finishes, so the block's timestamp is the task's finish
  * time even under `--concurrency=2`, where the live output of two tasks would
- * interleave. A block's start is the earliest Vitest `Start at HH:MM:SS` line
+ * interleave. A block's start is the first Vitest `Start at HH:MM:SS` line
  * inside it (the runner clock is UTC, the log timestamps are UTC). Wall time is
  * finish minus start: it includes time spent next to the sibling task on the
  * other lane, which is what the balancer's weights mean. It leaves out the few
