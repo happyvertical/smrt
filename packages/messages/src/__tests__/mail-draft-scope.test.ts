@@ -991,7 +991,7 @@ describe('draft scope on message writes (#5616)', () => {
     });
 
     describe('unchanged behaviour', () => {
-      it('leaves attachments of unowned drafts and sent mail alone', async () => {
+      it('leaves attachments of unowned drafts alone and gates those of sent mail (#5696)', async () => {
         const openDraft = await seedDraft(openId);
         const sent = await withTenant({ tenantId }, () =>
           runWithMailSystemAccess(async () => {
@@ -1002,11 +1002,12 @@ describe('draft scope on message writes (#5616)', () => {
           }),
         );
         await as(principal(stranger), async () => {
-          for (const messageId of [openDraft, sent]) {
-            const row = await addAttachment(messageId);
-            await row.delete();
-          }
+          const row = await addAttachment(openDraft);
+          await row.delete();
         });
+        await expect(
+          as(principal(stranger), async () => addAttachment(sent)),
+        ).rejects.toBeInstanceOf(MailAccessError);
       });
 
       it('lets trusted sync and ingest write attachments with no principal', async () => {

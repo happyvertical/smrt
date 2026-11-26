@@ -8,6 +8,7 @@
 import { withTenant } from '@happyvertical/smrt-tenancy';
 import { describe, expect, it } from 'vitest';
 import { MailAccessError, runWithMailSystemAccess } from '../access.js';
+import { Attachment } from '../models/Attachment';
 import { Email } from '../models/Email';
 import { useMailDraftScopeFixture } from './helpers/mail-draft-scope-fixture.js';
 
@@ -120,6 +121,35 @@ describe('stored sent rows (#5696)', () => {
     expect((await f.load(id)).subject).toBe('amended');
     await f.as(f.principal(f.sender), async () => (await f.load(id)).delete());
     expect(await f.exists(id)).toBe(false);
+  });
+
+  it('needs send to add or remove an attachment of sent mail', async () => {
+    const id = await seedSent(f.ownedId);
+    const make = async () => {
+      const attachment = new Attachment({
+        ...f.options,
+        tenantId: f.tenantId,
+        messageId: id,
+        filename: 'planted.txt',
+      });
+      await attachment.initialize();
+      return attachment;
+    };
+    await expect(
+      f.as(await reader(), async () => (await make()).save()),
+    ).rejects.toBeInstanceOf(MailAccessError);
+    const saved = await f.as(f.principal(f.sender), async () => {
+      const attachment = await make();
+      await attachment.save();
+      return attachment.id as string;
+    });
+    await expect(
+      f.as(await reader(), async () => {
+        const attachment = new Attachment({ ...f.options, id: saved });
+        await attachment.initialize();
+        await attachment.delete();
+      }),
+    ).rejects.toBeInstanceOf(MailAccessError);
   });
 
   it('leaves unowned accounts and trusted code alone', async () => {

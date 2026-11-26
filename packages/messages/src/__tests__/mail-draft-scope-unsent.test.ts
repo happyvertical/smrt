@@ -275,11 +275,24 @@ describe('draft scope on unsent outgoing mail (#5657)', () => {
       ).rejects.toThrow();
     });
 
-    it('leaves unowned and sent mail alone', async () => {
+    it('leaves unowned mail alone; sent mail needs send (#5696)', async () => {
       const openPending = await seedUnsent(openId, 'pending');
       const sent = await seedUnsent(ownedId, 'sent');
+      await expect(
+        as(principal(stranger), async () =>
+          (
+            await (
+              await collection()
+            ).create({
+              tenantId,
+              messageId: sent,
+              filename: 'no.txt',
+            })
+          ).save(),
+        ),
+      ).rejects.toBeInstanceOf(MailAccessError);
       await as(principal(stranger), async () => {
-        for (const messageId of [openPending, sent]) {
+        for (const messageId of [openPending]) {
           const row = await (await collection()).create({
             tenantId,
             messageId,
