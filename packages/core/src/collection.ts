@@ -770,14 +770,27 @@ export class SmrtCollection<ModelType extends SmrtObject> extends SmrtClass {
     );
   }
 
-  /** Discriminators visible through this STI class, including its descendants. */
+  /**
+   * Discriminators visible through this STI class, including its descendants,
+   * each with every stored name equivalent to it (previous and replaced
+   * qualified names), so rows written under an older identity stay visible.
+   */
   private getStiReadTypes(itemQualifiedName: string): string[] {
-    return [
+    const types = new Set<string>();
+    for (const name of [
       itemQualifiedName,
       ...ObjectRegistry.getDescendants(itemQualifiedName)
         .filter((name) => ObjectRegistry.getTableStrategy(name) === 'sti')
         .sort(),
-    ];
+    ]) {
+      types.add(name);
+      for (const equivalent of ObjectRegistry.getEquivalentQualifiedNames(
+        name,
+      )) {
+        types.add(equivalent);
+      }
+    }
+    return [...types];
   }
 
   /** Apply and validate this collection's owned STI discriminator predicate. */
@@ -858,7 +871,13 @@ export class SmrtCollection<ModelType extends SmrtObject> extends SmrtClass {
     }
 
     return andWhereCondition(where, {
-      '_meta_type in': [...stiScope.types],
+      '_meta_type in': [
+        ...new Set(
+          stiScope.types.flatMap((type) =>
+            ObjectRegistry.getEquivalentQualifiedNames(type),
+          ),
+        ),
+      ],
     });
   }
 
