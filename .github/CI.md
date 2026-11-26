@@ -635,8 +635,15 @@ read-only token. There is no enabling variable.
   off one shard when more than one exists; `core`'s `test:postgres` stays the
   local aggregate (real PostgreSQL, then PGlite) and is never scheduled in CI.
   An affected list from a merge group matches units on their owning package,
-  so an affected `core` runs both halves. `app-shell` is weighed 1172 s (it was
-  missing, so weighed 12 s). Every job retains
+  so an affected `core` runs both halves. `app-shell` is three units (#5664),
+  `test:postgres:1of3` to `3of3`: its 12 files as three hard-coded file lists
+  (`postgres-drafts` alone, 393 s of a 822 s run; `store-in-swap` and six
+  small files; the other four), each through `run-with-ci-postgres.mjs` on its
+  own database. Each file builds and drops its own schemas and roles, so none
+  needs another's tables. `scripts/app-shell-postgres-units.test.mjs` pins that
+  the lists are exactly `POSTGRES_SUITES` in `vitest.postgres.config.ts`, each
+  file once: a new suite file must join a unit. Its `test:postgres` stays the
+  local aggregate. Every job retains
   `--concurrency=2 --continue --summarize`,
   run every selected package even after one fails, and
   `scripts/postgres-lane-summary.mjs` writes a per-unit table (every Turbo run

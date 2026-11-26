@@ -70,14 +70,21 @@ export const TEST_SECONDS = {
 
 /**
  * `test:postgres` task seconds, PostgreSQL merge-group run of 2026-11-16, with
- * the #5649 additions from merge-group run 45076013203 (app-shell, core).
+ * the #5649 additions from merge-group run 45076013203 (core), and #5664's
+ * app-shell units.
  * Keys are package names, or `<package>#<task>` ids for a package listed in
  * SPLIT_POSTGRES_UNITS.
  */
 export const POSTGRES_TEST_SECONDS = {
   '@happyvertical/smrt-analytics': 40,
-  // 7 files, 1172 s; it was missing and weighed DEFAULT_SECONDS (12 s).
-  '@happyvertical/smrt-app-shell': 1172,
+  // app-shell: see SPLIT_POSTGRES_UNITS. 1386 s measured as one unit (12
+  // files, one process), the long pole of `remaining:1/3` (30.9 min). The
+  // unit weights split that by each file's test time in PostgreSQL run
+  // 45718543710 (1of3 postgres-drafts 393 s; 2of3 store-in-swap and six small
+  // files 227 s; 3of3 four files 201 s), scaled by 1386/822 to the measured total.
+  '@happyvertical/smrt-app-shell#test:postgres:1of3': 664,
+  '@happyvertical/smrt-app-shell#test:postgres:2of3': 383,
+  '@happyvertical/smrt-app-shell#test:postgres:3of3': 339,
   '@happyvertical/smrt-app-runtime': 41,
   '@happyvertical/smrt-cli': 33,
   '@happyvertical/smrt-commerce': 285,
@@ -123,8 +130,19 @@ export const SPLIT_TEST_UNITS = {
  * is its own package script and `turbo.json` task so the two can run on
  * different runners. The `test:postgres` script stays the local aggregate and
  * is never scheduled in CI for a package listed here, so no file runs twice.
+ *
+ * `app-shell` (#5664) is three file-list units. Its 12 files each build their
+ * own schemas and roles, so they need no shared database; each unit runs in
+ * its own process on its own disposable database, and
+ * `scripts/app-shell-postgres-units.test.mjs` pins that the units' files are
+ * exactly `POSTGRES_SUITES`, each once.
  */
 export const SPLIT_POSTGRES_UNITS = {
+  '@happyvertical/smrt-app-shell': [
+    'test:postgres:1of3',
+    'test:postgres:2of3',
+    'test:postgres:3of3',
+  ],
   '@happyvertical/smrt-core': ['test:postgres:real', 'test:postgres:pglite'],
 };
 
