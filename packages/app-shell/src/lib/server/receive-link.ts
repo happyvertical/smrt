@@ -149,12 +149,16 @@ export async function spendReceiveLink(
     const db = await getShellDb();
     // One conditional statement is the authority across processes. Raw SQL
     // bypasses the tenant interceptor, so the tenant is named here too.
+    // Expiry is decided here too: the body may take a while to arrive after
+    // the token verified. Both stamps are UTC ISO strings, which order as text.
+    const stamp = new Date(now()).toISOString();
     const spent = await db.query(
-      'UPDATE receive_links SET used_at = ? WHERE id = ? AND used_at = ? AND tenant_id = ? RETURNING id',
-      new Date(now()).toISOString(),
+      'UPDATE receive_links SET used_at = ? WHERE id = ? AND used_at = ? AND tenant_id = ? AND expires_at > ? RETURNING id',
+      stamp,
       link.id,
       '',
       link.tenantId,
+      stamp,
     );
     return spent.rows.length === 1;
   });

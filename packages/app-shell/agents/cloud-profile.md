@@ -416,7 +416,7 @@ a tenant-scoped shell table, RLS like the others).
 - **Short-lived**: 10 minutes by default, 15 at most (`ttlSeconds` may only
   shorten), fixed at minting.
 - **Single use**: the first presentation that passes every check is spent by one
-  conditional `UPDATE ... WHERE used_at = ''` before the bundle runs, so a
+  conditional `UPDATE ... WHERE used_at = '' AND expires_at > now` before the bundle runs (expiry is decided here too, not only at verify), so a
   receive that then fails still burned it (mint again; the receive converges).
   A body that is missing or not a bundle is refused before the spend.
 - **Constant time**: the stored hashes of the tenant's unspent tokens (at most a

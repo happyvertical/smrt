@@ -230,6 +230,20 @@ describe('presenting', () => {
     expect((await present(link.token)).status).toBe(401);
   });
 
+  it('cannot be spent once it has expired, even after it verified', async () => {
+    const link = await minted(h.a, { ttlSeconds: 60 });
+    const verified = await verifyReceiveLink(link.token);
+    expect(verified).not.toBeNull();
+    const late = () => Date.now() + 61_000;
+    expect(
+      await spendReceiveLink(verified as NonNullable<typeof verified>, late),
+    ).toBe(false);
+    // still unspent: a spend inside its lifetime works
+    expect(
+      await spendReceiveLink(verified as NonNullable<typeof verified>),
+    ).toBe(true);
+  });
+
   it('is spent by its first use, even when that receive fails, and is never reusable', async () => {
     const link = await minted(h.a);
     // no body to speak of: refused before the token is spent
