@@ -308,7 +308,7 @@ describe('SvelteKit Route Generator', () => {
           String(path).includes(`reports/[id]/${action}/+server.ts`),
         );
       expect(write?.[1]).toContain(
-        `requireRoutePermission(locals, "${permission}");`,
+        `requireRouteAccess(locals, "${action}", true, "${permission}");`,
       );
       expect(write?.[1]).toContain(`action: '${action}',`);
     }
@@ -648,7 +648,7 @@ describe('SvelteKit Route Generator', () => {
       // item's collection, matching the permission catalog (#2977).
       expect(content).toContain('const PERMISSION_COLLECTION = "widgets";');
       expect(content).toContain(
-        'requireRoutePermission(locals, "restoreSpecial");',
+        'requireRouteAccess(locals, "restoreSpecial", true, "restoreSpecial");',
       );
     });
 
@@ -715,8 +715,73 @@ describe('SvelteKit Route Generator', () => {
       const content = route?.[1] as string;
       expect(content).toContain('const PERMISSION_COLLECTION = "gadgets";');
       expect(content).toContain(
-        'requireRoutePermission(locals, "importBatch");',
+        'requireRouteAccess(locals, "importBatch", true, "importBatch");',
       );
+    });
+
+    it.each([
+      [true, 'const ALLOW_SUPER_ADMIN_BYPASS = true;'],
+      [false, 'const ALLOW_SUPER_ADMIN_BYPASS = false;'],
+    ])('derives the bypass opt-in of a collection-hosted action from the item model (opt-in %s)', async (optIn, expected) => {
+      const manifest = {
+        version: '1',
+        timestamp: 0,
+        objects: {
+          Widget: {
+            className: 'Widget',
+            name: 'Widget',
+            filePath: '',
+            collection: 'widgets',
+            extends: 'SmrtObject',
+            fields: {},
+            methods: {},
+            decoratorConfig: {
+              api: false,
+              ...(optIn
+                ? { tenantScoped: { allowSuperAdminBypass: true } }
+                : {}),
+            },
+          },
+          WidgetCollection: {
+            className: 'WidgetCollection',
+            name: 'WidgetCollection',
+            filePath: '',
+            collection: 'widget_collections',
+            extends: 'SmrtCollection',
+            extendsTypeArg: 'Widget',
+            fields: {},
+            methods: {
+              importBatch: {
+                async: false,
+                name: 'importBatch',
+                parameters: [],
+                returnType: 'Promise<any>',
+                isPublic: true,
+                isStatic: false,
+              },
+            },
+            decoratorConfig: {
+              api: {
+                include: ['importBatch'],
+                routes: { importBatch: { method: 'POST' } },
+              },
+            },
+          },
+        },
+      } as unknown as SmartObjectManifest;
+
+      await generateSvelteKitRoutes(projectRoot, manifest, {
+        enabled: true,
+        routesDir: 'src/routes/api',
+        objectsDir: 'src/lib/objects',
+        configPath: 'src/lib/server',
+      });
+      const route = vi
+        .mocked(writeFileSync)
+        .mock.calls.find(([filePath]) =>
+          String(filePath).includes('/importBatch/+server.ts'),
+        );
+      expect(route?.[1] as string).toContain(expected);
     });
 
     it('keeps an inherited item type name when a partial manifest omits the item', async () => {
@@ -1759,7 +1824,7 @@ describe('SvelteKit Route Generator', () => {
         'export const GET: RequestHandler = async ({ locals, params, request }) => {',
       );
       // Fail-closed auth guard (#1540): reads do not require auth as a mutation.
-      expect(content).toContain('requireRouteAuth(locals, false);');
+      expect(content).toMatch(/requireRouteAccess\(locals, "\w+", false\);/);
       expect(content).toContain(
         "type ActionArgs = Parameters<Document['evaluateReviewProfileAction']>;",
       );
@@ -2183,7 +2248,9 @@ describe('SvelteKit Route Generator', () => {
         'export const POST: RequestHandler = async ({ locals, params, request }) => {',
       );
       // Fail-closed auth guard (#1540): POST is a mutating verb.
-      expect(content).toContain('requireRouteAuth(locals, true);');
+      expect(content).toMatch(
+        /requireRouteAccess\(locals, "\w+", true, "\w+"\);/,
+      );
       expect(content).not.toContain('{ params, request }');
     });
 

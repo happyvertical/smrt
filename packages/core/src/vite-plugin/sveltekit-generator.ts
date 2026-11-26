@@ -75,10 +75,13 @@ import {
 } from './resources-route.js';
 import { AUTO_GENERATED_ROUTE_HEADER } from './route-header.js';
 import {
+  allowsSuperAdminBypass,
+  generateRoutePrincipalHelper,
   generateTenantContextHelper,
   getApiConfigObject,
   getApiPublicAccess,
   isTenantScoped,
+  manifestTenantColumns,
   usesPrincipalContext,
 } from './route-policy.js';
 import {
@@ -575,10 +578,12 @@ function collectReadPermissionFields(
 
 /**
  * Emit the fail-closed authorization guard injected into generated route files
- * (#1540, 2c). Every generated CRUD/action handler calls `requireRouteAuth`,
- * which throws 401 unless the route is `public` or `locals` carries an
- * authenticated principal. Mirrors the knowledge-route `isKnowledgeAdmin`
- * precedent. Mutating verbs require auth even when reads are public.
+ * (#1540, 2c). Every generated CRUD/action handler calls `requireRouteAccess`,
+ * which asks the shared decision (`authorize`, `generators/route-authz.ts`,
+ * #5195) for sign-in (401), the `<collection>.<action>` permission of a write
+ * (403) and, with `requireRouteBody`, the tenant a write body names. The
+ * emitted file keeps only the model's policy constants; the rule is the one
+ * runtime REST applies.
  */
 function generateAuthGuardHelper(
   objectDef: SmartObjectDefinition,
@@ -592,7 +597,7 @@ function generateAuthGuardHelper(
   return `
 // Fail-closed authorization (#1540): generated routes require an authenticated
 // principal on \`locals\` unless explicitly marked \`@smrt({ api: { public } })\`.
-import { isRuntimeModelEnabled, publicSerializerOf, toPublicJSONValue } from '@happyvertical/smrt-core';
+import { apiPrincipalFromLocals, authorize, isRuntimeModelEnabled, stripTenantFilters, publicSerializerOf, toPublicJSONValue } from '@happyvertical/smrt-core';
 const RUNTIME_MODEL = ${JSON.stringify({
     qualifiedName:
       permissionObjectDef.qualifiedName ??
@@ -613,88 +618,58 @@ const READ_PERMISSION_FIELDS: Array<[string, string]> = ${JSON.stringify(readPer
 // Operation permissions (#2977): mutating handlers require
 // \`<collection>.<action>\`, matching the smrt-users permission catalog slug.
 const PERMISSION_COLLECTION = ${JSON.stringify(permissionCollection)};
+// The decision itself is the shared one (#5195): these constants are the
+// model's policy it is given. A super-admin bypass counts only on a model that
+// opts in with \`tenantScoped: { allowSuperAdminBypass: true }\`.
+const ALLOW_SUPER_ADMIN_BYPASS = ${JSON.stringify(allowsSuperAdminBypass(permissionObjectDef))};
+const TENANT_COLUMNS: ReadonlySet<string> = new Set(${JSON.stringify(manifestTenantColumns(permissionObjectDef))});
 
 interface PublicJsonOptions {
   permissions?: Iterable<string>;
 }
 
-function hasAuthenticatedPrincipal(locals: unknown): boolean {
-  if (!locals || typeof locals !== 'object') return false;
-  const l = locals as Record<string, unknown>;
-  // Only a resolved, object-shaped principal counts. We intentionally do NOT
-  // treat \`locals.auth\` as a signal: Auth.js/SvelteKit put a callable
-  // \`auth()\` helper on every request (including anonymous ones), so honoring
-  // it would fail OPEN. Booleans don't count either (no convention sets
-  // \`locals.user = true\`); the only boolean accepted is the explicit
-  // \`smrtAuth\` opt-in marker.
-  const isResolvedPrincipal = (v: unknown) =>
-    typeof v === 'object' && v !== null;
-  return (
-    isResolvedPrincipal(l.user) ||
-    isResolvedPrincipal(l.session) ||
-    l.smrtAuth === true
-  );
+${generateRoutePrincipalHelper()}
+// One decision for the route (#5195), the one REST makes: sign-in (401), the
+// \`<collection>.<action>\` permission of a write (403), and, once a body is
+// given, the tenant it names (403 \`TENANT_MISMATCH\`).
+function routeDecision(locals: unknown, op: string, mutating: boolean, permissionAction?: string, body?: unknown) {
+  return authorize({
+    principal: routePrincipal(locals),
+    op,
+    mutating,
+    ...(permissionAction ? { permissionAction } : {}),
+    permissionCollection: PERMISSION_COLLECTION,
+    publicAccess: PUBLIC_ACCESS,
+    allowSuperAdminBypass: ALLOW_SUPER_ADMIN_BYPASS,
+    tenantColumns: TENANT_COLUMNS,
+    ...(body === undefined ? {} : { body }),
+  });
 }
 
-// The tenant the request acts for, from the same \`locals\` sources the tenant
-// helper enters (\`tenantId\`, \`user\`, \`session\`, \`tenantContext\`), else
-// the tenant context the host already entered for the request.
-function requestTenantOf(locals: unknown): string | undefined {
-  const l = locals && typeof locals === 'object' ? locals as Record<string, unknown> : {};
-  const record = (value: unknown) => value && typeof value === 'object' ? value as Record<string, unknown> : {};
-  const tenant = l.tenantId ?? record(l.user).tenantId ?? record(l.session).tenantId ?? record(l.tenantContext).tenantId;
-  if (typeof tenant === 'string' && tenant) return tenant;
-  const active = (getCurrentTenant() as { tenantId?: unknown } | undefined)?.tenantId;
-  return typeof active === 'string' && active ? active : undefined;
+function routeDenial(decision: { status: number; code: string; message: string }): never {
+  const body: { message: string; code: string } = {
+    message: decision.message,
+    code: decision.code,
+  };
+  throw error(decision.status, body);
 }
 
 // Authentication first, then the runtime exposure gate for the request's
-// tenant: a switched-off model answers 404 only to an admitted caller.
-function requireRouteAuth(locals: unknown, mutating: boolean): void {
-  const open = PUBLIC_ACCESS === true || (PUBLIC_ACCESS === 'read' && !mutating);
-  if (!open && !hasAuthenticatedPrincipal(locals)) {
-    throw error(401, 'Authentication required');
-  }
+// tenant (a switched-off model answers 404 only to an admitted caller), then
+// the rest of the decision.
+function requireRouteAccess(locals: unknown, op: string, mutating: boolean, permissionAction?: string): void {
+  const decision = routeDecision(locals, op, mutating, permissionAction);
+  if (!decision.allow && decision.status === 401) routeDenial(decision);
   if (!isRuntimeModelEnabled(RUNTIME_MODEL, { surface: 'rest', locals, tenantId: requestTenantOf(locals) })) {
     throw error(404, 'Not found');
   }
+  if (!decision.allow) routeDenial(decision);
 }
 
-function hasGrantedPermission(value: unknown, permission: string): boolean {
-  if (Array.isArray(value)) return value.includes(permission);
-  if (value instanceof Set) return value.has(permission);
-  return false;
-}
-
-// Fail-closed write authorization (#2977): a mutating handler requires the
-// \`<collection>.<action>\` operation permission in the principal's session
-// permission snapshot (\`locals.permissions\` from smrt-users, or the
-// smrt-tenancy \`locals.tenantContext\`). A missing snapshot denies. Only an
-// explicit tenancy super-admin bypass skips the check; \`public: true\` routes
-// keep their unauthenticated semantics.
-function requireRoutePermission(locals: unknown, action: string): void {
-  if (PUBLIC_ACCESS === true) return;
-  const l = readJsonRecord(locals);
-  const tenantContext = readJsonRecord(l.tenantContext);
-  if (tenantContext.superAdminBypass === true) return;
-  const permission = \`\${PERMISSION_COLLECTION}.\${action}\`;
-  const granted =
-    hasGrantedPermission(l.permissions, permission) ||
-    hasGrantedPermission(l.permissionSet, permission) ||
-    hasGrantedPermission(l.smrtPermissions, permission) ||
-    hasGrantedPermission(tenantContext.permissions, permission);
-  if (!granted) {
-    throw error(403, 'Permission denied');
-  }
-}
-
-function getPublicJsonOptions(locals: unknown): PublicJsonOptions {
-  const l = readJsonRecord(locals);
-  const permissions = l.permissions ?? l.permissionSet ?? l.smrtPermissions;
-  if (Array.isArray(permissions) || permissions instanceof Set) {
-    return { permissions };
-  }
-  return {};
+// A write body may not name another tenant (#5195).
+function requireRouteBody(locals: unknown, op: string, body: unknown): void {
+  const decision = routeDecision(locals, op, true, undefined, body);
+  if (!decision.allow) routeDenial(decision);
 }
 
 function hasReadPermission(
@@ -904,13 +879,13 @@ function routeGuardPreamble(
   permissionAction?: 'create' | 'update' | 'delete',
   readOperation: 'list' | 'get' = 'list',
 ): string {
-  const lines = [`  requireRouteAuth(locals, ${mutating});`];
+  const lines: string[] = [];
   if (mutating) {
     if (!permissionAction) {
       throw new Error('Mutating generated routes require a permission action');
     }
     lines.push(
-      `  requireRoutePermission(locals, ${JSON.stringify(permissionAction)});`,
+      `  requireRouteAccess(locals, ${JSON.stringify(permissionAction)}, true);`,
     );
     // The request's tenancy (#5375): a write needs a tenant, whatever the
     // model's tenancy mode and whether it was declared or registered at run
@@ -918,6 +893,7 @@ function routeGuardPreamble(
     lines.push(`  enterTenancy(locals, ${JSON.stringify(permissionAction)});`);
   } else {
     lines.push(
+      `  requireRouteAccess(locals, ${JSON.stringify(readOperation)}, false);`,
       `  const tenancy = enterTenancy(locals, ${JSON.stringify(readOperation)});`,
     );
   }
@@ -3252,18 +3228,15 @@ function generateCreateTargetAccessHelper(): string {
 function requireCreateTargetAccess(locals: unknown, model: string): void {
   const api = ObjectRegistry.getConfig(model).api;
   const publicAccess = api && typeof api === 'object' ? (api as { public?: unknown }).public : undefined;
-  if (publicAccess === true) return;
-  if (!hasAuthenticatedPrincipal(locals)) throw error(401, 'Authentication required');
-  const l = readJsonRecord(locals);
-  const tenantContext = readJsonRecord(l.tenantContext);
-  if (tenantContext.superAdminBypass === true) return;
-  const permission = \`\${PERMISSION_COLLECTION}.create\`;
-  const granted =
-    hasGrantedPermission(l.permissions, permission) ||
-    hasGrantedPermission(l.permissionSet, permission) ||
-    hasGrantedPermission(l.smrtPermissions, permission) ||
-    hasGrantedPermission(tenantContext.permissions, permission);
-  if (!granted) throw error(403, 'Permission denied');
+  const decision = authorize({
+    principal: routePrincipal(locals),
+    op: 'create',
+    permissionCollection: PERMISSION_COLLECTION,
+    publicAccess: publicAccess === true,
+    // The subtype's own opt-in, as REST reads it (a base's does not carry over).
+    allowSuperAdminBypass: ObjectRegistry.getTenantScopedConfig(model)?.allowSuperAdminBypass === true,
+  });
+  if (!decision.allow) routeDenial(decision);
 }
 `;
 }
@@ -3397,7 +3370,7 @@ ${generateAuthGuardHelper(objectDef, semanticManifest)}${generateTenantContextHe
   // `query` is the caller's filter and ordering, already checked against the
   // fields this caller may read (`listQuery`), before any ETag or table work.
   const listWhere =
-    'applyWhereScope(query.where, tenancyReadScope(tenancy)) ?? {}';
+    'applyWhereScope(stripTenantFilters(routePrincipal(locals), TENANT_COLUMNS, query.where), tenancyReadScope(tenancy)) ?? {}';
   const listAndCount = `  const where = ${listWhere};
   const orderBy = query.orderBy || LIST_ORDER_BY;
   const items = await collection.list({ limit, offset, orderBy, where${objectDef.displayLabelProjection ? ', displayLabel: true' : ''} }).catch(rejectListQuery);
@@ -3450,6 +3423,7 @@ export const POST: RequestHandler = async ({ locals, request }) => {
 ${routeGuardPreamble(objectDef, true, 'create')}
   const publicJsonOptions = getPublicJsonOptions(locals);
   const body: unknown = await request.json();
+  requireRouteBody(locals, 'create', body);
   try {
     const target = ObjectRegistry.resolveCreateTarget('${className}', body, {
       surface: 'rest', tenantId: requestTenantOf(locals), locals, request,
@@ -3651,6 +3625,7 @@ ${generateCollectionLoad(className, { typeName: modelType.typeName })}
 ${generateNotFoundError(className)}
 
   const body: unknown = await request.json();
+  requireRouteBody(locals, 'update', body);
   try {
     // A field the caller may not write is compared with the loaded row: an
     // unchanged value is accepted, a changed one refused.
@@ -3870,13 +3845,11 @@ function generateActionRouteHandler(
   const handlerName = routeConfig.method;
   // Mutating verbs require auth even when reads are public (#1540).
   const mutating = routeConfig.method !== 'GET';
-  const guardLines = [`  requireRouteAuth(locals, ${mutating});`];
-  if (mutating) {
-    // Custom mutating actions require `<collection>.<method>` (#2977).
-    guardLines.push(
-      `  requireRoutePermission(locals, ${JSON.stringify(permissionAction ?? actionName)});`,
-    );
-  }
+  // Sign-in and, on a mutating action, `<collection>.<method>` (#2977) are one
+  // shared decision (#5195).
+  const guardLines = [
+    `  requireRouteAccess(locals, ${JSON.stringify(actionName)}, ${mutating}${mutating ? `, ${JSON.stringify(permissionAction ?? actionName)}` : ''});`,
+  ];
   // The request's tenancy (#5375), decided for this action at request time:
   // a mutating action needs a tenant; a collection-scoped read whose scanned
   // parameters do not carry the scope (an options bag, or parameters named
