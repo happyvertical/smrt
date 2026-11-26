@@ -77,6 +77,8 @@ describe('wake and idle-close sampling', () => {
     expect(wake.source).toBe('app-shell.worker');
     expect(wake.getDimensions()).toMatchObject({ event: 'wake' });
 
+    const sampled = (await rows(h, a.tenantId, STORAGE_BYTES_METRIC)).length;
+    clock += 60 * 60 * 1000; // a new storage bucket, so the close's sample is its own row
     await sleepApp();
     expect(hostMetrics().open).toBe(0);
     await vi.waitFor(async () =>
@@ -90,15 +92,19 @@ describe('wake and idle-close sampling', () => {
     });
     // the close sampled storage, tagged with the host's tenant
     await vi.waitFor(async () =>
-      expect((await rows(h, a.tenantId, STORAGE_BYTES_METRIC)).length).toBe(1),
+      expect((await rows(h, a.tenantId, STORAGE_BYTES_METRIC)).length).toBe(
+        sampled + 1,
+      ),
     );
-    expect((await rows(h, a.tenantId, STORAGE_BYTES_METRIC))[0].quantity).toBe(
-      4096,
-    );
-    // another tenant's wake is its own; nothing leaked across
-    expect(await rows(h, b.tenantId, APP_AWAKE_METRIC)).toHaveLength(
-      (await rows(h, b.tenantId, APP_WAKE_METRIC)).length ? 1 : 0,
-    );
+    const latest = (await rows(h, a.tenantId, STORAGE_BYTES_METRIC)).sort(
+      (x, y) => y.windowStart.getTime() - x.windowStart.getTime(),
+    )[0];
+    expect(latest.quantity).toBe(4096);
+    expect(latest.getDimensions()).toMatchObject({ backend: 'sqlite' });
+    // the other tenant never woke: nothing of it was written
+    expect(await rows(h, b.tenantId, APP_WAKE_METRIC)).toHaveLength(0);
+    expect(await rows(h, b.tenantId, APP_AWAKE_METRIC)).toHaveLength(0);
+    expect(await rows(h, b.tenantId, STORAGE_BYTES_METRIC)).toHaveLength(0);
 
     // waking again is a second wake row
     await runAs(a, () => getHost());
@@ -161,6 +167,19 @@ describe('wake and idle-close sampling', () => {
       (await getHost()).list(hostOwner(await getHost()), 'Chore'),
     );
     expect(again).toHaveLength(1);
+    expect(await rows(h, a.tenantId, APP_WAKE_METRIC)).toHaveLength(0);
+    expect(await rows(h, a.tenantId, APP_AWAKE_METRIC)).toHaveLength(0);
+  });
+
+  it('a rejecting onWake alone does not break the wake', async () => {
+    const meter = new StorageMeter({ probe: fakeProbe(), now: () => clock });
+    vi.spyOn(meter, 'onWake').mockRejectedValue(new Error('writer down'));
+    const h = await openCloud(() => meter);
+    const { a } = h;
+    await runAs(a, () => App.defineModel('Chore', { title: { type: 'text' } }));
+    await runAs(a, () => applyWaiting(a));
+    expect(await runAs(a, () => getHost())).toBeTruthy();
+    expect(meter.onWake).toHaveBeenCalled();
     expect(await rows(h, a.tenantId, APP_WAKE_METRIC)).toHaveLength(0);
   });
 });
