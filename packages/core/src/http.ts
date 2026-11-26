@@ -498,10 +498,23 @@ function statusForbidsBody(status: number): boolean {
   );
 }
 
+const UNDICI_DECODED_ENCODINGS = new Set([
+  'gzip',
+  'x-gzip',
+  'deflate',
+  'br',
+  'zstd',
+]);
+
 /**
  * Write a Web Standard `Response` onto a Node.js `ServerResponse`, preserving
  * multi-header `Set-Cookie` values, stripping hop-by-hop headers, and dropping
- * stale `content-encoding` only on `fetch()`-decoded responses (`response.url !== ''`).
+ * stale `content-encoding` when `webResponse` came directly from `fetch()`
+ * (`response.url !== ''`) with an encoding `undici` decodes automatically.
+ *
+ * Callers that re-wrap a `fetch()` response in `new Response(upstream.body, upstream)`
+ * reset `response.url` to `''` and should delete `content-encoding` on the
+ * cloned `Headers` themselves so `content-encoding` always matches the body bytes.
  */
 export async function writeWebResponseToNode(
   res: ServerResponse,
@@ -530,7 +543,11 @@ export async function writeWebResponseToNode(
     if (STRIPPED_HOP_BY_HOP_HEADERS.has(lower)) {
       return;
     }
-    if (lower === 'content-encoding' && isFetchDecodedResponse) {
+    if (
+      lower === 'content-encoding' &&
+      isFetchDecodedResponse &&
+      UNDICI_DECODED_ENCODINGS.has(value.trim().toLowerCase())
+    ) {
       return;
     }
     res.setHeader(key, value);
