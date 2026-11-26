@@ -57,7 +57,29 @@ function clientOf(db: DatabaseInterface): object | undefined {
   return client && typeof client === 'object' ? client : undefined;
 }
 
-const wrappedTransactions = new WeakSet<Function>();
+const wrappedHandles = new WeakSet<object>();
+const wrappedFunctions = new WeakSet<Function>();
+
+function resolveWritableMethodDescriptor(
+  handle: object,
+  prop: 'transaction' | 'beginTransaction',
+  observedFn: Function,
+): boolean {
+  let cursor: object | null = handle;
+  while (cursor !== null) {
+    const desc = Object.getOwnPropertyDescriptor(cursor, prop);
+    if (desc) {
+      // If `handle` is a Proxy whose `get` trap synthesizes a wrapper function
+      // without a matching `getOwnPropertyDescriptor`/`set` trap (e.g.
+      // `app-shell` `scopeDatabase`), `desc.value` comes from the underlying
+      // target and will not match `observedFn`. Assigning `handle[prop] = ...`
+      // would mutate the raw target behind the Proxy and recurse infinitely.
+      return Boolean(desc.writable && desc.value === observedFn);
+    }
+    cursor = Object.getPrototypeOf(cursor);
+  }
+  return false;
+}
 
 function inheritDeclarationOnChildHandle(
   child: DatabaseInterface,
@@ -65,38 +87,76 @@ function inheritDeclarationOnChildHandle(
 ): void {
   if (!child || typeof child !== 'object') return;
   declaredHandles.set(child, record);
-  wrapTransactionMethod(child);
+  const childClient = clientOf(child);
+  if (childClient) declaredClients.set(childClient, record);
+  wrapTransactionMethods(child);
 }
 
-function wrapTransactionMethod(handle: DatabaseInterface): void {
-  if (
-    typeof handle.transaction !== 'function' ||
-    wrappedTransactions.has(handle.transaction)
-  ) {
+function wrapTransactionMethods(handle: DatabaseInterface): void {
+  if (wrappedHandles.has(handle)) {
     return;
   }
-  const originalTransaction = handle.transaction.bind(handle) as <T>(
-    callback: (tx: DatabaseInterface) => Promise<T>,
-    ...rest: unknown[]
-  ) => Promise<T>;
-  const wrapped: NonNullable<DatabaseInterface['transaction']> = (<T>(
-    callback: (tx: DatabaseInterface) => Promise<T>,
-    ...rest: unknown[]
-  ): Promise<T> => {
-    const active = runtimeManagedDatabaseDeclaration(handle);
-    return originalTransaction(
-      async (tx: DatabaseInterface) => {
-        if (active) inheritDeclarationOnChildHandle(tx, active);
-        return callback(tx);
-      },
-      ...rest,
-    );
-  }) as NonNullable<DatabaseInterface['transaction']>;
-  wrappedTransactions.add(wrapped);
-  try {
-    handle.transaction = wrapped;
-  } catch {
-    // Frozen or getter-only handles keep driver-client fallback.
+  wrappedHandles.add(handle);
+
+  const txFn = handle.transaction;
+  if (
+    typeof txFn === 'function' &&
+    !wrappedFunctions.has(txFn) &&
+    resolveWritableMethodDescriptor(handle, 'transaction', txFn)
+  ) {
+    const originalTransaction = txFn.bind(handle) as <T>(
+      callback: (tx: DatabaseInterface) => Promise<T>,
+      ...rest: unknown[]
+    ) => Promise<T>;
+    const wrapped: NonNullable<DatabaseInterface['transaction']> = (<T>(
+      callback: (tx: DatabaseInterface) => Promise<T>,
+      ...rest: unknown[]
+    ): Promise<T> => {
+      const active = runtimeManagedDatabaseDeclaration(handle);
+      return originalTransaction(
+        async (tx: DatabaseInterface) => {
+          if (active && tx !== handle) {
+            inheritDeclarationOnChildHandle(tx, active);
+          }
+          return callback(tx);
+        },
+        ...rest,
+      );
+    }) as NonNullable<DatabaseInterface['transaction']>;
+    wrappedFunctions.add(wrapped);
+    try {
+      handle.transaction = wrapped;
+    } catch {
+      // Frozen or non-extensible handles keep driver-client fallback.
+    }
+  }
+
+  const beginFn = handle.beginTransaction;
+  if (
+    typeof beginFn === 'function' &&
+    !wrappedFunctions.has(beginFn) &&
+    resolveWritableMethodDescriptor(handle, 'beginTransaction', beginFn)
+  ) {
+    const originalBegin = beginFn.bind(handle) as NonNullable<
+      DatabaseInterface['beginTransaction']
+    >;
+    const wrappedBegin: NonNullable<DatabaseInterface['beginTransaction']> =
+      (async (
+        ...args: Parameters<NonNullable<DatabaseInterface['beginTransaction']>>
+      ) => {
+        const tx = await originalBegin(...args);
+        const active = runtimeManagedDatabaseDeclaration(handle);
+        if (active && tx !== handle) {
+          inheritDeclarationOnChildHandle(tx, active);
+        }
+        return tx;
+      }) as NonNullable<DatabaseInterface['beginTransaction']>;
+    wrappedFunctions.add(wrappedBegin);
+    try {
+      handle.beginTransaction = wrappedBegin;
+    } catch {
+      // Frozen or non-extensible handles keep driver-client fallback.
+    }
   }
 }
 
@@ -137,7 +197,7 @@ export function declareRuntimeManagedDatabase(
   declaredHandles.set(db, record);
   const client = clientOf(db);
   if (client) declaredClients.set(client, record);
-  wrapTransactionMethod(db);
+  wrapTransactionMethods(db);
 }
 
 /** The declaration covering `db` (the handle itself or its client), if any. */

@@ -262,4 +262,68 @@ describe('runtime-managed databases and the startup check (#4927)', () => {
       for (const spy of spies) spy.mockRestore();
     }
   });
+
+  it('does not recurse when declared on a get-only Proxy wrapper around a raw handle (app-shell scopeDatabase)', async () => {
+    const rawClient = { kind: 'raw-pg-pool' };
+    const sharedScopedToken = { kind: 'scoped-client-token' };
+    const rawTxMethod = async <T>(
+      cb: (tx: DatabaseInterface) => Promise<T>,
+    ): Promise<T> => {
+      const innerTx = {
+        url: 'postgres://localhost:5432/boxbones',
+        client: { kind: 'checked-out' },
+        query: async () => ({ rows: [], rowCount: 0 }),
+      } as unknown as DatabaseInterface;
+      return cb(innerTx);
+    };
+    const raw = {
+      url: 'postgres://localhost:5432/boxbones',
+      client: rawClient,
+      transaction: rawTxMethod,
+    } as unknown as DatabaseInterface;
+
+    const members: Record<string, unknown> = {
+      client: sharedScopedToken,
+      transaction: <T>(cb: (tx: DatabaseInterface) => Promise<T>) => {
+        if (!raw.transaction) throw new Error('missing raw.transaction');
+        return raw.transaction(async (tx) => {
+          const guarded = new Proxy(tx, {
+            get(target, prop) {
+              if (prop === 'client') return sharedScopedToken;
+              const val = Reflect.get(target, prop, target);
+              return typeof val === 'function' ? val.bind(target) : val;
+            },
+          });
+          return cb(guarded);
+        });
+      },
+      query: () => {
+        if (!raw.transaction) throw new Error('missing raw.transaction');
+        return raw.transaction(async (tx) => tx.query('SELECT 1'));
+      },
+    };
+
+    const scopedProxy = new Proxy(raw, {
+      get(target, prop, receiver) {
+        if (typeof prop === 'string' && Object.hasOwn(members, prop)) {
+          return members[prop];
+        }
+        return Reflect.get(target, prop, receiver);
+      },
+    });
+
+    declareRuntimeManagedDatabase(scopedProxy, DECLARATION);
+    expect(raw.transaction).toBe(rawTxMethod);
+    await expect(scopedProxy.query('SELECT 1')).resolves.toEqual({
+      rows: [],
+      rowCount: 0,
+    });
+    if (!scopedProxy.transaction) {
+      throw new Error('scopedProxy must expose transaction');
+    }
+    await scopedProxy.transaction(async (tx) => {
+      expect(runtimeManagedDatabaseDeclaration(tx)).toEqual(DECLARATION);
+      await assertDatabaseMigratedForBuild(tx);
+    });
+  });
 });
