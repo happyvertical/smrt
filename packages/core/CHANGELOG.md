@@ -1,5 +1,23 @@
 # @happyvertical/smrt-core
 
+## 0.71.0
+
+### Minor Changes
+
+- ### Breaking Changes
+  
+  - restrict attachment file paths to a configured storage root (#5654) (messages)
+  
+  ### Bug Fixes
+  
+  - name source-compiled workspace classes by owner package (#5655) (#5656) (core)
+
+### Patch Changes
+
+- @happyvertical/smrt-config@0.71.0
+  - @happyvertical/smrt-scanner@0.71.0
+  - @happyvertical/smrt-types@0.71.0
+
 ## 0.70.3
 
 ### Patch Changes
