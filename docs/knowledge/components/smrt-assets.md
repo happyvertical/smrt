@@ -5,10 +5,10 @@ description: "Asset management system with versioning, metadata, and AI-powered 
 status: "stable"
 generated:
   by: "smrt/scripts/generate-knowledge-okf.ts"
-  at: "2026-11-26T18:24:00Z"
+  at: "2026-11-26T19:09:41Z"
 audience: "internal"
 evidence_level: "source-inspected"
-source_revision: "sha256:cc75810206b77ef1559b6b3275de2470d68e1715510be2820611e29112d56c91"
+source_revision: "sha256:73bdc0cbe39f1720505c0abd7438920e0e7d167f84e8ca629c3cb40127d8027c"
 sources:
   - id: "manifest"
     resource: "https://github.com/happyvertical/smrt/blob/main/packages/assets/package.json"
@@ -30,7 +30,7 @@ sources:
 
 - Directory: `packages/assets`
 - Private: no
-- Object source: `manifest`
+- Object source: `domain-artifact`
 - Evidence level: `source-inspected`
 
 ## Documentation
@@ -73,12 +73,14 @@ sources:
 
 - `Asset` (collection `assets`, extends `SmrtObject`, STI table)
 - `AssetAssociation` (collection `assetassociations`, extends `SmrtPolymorphicAssociation`)
-- `AssetAssociationCollection` (collection `assetassociations`, extends `SmrtJunction`)
+- `AssetAssociationCollection` (collection `assetassociations`, extends `SmrtJunctionBase`)
 - `AssetCollection` (collection `assets`, extends `SmrtCollection`)
 - `AssetMetafield` (collection `assetmetafields`, extends `SmrtObject`, STI table)
 - `AssetMetafieldCollection` (collection `assetmetafields`, extends `SmrtCollection`)
 - `AssetStatus` (collection `assetstatuses`, extends `SmrtObject`, STI table)
 - `AssetStatusCollection` (collection `assetstatuses`, extends `SmrtCollection`)
+- `AssetTag` (collection `assettags`, extends `SmrtObject`)
+- `AssetTagCollection` (collection `assettags`, extends `SmrtJunction`)
 - `AssetType` (collection `assettypes`, extends `SmrtObject`, STI table)
 - `AssetTypeCollection` (collection `assettypes`, extends `SmrtCollection`)
 - `Folder` (collection `folders`, extends `SmrtHierarchical`)
@@ -86,53 +88,23 @@ sources:
 
 ## MCP tools
 
-- `create_assetassociations`: create on `@happyvertical/smrt-assets:AssetAssociation`
-- `create_assetassociations`: create on `@happyvertical/smrt-assets:AssetAssociationCollection`
-- `create_assetmetafields`: create on `@happyvertical/smrt-assets:AssetMetafield`
-- `create_assetmetafields`: create on `@happyvertical/smrt-assets:AssetMetafieldCollection`
-- `create_assets`: create on `@happyvertical/smrt-assets:Asset`
-- `create_assets`: create on `@happyvertical/smrt-assets:AssetCollection`
-- `create_assetstatuses`: create on `@happyvertical/smrt-assets:AssetStatus`
-- `create_assetstatuses`: create on `@happyvertical/smrt-assets:AssetStatusCollection`
-- `create_assettypes`: create on `@happyvertical/smrt-assets:AssetType`
-- `create_assettypes`: create on `@happyvertical/smrt-assets:AssetTypeCollection`
-- `create_folders`: create on `@happyvertical/smrt-assets:Folder`
-- `create_folders`: create on `@happyvertical/smrt-assets:FolderCollection`
-- `delete_assetassociations`: delete on `@happyvertical/smrt-assets:AssetAssociationCollection`
-- `delete_assetmetafields`: delete on `@happyvertical/smrt-assets:AssetMetafieldCollection`
-- `delete_assets`: delete on `@happyvertical/smrt-assets:AssetCollection`
-- `delete_assetstatuses`: delete on `@happyvertical/smrt-assets:AssetStatusCollection`
-- `delete_assettypes`: delete on `@happyvertical/smrt-assets:AssetTypeCollection`
-- `delete_folders`: delete on `@happyvertical/smrt-assets:FolderCollection`
-- `get_assetassociations`: get on `@happyvertical/smrt-assets:AssetAssociation`
-- `get_assetassociations`: get on `@happyvertical/smrt-assets:AssetAssociationCollection`
-- `get_assetmetafields`: get on `@happyvertical/smrt-assets:AssetMetafield`
-- `get_assetmetafields`: get on `@happyvertical/smrt-assets:AssetMetafieldCollection`
-- `get_assets`: get on `@happyvertical/smrt-assets:Asset`
-- `get_assets`: get on `@happyvertical/smrt-assets:AssetCollection`
-- `get_assetstatuses`: get on `@happyvertical/smrt-assets:AssetStatus`
-- `get_assetstatuses`: get on `@happyvertical/smrt-assets:AssetStatusCollection`
-- `get_assettypes`: get on `@happyvertical/smrt-assets:AssetType`
-- `get_assettypes`: get on `@happyvertical/smrt-assets:AssetTypeCollection`
-- `get_folders`: get on `@happyvertical/smrt-assets:Folder`
-- `get_folders`: get on `@happyvertical/smrt-assets:FolderCollection`
-- `list_assetassociations`: list on `@happyvertical/smrt-assets:AssetAssociation`
-- `list_assetassociations`: list on `@happyvertical/smrt-assets:AssetAssociationCollection`
-- `list_assetmetafields`: list on `@happyvertical/smrt-assets:AssetMetafield`
-- `list_assetmetafields`: list on `@happyvertical/smrt-assets:AssetMetafieldCollection`
-- `list_assets`: list on `@happyvertical/smrt-assets:Asset`
-- `list_assets`: list on `@happyvertical/smrt-assets:AssetCollection`
-- `list_assetstatuses`: list on `@happyvertical/smrt-assets:AssetStatus`
-- `list_assetstatuses`: list on `@happyvertical/smrt-assets:AssetStatusCollection`
-- `list_assettypes`: list on `@happyvertical/smrt-assets:AssetType`
-- `list_assettypes`: list on `@happyvertical/smrt-assets:AssetTypeCollection`
-- `list_folders`: list on `@happyvertical/smrt-assets:Folder`
-- `list_folders`: list on `@happyvertical/smrt-assets:FolderCollection`
-- `update_assetassociations`: update on `@happyvertical/smrt-assets:AssetAssociationCollection`
-- `update_assetmetafields`: update on `@happyvertical/smrt-assets:AssetMetafieldCollection`
-- `update_assets`: update on `@happyvertical/smrt-assets:Asset`
-- `update_assets`: update on `@happyvertical/smrt-assets:AssetCollection`
-- `update_assetstatuses`: update on `@happyvertical/smrt-assets:AssetStatusCollection`
-- `update_assettypes`: update on `@happyvertical/smrt-assets:AssetTypeCollection`
-- `update_folders`: update on `@happyvertical/smrt-assets:Folder`
-- `update_folders`: update on `@happyvertical/smrt-assets:FolderCollection`
+- `asset_create`: create on `@happyvertical/smrt-assets:Asset`
+- `asset_get`: get on `@happyvertical/smrt-assets:Asset`
+- `asset_list`: list on `@happyvertical/smrt-assets:Asset`
+- `asset_update`: update on `@happyvertical/smrt-assets:Asset`
+- `assetassociation_create`: create on `@happyvertical/smrt-assets:AssetAssociation`
+- `assetassociation_get`: get on `@happyvertical/smrt-assets:AssetAssociation`
+- `assetassociation_list`: list on `@happyvertical/smrt-assets:AssetAssociation`
+- `assetmetafield_create`: create on `@happyvertical/smrt-assets:AssetMetafield`
+- `assetmetafield_get`: get on `@happyvertical/smrt-assets:AssetMetafield`
+- `assetmetafield_list`: list on `@happyvertical/smrt-assets:AssetMetafield`
+- `assetstatus_create`: create on `@happyvertical/smrt-assets:AssetStatus`
+- `assetstatus_get`: get on `@happyvertical/smrt-assets:AssetStatus`
+- `assetstatus_list`: list on `@happyvertical/smrt-assets:AssetStatus`
+- `assettype_create`: create on `@happyvertical/smrt-assets:AssetType`
+- `assettype_get`: get on `@happyvertical/smrt-assets:AssetType`
+- `assettype_list`: list on `@happyvertical/smrt-assets:AssetType`
+- `folder_create`: create on `@happyvertical/smrt-assets:Folder`
+- `folder_get`: get on `@happyvertical/smrt-assets:Folder`
+- `folder_list`: list on `@happyvertical/smrt-assets:Folder`
+- `folder_update`: update on `@happyvertical/smrt-assets:Folder`

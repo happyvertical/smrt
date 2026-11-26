@@ -5,10 +5,10 @@ description: "Background job processing for SMRT objects with persistence and sc
 status: "stable"
 generated:
   by: "smrt/scripts/generate-knowledge-okf.ts"
-  at: "2026-11-26T18:24:00Z"
+  at: "2026-11-26T19:09:41Z"
 audience: "internal"
 evidence_level: "source-inspected"
-source_revision: "sha256:e5a3937ced8a68739161e86ebbd147e959b51193684e6f3d72141d7129bfbd8d"
+source_revision: "sha256:c9e849979901d47b0d101d8afe252087530328cc1da4cba5b2723dd509d51984"
 sources:
   - id: "manifest"
     resource: "https://github.com/happyvertical/smrt/blob/main/packages/jobs/package.json"
@@ -42,7 +42,7 @@ sources:
 
 - Directory: `packages/jobs`
 - Private: no
-- Object source: `scanner`
+- Object source: `domain-artifact`
 - Evidence level: `source-inspected`
 
 ## Documentation
@@ -85,9 +85,13 @@ sources:
 ## Models
 
 - `ForgeDelivery` (collection `forgedeliveries`, extends `SmrtObject`)
-- `ForgeDeliveryCollection` (collection `forgedeliverycollections`, extends `SmrtCollection`)
+- `ForgeDeliveryCollection` (collection `forgedeliveries`, extends `SmrtCollection`)
 - `ForgeProjectionCheckpoint` (collection `forgeprojectioncheckpoints`, extends `SmrtObject`)
 - `SmrtJob` (collection `smrtjobs`, extends `SmrtObject`)
+- `SmrtJobCollection` (collection `smrtjobs`, extends `SmrtCollection`)
 - `SmrtJobDedupeSlot` (collection `smrtjobdedupeslots`, extends `SmrtObject`)
+- `SmrtJobDedupeSlotCollection` (collection `smrtjobdedupeslots`, extends `SmrtCollection`)
 - `SmrtJobEvent` (collection `smrtjobevents`, extends `SmrtObject`)
+- `SmrtJobEventCollection` (collection `smrtjobevents`, extends `SmrtCollection`)
 - `SmrtWorker` (collection `smrtworkers`, extends `SmrtObject`)
+- `SmrtWorkerCollection` (collection `smrtworkers`, extends `SmrtCollection`)
