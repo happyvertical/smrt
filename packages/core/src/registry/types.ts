@@ -1222,6 +1222,12 @@ export interface RegisteredClass {
   inheritedFields?: Map<string, RegisteredField>;
   /** Merged methods from entire inheritance chain (cached, includes parent methods) */
   inheritedMethods?: Map<string, MethodDefinition>;
+  /**
+   * Set by `registerRuntimeModel()` (#5196): the class was defined from data
+   * at run time, not from decorated source. Security ceilings (the guest
+   * caller ceiling) exclude such classes.
+   */
+  runtimeModel?: true;
   /** Normalized tenant scoping configuration (Issue #688) */
   tenantScopedConfig?: {
     mode: 'required' | 'optional';

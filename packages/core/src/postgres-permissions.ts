@@ -215,6 +215,27 @@ function name(value: unknown, label: string): string {
   }
   return value;
 }
+/** `pg_roles` attributes a runtime role must not hold. */
+const PRIVILEGED_ROLE_ATTRIBUTES = [
+  'rolsuper',
+  'rolcreaterole',
+  'rolcreatedb',
+  'rolreplication',
+  'rolbypassrls',
+] as const;
+
+/**
+ * Whether a `pg_roles` row (or its `rolsuper`/`rolbypassrls` columns) can
+ * bypass row-level security: SUPERUSER or BYPASSRLS. The guest caller gate
+ * (#5196) uses this to refuse a connection role that ignores policies.
+ */
+export function isRlsBypassingRole(row: {
+  rolsuper?: unknown;
+  rolbypassrls?: unknown;
+}): boolean {
+  return Boolean(row.rolsuper) || Boolean(row.rolbypassrls);
+}
+
 /** Validate configuration before opening a connection; unknown options fail closed. */
 export function validatePostgresPermissionContract(
   value: unknown,
@@ -482,13 +503,7 @@ async function plan(
     }
     if (
       roles.includes(role) &&
-      [
-        'rolsuper',
-        'rolcreaterole',
-        'rolcreatedb',
-        'rolreplication',
-        'rolbypassrls',
-      ].some((key) => row[key])
+      PRIVILEGED_ROLE_ATTRIBUTES.some((key) => row[key])
     )
       unsupported(
         'privileged-role',

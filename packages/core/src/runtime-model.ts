@@ -636,6 +636,8 @@ export function registerRuntimeModel(
   if (!registered) {
     throw new Error(`Run-time model ${qualifiedName} was not registered`);
   }
+  // Marker for ceilings that must never admit run-time models (#5196).
+  registered.runtimeModel = true;
   const proto = (registered.constructor as unknown as { prototype: object })
     .prototype as Record<string, unknown>;
   for (const [name, fn] of Object.entries(options.methods ?? {})) {
