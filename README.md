@@ -275,7 +275,7 @@ Status legend:
 | [`smrt-mobile-contract`](./packages/smrt-mobile-contract/README.md) | Preview | Manifest-to-Kotlin/Swift contract generation. |
 | [`smrt-mobile`](./packages/smrt-mobile/README.md) | Preview | Kotlin Multiplatform offline, sync, auth, and platform seams. |
 | [`smrt-android`](./packages/smrt-android/README.md) | Internal | Android Compose foundation and native adapters. |
-| [`smrt-capacitor-session`](./packages/smrt-capacitor-session/README.md) | Preview | Capacitor Android plugin that flushes the WebView cookie jar to disk so a cookie session survives the app being killed. |
+| [`smrt-capacitor-session`](./packages/smrt-capacitor-session/README.md) | Preview | Capacitor Android plugin that keeps a WebView cookie session durable and, opt-in, routes emailed links into the app and download paths out to the browser. |
 | [`smrt-ios`](./packages/smrt-ios/README.md) | Internal | SwiftUI foundation and native adapters. |
 | [`smrt-template-sveltekit`](./packages/template-sveltekit/README.md) | Stable | Minimal SvelteKit application template. |
 | [`smrt-template-site-static-json`](./packages/template-site-static-json/README.md) | Stable | Static JSON community-site template. |

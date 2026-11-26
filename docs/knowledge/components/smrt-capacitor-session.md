@@ -1,14 +1,14 @@
 ---
 type: "Component"
 title: "@happyvertical/smrt-capacitor-session"
-description: "Capacitor Android plugin that keeps a WebView cookie session durable: flushes the WebView CookieManager to disk when the cookie jar changes and on pause, stop and destroy"
+description: "Capacitor Android plugin that keeps a WebView cookie session durable: flushes the WebView CookieManager to disk when the cookie jar changes and on pause, stop and destroy; opt-in routing of emailed links into the app and of download paths out to the browser"
 status: "stable"
 generated:
   by: "smrt/scripts/generate-knowledge-okf.ts"
-  at: "2026-11-20T04:26:33Z"
+  at: "2026-11-26T20:13:12Z"
 audience: "internal"
 evidence_level: "manifest-described"
-source_revision: "sha256:20bf359bc0efab9b374dcdab92987c5164eb80a16e110e0eab90e82c781c8b89"
+source_revision: "sha256:8af099d804725838ad3b3beaca41dcb3ebf938fdc913670344e0f7235572a33d"
 sources:
   - id: "manifest"
     resource: "https://github.com/happyvertical/smrt/blob/main/packages/smrt-capacitor-session/package.json"

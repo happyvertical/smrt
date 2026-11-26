@@ -15,7 +15,7 @@
 * [@happyvertical/smrt-assets](/components/smrt-assets.md) - Asset management system with versioning, metadata, and AI-powered operations for SMRT framework
 * [@happyvertical/smrt-bookings](/components/smrt-bookings.md) - Operator-managed service reservations for SMRT
 * [@happyvertical/smrt-bundle-gate](/components/smrt-bundle-gate.md) - Consumer bundle reachability and size regression gate for SMRT packages
-* [@happyvertical/smrt-capacitor-session](/components/smrt-capacitor-session.md) - Capacitor Android plugin that keeps a WebView cookie session durable: flushes the WebView CookieManager to disk when the cookie jar changes and on pause, stop and destroy
+* [@happyvertical/smrt-capacitor-session](/components/smrt-capacitor-session.md) - Capacitor Android plugin that keeps a WebView cookie session durable: flushes the WebView CookieManager to disk when the cookie jar changes and on pause, stop and destroy; opt-in routing of emailed links into the app and of download paths out to the browser
 * [@happyvertical/smrt-chat](/components/smrt-chat.md) - Chat rooms, DMs, threads, and agent conversations for the SMRT framework
 * [@happyvertical/smrt-cli](/components/smrt-cli.md) - Developer CLI for SMRT framework - introspection, testing, and project management
 * [@happyvertical/smrt-comments](/components/smrt-comments.md) - Record comments and mention hooks for SMRT applications

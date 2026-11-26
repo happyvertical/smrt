@@ -4,7 +4,7 @@
  *
  * Default: structural checks, no JDK or Android SDK needed. `--test` also runs
  * the page watch script (res/raw/smrt_session_watch.js) against fakes in a Node
- * vm (#5160), and compiles CookieFlushPolicy, AppLinkPolicy and SpentLinks (#5361) with javac and runs their plain-Java
+ * vm (#5160), and compiles CookieFlushPolicy, AppLinkPolicy, SpentLinks (#5361) and ExternalPathPolicy (#5703) with javac and runs their plain-Java
  * test; with no JDK that step is skipped locally and fails when CI is set. The Gradle compile
  * against Capacitor happens in the consuming app's `cap sync` + assemble.
  */
@@ -45,6 +45,9 @@ const SPEC = [
       // A link opens once, even when Android rebuilds the activity from it.
       'SpentLinks.seen',
       'markSpent',
+      // Opt-in external paths leave the WebView (#5703).
+      'public Boolean shouldOverrideLoad(Uri url)',
+      'ExternalPathPolicy.opensOutside',
     ],
   },
   { path: WATCH, mustContain: ['PerformanceObserver', 'checkCookies'] },
@@ -54,6 +57,8 @@ const SPEC = [
   { path: 'test/AppLinkPolicyTest.java' },
   { path: `${JAVA}/SpentLinks.java`, mustContain: ['static boolean seen', 'SHA-256'] },
   { path: 'test/SpentLinksTest.java' },
+  { path: `${JAVA}/ExternalPathPolicy.java`, mustContain: ['static boolean opensOutside'] },
+  { path: 'test/ExternalPathPolicyTest.java' },
   {
     path: 'package.json',
     mustContain: ['"@happyvertical/smrt-capacitor-session"', '"android/src/main/"', '"src": "android"', '"@capacitor/core"'],
@@ -156,13 +161,15 @@ if (process.argv.includes('--test')) {
           join(PKG, JAVA, 'CookieFlushPolicy.java'),
           join(PKG, JAVA, 'AppLinkPolicy.java'),
           join(PKG, JAVA, 'SpentLinks.java'),
+          join(PKG, JAVA, 'ExternalPathPolicy.java'),
           join(PKG, 'test/CookieFlushPolicyTest.java'),
           join(PKG, 'test/AppLinkPolicyTest.java'),
           join(PKG, 'test/SpentLinksTest.java'),
+          join(PKG, 'test/ExternalPathPolicyTest.java'),
         ],
         { stdio: 'inherit' },
       );
-      for (const test of ['CookieFlushPolicyTest', 'AppLinkPolicyTest', 'SpentLinksTest'])
+      for (const test of ['CookieFlushPolicyTest', 'AppLinkPolicyTest', 'SpentLinksTest', 'ExternalPathPolicyTest'])
         execFileSync('java', ['-cp', out, `com.happyvertical.smrt.capacitor.session.${test}`], { stdio: 'inherit' });
     } catch (error) {
       console.error(`validate-plugin: policy test failed: ${error.message}`);
