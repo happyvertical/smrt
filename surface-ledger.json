@@ -1081,6 +1081,16 @@
   },
   {
     "kind": "entry-point",
+    "name": "@happyvertical/smrt-core#./http",
+    "issue": 5674,
+    "nearest": [
+      "@happyvertical/smrt-core#./generators/rest",
+      "@happyvertical/smrt-core#./smrt-error"
+    ],
+    "reason": "Downstream SMRT HTTP services and relays need standalone Web Request / Node IncomingMessage body bounds, JSON content-type guards, right-to-left X-Forwarded-For client IP extraction, and sliding-window rate limiting without pulling in the full REST code generator (./generators/rest) or browser-safe ./smrt-error."
+  },
+  {
+    "kind": "entry-point",
     "name": "@happyvertical/smrt-core#./inference-availability",
     "grandfathered": true
   },
