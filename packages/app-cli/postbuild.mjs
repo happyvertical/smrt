@@ -5,13 +5,25 @@
  *   1. Assert the bin entry has the `#!/usr/bin/env node` shebang.
  *   2. `chmod 0755` the bin so it's executable after `npm install`.
  *   3. Assert the dist tree contains no `.test.*` artifacts.
+ *   4. Assert the `./mcp-bridge` file answers MCP `initialize` on its own,
+ *      from a directory with no `node_modules` (a desktop bundle ships it so).
  *
  * The build fails loudly if any of these don't hold — these are the kinds
  * of regressions that only show up after publish, so they need to be
  * caught at build time.
  */
 
-import { chmodSync, readdirSync, readFileSync, statSync } from 'node:fs';
+import { spawnSync } from 'node:child_process';
+import {
+  chmodSync,
+  copyFileSync,
+  mkdtempSync,
+  readdirSync,
+  readFileSync,
+  rmSync,
+  statSync,
+} from 'node:fs';
+import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
 const distRoot = new URL('./dist/', import.meta.url);
@@ -65,6 +77,41 @@ for (const binPath of binPaths) {
     );
     process.exit(1);
   }
+}
+
+const isolated = mkdtempSync(join(tmpdir(), 'smrt-mcp-bridge-'));
+try {
+  const bridge = join(isolated, 'smrt-mcp-bridge.mjs');
+  copyFileSync(join(distRoot.pathname, 'bridge/smrt-mcp-bridge.mjs'), bridge);
+  const initialize = JSON.stringify({
+    jsonrpc: '2.0',
+    id: 1,
+    method: 'initialize',
+    params: {
+      protocolVersion: '2025-06-18',
+      capabilities: {},
+      clientInfo: { name: 'postbuild', version: '0.0.0' },
+    },
+  });
+  const probe = spawnSync(
+    process.execPath,
+    [bridge, '--env-prefix=SMRT_POSTBUILD', '--name=postbuild-mcp'],
+    {
+      cwd: isolated,
+      env: { HOME: isolated, USERPROFILE: isolated },
+      input: `${initialize}\n`,
+      encoding: 'utf8',
+      timeout: 30_000,
+    },
+  );
+  if (probe.status !== 0 || !probe.stdout.includes('"name":"postbuild-mcp"')) {
+    console.error(
+      `[postbuild] the bundled MCP bridge does not run on its own (exit ${probe.status}): ${probe.stderr.slice(0, 2000)}`,
+    );
+    process.exit(1);
+  }
+} finally {
+  rmSync(isolated, { recursive: true, force: true });
 }
 
 console.log('[postbuild] ok');

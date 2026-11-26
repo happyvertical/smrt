@@ -217,6 +217,11 @@ app's environment prefix. This Claude Desktop entry is an example:
 The token is sent only when `<PREFIX>_SERVER_URL` matches the target server.
 Revoke a token with `smrt app token revoke <id>`.
 
+For a desktop bundle, `@happyvertical/smrt-app-cli/mcp-bridge`
+(`dist/bridge/smrt-mcp-bridge.mjs`) is the same binary as one self-contained
+file that imports only Node built-ins; pass its path to `smrt desktop bundle
+--bridge`.
+
 The package also ships the generic `smrt-mcp-bridge` binary. The remote app
 surface is typically mounted with
 [`@happyvertical/smrt-app-mcp`](../smrt-app-mcp/README.md).

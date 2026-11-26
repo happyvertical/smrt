@@ -624,13 +624,21 @@ content.
 The bridge must be a single self-contained file that imports only Node
 built-ins (`node:` or bare names); the bundler verifies that, hashes it,
 copies it unchanged and records its hash. The bundler does not bundle
-JavaScript (that would add a runtime dependency to this package), so
-`@happyvertical/smrt-app-cli` has to publish the pre-bundled bridge. **That
-build is a follow-up** (a second `smrt-app-cli` build output and export
-checked by its postbuild); until it lands, produce the file yourself, for
-example with `esbuild --bundle --platform=node --format=esm` over
-`@happyvertical/smrt-app-cli/dist/bin/smrt-mcp-bridge.js`, as the measured run
-below did.
+JavaScript (that would add a runtime dependency to this package), and has no
+default: without `--bridge` it fails with `bridge_missing`.
+
+`@happyvertical/smrt-app-cli` ships that file, built from its
+`smrt-mcp-bridge` bin entry, as the `./mcp-bridge` export. Add the package to
+the app's `dependencies` and pass its path:
+
+```sh
+--bridge node_modules/@happyvertical/smrt-app-cli/dist/bridge/smrt-mcp-bridge.mjs
+```
+
+Releases up to 0.72.0 do not ship it. With one of those, produce the file
+yourself and commit it, with `esbuild --bundle --platform=node --format=esm`
+over `@happyvertical/smrt-app-cli/dist/bin/smrt-mcp-bridge.js` and a
+`--banner:js` that defines `require` from `node:module`'s `createRequire`.
 
 ### Threat model and closing tests
 
@@ -764,6 +772,20 @@ Prerequisites on the build host: the app's locked tree installed (it provides
 (`libwebkit2gtk-4.1-dev`, `libgtk-3-dev`, `libayatana-appindicator3-dev`,
 `librsvg2-dev`, `libssl-dev`, `libxdo-dev`, `patchelf`).
 
+The app is a standalone pnpm project: its own `package.json` and
+`pnpm-lock.yaml`, not a member of a workspace (the bundler installs production
+dependencies from that lockfile). In a repository that has a workspace, give the
+app directory its own `pnpm-workspace.yaml` (a standalone one; the keys the
+bundler accepts are under "What the install takes from the app") and its own
+lockfile, and leave it out of the root's `packages`. It depends on
+`@happyvertical/smrt-cli` (provides `smrt`), `@happyvertical/smrt-desktop` and
+`@happyvertical/smrt-app-cli` (the bridge). It has a health route and, for the
+owner sign-in, `sidecar.ownerClaimRoute` mounted with app-runtime's
+`createOwnerLinkHandler` (see `examples/generic-app/overlay`). The SvelteKit
+template's `.gitignore` ignores `src/routes/api/**/+server.ts`; apps scaffolded
+up to 0.72.0 must add `!src/routes/api/_runtime/owner-link/+server.ts`, or the
+route is silently left out of the commit.
+
 1. Write the owner inputs in `smrt-desktop.json`: product identity (as for the
    bundler), `icons` and, for anything that will ever be released,
    `updaterPublicKey`. Nothing is defaulted or generated: a missing `icons`
@@ -852,7 +874,8 @@ What the caller commits: `smrt-desktop.json` with the product identity,
 `icons` and `updaterPublicKey` (the public half of the Tauri updater key; the
 private half only ever lives in the `desktop-release` secrets), the icon files,
 the lockfile pinning `@happyvertical/smrt-desktop` (and `@happyvertical/smrt-cli`,
-which provides `smrt`), and the pre-bundled MCP bridge if any (`bridge_path`).
+which provides `smrt`), and a `bridge_path`: the file in the installed
+`@happyvertical/smrt-app-cli` (see "Bridge"), or a committed one.
 What the caller creates in its repository settings: the `desktop-release`
 environment (restricted to the default branch, required reviewers, the secrets
 above). The signing legs run on the hosted `macos-15` runner only; the
@@ -882,54 +905,55 @@ jobs:
     uses: happyvertical/smrt/.github/workflows/desktop-consumer-build.yml@<commit sha>
     with:
       app_dir: .
-      targets: aarch64-apple-darwin,x86_64-apple-darwin,x86_64-unknown-linux-gnu
-      bridge_path: build/smrt-mcp-bridge.mjs
-      smrt_desktop_version: 0.62.0   # must equal what the lockfile resolves
+      targets: aarch64-apple-darwin,x86_64-unknown-linux-gnu
+      bridge_path: node_modules/@happyvertical/smrt-app-cli/dist/bridge/smrt-mcp-bridge.mjs
+      smrt_desktop_version: <the version the lockfile resolves>
       # Unsigned on pull requests; signed and published only from main.
       release: ${{ github.event_name == 'push' }}
-    # Either map the secrets explicitly ...
-    secrets:
-      APPLE_CERTIFICATE: ${{ secrets.APPLE_CERTIFICATE }}
-      APPLE_CERTIFICATE_PASSWORD: ${{ secrets.APPLE_CERTIFICATE_PASSWORD }}
-      APPLE_SIGNING_IDENTITY: ${{ secrets.APPLE_SIGNING_IDENTITY }}
-      APPLE_ID: ${{ secrets.APPLE_ID }}
-      APPLE_PASSWORD: ${{ secrets.APPLE_PASSWORD }}
-      APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
-      TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
-      TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
-    # ... or replace the block above with `secrets: inherit`.
+    # The signing secrets live in this repository's `desktop-release` environment.
+    secrets: inherit
 ```
 
-Pin the workflow by commit SHA. Secrets stored as repository or organization
-secrets work with either form. Secrets stored only in the `desktop-release`
-environment are read by the called jobs that name that environment (the
-preflight, `sign` and `publish` jobs), but the caller's `secrets:` mapping is
-evaluated outside any environment, so with environment-only secrets prefer
-`secrets: inherit` or omit the block. Not proven by a run yet (see below).
+Pin the workflow by commit SHA. `bridge_path` is relative to the repository
+root, so prefix it with `app_dir` when that is not `.`.
+
+Secrets: GitHub requires the caller to pass secrets to a called workflow
+(`secrets: inherit` or by name), and a job that names an `environment` takes
+that environment's secret over a passed one of the same name. Use `secrets:
+inherit`: a `secrets:` mapping is written in the calling job, which cannot name
+an environment, so it has no value for an environment-only secret. GitHub documents `inherit`
+for callers in the same organization or enterprise as this repository. The
+environment is the CALLER's; this repository's secrets are never involved.
+Unsigned runs need none of it, and a pull request run reads no secret.
 
 Inputs: `app_dir`, `targets`, `release`, `smrt_desktop_version` (empty means the
-lockfile's version; a different value fails the run), `bridge_path` (optional for unsigned builds; required when `release` is true,
-the preflight refuses an empty value), `node_version`, `pnpm_version`. Artifact names (`desktop-bundle-<target>`,
+lockfile's version; a different value fails the run), `bridge_path` (required: the bundler has no default, and on a release the
+preflight refuses an empty value too), `node_version`, `pnpm_version`. Artifact names (`desktop-bundle-<target>`,
 `desktop-unsigned-<target>`, `desktop-release-<target>`) are run-wide: call the
 workflow once per run. Set your own workflow-level `concurrency` as in the
 example; the called `publish` job also serializes itself.
 
-Blocked until Apple's D-U-N-S number arrives and the Developer ID certificate
-and notarization credentials exist: the six `APPLE_*` secrets, so the
-preflight refuses every release run (by design; nothing is defaulted). Also
-open: the updater key pair (the public half in `smrt-desktop.json`, the private
-half in the environment), a gpg-verified Node pin (`--require-verified-pins`
-stops the bundle until a maintainer runs `scripts/update-node-pins.mjs` with
-`gpg`), and real product icons. The unsigned path needs none of these.
+A release needs these owner inputs in the consuming repository, and the
+preflight refuses until each exists (nothing is defaulted or generated):
+
+- the `desktop-release` environment, protected as the environment check demands:
+  at least one required reviewer, admin bypass off, and a deployment branch rule
+  of exactly `main` (selected branches);
+- the eight secrets above in that environment;
+- `updaterPublicKey` in `smrt-desktop.json` (the public half of the updater key
+  whose private half is `TAURI_SIGNING_PRIVATE_KEY`), a real `bundleId`, and
+  icons.
+
+Proven from a repository outside this one (smrt#4965): the unsigned build and
+launch smoke on macOS arm64 and Linux x64, on a pull request with no secrets,
+and the release jobs skipped when `release` is off.
 
 Not proven by a real run: that environment secrets reach the called jobs as
-written, that a second repository may call the workflow (needs the
-organization's Actions access setting for it, and a scratch repository), the
-`contents: write` permission check described above, and the macOS signing and
-notarization legs, which have only been exercised through this repository's own
-release workflow structure, never with real Apple credentials, and the
-environment check's `actions: read` token permission (it fails closed if
-GitHub refuses it). A builder without `updaterPublicKey` writes an invalid
+written, the environment check's `actions: read` token permission (it fails
+closed if GitHub refuses it), the `contents: write` publish, and the macOS
+signing and notarization legs, which have only been exercised through this
+repository's own release workflow structure, never with real Apple
+credentials. A builder without `updaterPublicKey` writes an invalid
 placeholder key into the installer (never the wrapper's own key), which the
 release preflight rejects.
 

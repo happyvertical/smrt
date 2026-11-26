@@ -78,8 +78,9 @@ on:
     inputs:
       app_dir:
         description: >-
-          Caller-repository-relative directory of the built app
-          (package.json, pnpm-lock.yaml, smrt-desktop.json).
+          Caller-repository-relative directory of the app (package.json,
+          pnpm-lock.yaml, smrt-desktop.json). A standalone pnpm project with
+          its own lockfile, not a member of a workspace.
         type: string
         default: '.'
       targets:
@@ -105,9 +106,13 @@ on:
       bridge_path:
         description: >-
           Caller-repository-relative path of the pre-bundled MCP bridge file
-          (passed to smrt desktop bundle --bridge). Optional for unsigned
-          builds (empty omits it); REQUIRED when release is true (the release
-          preflight refuses an empty value).
+          (passed to smrt desktop bundle --bridge, read after the install).
+          `smrt desktop bundle` refuses to run without one, so set it for every
+          build; REQUIRED when release is true (the release preflight refuses
+          an empty value). An app that depends on @happyvertical/smrt-app-cli
+          can point at the file that package ships:
+          node_modules/@happyvertical/smrt-app-cli/dist/bridge/smrt-mcp-bridge.mjs
+          (prefixed with app_dir when that is not the repository root).
         type: string
         default: ''
       node_version:
@@ -170,11 +175,12 @@ jobs:
         run: |
           node --input-type=module -e '
             import { appendFileSync } from "node:fs";
-            const safe = /^(?!\/)(?!.*(?:^|\/)\.\.(?:\/|$))[A-Za-z0-9._\/-]+$/;
+            const safe = /^(?!\/)(?!.*(?:^|\/)\.\.(?:\/|$))[A-Za-z0-9._@\/-]+$/;
             const fail = (message) => { console.error(message); process.exit(1); };
             const { APP_DIR, TARGETS, BRIDGE_PATH, DESKTOP_VERSION } = process.env;
             if (!safe.test(APP_DIR)) fail("app_dir must be a relative path of plain segments");
-            if (BRIDGE_PATH !== "" && !safe.test(BRIDGE_PATH)) fail("bridge_path must be a relative path of plain segments");
+            if (BRIDGE_PATH === "") fail("bridge_path is required: smrt desktop bundle needs the pre-bundled MCP bridge file");
+            if (!safe.test(BRIDGE_PATH)) fail("bridge_path must be a relative path of plain segments");
             if (DESKTOP_VERSION !== "" && !/^[0-9]+\.[0-9]+\.[0-9]+(?:-[0-9A-Za-z.-]+)?$/.test(DESKTOP_VERSION)) fail("smrt_desktop_version must be an exact version");
             const table = {
               "aarch64-apple-darwin": { runner: "macos-15", smoke: true },
@@ -229,6 +235,17 @@ jobs:
         uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7
         with:
           node-version: ${{ inputs.node_version }}
+
+      # A workspace member has no lockfile of its own, and `pnpm install`
+      # from it would install the whole workspace. Say so before it does.
+      - name: Require the app's own lockfile
+        env:
+          APP_DIR: ${{ inputs.app_dir }}
+        run: |
+          if [ ! -f "$APP_DIR/pnpm-lock.yaml" ]; then
+            echo "app_dir must be a standalone pnpm project with its own pnpm-lock.yaml (a workspace member is not supported)." >&2
+            exit 1
+          fi
 
       - name: Install the pinned smrt-desktop (scripts disabled)
         env:
@@ -484,6 +501,17 @@ jobs:
         run: |
           npm install --global --ignore-scripts "pnpm@${PNPM_VERSION}" "@tauri-apps/cli@${TAURI_CLI_VERSION}"
 
+      # A workspace member has no lockfile of its own, and `pnpm install`
+      # from it would install the whole workspace. Say so before it does.
+      - name: Require the app's own lockfile
+        env:
+          APP_DIR: ${{ inputs.app_dir }}
+        run: |
+          if [ ! -f "$APP_DIR/pnpm-lock.yaml" ]; then
+            echo "app_dir must be a standalone pnpm project with its own pnpm-lock.yaml (a workspace member is not supported)." >&2
+            exit 1
+          fi
+
       # The caller's own locked tree supplies the CLI, the bundler and the
       # wrapper. Nothing is copied from this repository.
       - name: Install the app (frozen lockfile, no lifecycle scripts)
@@ -523,7 +551,7 @@ jobs:
           args=(--app "$GITHUB_WORKSPACE/$APP_DIR" --target "$TARGET" --out "$RUNNER_TEMP/bundle")
           # The signing path refuses a Node pin that is not gpg-verified.
           if [ "$RELEASE" = "true" ]; then args+=(--require-verified-pins); fi
-          if [ -n "$BRIDGE_PATH" ]; then args+=(--bridge "$GITHUB_WORKSPACE/$BRIDGE_PATH"); fi
+          args+=(--bridge "$GITHUB_WORKSPACE/$BRIDGE_PATH")
           pnpm --dir "$APP_DIR" exec smrt desktop bundle "${args[@]}"
 
       # Unsigned, always: `smrt desktop build` passes --no-sign and forwards no

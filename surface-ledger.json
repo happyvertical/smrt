@@ -561,6 +561,16 @@
   },
   {
     "kind": "entry-point",
+    "name": "@happyvertical/smrt-app-cli#./mcp-bridge",
+    "issue": 4965,
+    "nearest": [
+      "@happyvertical/smrt-app-cli#.",
+      "@happyvertical/smrt-desktop#./bundler"
+    ],
+    "reason": "`smrt desktop bundle` needs a single-file MCP bridge that imports only Node built-ins. The root export and the smrt-mcp-bridge bin import @modelcontextprotocol packages and smrt-users, and the desktop bundler does not bundle JavaScript, so a consuming app had to run its own bundler over this package. This publishes the pre-bundled file of the same bin entry."
+  },
+  {
+    "kind": "entry-point",
     "name": "@happyvertical/smrt-app-mcp#.",
     "grandfathered": true
   },

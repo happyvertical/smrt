@@ -362,6 +362,68 @@ describe('the consumer workflow keeps secret custody (smrt#4965)', () => {
     expect(publish).not.toContain('inputs.targets');
   });
 
+  it('refuses a missing bridge_path and takes a scoped node_modules path', () => {
+    const script =
+      /node --input-type=module -e '\n([\s\S]*?)\n {10}'/.exec(
+        job('plan').body,
+      )?.[1] ?? '';
+    const plan = (env: Record<string, string>) => {
+      const dir = mkdtempSync(join(tmpdir(), 'plan-'));
+      const out = join(dir, 'out');
+      writeFileSync(out, '');
+      const status = spawnSync(
+        process.execPath,
+        ['--input-type=module', '-e', script],
+        {
+          encoding: 'utf8',
+          env: {
+            ...process.env,
+            APP_DIR: '.',
+            TARGETS: 'aarch64-apple-darwin',
+            BRIDGE_PATH:
+              'node_modules/@happyvertical/smrt-app-cli/dist/bridge/smrt-mcp-bridge.mjs',
+            DESKTOP_VERSION: '',
+            GITHUB_OUTPUT: out,
+            ...env,
+          },
+        },
+      ).status;
+      rmSync(dir, { recursive: true });
+      return status;
+    };
+    expect(plan({})).toBe(0);
+    expect(plan({ BRIDGE_PATH: '' })).toBe(1);
+    for (const BRIDGE_PATH of ['../x.mjs', '/x.mjs', 'a b.mjs', '$(id).mjs']) {
+      expect(plan({ BRIDGE_PATH }), BRIDGE_PATH).toBe(1);
+    }
+  });
+
+  it('refuses an app without its own lockfile before installing', () => {
+    for (const id of ['tools', 'build']) {
+      const names = job(id).steps.map((step) => step.name);
+      const guard = names.indexOf("Require the app's own lockfile");
+      expect(guard, id).toBeGreaterThanOrEqual(0);
+      expect(guard, id).toBeLessThan(
+        names.findIndex(
+          (name) =>
+            name.startsWith('Install the ') &&
+            !name.includes('system dependencies') &&
+            !name.includes('pnpm and'),
+        ),
+      );
+    }
+  });
+
+  it('signs and publishes only after every job they need succeeded', () => {
+    // A status function (always, failure, !cancelled) in either condition
+    // would let the leg run after a refused preflight.
+    for (const id of ['sign', 'publish']) {
+      expect(job(id).body.match(/^ {4}if: .*$/m)?.[0], id).toBe(
+        '    if: inputs.release',
+      );
+    }
+  });
+
   it('says the bridge is required for a release', () => {
     const description =
       /bridge_path:\n {8}description: >-\n((?: {10}.*\n)+)/.exec(text)?.[1];
