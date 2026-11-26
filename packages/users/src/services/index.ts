@@ -303,6 +303,11 @@ export {
   type SwitchTenantResult,
 } from './SessionService.js';
 export {
+  isStorableGuestPermissionSlug,
+  type TenantGuestGrantActor,
+  TenantGuestGrantService,
+} from './TenantGuestGrantService.js';
+export {
   type AcceptedTenantInvitation,
   type IssuedTenantInvitation,
   type PreparedTenantInvitation,
