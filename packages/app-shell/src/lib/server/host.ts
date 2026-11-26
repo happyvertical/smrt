@@ -35,7 +35,9 @@ import {
   AppHost,
   type AppLimits,
   bundledWorkerUrl,
+  type DowngradeToSqliteResult,
   discardOrphanDraft,
+  downgradeUserAppToSqlite,
   EngineError,
   isMigratedToPostgres,
   type MethodCodeGate,
@@ -758,7 +760,7 @@ export async function assertNothingPending(
   db: DatabaseInterface,
   tenant: string,
   draft: string,
-  moving: 'migrating' | 'receiving an app',
+  moving: 'migrating' | 'receiving an app' | 'going back to the desktop',
 ): Promise<void> {
   if (existsSync(draft))
     throw new EngineError(
@@ -820,6 +822,41 @@ export async function migrateOwnAppToPostgres(): Promise<MigrateToPostgresResult
     database: provider.config(schema),
     versions: await store.list(),
     provision: () => provider.provision(schema),
+  });
+}
+
+/**
+ * Take the signed-in owner's migrated app back to its kept `app.db` (#5193),
+ * only while it has taken no writes on PostgreSQL since the migration
+ * (`HostedWritesError` otherwise, nothing changed). The same refusals as the
+ * move (an open draft, waiting changes, an unsettled approval) apply, and a host
+ * holding the app refuses it. Run by the operator command inside the verified
+ * owner's scope; the tenant is that owner's, never an argument.
+ */
+export async function downgradeOwnAppToSqlite(): Promise<DowngradeToSqliteResult> {
+  const provider = requireContext().appDatabase;
+  if (!provider)
+    throw new EngineError(
+      'there is no PostgreSQL database for apps configured',
+      'refused',
+    );
+  const tenant = safeId((await assertOwner()).tenantId, 'the tenant');
+  const db = await getShellDb();
+  const store = new ShellVersionStore(db, tenant);
+  const app = await store.appRow();
+  const { live, draft } = tenantAppDirs(
+    await dataRoot(),
+    tenant,
+    app.id as string,
+  );
+  await assertNothingPending(db, tenant, draft, 'going back to the desktop');
+  // The tenant's open app in this process goes first (refused while a call is
+  // inside it); another process holding it is refused by the engine's claim.
+  await closeOwnApp();
+  return downgradeUserAppToSqlite({
+    dataDir: live,
+    database: provider.config(appSchemaName(tenant, app.id as string)),
+    versions: await store.list(),
   });
 }
 

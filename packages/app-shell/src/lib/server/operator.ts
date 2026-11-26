@@ -6,9 +6,13 @@
 // runs as them. No principal is built here from the operator's say-so, and the
 // tenant is the verified owner's (`migrateOwnAppToPostgres` takes it from the
 // async scope, never from an argument).
-import type { MigrateToPostgresResult } from '../../engine/index.ts';
+import type {
+  DowngradeToSqliteResult,
+  MigrateToPostgresResult,
+} from '../../engine/index.ts';
 import { EngineError } from '../../engine/index.ts';
 import {
+  downgradeOwnAppToSqlite,
   getShellDb,
   migrateOwnAppToPostgres,
   safeId,
@@ -17,6 +21,17 @@ import {
 import { PolicyError, requireOwner, runAs } from './owner.ts';
 
 export const MIGRATE_COMMAND = 'migrate-to-postgres';
+export const DOWNGRADE_COMMAND = 'downgrade-to-sqlite';
+
+const DOWNGRADE_USAGE = `usage: smrt-app-shell ${DOWNGRADE_COMMAND} --tenant <tenant id> --user <owner user id> [--json]
+
+Takes the tenant's migrated app back to its kept SQLite file (app.db), only
+while the hosted app has taken no writes since the migration; after any write
+it is refused by name and nothing changes. Hosted profile only, run on the
+host with the server's own environment. The user must be the tenant's owner.
+Refuses while a draft, changes waiting or an unsettled approval exists, or
+another host holds the app. Drops the app's PostgreSQL schema; the hosted app
+stays closed until it is migrated again.`;
 
 const USAGE = `usage: smrt-app-shell ${MIGRATE_COMMAND} --tenant <tenant id> --user <owner user id> [--json]
 
@@ -63,17 +78,17 @@ export function parseMigrateArgs(argv: readonly string[]): MigrateArgs {
 class UsageError extends Error {}
 
 /**
- * Migrate one tenant's SQLite app into PostgreSQL as its verified owner.
- * Hosted profile only. `userId` must hold the tenant's owner role; anything
- * else is refused before any app file or schema is touched.
+ * The tenant's verified owner, for an operator command. Hosted profile only.
+ * `userId` must hold the tenant's owner role; anything else is refused before
+ * any app file or schema is touched.
  */
-export async function migrateAppToPostgresAsOperator(input: {
-  tenantId: string;
-  userId: string;
-}): Promise<MigrateToPostgresResult> {
+async function verifiedOwner(
+  command: string,
+  input: { tenantId: string; userId: string },
+) {
   if ((await shellProfile()) !== 'cloud')
     throw new EngineError(
-      'migrating to PostgreSQL is a hosted-profile operation',
+      `${command} is a hosted-profile operation`,
       'refused',
     );
   const tenantId = safeId(input.tenantId, 'the tenant');
@@ -85,9 +100,8 @@ export async function migrateAppToPostgresAsOperator(input: {
   });
   // The verified owner, looked up in shell.db; a non-owner or a tenant that
   // does not exist is the same refusal (nothing says which).
-  let owner: Awaited<ReturnType<typeof requireOwner>>;
   try {
-    owner = await requireOwner({ id: userId, tenantId });
+    return await requireOwner({ id: userId, tenantId });
   } catch (error) {
     if (error instanceof PolicyError)
       throw new EngineError(
@@ -96,7 +110,27 @@ export async function migrateAppToPostgresAsOperator(input: {
       );
     throw error;
   }
+}
+
+/** Migrate one tenant's SQLite app into PostgreSQL as its verified owner. */
+export async function migrateAppToPostgresAsOperator(input: {
+  tenantId: string;
+  userId: string;
+}): Promise<MigrateToPostgresResult> {
+  const owner = await verifiedOwner('migrating to PostgreSQL', input);
   return runAs(owner, () => migrateOwnAppToPostgres());
+}
+
+/**
+ * Take one tenant's migrated app back to its SQLite file as its verified owner,
+ * only while the hosted app has taken no writes (`HostedWritesError`).
+ */
+export async function downgradeAppToSqliteAsOperator(input: {
+  tenantId: string;
+  userId: string;
+}): Promise<DowngradeToSqliteResult> {
+  const owner = await verifiedOwner('going back to SQLite', input);
+  return runAs(owner, () => downgradeOwnAppToSqlite());
 }
 
 /**
@@ -109,7 +143,8 @@ export async function runOperatorCommand(
   io: OperatorIo,
 ): Promise<number> {
   const [command, ...rest] = argv;
-  if (command !== MIGRATE_COMMAND) {
+  const down = command === DOWNGRADE_COMMAND;
+  if (command !== MIGRATE_COMMAND && !down) {
     io.err(`unknown command ${JSON.stringify(command ?? '')}\n${USAGE}`);
     return 2;
   }
@@ -118,11 +153,13 @@ export async function runOperatorCommand(
     args = parseMigrateArgs(rest);
   } catch (error) {
     if (!(error instanceof UsageError)) throw error;
-    io.err(`${error.message}\n${USAGE}`);
+    io.err(`${error.message}\n${down ? DOWNGRADE_USAGE : USAGE}`);
     return 2;
   }
   try {
-    const result = await migrateAppToPostgresAsOperator(args);
+    const result = await (down
+      ? downgradeAppToSqliteAsOperator(args)
+      : migrateAppToPostgresAsOperator(args));
     io.out(
       args.json
         ? JSON.stringify({ ok: true, tenantId: args.tenantId, ...result })
