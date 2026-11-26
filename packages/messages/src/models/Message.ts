@@ -609,7 +609,10 @@ export class Message extends SmrtObject {
     if (
       save &&
       row.sendStatus === 'sent' &&
-      (fresh || takesOver || stored?.send_status !== 'sent') &&
+      (fresh ||
+        takesOver ||
+        stored?.send_status !== 'sent' ||
+        String(stored.account_id ?? '') !== this.accountId) &&
       this.accountId
     ) {
       result.keys.add(`send:${this.accountId}`);
@@ -643,7 +646,14 @@ export class Message extends SmrtObject {
       'slug',
       'context',
     ]);
-    let registered: ReadonlyMap<string, { type?: string; transient?: boolean }>;
+    let registered: ReadonlyMap<
+      string,
+      {
+        type?: string;
+        transient?: boolean;
+        _meta?: { transient?: boolean };
+      }
+    >;
     try {
       registered = ObjectRegistry.getFields(qualified);
     } catch {
@@ -714,7 +724,13 @@ export class Message extends SmrtObject {
         storedValue = bag[name];
       } else if (column in stored) {
         storedValue = stored[column];
-      } else if (definition && !definition.transient) {
+      } else if (
+        definition &&
+        !definition.transient &&
+        !definition._meta?.transient &&
+        definition.type !== 'oneToMany' &&
+        definition.type !== 'manyToMany'
+      ) {
         // A registered field this comparison cannot read back counts as
         // changed: it cannot be shown to equal the stored row.
         return false;

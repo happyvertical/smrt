@@ -63,6 +63,22 @@ describe('creating a sent row (#5681)', () => {
     expect((await f.load(id)).sendStatus).toBe('draft');
   });
 
+  it('refuses to move a sent row onto an owned account', async () => {
+    const id = await f.as(f.principal(f.stranger), async () => {
+      const email = await newSent(f.openId, 'moved');
+      await email.save();
+      return email.id as string;
+    });
+    await expect(
+      f.as(f.principal(f.stranger), async () => {
+        const email = await f.load(id);
+        email.accountId = f.ownedId;
+        await email.save();
+      }),
+    ).rejects.toBeInstanceOf(MailAccessError);
+    expect((await f.load(id)).accountId).toBe(f.openId);
+  });
+
   it('lets a sender, the owner and trusted code record a sent row', async () => {
     for (const [label, who] of [
       ['sender', f.principal(f.sender)],
