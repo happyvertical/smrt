@@ -315,9 +315,9 @@ function reportFailures(
 }
 
 /** Table of tenant memberships, as named in change signals. */
-async function membershipTable(): Promise<string> {
-  const { Membership } = await import('@happyvertical/smrt-users');
-  return new Membership().tableName;
+async function membershipTable(db: DatabaseInterface): Promise<string> {
+  const { MembershipCollection } = await import('@happyvertical/smrt-users');
+  return (await MembershipCollection.create({ db })).tableName;
 }
 
 /**
@@ -357,7 +357,7 @@ function watchMemberships(
   const unsubscribe = subscribeToChangeSignals(db, (signal) => {
     if (stopped || !signal.tenantId) return;
     const tenantId = signal.tenantId;
-    void membershipTable()
+    void membershipTable(db)
       .then((name) => {
         table ??= name;
         if (signal.table !== table || stopped) return;
