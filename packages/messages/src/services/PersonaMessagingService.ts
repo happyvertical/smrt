@@ -8,7 +8,7 @@ import { PersonaMessageRouteCollection } from '../collections/PersonaMessageRout
 import { withTenant } from '../host.js';
 import { Email } from '../models/Email.js';
 import { EmailAccount } from '../models/EmailAccount.js';
-import { Message } from '../models/Message.js';
+import { Message, saveQueuedForSend } from '../models/Message.js';
 import type { PersonaMessageRoute } from '../models/PersonaMessageRoute.js';
 import {
   assertMessagingPermission,
@@ -117,7 +117,7 @@ export class PersonaMessagingService {
         );
       }
       await message.initialize();
-      await message.save();
+      await saveQueuedForSend(message);
       const sendOptions: SendEmailOptions | undefined = input.attachments
         ?.length
         ? { attachments: input.attachments }
