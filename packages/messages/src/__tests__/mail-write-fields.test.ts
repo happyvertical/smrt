@@ -96,6 +96,17 @@ describe('stored-row comparison covers meta and write-through fields (#5681)', (
     expect(stored.isRead).toBe(false);
   });
 
+  it('lets a triage-only save change the read flag of a write-through subclass row', async () => {
+    const id = await seed(LinkedEmail);
+    const who = await triager();
+    await f.as(who, async () => {
+      const email = await open(LinkedEmail, id);
+      email.isRead = true;
+      await email.save();
+    });
+    expect((await open(LinkedEmail, id)).isRead).toBe(true);
+  });
+
   it('refuses a write-through field changed under a triage-only save', async () => {
     const id = await seed(LinkedEmail);
     const who = await triager();

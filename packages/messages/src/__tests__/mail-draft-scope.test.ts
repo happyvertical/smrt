@@ -652,8 +652,10 @@ describe('draft scope on message writes (#5616)', () => {
       expect((await load(id)).subject).toBe('edited');
     });
 
-    it('leaves sent mail and unflagged queued mail alone', async () => {
+    it('lets a triage grantee mark sent mail read (#5696)', async () => {
       const sent = await seedFlagged('sent');
+      await f.grant(stranger.id, 'read');
+      await f.grant(stranger.id, 'triage');
       await as(principal(stranger), async () => {
         const email = await load(sent);
         email.isRead = true;

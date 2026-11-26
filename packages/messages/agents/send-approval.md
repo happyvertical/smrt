@@ -109,6 +109,11 @@ covers meta and write-through fields of a host subclass like any column, and
 counts a registered field it cannot read back as changed. Triage write-back
 never changes `isDraft`; only a full sync does.
 
+A stored `sent` row is a record that replies and forwards quote. Outside
+system access its read and flag marks need `triage`; any other change, a move
+onto or off an owned account, and a delete need `send` (the scope that creates
+the record) on each account involved. Unowned accounts are unaffected.
+
 The `draft` scope is needed: `Message.save()` and `Message.delete()`
 check it (`assertMailScopeOn`, `access.ts`) for unsent outgoing mail (below)
 now or when stored, by id or by the slug a new object would take over (its own

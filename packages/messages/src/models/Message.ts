@@ -27,6 +27,7 @@ import {
   ObjectRegistry,
   SmrtObject,
   smrt,
+  toSnakeCase,
   usesEmbeddedRevisionFallback,
   withEmbeddedWriteQueue,
 } from '@happyvertical/smrt-core';
@@ -536,6 +537,9 @@ export class Message extends SmrtObject {
     const row = this as unknown as Record<string, unknown>;
     const write = save ? 'save' : 'delete';
     const priorAccountIds: string[] = [];
+    // Accounts of stored `sent` rows this write changes, moves or deletes.
+    const sentAccountIds: string[] = [];
+    let storedSent = false;
     let stored: Record<string, unknown> | null = null;
     let unchanged = false;
     let triageOnly = false;
@@ -545,6 +549,8 @@ export class Message extends SmrtObject {
         if (isMailWriteGated(stored, write)) {
           priorAccountIds.push(String(stored.account_id ?? ''));
         }
+        storedSent = stored.send_status === 'sent';
+        if (storedSent) sentAccountIds.push(String(stored.account_id ?? ''));
         if (
           save &&
           stored.send_status === 'sent' &&
@@ -590,6 +596,9 @@ export class Message extends SmrtObject {
             if (isMailWriteGated(keyed, write)) {
               priorAccountIds.push(String(keyed.account_id ?? ''));
             }
+            if (keyed.send_status === 'sent') {
+              sentAccountIds.push(String(keyed.account_id ?? ''));
+            }
           }
         }
       }
@@ -599,7 +608,18 @@ export class Message extends SmrtObject {
       // Read and flag marks are not content, but they are triage: the stored
       // row's account decides, under the triage scope instead of draft.
       for (const id of priorAccountIds) if (id) result.keys.add(`triage:${id}`);
+      if (storedSent) {
+        for (const id of sentAccountIds)
+          if (id) result.keys.add(`triage:${id}`);
+      }
       return result;
+    }
+    // Sent mail is a record that replies and forwards quote. Outside the
+    // triage fields, changing, moving or deleting a stored `sent` row needs
+    // `send` on the account it is on and on the one it moves to.
+    for (const id of sentAccountIds) if (id) result.keys.add(`send:${id}`);
+    if (storedSent && save && this.accountId) {
+      result.keys.add(`send:${this.accountId}`);
     }
     const fresh = !stored && !takesOver;
     const outgoingNow = isMailWriteGated(row, write);
@@ -683,14 +703,21 @@ export class Message extends SmrtObject {
     };
     // Write-through fields live on a linked record: any pending edit is a
     // change, and so is a draft the instance does not expose.
-    let writeThrough: string[] = [];
+    const writeThrough: string[] = [];
     try {
-      writeThrough = Object.keys(
-        ObjectRegistry.getWriteThroughFields(qualified),
-      );
+      // Names come from the declaration itself, as core persists them; the
+      // linked target is not resolved, so a lookup failure cannot refuse a
+      // save that carries no pending edit.
+      for (const link of Object.values(
+        ObjectRegistry.getConfig(qualified).writeThrough ?? {},
+      )) {
+        writeThrough.push(
+          ...link.fields,
+          ...Object.keys(link.virtualFields ?? {}),
+        );
+      }
     } catch {
-      // A declaration that cannot be resolved cannot be compared.
-      if (ObjectRegistry.getConfig(qualified).writeThrough) return false;
+      return false;
     }
     if (writeThrough.length) {
       const pending = (this as unknown as Record<string, unknown>)
@@ -716,7 +743,7 @@ export class Message extends SmrtObject {
       if (!(name in this)) continue;
       if (writeThrough.includes(name)) continue;
       const definition = registered.get(name);
-      const column = name.replace(/[A-Z]/g, (c) => `_${c.toLowerCase()}`);
+      const column = toSnakeCase(name);
       let storedValue: unknown;
       if (definition?.type === 'meta') {
         const bag = metaOf();
