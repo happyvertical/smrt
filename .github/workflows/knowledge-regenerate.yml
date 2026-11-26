@@ -74,6 +74,9 @@ jobs:
           GH_TOKEN: ${{ steps.generate_token.outputs.token }}
           REPO: ${{ github.repository }}
           MAIN_SHA: ${{ github.sha }}
+          # Repo git hooks (installed by `pnpm install`) are a local developer
+          # gate; the bot PR still runs full PR CI. Same as push-release-refs.
+          LEFTHOOK: '0'
         run: |
           set -euo pipefail
           paths=(docs/knowledge/components docs/knowledge/index.md)
