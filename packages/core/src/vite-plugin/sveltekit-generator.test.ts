@@ -719,6 +719,71 @@ describe('SvelteKit Route Generator', () => {
       );
     });
 
+    it.each([
+      [true, 'const ALLOW_SUPER_ADMIN_BYPASS = true;'],
+      [false, 'const ALLOW_SUPER_ADMIN_BYPASS = false;'],
+    ])('derives the bypass opt-in of a collection-hosted action from the item model (opt-in %s)', async (optIn, expected) => {
+      const manifest = {
+        version: '1',
+        timestamp: 0,
+        objects: {
+          Widget: {
+            className: 'Widget',
+            name: 'Widget',
+            filePath: '',
+            collection: 'widgets',
+            extends: 'SmrtObject',
+            fields: {},
+            methods: {},
+            decoratorConfig: {
+              api: false,
+              ...(optIn
+                ? { tenantScoped: { allowSuperAdminBypass: true } }
+                : {}),
+            },
+          },
+          WidgetCollection: {
+            className: 'WidgetCollection',
+            name: 'WidgetCollection',
+            filePath: '',
+            collection: 'widget_collections',
+            extends: 'SmrtCollection',
+            extendsTypeArg: 'Widget',
+            fields: {},
+            methods: {
+              importBatch: {
+                async: false,
+                name: 'importBatch',
+                parameters: [],
+                returnType: 'Promise<any>',
+                isPublic: true,
+                isStatic: false,
+              },
+            },
+            decoratorConfig: {
+              api: {
+                include: ['importBatch'],
+                routes: { importBatch: { method: 'POST' } },
+              },
+            },
+          },
+        },
+      } as unknown as SmartObjectManifest;
+
+      await generateSvelteKitRoutes(projectRoot, manifest, {
+        enabled: true,
+        routesDir: 'src/routes/api',
+        objectsDir: 'src/lib/objects',
+        configPath: 'src/lib/server',
+      });
+      const route = vi
+        .mocked(writeFileSync)
+        .mock.calls.find(([filePath]) =>
+          String(filePath).includes('/importBatch/+server.ts'),
+        );
+      expect(route?.[1] as string).toContain(expected);
+    });
+
     it('keeps an inherited item type name when a partial manifest omits the item', async () => {
       const manifest: SmartObjectManifest = {
         version: '1',

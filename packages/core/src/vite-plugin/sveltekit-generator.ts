@@ -621,8 +621,8 @@ const PERMISSION_COLLECTION = ${JSON.stringify(permissionCollection)};
 // The decision itself is the shared one (#5195): these constants are the
 // model's policy it is given. A super-admin bypass counts only on a model that
 // opts in with \`tenantScoped: { allowSuperAdminBypass: true }\`.
-const ALLOW_SUPER_ADMIN_BYPASS = ${JSON.stringify(allowsSuperAdminBypass(objectDef))};
-const TENANT_COLUMNS: ReadonlySet<string> = new Set(${JSON.stringify(manifestTenantColumns(objectDef))});
+const ALLOW_SUPER_ADMIN_BYPASS = ${JSON.stringify(allowsSuperAdminBypass(permissionObjectDef))};
+const TENANT_COLUMNS: ReadonlySet<string> = new Set(${JSON.stringify(manifestTenantColumns(permissionObjectDef))});
 
 interface PublicJsonOptions {
   permissions?: Iterable<string>;
