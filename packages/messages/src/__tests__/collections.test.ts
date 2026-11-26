@@ -760,7 +760,6 @@ describe('AttachmentCollection', () => {
         contentType: 'application/pdf',
         size: 2048,
         contentDisposition: 'attachment',
-        filePath: '/tmp/report.pdf',
       }),
     );
     await persist(
@@ -806,6 +805,12 @@ describe('AttachmentCollection', () => {
 
   it('getWithExternalFiles() returns attachments with a filePath', async () => {
     await seedAttachments();
+    // Stored directly: the seeded message has no account to scope a path to.
+    await db.update(
+      col.tableName,
+      { filename: 'report.pdf' },
+      { file_path: 'acct-1/reports/report.pdf' },
+    );
     const external = await col.getWithExternalFiles();
     expect(external).toHaveLength(1);
     expect(external[0].filename).toBe('report.pdf');

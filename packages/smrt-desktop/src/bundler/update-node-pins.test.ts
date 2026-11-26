@@ -149,7 +149,7 @@ describe('update-node-pins (offline parts)', () => {
     const versions = script
       .parsePinsBlock(merged)
       .map((r: { version: string }) => r.version);
-    expect(versions).toEqual(['26.9.0', '26.8.1']);
+    expect(versions).toEqual(['26.12.1', '26.9.0', '26.8.1']);
     // Code outside the block is untouched.
     expect(merged.slice(0, merged.indexOf(script.BEGIN_MARKER))).toBe(
       pinsSource.slice(0, pinsSource.indexOf(script.BEGIN_MARKER)),
@@ -164,7 +164,7 @@ describe('update-node-pins (offline parts)', () => {
       ...record,
       pins: pins.slice().reverse(),
     });
-    expect(script.parsePinsBlock(reRun)).toHaveLength(2);
+    expect(script.parsePinsBlock(reRun)).toHaveLength(3);
     expect(merged).toContain("verification: 'gpg-verified'");
     expect(merged).toContain(`signerFingerprints: ['${FPR_A}']`);
     // The 26.8.1 record is untouched and still unverified.
@@ -383,10 +383,13 @@ describe('update-node-pins (offline parts)', () => {
       const written = readFileSync(out, 'utf8');
       const records = script.parsePinsBlock(written);
       expect(records.map((r: { version: string }) => r.version)).toEqual([
+        '26.12.1',
         '26.9.0',
         '26.8.1',
       ]);
-      const fresh = records[0] as {
+      const fresh = records.find(
+        (r: { version: string }) => r.version === '26.9.0',
+      ) as {
         provenance: { verification: string; signerFingerprints: string[] };
       };
       expect(fresh.provenance.verification).toBe('unverified');

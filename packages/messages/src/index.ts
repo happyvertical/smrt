@@ -45,6 +45,12 @@ export {
   runWithMailSystemAccess,
 } from './access.js';
 export {
+  type AttachmentStorageConfig,
+  AttachmentStorageError,
+  configureAttachmentStorage,
+  resetAttachmentStorage,
+} from './attachment-storage.js';
+export {
   MailDraftError,
   type MailDraftInput,
   MailDraftService,

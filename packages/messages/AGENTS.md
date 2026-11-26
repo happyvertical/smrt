@@ -111,6 +111,13 @@ owners and call `configureMailAccess({ options, resolvePrincipal })` at startup
 `CorrespondentService` derives owner-private contacts (optional `Profile` link).
 Both fail closed. Details: [agents/mail-search.md](agents/mail-search.md).
 
+## Attachment storage root (#5645)
+
+`Attachment.filePath` is `<accountId>/...` relative to the root set once at startup with
+`configureAttachmentStorage({ root })` (beside `configureMailAccess`). Without
+it stored files are never read (fail closed). Rules, send behaviour and the
+upgrade step: [agents/attachment-storage.md](agents/attachment-storage.md).
+
 ## Mailbox connect (provider-neutral)
 
 Credentials reach smrt-secrets in two ways; neither writes the plaintext `settings` fallback.
@@ -221,9 +228,8 @@ import '@happyvertical/smrt-messages/providers/all';     // all of the above
   `createSender` hooks. Never import a provider SDK from any module reachable
   from `src/index.ts` — the consumer bundle gate (`packages/bundle-gate`)
   fails CI when one becomes reachable.
-- `Attachment.readContent()` loads `@happyvertical/files` through core's
-  `importOptionalDependency` boundary and keeps its null-on-failure contract
-  in builds where the SDK is absent.
+- `Attachment.readContent()` reads with `node:fs` through `host.ts` (stubbed
+  in `host.browser.ts`), not `@happyvertical/files`; see Attachment storage.
 
 ## Gotchas
 

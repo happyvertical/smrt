@@ -43,6 +43,9 @@ export interface InstalledPackage {
   readonly dependencies: Readonly<Record<string, string>>;
   readonly optionalDependencies: Readonly<Record<string, string>>;
   readonly peerDependencies: Readonly<Record<string, string>>;
+  readonly peerDependenciesMeta?: Readonly<
+    Record<string, { readonly optional?: boolean }>
+  >;
   /** Install-time script names present (`preinstall`, `install`, `postinstall`). */
   readonly installScripts: readonly string[];
   readonly gypfile: boolean;
@@ -65,6 +68,29 @@ function stringMap(value: unknown): Record<string, string> {
       throw new BundleTreeError('invalid_package_json');
     }
     out[key] = spec;
+  }
+  return out;
+}
+
+function peerMetadata(value: unknown): Record<string, { optional?: boolean }> {
+  if (value === undefined) return {};
+  if (value === null || typeof value !== 'object' || Array.isArray(value)) {
+    throw new BundleTreeError('invalid_package_json');
+  }
+  const out: Record<string, { optional?: boolean }> = Object.create(null);
+  for (const [name, metadata] of Object.entries(value)) {
+    if (
+      metadata === null ||
+      typeof metadata !== 'object' ||
+      Array.isArray(metadata)
+    ) {
+      throw new BundleTreeError('invalid_package_json');
+    }
+    const optional = (metadata as Record<string, unknown>).optional;
+    if (optional !== undefined && typeof optional !== 'boolean') {
+      throw new BundleTreeError('invalid_package_json');
+    }
+    out[name] = optional === undefined ? {} : { optional };
   }
   return out;
 }
@@ -107,6 +133,7 @@ function parseManifest(
       dependencies: stringMap(record.dependencies),
       optionalDependencies: stringMap(record.optionalDependencies),
       peerDependencies: stringMap(record.peerDependencies),
+      peerDependenciesMeta: peerMetadata(record.peerDependenciesMeta),
       installScripts: ['preinstall', 'install', 'postinstall'].filter(
         (script) => typeof scripts[script] === 'string',
       ),
@@ -333,7 +360,11 @@ export function buildDependencyGraph(
     for (const name of Object.keys(pkg.dependencies)) {
       const resolved = resolve(pkg.id, name);
       if (resolved === undefined) {
-        if (!(name in pkg.optionalDependencies)) {
+        const optionalPeer =
+          Object.hasOwn(pkg.peerDependencies, name) &&
+          Object.hasOwn(pkg.peerDependenciesMeta ?? {}, name) &&
+          pkg.peerDependenciesMeta?.[name]?.optional === true;
+        if (!(name in pkg.optionalDependencies) && !optionalPeer) {
           missing.push({ from: pkg.id, name });
         }
       } else {
