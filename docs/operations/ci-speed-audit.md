@@ -171,6 +171,36 @@ audit did not change cache behaviour; see Proposals.
 | `packages.microsoft.com` apt source parked on GitHub-hosted runners, plus `Acquire::Retries "5"` | same | Removes the 429 class (2 runs). The ONNX packages all come from the Ubuntu archive; self-hosted pods and `CI_ONNX_DEPS_READY` runners are untouched |
 | `smrt-app-shell` weight 628 to 1200 in the shard table | `scripts/test-shard-balance.mjs` | `app-shell` gets a shard to itself; shard 2/5 was 25.1 p50 in the merge queue against 13 to 15 elsewhere. Expected 3 to 6 minutes off the merge-queue and PR critical path. Re-measure after merge |
 | `testTimeout` 30 s to 60 s in `ingestion` | `packages/ingestion/vitest.config.ts` | Matches `app-shell`; no test is skipped or weakened, a hang just fails 30 s later |
+| Dropped ordering-only `needs` on `affected-package-tests` (waited on `affected-test-scope`, which waited on `affected-scope`); `affected-core-tests` keeps its need because it reads the scope output (#5646) | `.github/workflows/test-suite.yml` | The package shards start with their sibling jobs instead of about 80 s later (PR run 45077001900). Same jobs, same `Required CI` aggregate: a failed scope job still fails the reusable workflow |
+| Coverage Gate split in two: `Coverage Gate` (non-core, starts after `build`) and `Coverage Gate (core)`, which merges the coverage blobs the three core shards write instead of re-running the core suite; the gate fails on a missing, duplicate or file-short blob set (#5648) | `.github/workflows/test-suite.yml`, `scripts/core-coverage-merge.mjs`, `scripts/check-coverage.mjs` | Removes the 1063 s and 1205 s core re-run (sampled merge groups) from the gate, which finished at about 28 of 30 minutes. Costs the core shards the v8 slowdown below. Same floors, interim floors and exemptions; verify on the first queue transit |
+
+### Core coverage reuse (#5648), local measurements
+
+Run on one workstation (macOS, `hv-heavy`, core suite without Docker, so
+PostgreSQL-only files skip; 9 environment-dependent tests fail locally in both
+the sharded and the single run, identically):
+
+| Measurement | Value |
+| --- | --- |
+| Core test files, `vitest list --filesOnly` | 768 (shards ran 256 + 256 + 256) |
+| Shard 1/3 without coverage | 156 s |
+| Shard 1/3 `--coverage --reporter=default --reporter=blob` | 188 s (+32 s, +20%) |
+| Shards 2/3 and 3/3 with coverage | 209 s and 172 s (no uncovered baseline taken) |
+| Single run `vitest run --coverage`, whole suite | 522 s |
+| `vitest --merge-reports` of the three blobs | 2 s plus about 1 s of report generation |
+| Merged line coverage | 90.65% (41222 / 45470 lines, 428 files) |
+| Single-run line coverage | 90.64% (41217 / 45470 lines, 428 files) |
+
+The denominator and file set are identical; the merged figure is 5 lines (0.01
+percentage points) above the single run. The stated tolerance is 0.1 percentage
+points: merge replays the same per-file v8 data, so the only expected drift is a
+few ordering-sensitive lines, and the 80% T1 floor sits 10 points below the
+90.6% measured in merge group 45076013238. The 20% shard slowdown is the v8 instrumentation cost; the shards are
+not the critical path of a merge group (test-packages is), so it is spent in
+parallel slack, and the gate sheds the 1063 to 1205 s serial re-run. The CI
+cost of `Coverage Gate (core)` itself is checkout, install, build cache restore
+and `generate:test` plus seconds of merge; compare it with the first queue
+transit.
 
 Not changed: required checks, rulesets, branch protection, runner
 infrastructure, secrets. `concurrency` already cancels superseded runs. The
@@ -184,12 +214,13 @@ rough.
 
 | # | Proposal | Saves | Risk | Effort | Needs owner decision |
 | --- | --- | --- | --- | --- | --- |
-| 1 | Split `app-shell` tests across two shards, or give it its own matrix entry, and reduce its 1196 s (`fileParallelism: false`, one test file `minimal-row.generated.test.ts` is a large share of the 2221 s of summed test time) | 6 to 9 (new critical path becomes M5 gate, 19 min) | Low | Medium | No |
+| 1 | Shipped on `release/ci-wall-clock` (#5647): `app-shell` runs as three units (default config `--shard` 1/2 and 2/2, and pglite+dom+packed), balanced like any package. Original proposal: split `app-shell` tests across two shards, or give it its own matrix entry, and reduce its 1196 s (`fileParallelism: false`, one test file `minimal-row.generated.test.ts` is a large share of the 2221 s of summed test time) | 6 to 9 (new critical path becomes M5 gate, 19 min) | Low | Medium | No |
 | 2 | Shipped here: weight fix for `app-shell` | 3 to 6 | Low | Done | No |
 | 3 | Shipped here: install and apt retries | 0 p50, removes about 1 in 80 failed runs (about 25 to 30 minutes each with a re-run) | Low | Done | No |
 | 4 | Refresh `TEST_SECONDS` / `POSTGRES_TEST_SECONDS` automatically, from a nightly job summing per-package `Duration`, instead of by hand. Package attribution from raw job logs is unreliable; use `turbo run --summarize` output | Keeps 2 from regressing | Low | Medium | No |
 | 5 | Shorten the M5 Reference Fixture Gate (19.4 min p50 on every PR, 14.9 in one step) by caching its reference application closure build, or splitting it | 2 to 5 once shard 2/5 is fixed (it becomes the PR critical path) | Medium | Medium | No |
 | 6 | Run the PostgreSQL merge-queue lane only on a cheap subset or drop it when the PR run on the same code was green (**proposal only, not implemented**). Today 39 of 40 merge groups re-ran all five shards for 68 runner-minutes and 19 minutes wall | up to 19 min of queue time per merge, 68 runner-minutes | Medium to high (the merge result can differ from the PR head, and the queue is the last gate) | Low (workflow condition) | **Yes.** Re-measure after #5366 has been live a week; it may already have taken most of this |
+| 7a | Shipped on `release/ci-wall-clock` (#5649): `core`'s PGlite half (42 files, 721 to 1227 s) runs as its own PostgreSQL-lane unit beside its real-PostgreSQL half (100 files, about 360 s); `app-shell` (1172 s) is weighed instead of defaulting to 12 s. Expected to bring the `remaining:1/3` pole of 29.8 min near its neighbours; measure on the first merge group | to be measured | Low | Done | No |
 | 7 | Rebalance PostgreSQL `remaining` groups: `remaining:1/3` is 2.4 min behind the next shard and failed 14 times; move one large package (`smrt-users` 606 s or `smrt-education` 325 s) | 1 to 2 | Low | Low | No |
 | 8 | Make `Turbo` cache HITs verify `dist/` identity before trusting them (a stamp written next to `dist/` and compared with the task hash) | Reliability only | Medium | Medium | Yes, touches build contract |
 | 9 | Look at the duplicate `github-pages` artifact failure in Batched Release docs deploy, and quiet the `Stale PR validation head` reconcile failures | Reliability only | Low | Low | No |

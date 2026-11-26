@@ -12,8 +12,9 @@
  * `@happyvertical/smrt-core` (it runs in the separate sharded "Test Core" job).
  * `selectShard` in test-shard-balance.mjs then gives each dedicated package a
  * trailing shard of its own and balances the rest over the leading shards by
- * measured duration. This prints the shard's `--filter=<name>` flags for
- * `turbo run test`.
+ * measured duration. A package in SPLIT_TEST_UNITS (app-shell) is balanced as
+ * its separate unit tasks. This prints the shard's `<package>#<task>` unit ids
+ * for `turbo run` (#5647).
  *
  * Usage: node scripts/test-packages-shard.mjs <i>/<n>   (e.g. "2/4")
  * Prints nothing for an empty shard (more shards than packages); the CI step
@@ -23,7 +24,11 @@
 import { existsSync, readFileSync, readdirSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { selectShard, TEST_SECONDS } from './test-shard-balance.mjs';
+import {
+  expandTestUnits,
+  selectShard,
+  TEST_SECONDS,
+} from './test-shard-balance.mjs';
 
 const shardArg = process.argv[2] ?? '';
 // Require exactly "<i>/<n>" — reject empties, extra segments ("1/3/4"), etc.
@@ -54,9 +59,13 @@ for (const dir of readdirSync(packagesDir)) {
   names.push(manifest.name);
 }
 
-const shard = selectShard(names, { index: i, count: n }, TEST_SECONDS);
+const shard = selectShard(
+  expandTestUnits(names),
+  { index: i, count: n },
+  TEST_SECONDS,
+);
 
 // Empty shard → print nothing; the CI step's `xargs -r` then runs zero packages.
-// (A turbo --filter that matches nothing errors out, and a bare `turbo run test`
-// with no filter would run EVERY package — both defeat the sharding.)
-process.stdout.write(shard.map((name) => `--filter=${name}`).join(' '));
+// (A bare `turbo run test` with no filter would run EVERY package, which
+// defeats the sharding.)
+process.stdout.write(shard.join(' '));
