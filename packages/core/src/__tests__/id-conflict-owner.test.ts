@@ -34,6 +34,26 @@ class IdConflictPlainCollection extends SmrtCollection<IdConflictPlain> {
   static readonly _itemClass = IdConflictPlain;
 }
 
+/** Whether `transformJSON()` drops the owner column from the saved row. */
+let dropOwner = false;
+
+@smrt({ tableName: 'id_conflict_dropping', conflictColumns: ['id'] })
+class IdConflictDropping extends SmrtObject {
+  @field({ type: 'text' }) body = '';
+  @field({ type: 'text' }) tenantId: string | null = null;
+
+  protected override transformJSON(
+    data: Record<string, unknown>,
+  ): Record<string, unknown> {
+    if (!dropOwner) return data;
+    const { tenantId: _omitted, ...rest } = data;
+    return rest;
+  }
+}
+class IdConflictDroppingCollection extends SmrtCollection<IdConflictDropping> {
+  static readonly _itemClass = IdConflictDropping;
+}
+
 type Engine = 'sqlite' | 'pglite';
 const engines: Engine[] =
   process.env.SMRT_TEST_PGLITE === '1' ? ['pglite'] : ['sqlite'];
@@ -45,6 +65,7 @@ describe.each(
   let db: Awaited<ReturnType<typeof getTestDatabase>>;
   let owned: IdConflictOwnedCollection;
   let plain: IdConflictPlainCollection;
+  let dropping: IdConflictDroppingCollection;
 
   beforeEach(async () => {
     restore = snapshotObjectRegistryState();
@@ -56,13 +77,18 @@ describe.each(
       'IdConflictPlain',
       IdConflictPlainCollection,
     );
+    ObjectRegistry.registerCollection(
+      'IdConflictDropping',
+      IdConflictDroppingCollection,
+    );
     db = await getTestDatabase({
       type: engine,
       ...(engine === 'sqlite' ? { url: ':memory:' } : {}),
-      classes: ['IdConflictOwned', 'IdConflictPlain'],
+      classes: ['IdConflictOwned', 'IdConflictPlain', 'IdConflictDropping'],
     });
     owned = (await IdConflictOwnedCollection.create({ db })) as never;
     plain = (await IdConflictPlainCollection.create({ db })) as never;
+    dropping = (await IdConflictDroppingCollection.create({ db })) as never;
   });
 
   afterEach(async () => {
@@ -115,6 +141,41 @@ describe.each(
       body: 'global',
       tenant_id: null,
     });
+  });
+
+  it('refuses a create whose saved row leaves the owner column out', async () => {
+    const a = await dropping.create({
+      body: 'A',
+      tenantId: TENANT_A,
+    } as never);
+
+    dropOwner = true;
+    try {
+      await expect(
+        dropping.create({ id: a.id, body: 'B', tenantId: TENANT_B } as never),
+      ).rejects.toMatchObject({ code: 'TENANT_ISOLATION_VIOLATION' });
+    } finally {
+      dropOwner = false;
+    }
+
+    expect(await stored('id_conflict_dropping', String(a.id))).toEqual({
+      body: 'A',
+      tenant_id: TENANT_A,
+    });
+  });
+
+  it('treats a whitespace-only owner as unset, as a global row', async () => {
+    const global = await owned.create({ body: 'global' } as never);
+
+    await owned.create({
+      id: global.id,
+      body: 'blank owner',
+      tenantId: '  ',
+    } as never);
+
+    expect((await stored('id_conflict_owned', String(global.id))).body).toBe(
+      'blank owner',
+    );
   });
 
   it('control: a same-tenant create with the id updates the row in place', async () => {

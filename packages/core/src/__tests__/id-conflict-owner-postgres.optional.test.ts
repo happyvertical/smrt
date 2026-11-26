@@ -31,6 +31,26 @@ class PgIdConflictOwnedCollection extends SmrtCollection<PgIdConflictOwned> {
   static readonly _itemClass = PgIdConflictOwned;
 }
 
+/** Whether `transformJSON()` drops the owner column from the saved row. */
+let dropOwner = false;
+
+@smrt({ tableName: 'pg_id_conflict_dropping', conflictColumns: ['id'] })
+class PgIdConflictDropping extends SmrtObject {
+  @field({ type: 'text' }) body = '';
+  @field({ type: 'text' }) tenantId: string | null = null;
+
+  protected override transformJSON(
+    data: Record<string, unknown>,
+  ): Record<string, unknown> {
+    if (!dropOwner) return data;
+    const { tenantId: _omitted, ...rest } = data;
+    return rest;
+  }
+}
+class PgIdConflictDroppingCollection extends SmrtCollection<PgIdConflictDropping> {
+  static readonly _itemClass = PgIdConflictDropping;
+}
+
 describe.skipIf(!pgUrl)(
   'explicit-id create on an id conflict target [postgres]',
   () => {
@@ -45,15 +65,17 @@ describe.skipIf(!pgUrl)(
         max: 4,
       } as Parameters<typeof getDatabase>[0])) as DatabaseInterface;
       await db.query(`DROP TABLE IF EXISTS "${TABLE}" CASCADE`);
+      await db.query(`DROP TABLE IF EXISTS "pg_id_conflict_dropping" CASCADE`);
       await getTestDatabase({
         type: 'postgres',
         db,
-        classes: ['PgIdConflictOwned'],
+        classes: ['PgIdConflictOwned', 'PgIdConflictDropping'],
       });
     }, 60_000);
 
     afterAll(async () => {
       await db?.query(`DROP TABLE IF EXISTS "${TABLE}" CASCADE`);
+      await db?.query(`DROP TABLE IF EXISTS "pg_id_conflict_dropping" CASCADE`);
       await db?.close?.();
     });
 
@@ -94,6 +116,34 @@ describe.skipIf(!pgUrl)(
         body: 'A',
         tenant_id: TENANT_A,
       });
+    });
+
+    it('refuses a create whose saved row leaves the owner column out', async () => {
+      await db.query('TRUNCATE "pg_id_conflict_dropping"');
+      const dropping = await PgIdConflictDroppingCollection.create({ db });
+      const a = await dropping.create({
+        body: 'A',
+        tenantId: TENANT_A,
+      } as never);
+
+      dropOwner = true;
+      try {
+        await expect(
+          dropping.create({
+            id: a.id,
+            body: 'B',
+            tenantId: TENANT_B,
+          } as never),
+        ).rejects.toMatchObject({ code: 'TENANT_ISOLATION_VIOLATION' });
+      } finally {
+        dropOwner = false;
+      }
+
+      const result = await db.query(
+        'SELECT body, CAST(tenant_id AS VARCHAR) AS tenant_id FROM "pg_id_conflict_dropping" WHERE id = $1',
+        String(a.id),
+      );
+      expect(result.rows[0]).toEqual({ body: 'A', tenant_id: TENANT_A });
     });
 
     it('control: a same-tenant create with the id updates the row in place', async () => {

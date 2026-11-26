@@ -5388,8 +5388,9 @@ export class SmrtObject extends SmrtClass {
       this.getResolvedQualifiedName(),
     );
     const normalizeOwner = (value: unknown): string | null => {
-      if (value === null || value === undefined || value === '') return null;
-      return String(value).trim().toLowerCase();
+      if (value === null || value === undefined) return null;
+      const owner = String(value).trim().toLowerCase();
+      return owner === '' ? null : owner;
     };
     const differing = [...ownershipColumns].filter(
       (column) =>
@@ -5456,13 +5457,14 @@ export class SmrtObject extends SmrtClass {
     // the save's on every ownership column the row carries (normalized as in
     // assertSameNaturalKeyOwner); otherwise nothing is written.
     const normalizedOwner = (reference: string) =>
-      `NULLIF(lower(trim(CAST(${reference} AS TEXT))), '')`;
+      `NULLIF(lower(regexp_replace(CAST(${reference} AS TEXT), '^\\s+|\\s+$', '', 'g')), '')`;
     const ownerPredicate = updateUntrackedId
       ? [...SmrtObject.ownershipColumnsFor(this.getResolvedQualifiedName())]
-          .filter((column) => Object.hasOwn(data, column))
-          .map(
-            (column) =>
-              ` AND ${normalizedOwner(`${table}.${quote(column)}`)} IS NOT DISTINCT FROM ${normalizedOwner(`excluded.${quote(column)}`)}`,
+          .map((column) =>
+            // A column the save leaves out is an unset owner, i.e. NULL.
+            Object.hasOwn(data, column)
+              ? ` AND ${normalizedOwner(`${table}.${quote(column)}`)} IS NOT DISTINCT FROM ${normalizedOwner(`excluded.${quote(column)}`)}`
+              : ` AND ${normalizedOwner(`${table}.${quote(column)}`)} IS NULL`,
           )
           .join('')
       : '';
