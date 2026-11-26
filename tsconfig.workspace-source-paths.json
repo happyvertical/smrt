@@ -295,6 +295,9 @@
       "@happyvertical/smrt-core/generators/swagger": [
         "./packages/core/src/generators/swagger.ts"
       ],
+      "@happyvertical/smrt-core/http": [
+        "./packages/core/src/http.ts"
+      ],
       "@happyvertical/smrt-core/inference-availability": [
         "./packages/core/src/inference-availability.ts"
       ],

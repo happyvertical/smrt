@@ -1,0 +1,244 @@
+import { createServer, type Server } from 'node:http';
+import type { AddressInfo } from 'node:net';
+import { afterEach, describe, expect, it } from 'vitest';
+import { normalizeTypedHttpError } from './generators/typed-http-error.js';
+import {
+  BoundedSlidingWindowRateLimiter,
+  createNodeHttpHandler,
+  extractClientIp,
+  formatBodyLimitMessage,
+  HttpBadRequestError,
+  HttpPayloadTooLargeError,
+  HttpTooManyRequestsError,
+  isJsonContentType,
+  normalizeIpAddress,
+  parseJsonRequestBody,
+  parseOptionalJsonRequestBody,
+  readBoundedBody,
+} from './http.js';
+
+describe('@happyvertical/smrt-core/http helpers (#5674)', () => {
+  const servers: Server[] = [];
+
+  afterEach(async () => {
+    for (const server of servers.splice(0)) {
+      await new Promise<void>((resolve) => server.close(() => resolve()));
+    }
+  });
+
+  it('integrates HTTP error classes cleanly with normalizeTypedHttpError', () => {
+    expect(
+      normalizeTypedHttpError(new HttpBadRequestError('bad json')),
+    ).toEqual({
+      ok: false,
+      status: 400,
+      code: 'bad_request',
+      message: 'bad json',
+    });
+    expect(
+      normalizeTypedHttpError(new HttpPayloadTooLargeError('too big')),
+    ).toEqual({
+      ok: false,
+      status: 413,
+      code: 'payload_too_large',
+      message: 'too big',
+    });
+    const rateErr = new HttpTooManyRequestsError('slow down', 12.2);
+    expect(rateErr.retryAfterSeconds).toBe(13);
+    expect(normalizeTypedHttpError(rateErr)).toEqual({
+      ok: false,
+      status: 429,
+      code: 'too_many_requests',
+      message: 'slow down',
+    });
+  });
+
+  it('validates content types and enforces streaming + declared byte bounds', async () => {
+    expect(isJsonContentType('application/json')).toBe(true);
+    expect(isJsonContentType('application/json; charset=utf-8')).toBe(true);
+    expect(isJsonContentType('text/plain')).toBe(false);
+    expect(isJsonContentType(null)).toBe(false);
+    expect(formatBodyLimitMessage(64 * 1024)).toBe(
+      'Request body exceeds 64 KiB limit',
+    );
+    expect(formatBodyLimitMessage(2 * 1024 * 1024)).toBe(
+      'Request body exceeds 2 MiB limit',
+    );
+
+    const validReq = new Request('http://localhost/test', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json; charset=utf-8' },
+      body: JSON.stringify({ hello: 'world' }),
+    });
+    await expect(parseJsonRequestBody(validReq, 1024)).resolves.toEqual({
+      hello: 'world',
+    });
+
+    const emptyOptReq = new Request('http://localhost/test', {
+      method: 'POST',
+    });
+    await expect(
+      parseOptionalJsonRequestBody(emptyOptReq, 1024),
+    ).resolves.toEqual({});
+
+    const wrongTypeReq = new Request('http://localhost/test', {
+      method: 'POST',
+      headers: { 'content-type': 'text/plain' },
+      body: '{"a":1}',
+    });
+    await expect(
+      parseJsonRequestBody(wrongTypeReq, 1024),
+    ).rejects.toBeInstanceOf(HttpBadRequestError);
+
+    // Oversized declared Content-Length fails before consuming stream
+    let streamPulled = false;
+    const oversizedDeclared = new Request('http://localhost/test', {
+      method: 'POST',
+      headers: { 'content-length': '2048' },
+      body: new ReadableStream(
+        {
+          pull(controller) {
+            streamPulled = true;
+            controller.enqueue(new Uint8Array(10));
+            controller.close();
+          },
+        },
+        { highWaterMark: 0 },
+      ),
+      duplex: 'half',
+    } as RequestInit);
+    await expect(
+      readBoundedBody(oversizedDeclared, 128),
+    ).rejects.toBeInstanceOf(HttpPayloadTooLargeError);
+    expect(streamPulled).toBe(false);
+
+    // Oversized chunked stream without Content-Length cancels mid-stream
+    let cancelled = false;
+    const oversizedStream = new Request('http://localhost/test', {
+      method: 'POST',
+      body: new ReadableStream({
+        start(controller) {
+          controller.enqueue(new Uint8Array(80));
+          controller.enqueue(new Uint8Array(80));
+        },
+        cancel() {
+          cancelled = true;
+        },
+      }),
+      duplex: 'half',
+    } as RequestInit);
+    await expect(readBoundedBody(oversizedStream, 100)).rejects.toBeInstanceOf(
+      HttpPayloadTooLargeError,
+    );
+    expect(cancelled).toBe(true);
+  });
+
+  it('extracts client IPs safely from right-to-left X-Forwarded-For hops', () => {
+    expect(normalizeIpAddress('::ffff:198.51.100.7')).toBe('198.51.100.7');
+    const req = new Request('http://localhost/api', {
+      headers: {
+        'x-forwarded-for': '203.0.113.99, 198.51.100.42, ::ffff:10.0.0.5',
+      },
+    });
+    // Untrusted proxy (hops = 0) ignores X-Forwarded-For completely
+    expect(extractClientIp(req, '::ffff:127.0.0.1', 0)).toBe('127.0.0.1');
+    // 1 trusted hop picks rightmost proxy entry
+    expect(extractClientIp(req, '::ffff:127.0.0.1', 1)).toBe('10.0.0.5');
+    // 2 trusted hops picks second from right, resisting leftmost spoofing
+    expect(extractClientIp(req, '::ffff:127.0.0.1', 2)).toBe('198.51.100.42');
+  });
+
+  it('enforces LRU-bounded sliding-window rate limits and refunds', () => {
+    const limiter = new BoundedSlidingWindowRateLimiter({
+      maxEvents: 2,
+      windowMs: 10_000,
+      maxEntries: 2,
+    });
+    expect(limiter.check('alice', 1_000)).toBeNull();
+    limiter.record('alice', 1_000);
+    limiter.record('alice', 2_000);
+    expect(limiter.check('alice', 3_000)).toBe(8);
+
+    // Refunding one attempt restores availability immediately
+    limiter.refundOne('alice', 2_000);
+    expect(limiter.check('alice', 3_000)).toBeNull();
+
+    // LRU cap evicts oldest key when full
+    limiter.record('bob', 4_000);
+    limiter.record('charlie', 5_000);
+    expect(limiter.size).toBe(2);
+    expect(limiter.check('alice', 5_000)).toBeNull();
+
+    // Window expiry clears bob after 10s
+    limiter.record('bob', 5_500);
+    expect(limiter.check('bob', 6_000)).toBe(8);
+    expect(limiter.check('bob', 16_000)).toBeNull();
+  });
+
+  it('bridges Node http.Server requests with streaming 413 protection and multi Set-Cookie headers', async () => {
+    const handler = createNodeHttpHandler(
+      async (request, remoteAddress) => {
+        const url = new URL(request.url);
+        if (url.pathname === '/cookies') {
+          const headers = new Headers({ 'content-type': 'application/json' });
+          headers.append('set-cookie', 'a=1; Path=/; HttpOnly');
+          headers.append('set-cookie', 'b=2; Path=/; HttpOnly');
+          return new Response(
+            JSON.stringify({
+              proto: url.protocol,
+              ip: extractClientIp(request, remoteAddress, 1),
+            }),
+            { status: 200, headers },
+          );
+        }
+        const body = await parseJsonRequestBody<{ echo: string }>(request, 128);
+        return new Response(JSON.stringify({ got: body.echo }), {
+          status: 200,
+          headers: { 'content-type': 'application/json' },
+        });
+      },
+      {
+        maxBodyBytes: 128,
+        trustProxyHops: 1,
+      },
+    );
+
+    const server = createServer(handler);
+    servers.push(server);
+    await new Promise<void>((resolve) =>
+      server.listen(0, '127.0.0.1', resolve),
+    );
+    const { port } = server.address() as AddressInfo;
+
+    const okRes = await fetch(`http://127.0.0.1:${port}/echo`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ echo: 'ok' }),
+    });
+    expect(okRes.status).toBe(200);
+    expect(await okRes.json()).toEqual({ got: 'ok' });
+
+    const tooBigRes = await fetch(`http://127.0.0.1:${port}/echo`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ echo: 'x'.repeat(256) }),
+    });
+    expect(tooBigRes.status).toBe(413);
+
+    const cookieRes = await fetch(`http://127.0.0.1:${port}/cookies`, {
+      headers: {
+        'x-forwarded-proto': 'https',
+        'x-forwarded-for': '203.0.113.7',
+      },
+    });
+    expect(cookieRes.status).toBe(200);
+    expect(cookieRes.headers.getSetCookie()).toEqual([
+      'a=1; Path=/; HttpOnly',
+      'b=2; Path=/; HttpOnly',
+    ]);
+    expect(await cookieRes.json()).toEqual({
+      proto: 'https:',
+      ip: '203.0.113.7',
+    });
+  });
+});
