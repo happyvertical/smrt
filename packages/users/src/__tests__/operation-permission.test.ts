@@ -124,6 +124,7 @@ describe('operation permission guards', () => {
     'rolepermissions.create',
     'roles.create',
     'sessions.create',
+    'tenantguestgrants.create',
     'tenantpermissionoverrides.create',
     'tenants.create',
     'users.create',

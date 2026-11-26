@@ -72,6 +72,8 @@ const DEFAULT_MEMBER_CREATE_DENIED_RESOURCES = new Set([
   'rolepermissions',
   'roles',
   'sessions',
+  'tenant_guest_grants',
+  'tenantguestgrants',
   'tenant_permission_overrides',
   'tenantpermissionoverrides',
   'tenants',

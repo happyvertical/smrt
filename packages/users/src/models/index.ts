@@ -78,6 +78,10 @@ export {
 } from './Session.js';
 export { MAX_TENANT_HIERARCHY_DEPTH, Tenant } from './Tenant.js';
 export {
+  TenantGuestGrant,
+  type TenantGuestGrantOptions,
+} from './TenantGuestGrant.js';
+export {
   TenantIntegration,
   type TenantIntegrationCheckSummary,
   type TenantIntegrationOptions,

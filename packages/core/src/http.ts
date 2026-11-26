@@ -286,6 +286,14 @@ export interface BoundedSlidingWindowRateLimiterOptions {
   windowMs: number;
   /** Maximum distinct keys retained in memory (LRU-evicted). Defaults to 10,000. */
   maxEntries?: number;
+  /**
+   * When `true` and the key table is full, an unknown key is denied (`check`
+   * returns `retryAfterSeconds`, `record` does not admit it) instead of
+   * evicting the oldest key. Entries whose window has fully expired are pruned
+   * first, so a full table of live keys is the only denial case. Default
+   * `false` keeps LRU eviction.
+   */
+  denyWhenFull?: boolean;
 }
 
 /**
@@ -297,6 +305,7 @@ export class BoundedSlidingWindowRateLimiter {
   private readonly maxEvents: number;
   private readonly windowMs: number;
   private readonly maxEntries: number;
+  private readonly denyWhenFull: boolean;
 
   constructor(options: BoundedSlidingWindowRateLimiterOptions) {
     if (!Number.isSafeInteger(options.maxEvents) || options.maxEvents < 1) {
@@ -312,6 +321,7 @@ export class BoundedSlidingWindowRateLimiter {
     this.maxEvents = options.maxEvents;
     this.windowMs = options.windowMs;
     this.maxEntries = maxEntries;
+    this.denyWhenFull = options.denyWhenFull === true;
   }
 
   /** Number of currently tracked keys. */
@@ -336,6 +346,24 @@ export class BoundedSlidingWindowRateLimiter {
     return active;
   }
 
+  /** True when `denyWhenFull` is on, `key` is unknown and no slot is free. */
+  private isFullForUnknownKey(key: string, nowMs: number): boolean {
+    if (!this.denyWhenFull || this.entries.has(key)) {
+      return false;
+    }
+    if (this.entries.size < this.maxEntries) {
+      return false;
+    }
+    for (const existing of [...this.entries.keys()]) {
+      this.pruneKey(existing, nowMs);
+    }
+    return this.entries.size >= this.maxEntries;
+  }
+
+  private fullRetryAfterSeconds(): number {
+    return Math.max(1, Math.ceil(this.windowMs / 1000));
+  }
+
   private evictIfFull(): void {
     while (this.entries.size >= this.maxEntries) {
       const oldestKey = this.entries.keys().next().value;
@@ -352,6 +380,9 @@ export class BoundedSlidingWindowRateLimiter {
    */
   check(key: string, nowMs: number = Date.now()): number | null {
     const active = this.pruneKey(key, nowMs);
+    if (!active && this.isFullForUnknownKey(key, nowMs)) {
+      return this.fullRetryAfterSeconds();
+    }
     if (!active || active.length < this.maxEvents) {
       return null;
     }
@@ -364,6 +395,9 @@ export class BoundedSlidingWindowRateLimiter {
    * Record an event timestamp for `key` at `nowMs`.
    */
   record(key: string, nowMs: number = Date.now()): void {
+    if (this.isFullForUnknownKey(key, nowMs)) {
+      return;
+    }
     const active = this.pruneKey(key, nowMs) ?? [];
     if (!this.entries.has(key)) {
       this.evictIfFull();
