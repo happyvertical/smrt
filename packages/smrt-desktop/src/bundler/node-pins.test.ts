@@ -14,6 +14,19 @@ import {
 import { nodeDistFile, TARGETS } from './targets.js';
 
 describe('node-pins', () => {
+  it('defaults to verified Node 26.12.1 while preserving explicit Node 26.8.1', () => {
+    expect(pinnedVersions()[0]).toBe('26.12.1');
+    expect(isGpgVerified(lookupPinProvenance('26.12.1'))).toBe(true);
+    for (const spec of TARGETS) {
+      expect(
+        isSha256Hex(lookupPin('26.12.1', nodeDistFile(spec, '26.12.1'))),
+      ).toBe(true);
+      expect(
+        isSha256Hex(lookupPin('26.8.1', nodeDistFile(spec, '26.8.1'))),
+      ).toBe(true);
+    }
+  });
+
   it('covers every dist file of every supported target for each pinned version', () => {
     const versions = pinnedVersions();
     expect(versions.length).toBeGreaterThan(0);

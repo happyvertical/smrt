@@ -223,9 +223,11 @@ describe.skipIf(!pgUrl)('retire step on real PostgreSQL (#5005)', () => {
       'DROP TABLE IF EXISTS "public"."r5005_pg_dropfail"',
     ]);
     expect(pgErrorCode(failure)).toBe('2BP01');
+    // A closed reason: statement kind and SQLSTATE, not the server's text.
     expect(String((failure as Error).message)).toMatch(
-      /cannot drop table "?(public\.)?r5005_pg_dropfail"? because other objects depend on it/,
+      /\(drop-table\) failed in the regular phase \(SQLSTATE 2BP01; database message withheld\)/,
     );
+    expect(String((failure as Error).message)).not.toContain('depend on it');
     expect(await exists('r5005_pg_dropfail')).toBe(true);
     expect(await exists('r5005_pg_fresh_a')).toBe(false);
     await db.query('DROP VIEW "r5005_pg_late_view"');

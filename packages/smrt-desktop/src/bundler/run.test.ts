@@ -61,6 +61,19 @@ function assertNothingLeft(item: Fixture): void {
 }
 
 describe('runBundle layout', () => {
+  it('defaults to verified Node 26.12.1 on the release path', async () => {
+    const item = fixture();
+    const result = await runBundle(
+      await item.plan({ nodeVersion: undefined, requireVerifiedPins: true }),
+      item.seams(),
+    );
+    expect(result.report.node.version).toBe('26.12.1');
+    expect(result.report.node.pin.verification).toBe('gpg-verified');
+    expect(result.report.warnings).not.toEqual(
+      expect.arrayContaining([expect.stringContaining('NOT verified')]),
+    );
+  });
+
   it('produces the documented layout', async () => {
     const item = fixture();
     const result = await runBundle(await item.plan(), item.seams());

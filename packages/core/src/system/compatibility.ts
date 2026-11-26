@@ -197,6 +197,21 @@ export async function planPostgresSystemTimestampMigrations(
 }
 
 /**
+ * The refusal {@link assertPostgresSystemTimestampsCurrent} raises itself.
+ * Its message is framework text (it names system columns, which are
+ * identifiers). Callers that close database failures recognise it by this
+ * type, set where it is constructed, never by its message.
+ */
+export class LegacySystemTimestampsError extends Error {
+  constructor(columns: string) {
+    super(
+      `Legacy SMRT system timestamps remain (${columns}); run the explicit audited migratePostgresSystemTimestamps() migration before bootstrap`,
+    );
+    this.name = 'LegacySystemTimestampsError';
+  }
+}
+
+/**
  * Fail closed when framework-owned PostgreSQL tables still contain legacy
  * timezone-naive timestamps. Call this before recording the current system
  * schema version so a partial installation cannot be stamped as upgraded.
@@ -222,9 +237,7 @@ export async function assertPostgresSystemTimestampsCurrent(
   const columns = rows
     .map((row) => `${String(row.table_name)}.${String(row.column_name)}`)
     .join(', ');
-  throw new Error(
-    `Legacy SMRT system timestamps remain (${columns}); run the explicit audited migratePostgresSystemTimestamps() migration before bootstrap`,
-  );
+  throw new LegacySystemTimestampsError(columns);
 }
 
 export async function migratePostgresSystemTimestamps(
