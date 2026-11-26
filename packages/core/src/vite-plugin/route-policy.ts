@@ -203,7 +203,11 @@ function enterTenancy(
     });
   } catch (cause) {
     const failure = tenancyRefusalOf(cause);
-    if (failure) throw error(failure.status, { message: failure.message, code: failure.code });
+    if (failure) {
+      // A variable: the body of error() is typed App.Error, which has no code.
+      const body: { message: string; code: string } = { message: failure.message, code: failure.code };
+      throw error(failure.status, body);
+    }
     throw cause;
   }
 }

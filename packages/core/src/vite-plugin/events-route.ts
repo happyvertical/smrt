@@ -181,7 +181,13 @@ function requireRouteAuth(locals: unknown): void {
     publicAccess: false,
   });
   if (!decision.allow) {
-    throw error(decision.status, { message: decision.message, code: decision.code });
+    // A variable, not a literal: SvelteKit types the body of error() as
+    // App.Error, which has no code, and only a literal is checked for it.
+    const body: { message: string; code: string } = {
+      message: decision.message,
+      code: decision.code,
+    };
+    throw error(decision.status, body);
   }
 }
 
