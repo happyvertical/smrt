@@ -305,17 +305,49 @@ jobs:
           NODE_AUTH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Run affected core tests (shard ${{ matrix.shard }})
+        if: github.event_name != 'merge_group'
         working-directory: packages/core
         run: pnpm exec vitest run --shard=${{ matrix.shard }}
         env:
           NODE_AUTH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           NODE_ENV: test
 
+      # A merge group in affected mode still runs Coverage Gate, whose core half
+      # merges these blobs (#5648). Pull requests never reach the gate, so they
+      # skip the coverage cost.
+      - name: Run affected core tests with coverage blob (shard ${{ matrix.shard }})
+        if: github.event_name == 'merge_group'
+        working-directory: packages/core
+        run: |
+          pnpm exec vitest run --shard="$SHARD" --coverage \
+            --reporter=default --reporter=blob \
+            --outputFile.blob=".vitest-reports/blob-${SHARD%/*}-${SHARD#*/}.json"
+        env:
+          SHARD: ${{ matrix.shard }}
+          NODE_AUTH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          NODE_ENV: test
+
+      - name: Upload core coverage blob
+        if: always() && github.event_name == 'merge_group'
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        with:
+          name: core-coverage-blob-affected-${{ strategy.job-index }}
+          path: packages/core/.vitest-reports/blob-*.json
+          # `.vitest-reports` is a hidden directory; upload-artifact skips
+          # hidden files unless told otherwise, which would leave the gate
+          # with no blobs.
+          include-hidden-files: true
+          if-no-files-found: error
+          retention-days: 7
+
   affected-package-tests:
-    # Runs concurrently with affected-core-tests: both matrices shard disjoint
-    # package sets, and a failing core shard already fails `Required CI`.
-    needs: affected-test-scope
-    if: inputs.mode == 'affected' && needs.affected-test-scope.result == 'success'
+    # No `needs`: each shard recomputes its own Turbo dry run and reads nothing
+    # from affected-test-scope, so waiting on it (and on affected-scope behind
+    # it) only delayed the shards (#5646). A failing scope job still fails this
+    # workflow, and with it `Required CI`, because the reusable workflow's
+    # result is failure when any of its jobs fails. Runs concurrently with
+    # affected-core-tests: both matrices shard disjoint package sets.
+    if: inputs.mode == 'affected'
     runs-on: ubuntu-latest
     timeout-minutes: 90
     strategy:
@@ -356,7 +388,7 @@ jobs:
           set -o pipefail
           pnpm turbo run test --filter="...[$BASE_SHA]" --dry=json |
             node scripts/affected-test-shard.mjs '${{ matrix.shard }}' |
-            xargs -r pnpm turbo run test --concurrency=2
+            xargs -r pnpm turbo run --concurrency=2
 
   # Use Turbo's own task plan to decide whether the core Vitest shards are
   # needed. A path filter would miss global inputs (lockfile, root config,
@@ -364,7 +396,6 @@ jobs:
   # packages/core/** edit.
   affected-test-scope:
     name: Detect Affected Test Scope
-    needs: affected-scope
     if: inputs.mode == 'affected'
     runs-on: ubuntu-latest
     timeout-minutes: 90
@@ -390,10 +421,22 @@ jobs:
         id: scope
         env:
           BASE_SHA: ${{ github.event.merge_group.base_sha || github.event.pull_request.base.sha }}
+          # Same base handling as `coverage-gate-core`'s scope probe (empty on
+          # merge_group, so check-coverage.mjs falls back to merge-base with main).
+          BASE_REF: ${{ github.base_ref }}
         run: |
           set -euo pipefail
           core=$(pnpm turbo run test --filter="...[$BASE_SHA]" --dry=json |
             node scripts/affected-test-shard.mjs --has-core)
+          # In a merge group the coverage gate decides "core touched" against
+          # merge-base with main, which can include an earlier queue entry's core
+          # change that `...[merge_group.base_sha]` does not select. The core
+          # shards must then still run and upload blobs, or the gate would find
+          # none and fail an unrelated entry (#5648). Producer is a superset.
+          if [ "$core" != "true" ] && [ "$GITHUB_EVENT_NAME" = "merge_group" ]; then
+            gated=$(node scripts/check-coverage.mjs --only core --list-checked)
+            if [ "$gated" = "core" ]; then core=true; fi
+          fi
           printf 'core=%s\n' "$core" | tee -a "$GITHUB_OUTPUT"
 
   affected-knowledge:
@@ -709,6 +752,12 @@ jobs:
       - name: Check release upgrade gate
         run: pnpm check:release-upgrade
 
+  # Coverage Gate is two jobs (#5648). This one measures every touched tiered
+  # package EXCEPT core, starts as soon as `build` finishes, and re-runs each
+  # package's vitest itself. Core is gated by `coverage-gate-core` below, which
+  # merges the coverage the core shards already collected instead of repeating
+  # the ~18 min core suite. Both are required-by-workflow-result: a failure in
+  # either fails this reusable workflow and so Required CI.
   coverage-gate:
     name: Coverage Gate
     needs: build
@@ -776,11 +825,118 @@ jobs:
       # on the packages this PR touches. Blocks regressions below the floor
       # without forcing repo-wide uplift (that uplift is Wave 3). Floors + tier
       # assignments mirror docs/content/PRODUCTION_READINESS.md.
-      - name: Per-tier coverage gate (touched packages)
-        run: node scripts/check-coverage.mjs
+      - name: Per-tier coverage gate (touched packages, core excluded)
+        run: node scripts/check-coverage.mjs --exclude core
         env:
           BASE_REF: ${{ github.base_ref }}
           NODE_AUTH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+  # Core half of the Coverage Gate (#5648). Core coverage comes from the core
+  # shards (`test-core` in full mode, `affected-core-tests` in an affected-mode
+  # merge group): each shard writes a vitest blob, this job merges them with
+  # the same config and applies the same floor as every other package.
+  #
+  # The `if` is deliberately not `success()`: `test-core` and
+  # `affected-core-tests` are mutually exclusive, so one of them is always
+  # skipped, and the implicit `success()` would skip this gate with it. A gate
+  # that is skipped is a gate that passes, so the job runs whenever the gate
+  # lane is selected and `build` succeeded, and decides inside from the
+  # explicit shard results. Pinned by ci-control-plane-workflow.test.mjs.
+  coverage-gate-core:
+    name: Coverage Gate (core)
+    needs: [build, test-core, affected-core-tests]
+    if: >-
+      !cancelled() &&
+      (inputs.mode == 'full' || github.event_name == 'merge_group') &&
+      needs.build.result == 'success'
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+    env:
+      # Must equal the shard matrix size of both core test jobs (pinned).
+      CORE_SHARDS: '3'
+
+    steps:
+      # fetch-depth: 0 so the gate can diff against the PR base.
+      - name: Checkout repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          ref: ${{ env.CHECKOUT_REF }}
+          fetch-depth: 0
+
+      # Runner Node, no install: when this PR does not touch core the job ends
+      # here, seconds after the shards finish.
+      - name: Is core subject to the coverage floor
+        id: scope
+        env:
+          BASE_REF: ${{ github.base_ref }}
+        run: |
+          set -euo pipefail
+          checked=$(node scripts/check-coverage.mjs --only core --list-checked)
+          if [ "$checked" = "core" ]; then
+            echo "core=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "core=false" >> "$GITHUB_OUTPUT"
+            echo "core is not touched by this change; its floor does not apply."
+          fi
+
+      - name: Require the core shards to have produced coverage
+        if: steps.scope.outputs.core == 'true'
+        run: >-
+          node scripts/core-coverage-merge.mjs shard-results
+          --test-core "${{ needs.test-core.result }}"
+          --affected-core-tests "${{ needs.affected-core-tests.result }}"
+
+      - name: Setup environment
+        if: steps.scope.outputs.core == 'true'
+        uses: ./.github/actions/setup-environment
+        with:
+          node-version: '26.12.1'
+          install-deps: 'true'
+          setup-playwright: 'false'
+          registry-url: 'https://npm.pkg.github.com'
+          auth-token: ${{ secrets.GITHUB_TOKEN }}
+
+      # Same build and manifest steps as the shards, so `vitest list` and the
+      # merge see the same config, generated manifest and absolute source paths.
+      - name: Build core and integration fixture dependencies
+        if: steps.scope.outputs.core == 'true'
+        run: >-
+          pnpm turbo run build --filter='@happyvertical/smrt-core...'
+          --filter='@happyvertical/smrt-web...' --filter='@happyvertical/smrt-products...'
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Restore core test manifest
+        if: steps.scope.outputs.core == 'true'
+        run: pnpm turbo run generate:test --filter='@happyvertical/smrt-core'
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      # One folder per artifact (no merge-multiple) so a duplicate blob is
+      # visible to the merge script instead of silently overwriting.
+      - name: Download core coverage blobs
+        if: steps.scope.outputs.core == 'true'
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8
+        with:
+          pattern: core-coverage-blob-*
+          path: ${{ runner.temp }}/core-coverage-blobs
+
+      - name: Merge core coverage blobs
+        if: steps.scope.outputs.core == 'true'
+        run: >-
+          node scripts/core-coverage-merge.mjs merge
+          --blobs "${{ runner.temp }}/core-coverage-blobs"
+          --expected-shards "$CORE_SHARDS"
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Per-tier coverage gate (core, merged shard coverage)
+        if: steps.scope.outputs.core == 'true'
+        run: >-
+          node scripts/check-coverage.mjs --only core
+          --summary core=packages/core/coverage/coverage-summary.json
+        env:
+          BASE_REF: ${{ github.base_ref }}
 
   test-core:
     needs: build
@@ -825,12 +981,31 @@ jobs:
         env:
           NODE_AUTH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
-      - name: Run core tests (shard ${{ matrix.shard }})
+      # Collects v8 coverage in the shard and writes it as a blob that
+      # `coverage-gate-core` merges (#5648), so the gate does not re-run core.
+      - name: Run core tests with coverage blob (shard ${{ matrix.shard }})
         working-directory: packages/core
-        run: pnpm exec vitest run --shard=${{ matrix.shard }}
+        run: |
+          pnpm exec vitest run --shard="$SHARD" --coverage \
+            --reporter=default --reporter=blob \
+            --outputFile.blob=".vitest-reports/blob-${SHARD%/*}-${SHARD#*/}.json"
         env:
+          SHARD: ${{ matrix.shard }}
           NODE_AUTH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           NODE_ENV: test
+
+      - name: Upload core coverage blob
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        with:
+          name: core-coverage-blob-full-${{ strategy.job-index }}
+          path: packages/core/.vitest-reports/blob-*.json
+          # `.vitest-reports` is a hidden directory; upload-artifact skips
+          # hidden files unless told otherwise, which would leave the gate
+          # with no blobs.
+          include-hidden-files: true
+          if-no-files-found: error
+          retention-days: 7
 
       - name: Upload core test results
         if: always()
@@ -932,7 +1107,7 @@ jobs:
         run: |
           set -o pipefail
           node scripts/test-packages-shard.mjs '${{ matrix.shard }}' |
-            xargs -r pnpm turbo run test --concurrency=2
+            xargs -r pnpm turbo run --concurrency=2
         env:
           NODE_AUTH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           NODE_ENV: test
