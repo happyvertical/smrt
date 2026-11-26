@@ -97,9 +97,11 @@ export async function runPgliteCascade(dataDir: string): Promise<void> {
       untracked?.parent_id !== null ||
       untracked._sync_origin_device_id !== null ||
       untracked._sync_revision !== null ||
-      untracked.unchanged !== true
+      untracked.advanced !== true
     ) {
-      throw new Error('PGlite SET NULL changed the untracked row revision');
+      throw new Error(
+        'PGlite SET NULL did not advance the untracked row timestamp, or changed its sync revision',
+      );
     }
   } finally {
     await db.close?.();
