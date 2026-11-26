@@ -17,3 +17,4 @@ export {
 } from './AssistantThread.ts';
 export { ChangeBatch, ChangeBatchCollection } from './ChangeBatch.ts';
 export { ChangeCard, ChangeCardCollection } from './ChangeCard.ts';
+export { ReceiveLink, ReceiveLinkCollection } from './ReceiveLink.ts';
