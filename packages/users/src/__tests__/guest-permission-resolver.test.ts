@@ -328,6 +328,17 @@ describe('GuestPermissionResolver (#5196)', () => {
     expect(GpInPackage5196).toBeDefined();
   });
 
+  it('malformed guest config means no guest collections', async () => {
+    const t = await tenant('gp-badcfg');
+    await grant(t.id!, 'gp5196_products.read');
+    for (const collections of ['gp5196_products', undefined, null, 5]) {
+      const r = await GuestPermissionResolver.create({ db }, {
+        collections,
+      } as never);
+      expect((await r.resolveGuestPermissions(t.id!)).size).toBe(0);
+    }
+  });
+
   it('excludes run-time models', async () => {
     registerRuntimeModel({
       name: 'Rt5196Thing',
@@ -474,6 +485,44 @@ describe('assertGuestRuntimeActive (#5196)', () => {
     if (!result.active) {
       expect(result.reason).toBe(reason);
       expect(result.detail.length).toBeGreaterThan(0);
+    }
+  });
+
+  it.each([
+    ['empty posture', {}],
+    ['missing rolsuper', { rolbypassrls: false }],
+    ['missing rolbypassrls', { rolsuper: false }],
+    ['non-boolean attributes', { rolsuper: 'f', rolbypassrls: 0 }],
+  ])('refuses %s as unverified', (_n, rolePosture) => {
+    const result = assertGuestRuntimeActive({
+      ...ok,
+      rolePosture: rolePosture as never,
+    });
+    expect(result).toMatchObject({
+      active: false,
+      reason: 'role-posture-unknown',
+    });
+  });
+
+  it('refuses truthy-but-not-true flags and loose table posture', () => {
+    expect(
+      assertGuestRuntimeActive({ ...ok, postgresRls: 'yes' as never }),
+    ).toMatchObject({ active: false, reason: 'rls-not-active' });
+    expect(
+      assertGuestRuntimeActive({ ...ok, tenancyEnabled: 1 as never }),
+    ).toMatchObject({ active: false, reason: 'tenancy-not-enabled' });
+    for (const bad of [
+      { rowSecurity: undefined },
+      { forceRowSecurity: undefined },
+      { policyCount: undefined },
+      { policyCount: '2' },
+    ]) {
+      expect(
+        assertGuestRuntimeActive({
+          ...ok,
+          ceilingTables: [{ ...ok.ceilingTables[0], ...bad } as never],
+        }),
+      ).toMatchObject({ active: false, reason: 'ceiling-table-not-forced' });
     }
   });
 

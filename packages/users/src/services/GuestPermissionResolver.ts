@@ -242,9 +242,15 @@ export class GuestPermissionResolver {
 
   constructor(options: SmrtClassOptions, guest: GuestPermissionConfig) {
     this.options = options;
+    // A malformed list is an empty list (no guest collections), never a
+    // spread of its characters or entries of the wrong type.
+    const list = (value: unknown): string[] =>
+      Array.isArray(value)
+        ? value.filter((entry): entry is string => typeof entry === 'string')
+        : [];
     this.guest = {
-      collections: [...(guest?.collections ?? [])],
-      createCollections: [...(guest?.createCollections ?? [])],
+      collections: list(guest?.collections),
+      createCollections: list(guest?.createCollections),
     };
   }
 
@@ -396,7 +402,7 @@ export interface GuestRuntimeState {
    * attributes the PostgreSQL permission contract rejects). Unknown posture
    * is refused.
    */
-  rolePosture?: { rolsuper?: boolean; rolbypassrls?: boolean } | null;
+  rolePosture?: { rolsuper: boolean; rolbypassrls: boolean } | null;
   /**
    * FORCE ROW LEVEL SECURITY state of every ceiling table, from the catalog.
    * Omitting it refuses guests: an unchecked catalog is not a passed check.
@@ -448,7 +454,13 @@ export function assertGuestRuntimeActive(
     );
   }
   const role = state.rolePosture;
-  if (!role) {
+  // Both attributes must be explicit booleans: a missing one is unverified,
+  // not false.
+  if (
+    !role ||
+    typeof role.rolsuper !== 'boolean' ||
+    typeof role.rolbypassrls !== 'boolean'
+  ) {
     return deny(
       'role-posture-unknown',
       'the connection role posture was not verified',
@@ -477,8 +489,9 @@ export function assertGuestRuntimeActive(
   }
   for (const table of state.ceilingTables) {
     if (
-      !table.rowSecurity ||
-      !table.forceRowSecurity ||
+      table.rowSecurity !== true ||
+      table.forceRowSecurity !== true ||
+      typeof table.policyCount !== 'number' ||
       !(table.policyCount > 0)
     ) {
       return deny(

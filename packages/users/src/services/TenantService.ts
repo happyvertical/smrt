@@ -3,10 +3,15 @@
  * @packageDocumentation
  */
 
-import type { SmrtClassOptions } from '@happyvertical/smrt-core';
+import {
+  isEmbeddedDatabase,
+  type SmrtClassOptions,
+  withEmbeddedWriteTransaction,
+} from '@happyvertical/smrt-core';
 import { MembershipCollection } from '../collections/MembershipCollection.js';
 import { RoleCollection } from '../collections/RoleCollection.js';
 import { TenantCollection } from '../collections/TenantCollection.js';
+import { TenantGuestGrantCollection } from '../collections/TenantGuestGrantCollection.js';
 import type { Membership } from '../models/Membership.js';
 import type { Tenant } from '../models/Tenant.js';
 import {
@@ -241,8 +246,13 @@ export class TenantService {
   /**
    * Delete a tenant
    *
-   * Note: This does not cascade delete related records (memberships, etc.).
-   * The caller should handle cleanup of related data if needed.
+   * The tenant's guest grants (#5196) are removed in the same transaction as
+   * the tenant (the foreign key is NO ACTION, there is no CASCADE), so a
+   * failed tenant delete leaves its grants in place.
+   *
+   * Memberships are removed in the same transaction. Other related records
+   * (sessions, invitations, etc.) are not cascaded; the caller handles them,
+   * and a remaining reference fails the whole delete.
    *
    * @throws Error if user cannot delete the tenant (with specific reason)
    */
@@ -252,10 +262,34 @@ export class TenantService {
       throw new Error(error);
     }
 
-    const tenant = await this.tenantCollection.get(tenantId);
-    if (tenant) {
-      await tenant.delete();
+    const db = this.tenantCollection.db;
+    if (typeof db.transaction !== 'function') {
+      throw new Error(
+        'Deleting a tenant requires database transaction support.',
+      );
     }
+    await withEmbeddedWriteTransaction(
+      db,
+      isEmbeddedDatabase(db),
+      async (tx) => {
+        const options = { ...withoutListBounds(this.options), db: tx };
+        const grants = await TenantGuestGrantCollection.create(options);
+        const tenants = await TenantCollection.create(options);
+        for (const grant of await grants.findByTenant(tenantId)) {
+          await grant.delete();
+        }
+        // Memberships reference the tenant with NO ACTION, so an owned tenant
+        // could not be deleted while its memberships existed.
+        const memberships = await MembershipCollection.create(options);
+        for (const row of await memberships.findByTenant(tenantId)) {
+          await row.delete();
+        }
+        const tenant = await tenants.get(tenantId);
+        if (tenant) {
+          await tenant.delete();
+        }
+      },
+    );
   }
 
   /**
