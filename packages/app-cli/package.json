@@ -1,7 +1,7 @@
 {
   "name": "@happyvertical/smrt-app-cli",
   "version": "0.72.0",
-  "description": "Reusable CLI factory for SMRT apps — branded `<name> <resource> <command>` CLI + stdio MCP bridge with decorator-driven resource discovery",
+  "description": "Reusable CLI factory for SMRT apps \u2014 branded `<name> <resource> <command>` CLI + stdio MCP bridge with decorator-driven resource discovery",
   "type": "module",
   "main": "./dist/index.js",
   "types": "./dist/index.d.ts",
@@ -9,6 +9,9 @@
     ".": {
       "types": "./dist/index.d.ts",
       "import": "./dist/index.js"
+    },
+    "./mcp-bridge": {
+      "default": "./dist/bin/smrt-mcp-bridge.mjs"
     }
   },
   "bin": {
@@ -21,7 +24,7 @@
     "AGENTS.md"
   ],
   "scripts": {
-    "build": "vite build && node postbuild.mjs",
+    "build": "vite build && vite build --config vite.bridge.config.ts && node postbuild.mjs",
     "build:watch": "vite build --watch",
     "clean": "rm -rf dist",
     "dev": "npm run build:watch",

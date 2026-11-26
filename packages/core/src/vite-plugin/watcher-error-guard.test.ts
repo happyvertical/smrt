@@ -13,7 +13,13 @@
  */
 
 import { EventEmitter } from 'node:events';
-import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import {
+  mkdirSync,
+  mkdtempSync,
+  realpathSync,
+  rmSync,
+  writeFileSync,
+} from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
@@ -30,7 +36,7 @@ describe('smrtPlugin watcher error guard (#1378)', () => {
     // targets it. A MALFORMED .ts file makes the OXC scanner report a parse
     // error, which scanWithOxc turns into a thrown Error — the deterministic
     // failure the watcher handler must catch.
-    testDir = mkdtempSync(join(tmpdir(), 'smrt-watcher-guard-'));
+    testDir = realpathSync(mkdtempSync(join(tmpdir(), 'smrt-watcher-guard-')));
     mkdirSync(join(testDir, 'src'), { recursive: true });
     // Matches the default include glob (src/**/*.ts) so shouldRescan() is true.
     writeFileSync(
