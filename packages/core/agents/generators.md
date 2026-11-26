@@ -183,7 +183,13 @@ request as received, and passes the result (`ResolvedRequestPrincipal`,
 `generators/request-principal.ts`) explicitly to every check: CRUD, custom
 actions, each `sync/apply` item, subtype re-checks, `_changes`, `_events`,
 `_inference` and `_preflight`. Rebuilt requests (sync items, subtype checks)
-never resolve it again. A throw, or a value of the wrong shape, is a 500 that
+never resolve it again. Every check is the shared decision of
+`generators/route-authz.ts` (`authorize`, `stripTenantFilters`), called by
+`APIGenerator.decide` with the model's policy read from the registry; it
+applies only with `resolvePrincipal`, since the fixed `APIContext` principal
+carries no verified permissions and `authMiddleware` decides alone there.
+`_inference` and `_preflight` make no principal decision (anonymous callers
+may read them). A throw, or a value of the wrong shape, is a 500 that
 carries only a request id, before any hook. `normalizeRequestPrincipal` reads
 the answer into the request's one `RequestPrincipal` snapshot (frozen, null
 prototype; what `onRequest` receives): each own field exactly once in a fixed

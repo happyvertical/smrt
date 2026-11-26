@@ -684,7 +684,13 @@ request admitted under a cross-tenant read grant, which writes no
 tenant-scoped row whatever context its code enters.
 
 With `resolvePrincipal` configured the server also enforces, from that
-principal and from nothing in the request:
+principal and from nothing in the request. Sign-in, `api.public`, the
+operation permission and the write-body tenant are one decision
+(`generators/route-authz.ts`, the module the generated SvelteKit routes call
+too), made at every site: each CRUD route, custom action, `sync/apply` item
+(per item, with the item's own reason), `_changes` and `_events`. `authMiddleware`,
+when also set, is an extra check that may still refuse; it never replaces the
+decision, and it cannot admit what the decision refuses:
 
 - **Sign-in.** A route that is not `@smrt({ api: { public } })` needs
   `authenticated` (`401`); `public: 'read'` opens reads only. `_changes` and

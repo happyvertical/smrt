@@ -48,6 +48,7 @@ import {
 import {
   assertPrincipalScopeUsable,
   currentPrincipalFrame,
+  livePrincipalRecord,
   narrowToEnclosingFrame,
   PrincipalRecord,
   requestEnded,
@@ -85,10 +86,12 @@ import {
   SyncApplyRejection,
   type SyncApplyTarget,
 } from '../sync/apply';
+import { tenantOwnershipFields } from '../tenant-read-scope';
 import {
   DISPLAY_LABEL_FIELD,
   resolveDisplayLabelProjection,
 } from '../ui-metadata';
+import { getApiPublicAccess } from '../vite-plugin/route-policy';
 import { computeWebManifestHash } from '../vite-plugin/web-collections';
 import { applyWhereScope } from '../where-keys';
 import { handleChangesRoute } from './changes-route';
@@ -123,16 +126,21 @@ import {
 import {
   type APIRequestInfo,
   type APIRequestPrincipal,
-  assertWriteTenant,
   customActionPermission,
   fixedRequestPrincipal,
   normalizeRequestPrincipal,
+  operationPermissionOf,
+  permissionDenied,
   type RequestPrincipal,
+  RequestPrincipalRefusal,
   type ResolvedRequestPrincipal,
-  requirePermission,
   settledPrincipalOf,
-  withoutTenantFilters,
 } from './request-principal';
+import {
+  type AuthorizeDecision,
+  authorize,
+  stripTenantFilters,
+} from './route-authz';
 import { reportUnexpectedHttpError } from './route-error';
 import { normalizeTypedHttpError } from './typed-http-error';
 
@@ -1017,6 +1025,149 @@ export class APIGenerator {
   }
 
   /**
+   * What the shared decision (`route-authz.ts`) is told about `model`: its
+   * `api.public` posture, the `<collection>` of its permission slugs, the
+   * super-admin opt-in and the columns that record its tenant. Read from the
+   * live registry, as the generated routes read them from the manifest.
+   */
+  private routePolicyOf(model: string) {
+    return {
+      publicAccess: getApiPublicAccess(ObjectRegistry.getConfig(model)?.api),
+      // `<collection>.<action>` minus its action: the collection the
+      // generated routes and the permission catalog use.
+      permissionCollection: operationPermissionOf(model, '_').slice(0, -2),
+      allowSuperAdminBypass:
+        ObjectRegistry.getTenantScopedConfig(model)?.allowSuperAdminBypass ===
+        true,
+      tenantColumns: new Set(tenantOwnershipFields(model).values()),
+    };
+  }
+
+  /** The principal as the shared decision reads it. */
+  private apiPrincipalOf(
+    principal: ResolvedRequestPrincipal,
+  ): APIRequestPrincipal {
+    return {
+      tenantId: principal.tenantId,
+      allowCrossTenant: principal.allowCrossTenant,
+      authenticated: principal.authenticated,
+      ...(principal.userId ? { userId: principal.userId } : {}),
+      ...(principal.permissions ? { permissions: principal.permissions } : {}),
+      superAdminBypass: principal.superAdminBypass,
+    };
+  }
+
+  /**
+   * Decide one operation on one model through the shared module: sign-in,
+   * `api.public`, `<collection>.<action>` permission and the tenant of a write
+   * body. The decision applies when the host resolves principals; without
+   * `resolvePrincipal` the server's fixed principal carries no verified
+   * permissions, so `authMiddleware` decides alone and this admits.
+   *
+   * @param op - `create`, `update`, `delete`, `sync`'s op or a custom action
+   * @param options.mutating - Whether the operation writes (default: by name)
+   * @param options.permissionAction - The slug's action when it is not `op`
+   * @param options.body - The write body to check for another tenant
+   */
+  private decide(
+    principal: ResolvedRequestPrincipal,
+    model: string,
+    op: string,
+    options: {
+      mutating?: boolean;
+      permissionAction?: string;
+      body?: unknown;
+      /** Skip the live-request check; for the sign-in answer alone. */
+      signInOnly?: boolean;
+    } = {},
+  ): AuthorizeDecision | undefined {
+    if (!principal.enforced) return undefined;
+    const { signInOnly, ...input } = options;
+    // A permission is decided for the live request it belongs to, never for
+    // work that escaped it or outlived it.
+    if (
+      !signInOnly &&
+      livePrincipalRecord()?.snapshot !== principal.principal
+    ) {
+      return {
+        allow: false,
+        status: 403,
+        code: 'PERMISSION_DENIED',
+        message: 'Permission denied.',
+      };
+    }
+    return authorize({
+      principal: this.apiPrincipalOf(principal),
+      op,
+      ...this.routePolicyOf(model),
+      ...input,
+    });
+  }
+
+  /**
+   * {@link decide}, as a thrown refusal for the REST error boundary: a 403
+   * `PERMISSION_DENIED` or `TENANT_MISMATCH`, or a 401. A sign-in refusal is
+   * already settled when a request is admitted, so it only arises for a
+   * caller that is not signed in on a model that is not public.
+   *
+   * @throws {RequestPrincipalRefusal}
+   */
+  private assertOperation(
+    principal: ResolvedRequestPrincipal,
+    model: string,
+    op: string,
+    options: Parameters<APIGenerator['decide']>[3] = {},
+  ): void {
+    const decision = this.decide(principal, model, op, options);
+    if (decision && !decision.allow) {
+      throw decision.code === 'PERMISSION_DENIED'
+        ? permissionDenied()
+        : new RequestPrincipalRefusal(
+            decision.status,
+            decision.code,
+            decision.message,
+          );
+    }
+  }
+
+  /**
+   * Refuse a write body that names a tenant other than the principal's, and
+   * a write the principal may not make: the decision for `op` on `model` with
+   * the body. A body never chooses the tenant; naming another is refused
+   * rather than dropped.
+   *
+   * @throws {RequestPrincipalRefusal}
+   */
+  private assertWriteBody(
+    principal: ResolvedRequestPrincipal,
+    model: string | undefined,
+    op: 'create' | 'update',
+    body: unknown,
+  ): void {
+    if (!model) return;
+    this.assertOperation(principal, model, op, { mutating: true, body });
+  }
+
+  /**
+   * Remove every filter on the model's tenant columns from a request `where`,
+   * unless the principal is cross-tenant: the tenant a read acts in comes
+   * from the principal alone (`stripTenantFilters`). Applies only when the
+   * host resolves principals.
+   */
+  private withoutTenantFilters<T extends Record<string, unknown>>(
+    principal: ResolvedRequestPrincipal,
+    model: string | undefined,
+    where: T | undefined,
+  ): T | undefined {
+    if (!principal.enforced || !model || !where) return where;
+    return stripTenantFilters(
+      principal,
+      this.routePolicyOf(model).tenantColumns,
+      where,
+    );
+  }
+
+  /**
    * The principal one request acts for: what the host's `resolvePrincipal`
    * returns for the request as received, or the server's fixed context.
    * Called once per request, by `handleRequest`.
@@ -1159,9 +1310,16 @@ export class APIGenerator {
   private feedAuthentication(principal: ResolvedRequestPrincipal): {
     principalAuthenticated?: boolean;
   } {
-    return principal.enforced
-      ? { principalAuthenticated: principal.authenticated }
-      : {};
+    if (!principal.enforced) return {};
+    // A feed spans every table, so it is never public: the decision is
+    // sign-in alone, on a model that opens nothing.
+    const decision = authorize({
+      principal: this.apiPrincipalOf(principal),
+      op: 'read',
+      permissionCollection: '_feed',
+      publicAccess: false,
+    });
+    return { principalAuthenticated: decision.allow };
   }
 
   /**
@@ -1482,8 +1640,18 @@ export class APIGenerator {
     principal: ResolvedRequestPrincipal,
   ): Response | undefined {
     if (!principal.enforced || principal.authenticated) return undefined;
-    if (this.isRoutePublic(objectName, method)) return undefined;
-    return this.createErrorResponse(401, 'Authentication required');
+    // An unsigned caller is never refused a permission: the decision's only
+    // answers are admit (public) or 401.
+    if (!objectName) {
+      return this.createErrorResponse(401, 'Authentication required');
+    }
+    const decision = this.decide(principal, objectName, 'sign-in', {
+      mutating: method.toUpperCase() !== 'GET',
+      signInOnly: true,
+    });
+    return decision && !decision.allow
+      ? this.createErrorResponse(401, 'Authentication required')
+      : undefined;
   }
 
   /**
@@ -1528,7 +1696,7 @@ export class APIGenerator {
     const signIn = this.signInRefusal(rowModel, req.method, principal);
     if (signIn) return signIn;
     try {
-      requirePermission(principal, rowModel, action);
+      this.assertOperation(principal, rowModel, action);
     } catch (error) {
       const failure = normalizeTypedHttpError(error);
       if (!failure) throw error;
@@ -1759,7 +1927,7 @@ export class APIGenerator {
       objectName &&
       (action === 'create' || action === 'update' || action === 'delete')
     ) {
-      requirePermission(this.principalOf(req), objectName, action);
+      this.assertOperation(this.principalOf(req), objectName, action);
     }
 
     // Handle special /count endpoint
@@ -2121,11 +2289,10 @@ export class APIGenerator {
       // `operationPermissions` alias) when the host resolves the principal,
       // as on the generated SvelteKit action routes.
       if (routeMethod !== 'GET') {
-        requirePermission(
-          this.principalOf(req),
-          objectName,
-          customActionPermission(objectName, actionName),
-        );
+        this.assertOperation(this.principalOf(req), objectName, actionName, {
+          mutating: true,
+          permissionAction: customActionPermission(objectName, actionName),
+        });
       }
 
       const invoke = isCollectionHosted
@@ -2339,7 +2506,7 @@ export class APIGenerator {
     req: Request,
   ): Record<string, unknown> | undefined {
     return applyWhereScope(
-      withoutTenantFilters(this.principalOf(req), objectName, where),
+      this.withoutTenantFilters(this.principalOf(req), objectName, where),
       this.readScopeOf(req),
     );
   }
@@ -2562,7 +2729,7 @@ export class APIGenerator {
     const rawBody = await req.text();
     const body = rawBody.trim() === '' ? {} : JSON.parse(rawBody);
     // A body never chooses the tenant: naming another one is refused.
-    assertWriteTenant(this.principalOf(req), objectName, body);
+    this.assertWriteBody(this.principalOf(req), objectName, 'create', body);
     let targetName = objectName;
     let data = body;
     if (objectName) {
@@ -2602,7 +2769,12 @@ export class APIGenerator {
           req,
         );
         if (refusal) return refusal;
-        assertWriteTenant(this.principalOf(req), target.collectionName, body);
+        this.assertWriteBody(
+          this.principalOf(req),
+          target.collectionName,
+          'create',
+          body,
+        );
         const info = ObjectRegistry.getClass(targetName);
         if (!info)
           return this.createErrorResponse(404, 'Create target unavailable');
@@ -2633,7 +2805,7 @@ export class APIGenerator {
     const rawBody = await req.text();
     const body = rawBody.trim() === '' ? {} : JSON.parse(rawBody);
     // A body never chooses the tenant: naming another one is refused.
-    assertWriteTenant(this.principalOf(req), objectName, body);
+    this.assertWriteBody(this.principalOf(req), objectName, 'update', body);
     const object = await collection.get(this.pointReadFilter(id, req));
 
     if (!object) {
@@ -2652,7 +2824,7 @@ export class APIGenerator {
         req,
       );
       if (refusal) return refusal;
-      assertWriteTenant(this.principalOf(req), rowModel, body);
+      this.assertWriteBody(this.principalOf(req), rowModel, 'update', body);
     }
 
     // A field the caller may not write is compared with the loaded row: an
@@ -2900,19 +3072,11 @@ export class APIGenerator {
       authorize: async (op: SyncApplyOp) => {
         // With `resolvePrincipal`: sign-in, then `<collection>.<op>`, as on
         // the CRUD route the item mirrors and on the generated sync route.
-        if (principal.enforced) {
-          if (
-            !principal.authenticated &&
-            !this.isRoutePublic(resolvedName, 'POST')
-          ) {
-            return 'auth_required';
-          }
-          try {
-            requirePermission(principal, resolvedName, op);
-          } catch (error) {
-            if (!normalizeTypedHttpError(error)) throw error;
-            return 'forbidden';
-          }
+        const decision = this.decide(principal, resolvedName, op, {
+          mutating: true,
+        });
+        if (decision && !decision.allow) {
+          return decision.status === 401 ? 'auth_required' : 'forbidden';
         }
         if (this.config.authMiddleware) {
           const verb =
@@ -2969,7 +3133,12 @@ export class APIGenerator {
         // A payload never chooses the tenant: naming another one rejects
         // the item.
         try {
-          assertWriteTenant(principal, resolvedName, payload);
+          this.assertWriteBody(
+            principal,
+            resolvedName,
+            stored ? 'update' : 'create',
+            payload,
+          );
         } catch (error) {
           if (!normalizeTypedHttpError(error)) throw error;
           throw new SyncApplyRejection('forbidden');
