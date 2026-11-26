@@ -5,7 +5,7 @@ description: "Agent framework for building autonomous actors in the SMRT ecosyst
 status: "stable"
 generated:
   by: "smrt/scripts/generate-knowledge-okf.ts"
-  at: "2026-11-26T19:09:41Z"
+  at: "2026-11-20T00:35:42Z"
 audience: "internal"
 evidence_level: "source-inspected"
 source_revision: "sha256:4237702881c12f769b5d4195a67e2c4e476df7c743e9cb9f8ac3cf39fbe54b2e"

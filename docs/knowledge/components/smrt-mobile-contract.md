@@ -5,7 +5,7 @@ description: "SMRT mobile contract codegen: manifest + allowlist → mobile-cont
 status: "stable"
 generated:
   by: "smrt/scripts/generate-knowledge-okf.ts"
-  at: "2026-11-26T19:09:41Z"
+  at: "2026-11-05T15:48:19Z"
 audience: "internal"
 evidence_level: "manifest-described"
 source_revision: "sha256:cc3af5ec2f731ba0f4d8105733b2024360f5e50f66ec02b9fe50fd848ebd03b5"

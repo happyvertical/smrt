@@ -5,7 +5,7 @@ description: "Distributed memory and knowledge management with provenance tracki
 status: "stable"
 generated:
   by: "smrt/scripts/generate-knowledge-okf.ts"
-  at: "2026-11-26T19:09:41Z"
+  at: "2026-11-17T18:51:08Z"
 audience: "internal"
 evidence_level: "source-inspected"
 source_revision: "sha256:460a057b5429a63c6d56979a7d593fbf84ee5130e1db5f727d52cfa02ed30674"

@@ -5,7 +5,7 @@ description: "Asset management system with versioning, metadata, and AI-powered 
 status: "stable"
 generated:
   by: "smrt/scripts/generate-knowledge-okf.ts"
-  at: "2026-11-26T19:09:41Z"
+  at: "2026-11-06T01:23:41Z"
 audience: "internal"
 evidence_level: "source-inspected"
 source_revision: "sha256:73bdc0cbe39f1720505c0abd7438920e0e7d167f84e8ca629c3cb40127d8027c"

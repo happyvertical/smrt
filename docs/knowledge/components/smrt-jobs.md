@@ -5,7 +5,7 @@ description: "Background job processing for SMRT objects with persistence and sc
 status: "stable"
 generated:
   by: "smrt/scripts/generate-knowledge-okf.ts"
-  at: "2026-11-26T19:09:41Z"
+  at: "2026-11-17T18:19:37Z"
 audience: "internal"
 evidence_level: "source-inspected"
 source_revision: "sha256:c9e849979901d47b0d101d8afe252087530328cc1da4cba5b2723dd509d51984"

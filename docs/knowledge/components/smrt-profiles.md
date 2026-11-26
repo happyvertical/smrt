@@ -5,7 +5,7 @@ description: "Profile management system with relationships, metadata, and recipr
 status: "stable"
 generated:
   by: "smrt/scripts/generate-knowledge-okf.ts"
-  at: "2026-11-26T19:09:41Z"
+  at: "2026-11-08T08:43:50Z"
 audience: "internal"
 evidence_level: "source-inspected"
 source_revision: "sha256:5329256a4d988d1d82ed155f7b1841cbd396e592b816979293703886db9ae1c7"

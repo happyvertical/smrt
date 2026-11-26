@@ -18,6 +18,7 @@ import { TenantScoped, tenantId } from '@happyvertical/smrt-tenancy/decorators';
 import {
   assertHydratedMailAccess,
   assertMailDraftWrite,
+  assertMailScopeOn,
   inMailSystemAccess,
   isMailWriteGated,
   learnMailAccessOptions,
@@ -187,6 +188,8 @@ export class Attachment extends SmrtObject {
     );
     const messages = await MessageCollection.create(this.options as never);
     const accountIds: Array<string | null> = [];
+    // Attachments of sent mail are part of that record: `send` decides.
+    const sentAccountIds: Array<string | null> = [];
     for (const id of parentIds) {
       const parent = (await this.db.get(messages.tableName, { id })) as Record<
         string,
@@ -194,9 +197,12 @@ export class Attachment extends SmrtObject {
       > | null;
       if (parent && isMailWriteGated(parent, write)) {
         accountIds.push((parent.account_id as string | null) ?? null);
+      } else if (parent?.send_status === 'sent') {
+        sentAccountIds.push((parent.account_id as string | null) ?? null);
       }
     }
     await assertMailDraftWrite(accountIds, this.options);
+    await assertMailScopeOn(sentAccountIds, 'send', this.options);
   }
 
   /**
