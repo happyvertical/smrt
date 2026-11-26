@@ -257,8 +257,11 @@ const NODE_ONLY_GROUPS: ReadonlyArray<{
     names: [
       'apiPrincipalFromLocals',
       'authorize',
+      'foreignRowModel',
       'isMutatingOperation',
       'isOperationPublic',
+      'modelRoutePolicy',
+      'RequestPrincipalRefusal',
       'stripTenantFilters',
     ],
   },
