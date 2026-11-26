@@ -189,7 +189,7 @@ export class Attachment extends SmrtObject {
         string,
         unknown
       > | null;
-      if (parent && isUnsentOutgoing(parent.send_status, parent.is_draft)) {
+      if (parent && isUnsentOutgoing(parent)) {
         accountIds.push((parent.account_id as string | null) ?? null);
       }
     }

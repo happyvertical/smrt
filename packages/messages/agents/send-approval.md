@@ -103,27 +103,34 @@ same authority as sending directly from it.
 ## Draft writes
 
 The `draft` scope is needed: `Message.save()` and `Message.delete()`
-check it (`assertMailScopeOn`, `access.ts`) for an email that is draft
-content now or was when stored, by id or by the slug a new object would take
-over (its own or the one derived from its id), and for both accounts when a
-draft moves. Draft content is an email flagged `isDraft` (any stored form:
-`true`, `1`, `'1'`, `'true'`) whose `sendStatus` is not `sent`, so `failed`,
-`pending`, `scheduled` and `sending` rows are covered too. The stored row
-decides, whatever class the handle is. Received mail is not flagged. The
+check it (`assertMailScopeOn`, `access.ts`) for unsent outgoing mail (below)
+now or when stored, by id or by the slug a new object would take over (its own
+or the one derived from its id), and for both accounts when a row moves. A
+draft flag is `isDraft` in any stored form (`true`, `1`, `'1'`, `'true'`). The
+stored row decides, whatever class the handle is. The
 grants and account owner are read before the write (a single-connection
 engine cannot serve the policy handle inside a transaction); the write then
 re-reads the stored row and refuses a save that now needs more.
 `Attachment.save()`/`delete()` need the same scope when the message they
 belong to (or are moved from) is unsent outgoing mail on an owned account
-(`isUnsentOutgoing`): draft content as above, or any stored send status other
-than `sent` and `draft` (`pending`, `scheduled`, `sending`, `failed`, and an
-unknown value, which fails closed). `Message.save()`/`delete()` apply the same
-test to the stored row, and to a stored row moved into such a status, so the
-parent cannot be relabelled around the attachment check; a fresh row created
-as `pending` (outbox, persona route) is not a write to stored content. An
-unflagged `draft` is what received mail carries, so it stays as it was; a held
-send's binding hash still covers its attachment rows. The attachment check
-runs just before the write, not inside it.
+(`isUnsentOutgoing`). Unsent outgoing mail is any row a later send would
+transmit: every row that is not `sent` and not received mail. Received mail
+is a provider-tagged row (`messageId`, `folderId`, `tweetId` or `slackTs` set)
+that is unflagged and still `draft`; `Message.send()` refuses it, so it is a
+record. A `draft` row with no provider id, a flagged draft, and `pending`,
+`scheduled`, `sending`, `failed` or an unknown status all count. `Message.save()`/
+`delete()` apply the same test to the stored row and to the state a row is
+moved into, so a received row cannot be relabelled or stripped of its provider
+id around the check. A stored `sent` row cannot be moved out of `sent` by a
+principal (sent mail is a record). A fresh row in any of these states needs
+`draft` too; the only exception is a row the send path itself creates (an
+unsaved message being sent) or the persona route queues, which needs `send`
+(the route saves through a module-private helper, `saveQueuedForSend`, valid
+only for a fresh row). A save that changes only `isRead` and `isFlagged` of a
+stored row needs neither scope, so triage marks work on queued rows, and
+`markAllRead` / `markFolderRead` try every row before raising the first error.
+A held send's binding hash still covers its attachment rows. The attachment
+check runs just before the write, not inside it.
 That covers generated routes, collection `delete`/`getOrUpsert`,
 `createReply`/`createForward` + `save()` and `MailDraftService`. Trusted work
 (`runWithMailSystemAccess`: sync, outbox, triage write-back, approval edits)
@@ -132,6 +139,7 @@ need `send` instead, and only while every stored field outside the lifecycle
 fields (`sendStatus`, `sentAt`, `sendError`, `retryCount`, handled-by,
 `updatedAt`) is unchanged, tenant, slug, context and subclass fields included.
 A row the send path itself creates (an unsaved message being sent) needs
-`send` too. As for read, triage and send, a principal's scope and account
-ceilings apply to unowned accounts too; with no principal an owned account is
+`send` too (a queued row whose account no longer exists is marked `failed`
+with nothing else changed, without a scope). As for read, triage and send, a
+principal's scope and account ceilings apply to unowned accounts too; with no principal an owned account is
 closed and an unowned one is open.

@@ -704,6 +704,7 @@ describe('mail account access (#5129)', () => {
           tenantId: tenantA,
           accountId: privateAccountId,
           subject: 'app subject',
+          messageId: '<app@example.com>',
         });
         await subclassed.initialize();
         await subclassed.save();
@@ -942,7 +943,6 @@ describe('mail account access (#5129)', () => {
           toAddresses: JSON.stringify(['someone@example.com']),
         });
         await email.initialize();
-        await email.save();
         return email.send();
       });
     };

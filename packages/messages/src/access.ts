@@ -504,21 +504,46 @@ export function isUnsentDraft(sendStatus: unknown, isDraft: unknown): boolean {
   return mailFlag(isDraft) && sendStatus !== 'sent';
 }
 
-/**
- * Unsent outgoing mail: {@link isUnsentDraft}, or any stored send status other
- * than `sent` and `draft` (`pending`, `scheduled`, `sending`, `failed`, and any
- * unknown value, which fails closed). An unflagged `draft` is what received
- * mail carries, so it is not outgoing; `sent` is done.
- */
-export function isUnsentOutgoing(
-  sendStatus: unknown,
-  isDraft: unknown,
-): boolean {
-  if (isUnsentDraft(sendStatus, isDraft)) return true;
-  if (sendStatus === undefined || sendStatus === null || sendStatus === '') {
+/** Fields only a provider sync sets: they tie a row to mail that arrived. */
+const PROVENANCE_FIELDS = [
+  ['messageId', 'message_id'],
+  ['folderId', 'folder_id'],
+  ['tweetId', 'tweet_id'],
+  ['slackTs', 'slack_ts'],
+] as const;
+
+/** Whether a row (instance or stored, any naming) carries a provider id. */
+export function hasMailProvenance(row: Record<string, unknown>): boolean {
+  return PROVENANCE_FIELDS.some(([camel, snake]) => {
+    for (const value of [row[camel], row[snake]]) {
+      if (value !== undefined && value !== null && value !== '') return true;
+    }
     return false;
+  });
+}
+
+/**
+ * Received mail: a provider-tagged row that is neither flagged as a draft nor
+ * in an outgoing status. A record of what arrived, so it is never sent.
+ */
+export function isReceivedMail(row: Record<string, unknown>): boolean {
+  const status = row.sendStatus ?? row.send_status;
+  if (status !== undefined && status !== null && status !== '') {
+    if (status !== 'draft') return false;
   }
-  return sendStatus !== 'sent' && sendStatus !== 'draft';
+  return !mailFlag(row.isDraft ?? row.is_draft) && hasMailProvenance(row);
+}
+
+/**
+ * Unsent outgoing mail: anything a later send would transmit. That is every
+ * row that is not `sent` and not received mail ({@link isReceivedMail}):
+ * flagged drafts, `draft` rows with no provider id, `pending`, `scheduled`,
+ * `sending`, `failed` and any unknown status (which fails closed).
+ */
+export function isUnsentOutgoing(row: Record<string, unknown>): boolean {
+  const status = row.sendStatus ?? row.send_status;
+  if (status === 'sent') return false;
+  return !isReceivedMail(row);
 }
 
 /**
@@ -539,6 +564,7 @@ export async function assertMailScopeOn(
   accountIds: ReadonlyArray<string | null | undefined>,
   scope: MailScope,
   options: SmrtClassOptions | undefined,
+  { allowMissing = false }: { allowMissing?: boolean } = {},
 ): Promise<void> {
   if (inMailSystemAccess()) return;
   learnMailAccessOptions(options);
@@ -553,7 +579,10 @@ export async function assertMailScopeOn(
     const account = await runWithMailSystemAccess(async () =>
       (await AccountCollection.create(config.options)).get({ id }),
     );
-    if (!account) throw new MailAccessError(scope, 'denied');
+    if (!account) {
+      if (allowMissing) continue;
+      throw new MailAccessError(scope, 'denied');
+    }
     await assertMailAccess(
       {
         id: account.id,

@@ -282,6 +282,7 @@ describe('mailbox connect', () => {
           tenantId: TENANT,
           accountId: view.id,
           subject: 'synced',
+          messageId: '<synced@example.com>',
         });
         await email.initialize();
         await email.save();

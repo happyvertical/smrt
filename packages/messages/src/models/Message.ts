@@ -36,7 +36,7 @@ import {
   assertMailScopeOn,
   decideMailAccess,
   inMailSystemAccess,
-  isUnsentDraft,
+  isReceivedMail,
   isUnsentOutgoing,
   learnMailAccessOptions,
   MailAccessError,
@@ -124,6 +124,20 @@ async function saveHeld(message: Message): Promise<void> {
   }
 }
 
+// Rows a service creates in the outgoing queue (the persona route). Only the
+// module-private helper below marks one, and only a fresh row is covered; it
+// then needs the `send` scope instead of `draft`, as the send that follows does.
+const queuedCreates = new WeakSet<Message>();
+/** Internal: not exported from the package index. */
+export async function saveQueuedForSend(message: Message): Promise<void> {
+  queuedCreates.add(message);
+  try {
+    await message.save();
+  } finally {
+    queuedCreates.delete(message);
+  }
+}
+
 /**
  * The only fields a send-path save of a draft may change: the send lifecycle,
  * the handled-by stamp and the revision. Everything else, including fields the
@@ -144,6 +158,30 @@ const SEND_PATH_MAY_CHANGE = new Set([
   'createdAt',
   'created_at',
 ]);
+
+/** Read and flagged state: not content a send transmits. */
+const TRIAGE_MAY_CHANGE = new Set([
+  'isRead',
+  'isFlagged',
+  'updatedAt',
+  'createdAt',
+  'created_at',
+]);
+
+interface DraftRequirements {
+  /** `scope:accountId` pairs the write needs. */
+  keys: Set<string>;
+  /** A stored `sent` row moved out of `sent`: sent mail is a record. */
+  refused: boolean;
+  /** An authorised lifecycle save of a stored row with nothing else changed. */
+  storedLifecycle: boolean;
+}
+
+const emptyRequirements = (): DraftRequirements => ({
+  keys: new Set(),
+  refused: false,
+  storedLifecycle: false,
+});
 
 const DATE_LIKE =
   /^\d{4}-\d{2}-\d{2}[T ]\d{2}:\d{2}(:\d{2}(\.\d+)?)?(Z|[+-]\d{2}:?\d{2})?$/;
@@ -379,11 +417,11 @@ export class Message extends SmrtObject {
     const authorized =
       signature !== undefined && signature === lifecycleSignature(this);
     const lifecycle = authorized || heldSaves.has(this);
-    const required = await this.enforceDraftScope(lifecycle);
+    const required = await this.enforceDraftScope(lifecycle, true);
     return this.withTransaction(async () => {
       // The decision above used the stored row as it was then; inside the
       // write, the row this save replaces must still need nothing more.
-      await this.assertDraftScopeStillHolds(lifecycle, required);
+      await this.assertDraftScopeStillHolds(lifecycle, true, required);
       await assertProtectedNotificationSave(this, options, authorized);
       if (signature !== undefined && signature !== lifecycleSignature(this))
         throw new Error('Message lifecycle changed during its guarded save.');
@@ -402,44 +440,64 @@ export class Message extends SmrtObject {
   override async delete(
     options: { expectedUpdatedAt?: Date | string } = {},
   ): Promise<void> {
-    const required = await this.enforceDraftScope(false);
+    const required = await this.enforceDraftScope(false, false);
     return this.withTransaction(async () => {
-      await this.assertDraftScopeStillHolds(false, required);
+      await this.assertDraftScopeStillHolds(false, false, required);
       await assertProtectedNotificationDelete(this);
       return super.delete(options);
     });
   }
 
   /**
-   * Creating, changing or deleting a draft on an owned account needs the
-   * `draft` scope, whichever route the write takes. A draft is an email
-   * flagged `isDraft` that has not been sent (any send status but `sent`), in
-   * whatever form the flag is stored; received mail is not flagged. The stored
-   * row decides, whatever class this instance is, so a base `Message` handle
-   * on a stored draft is covered. Both the new and the stored state count, so
-   * a draft cannot be edited by first relabelling it, and both accounts count
-   * when a draft moves. Trusted system work, unowned accounts and rows that
-   * are not drafts are unaffected.
+   * Creating, changing or deleting mail that a later send would transmit
+   * needs the `draft` scope on an owned account, whichever route the write
+   * takes. That is every row that is not `sent` and not received mail
+   * ({@link isUnsentOutgoing}): flagged drafts, `draft` rows with no provider
+   * id, `pending`, `scheduled`, `sending`, `failed` and unknown statuses. A
+   * row counts by its stored state and by the state it is moved into, so it
+   * cannot be edited by first relabelling it, and both accounts count when it
+   * moves. A fresh row on an owned account needs the scope too. Received mail
+   * (provider-tagged, unflagged, plain `draft`) is a record and is never sent
+   * ({@link Message.send} refuses it), and a stored row cannot leave `sent`.
+   * The stored row decides, whatever class this instance is. Trusted system
+   * work, unowned accounts and rows that are only received or sent mail are
+   * unaffected.
+   *
+   * A save that changes only the triage fields (read and flagged state) of a
+   * stored row needs nothing here: they are not content a send transmits.
    *
    * `lifecycle` is the send path's own save (status changes, a held send moved
    * back to draft): it needs the `send` scope instead, and passes only while
    * every field outside {@link SEND_PATH_MAY_CHANGE} still equals the stored
    * row, so it cannot carry an edit. A row the send path itself creates (an
-   * unsaved message being sent) needs `send` too.
+   * unsaved message being sent), or a service-queued row saved through
+   * {@link saveQueuedForSend}, needs `send` too.
    *
    * Returns the requirements it enforced (empty for system work).
    */
-  private async enforceDraftScope(lifecycle: boolean): Promise<Set<string>> {
-    if (inMailSystemAccess()) return new Set();
+  private async enforceDraftScope(
+    lifecycle: boolean,
+    save: boolean,
+  ): Promise<DraftRequirements> {
+    if (inMailSystemAccess()) return emptyRequirements();
     const rootOptions = { ...this.options } as SmrtClassOptions;
     learnMailAccessOptions(rootOptions);
-    const required = await this.draftScopeRequirements(lifecycle);
-    for (const key of required) {
+    const required = await this.draftScopeRequirements(lifecycle, save);
+    if (required.refused) throw new MailAccessError('draft', 'denied');
+    for (const key of required.keys) {
       const at = key.indexOf(':');
       await assertMailScopeOn(
         [key.slice(at + 1)],
         key.slice(0, at) as MailScope,
         rootOptions,
+        // A queued row whose account was deleted is marked failed by the send
+        // path with nothing else changed; there is no owner left to protect.
+        {
+          allowMissing:
+            required.storedLifecycle &&
+            this.sendStatus === 'failed' &&
+            key.startsWith('send:'),
+        },
       );
     }
     return required;
@@ -454,11 +512,14 @@ export class Message extends SmrtObject {
    */
   private async assertDraftScopeStillHolds(
     lifecycle: boolean,
-    enforced: Set<string>,
+    save: boolean,
+    enforced: DraftRequirements,
   ): Promise<void> {
     if (inMailSystemAccess()) return;
-    for (const key of await this.draftScopeRequirements(lifecycle)) {
-      if (!enforced.has(key)) {
+    const now = await this.draftScopeRequirements(lifecycle, save);
+    if (now.refused) throw new MailAccessError('draft', 'denied');
+    for (const key of now.keys) {
+      if (!enforced.keys.has(key)) {
         throw new MailAccessError(
           key.slice(0, key.indexOf(':')) as MailScope,
           'denied',
@@ -470,21 +531,30 @@ export class Message extends SmrtObject {
   /** The `scope:accountId` pairs this write needs, read through `this.db`. */
   private async draftScopeRequirements(
     lifecycle: boolean,
-  ): Promise<Set<string>> {
-    const needed = new Set<string>();
+    save: boolean,
+  ): Promise<DraftRequirements> {
+    const result = emptyRequirements();
     const row = this as unknown as Record<string, unknown>;
-    const flag = 'isDraft' in this ? row.isDraft : false;
-    const draftNow = isUnsentDraft(row.sendStatus, flag);
     const priorAccountIds: string[] = [];
     let stored: Record<string, unknown> | null = null;
     let unchanged = false;
+    let triageOnly = false;
     if (this.id) {
       stored = await this.getCanonicalPersistedRow({ id: this.id });
       if (stored) {
-        if (isUnsentOutgoing(stored.send_status, stored.is_draft)) {
+        if (isUnsentOutgoing(stored)) {
           priorAccountIds.push(String(stored.account_id ?? ''));
         }
-        unchanged = this.matchesStoredBeyondSendPath(stored);
+        if (stored.send_status === 'sent' && row.sendStatus !== 'sent') {
+          result.refused = true;
+        }
+        unchanged = this.matchesStoredBeyond(
+          stored,
+          SEND_PATH_MAY_CHANGE,
+          true,
+        );
+        triageOnly =
+          save && this.matchesStoredBeyond(stored, TRIAGE_MAY_CHANGE, false);
       }
     }
     // A new object is written over the stored row that carries its natural
@@ -509,35 +579,41 @@ export class Message extends SmrtObject {
             if (keyed.id === this.id) continue;
             takesOver = true;
             unchanged = false;
-            if (isUnsentOutgoing(keyed.send_status, keyed.is_draft)) {
+            triageOnly = false;
+            if (keyed.send_status === 'sent' && row.sendStatus !== 'sent') {
+              result.refused = true;
+            }
+            if (isUnsentOutgoing(keyed)) {
               priorAccountIds.push(String(keyed.account_id ?? ''));
             }
           }
         }
       }
     }
-    // A stored row moved into an outgoing status (a received or plain row made
-    // `pending`) changes what will be sent. A fresh row created in one (the
-    // outbox, a persona route) is not a write to stored content.
-    const movedOut =
-      (Boolean(stored) || takesOver) && isUnsentOutgoing(row.sendStatus, flag);
-    if (!draftNow && !movedOut && !priorAccountIds.length) return needed;
-    const scope: MailScope =
-      lifecycle && ((stored && unchanged) || (!stored && !takesOver))
-        ? 'send'
-        : 'draft';
-    for (const id of [
-      draftNow || movedOut ? this.accountId : '',
-      ...priorAccountIds,
-    ]) {
-      if (id) needed.add(`${scope}:${id}`);
+    if (result.refused) return result;
+    if (triageOnly) return result;
+    const fresh = !stored && !takesOver;
+    const outgoingNow = isUnsentOutgoing(row);
+    if (!outgoingNow && !priorAccountIds.length) return result;
+    const sanctioned =
+      (lifecycle && ((stored && unchanged) || fresh)) ||
+      (fresh && queuedCreates.has(this));
+    const scope: MailScope = sanctioned ? 'send' : 'draft';
+    result.storedLifecycle = Boolean(lifecycle && stored && unchanged);
+    for (const id of [outgoingNow ? this.accountId : '', ...priorAccountIds]) {
+      if (id) result.keys.add(`${scope}:${id}`);
     }
-    return needed;
+    return result;
   }
 
-  /** Whether every field outside {@link SEND_PATH_MAY_CHANGE} equals `stored`. */
-  private matchesStoredBeyondSendPath(
+  /**
+   * Whether every field outside `allowed` equals `stored`. `held` lets a held
+   * send raise the draft flag.
+   */
+  private matchesStoredBeyond(
     stored: Record<string, unknown>,
+    allowed: ReadonlySet<string>,
+    held: boolean,
   ): boolean {
     const row = this as unknown as Record<string, unknown>;
     const names = new Set([
@@ -547,9 +623,14 @@ export class Message extends SmrtObject {
       'context',
     ]);
     for (const name of names) {
-      if (SEND_PATH_MAY_CHANGE.has(name)) continue;
+      if (allowed.has(name)) continue;
       // A held send flags the message as a draft; it may raise the flag only.
-      if (name === 'isDraft' && heldSaves.has(this) && mailFlag(row[name])) {
+      if (
+        held &&
+        name === 'isDraft' &&
+        heldSaves.has(this) &&
+        mailFlag(row[name])
+      ) {
         continue;
       }
       const column = name.replace(/[A-Z]/g, (c) => `_${c.toLowerCase()}`);
@@ -801,6 +882,14 @@ export class Message extends SmrtObject {
       return {
         success: false,
         error: error instanceof Error ? error.message : String(error),
+        sentAt: new Date(),
+      };
+    }
+    // Received mail is a record of what arrived, never an outgoing message.
+    if (isReceivedMail(this as unknown as Record<string, unknown>)) {
+      return {
+        success: false,
+        error: 'Cannot send: this is received mail',
         sentAt: new Date(),
       };
     }

@@ -164,12 +164,20 @@ export class MessageCollection extends SmrtCollection<Message> {
    * Mark multiple messages as read
    */
   async markAllRead(messageIds: string[]): Promise<void> {
+    // One refused or failed row does not stop the rest; the first error is
+    // raised once every row has been tried.
+    let failure: unknown;
     for (const id of messageIds) {
-      const message = await this.get({ id });
-      if (message) {
-        await message.markRead();
+      try {
+        const message = await this.get({ id });
+        if (message) {
+          await message.markRead();
+        }
+      } catch (error) {
+        failure ??= error;
       }
     }
+    if (failure) throw failure;
   }
 
   /**
