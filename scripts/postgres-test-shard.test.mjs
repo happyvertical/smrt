@@ -128,21 +128,22 @@ test('affecting core selects BOTH of its halves, matched on the owning package (
   assert.ok(homes.every(Boolean) && homes[0] !== homes[1], `halves share a shard: ${homes}`);
 });
 
-test('the union of units is every test:postgres package plus both core halves, from package.json (#5649)', async () => {
+test('the union of units is every test:postgres package, split ones as their tasks, from package.json (#5649, #5664)', async () => {
   const manifests = await readPostgresManifests(root);
   const withScript = manifests.filter((m) => typeof m.scripts?.['test:postgres'] === 'string').map((m) => m.name).sort();
   assert.ok(withScript.includes(CORE) && withScript.includes('@happyvertical/smrt-app-shell'));
   const shards = ['ingestion', 'remaining:1/3', 'remaining:2/3', 'remaining:3/3'];
   const units = shards.flatMap((shard) => selectPostgresShard(manifests, shard).selected).sort();
   const expected = withScript
-    .flatMap((name) => (name === CORE ? [`${CORE}#test:postgres:pglite`, `${CORE}#test:postgres:real`] : [unit(name)]))
+    .flatMap((name) => (SPLIT_POSTGRES_UNITS[name] ?? ['test:postgres']).map((task) => `${name}#${task}`))
     .sort();
   assert.deepEqual(units, expected);
   assert.equal(new Set(units).size, units.length, 'no unit may run twice');
   // Every unit has a weight source: its own id, or its package (a plain unit).
-  for (const half of SPLIT_POSTGRES_UNITS[CORE]) assert.ok(POSTGRES_TEST_SECONDS[`${CORE}#${half}`] > 0, half);
-  assert.ok(POSTGRES_TEST_SECONDS['@happyvertical/smrt-app-shell'] > 100, 'app-shell must be weighed');
-  assert.equal(POSTGRES_TEST_SECONDS[CORE], undefined, 'core has no whole-package weight once split');
+  for (const [name, tasks] of Object.entries(SPLIT_POSTGRES_UNITS)) {
+    for (const task of tasks) assert.ok(POSTGRES_TEST_SECONDS[`${name}#${task}`] > 0, `${name}#${task}`);
+    assert.equal(POSTGRES_TEST_SECONDS[name], undefined, `${name} has no whole-package weight once split`);
+  }
 });
 
 test('a test:postgres package in no unit fails; a split package missing a half fails (#5649)', () => {
@@ -153,4 +154,21 @@ test('a test:postgres package in no unit fails; a split package missing a half f
     delete broken.scripts[missing];
     assert.throws(() => selectPostgresShard([suite(INGESTION), broken, suite('a')], 'remaining'), new RegExp(`Missing ${missing}`));
   }
+});
+
+test('affecting app-shell selects every one of its units; a missing unit script fails (#5664)', () => {
+  const APP_SHELL = '@happyvertical/smrt-app-shell';
+  const tasks = SPLIT_POSTGRES_UNITS[APP_SHELL];
+  assert.ok(tasks.length >= 2);
+  const shell = () => ({ name: APP_SHELL, scripts: { 'test:postgres': 'aggregate', ...Object.fromEntries(tasks.map((task) => [task, 'unit'])) } });
+  const manifests = [suite(INGESTION), shell(), coreSuite(), ...['a', 'b', 'c', 'd', 'e'].map(suite)];
+  const selected = [1, 2, 3].flatMap((i) => selectPostgresShard(manifests, `remaining:${i}/3`, [APP_SHELL]).selected);
+  assert.deepEqual(selected.sort(), tasks.map((task) => `${APP_SHELL}#${task}`).sort());
+  for (const missing of tasks) {
+    const broken = shell();
+    delete broken.scripts[missing];
+    assert.throws(() => selectPostgresShard([suite(INGESTION), broken, suite('a')], 'remaining'), new RegExp(`Missing ${missing}`));
+  }
+  // A unit dropped from the table leaves the aggregate uncovered only if no unit remains.
+  assert.deepEqual(uncoveredPostgresPackages([APP_SHELL], []), [APP_SHELL]);
 });
