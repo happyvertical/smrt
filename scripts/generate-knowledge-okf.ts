@@ -10,8 +10,11 @@
  *
  * Run it after `pnpm build` (it is deliberately not part of the build, or the
  * freshness gate could never see a stale page): the model, MCP-tool and agent-surface slices come from the
- * built knowledge artifacts. `pnpm knowledge:check --strict` fails when a page
- * no longer matches its inputs, so CI catches a stale or hand-edited page.
+ * built knowledge artifacts. Do not run it in a PR (#5705): the "Regenerate
+ * Knowledge Pages" workflow runs it after every push to main and lands the
+ * result through one rolling `chore/knowledge-regenerate` PR. A PR that edits
+ * the generated pages fails `scripts/check-generated-knowledge-untouched.mjs`.
+ * `pnpm knowledge:check --strict --generated` verifies the pages locally.
  * The page format, the `source_revision` definition and the `generated.at`
  * rule are documented in `scripts/knowledge-okf.ts`.
  */

@@ -8,7 +8,7 @@ tags:
 status: draft
 generated:
   by: claude/smrt-4688
-  at: 2026-11-05T00:00:00Z
+  at: 2026-11-26T00:00:00Z
 stale_after: 2027-02-03T00:00:00Z
 audience: internal
 sources:
@@ -42,7 +42,7 @@ The bundle root is `docs/knowledge/`. A concept ID is the path from the root wit
 | Solutions, capability map | `/solutions/*.md` | humans and agents | `stale_after` |
 | This page | `/maintenance.md` | humans and agents | `stale_after` |
 
-Never edit a generated page by hand: `knowledge:check` compares each one with the generator's output and fails on any difference.
+Never edit a generated page by hand, and never commit one in a PR (#5705): the post-merge workflow owns them, and `knowledge:check --strict --generated` compares each with the generator's output.
 
 # Evidence labels
 
@@ -57,13 +57,14 @@ The generator can only ever emit `manifest-described` or `source-inspected`. The
 
 # Refresh workflow
 
-Generated component pages, their indexes and the root index are refreshed by tooling, not by hand.
+Generated component pages, their indexes and the root index are refreshed by tooling after merge to main, not by hand and not in pull requests. Committing them in each PR made the next queued PR conflict and leave the merge queue (#5705).
 
-1. Build first (`pnpm build`). The generator reads the built knowledge artifacts, so run it only after a full `pnpm build` (which ends with `knowledge:graph`); a partial build produces different pages.
-2. Run `pnpm knowledge:okf` to regenerate `/components/*.md`, `/components/index.md` and `/index.md`. It adds pages for new workspace packages and removes pages for packages that no longer exist. It never touches `intents/`, `solutions/` or other hand-authored pages.
-3. Read the diff. Each page carries `source_revision: sha256:...`, a content pin over the package manifest facts, the package `AGENTS.md` and linked `agents/*.md` module docs, the scanner-derived models, MCP tools and agent-surface entries, and the generator format version. A pin moves only when something the page renders changes, so a moving `HEAD` alone changes nothing. `generated.at` is rewritten only when the pin moves.
-4. Run `pnpm knowledge:check --strict --format markdown`. It fails when a generated page is missing, stale (pin mismatch), hand-edited or without a workspace package, when a generated index is out of date, when any page has unparseable frontmatter or an empty `type`, and when any absolute link in a hand-authored page does not resolve to a page in the bundle.
-5. Commit the regenerated pages with the change that caused them.
+1. A push to main runs the "Regenerate Knowledge Pages" workflow: `pnpm build`, then `pnpm knowledge:okf`. If anything changed it force-updates the bot branch `chore/knowledge-regenerate` and opens or updates one rolling PR titled `chore(knowledge): regenerate generated pages`. It never pushes to main and never enables auto-merge; a maintainer queues the PR. If main already matches, the PR is closed.
+2. A pull request that edits `/components/*.md`, `/components/index.md` or `/index.md` fails the "Check Monorepo Standards" job (`scripts/check-generated-knowledge-untouched.mjs`). To drop such edits: `git restore --source="$(git merge-base origin/main HEAD)" --staged --worktree -- docs/knowledge/components docs/knowledge/index.md`.
+3. PR CI runs `pnpm knowledge:check --strict --format markdown`, which checks generation succeeds, every hand-authored page has valid frontmatter, and every absolute link resolves (a link to a page the generator will write resolves before it is committed). It does not compare generated pages with the generator. Add `--generated` to do so locally.
+4. To inspect output locally, build first (`pnpm build`; a partial build produces different pages) and run `pnpm knowledge:okf`, then discard the result before committing. It adds pages for new workspace packages and removes pages for packages that no longer exist. It never touches `intents/`, `solutions/` or other hand-authored pages.
+
+Each page carries `source_revision: sha256:...`, a content pin over the package manifest facts, the package `AGENTS.md` and linked `agents/*.md` module docs, the scanner-derived models, MCP tools and agent-surface entries, and the generator format version. A pin moves only when something the page renders changes, so a moving `HEAD` alone changes nothing. `generated.at` is rewritten only when the pin moves. Published packages copy their page into `dist/smrt-knowledge.okf.md` from the committed copy; a package with no page yet ships none until the regeneration PR lands.
 
 To correct a generated page's content, fix its source: the package `AGENTS.md`, the package manifest, or the scanner and generator. Package behaviour that is not derivable from source or the manifest belongs in that package's `AGENTS.md`, from which the page is generated.
 

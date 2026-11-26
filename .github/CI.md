@@ -369,8 +369,11 @@ reversal lever.
   Turbo's dry-run task list, log selected/total package counts, and emit each
   selected non-core test task exactly once, so wide core closures use the full
   suite's parallel shape without silently changing coverage. The core and
-  package matrices run concurrently. Every PR also runs affected knowledge
-  freshness: it has no paths filter, because the merge group always runs the
+  package matrices run concurrently. Generated knowledge pages are not committed in PRs: a push to main runs
+  `knowledge-regenerate.yml`, which maintains one rolling
+  `chore/knowledge-regenerate` PR, and `check-standards` fails a PR that edits
+  them (#5705). Every PR also runs affected knowledge
+  freshness (hand-written pages and generation inputs only): it has no paths filter, because the merge group always runs the
   check and a PR that skipped it was ejected there (#5045).
 - Merge groups (#5364): `validation-scope` runs `scripts/merge-group-scope.mjs`,
   which wraps `scripts/ci-impact.mjs` against `merge_group.base_sha`. The

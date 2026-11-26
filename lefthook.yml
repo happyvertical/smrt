@@ -149,6 +149,19 @@ pre-push:
         Fix the issues above, or run:
           pnpm knowledge:check --strict --format markdown
 
+    generated-knowledge-untouched:
+      # Generated pages are regenerated after merge to main (#5705); a PR must
+      # not carry them. The rolling bot branch is the only exception.
+      run: |
+        [ "$(git rev-parse --abbrev-ref HEAD)" = chore/knowledge-regenerate ] && exit 0
+        git rev-parse --verify -q origin/main >/dev/null || exit 0
+        node scripts/check-generated-knowledge-untouched.mjs origin/main
+      fail_text: |
+        ❌ This branch edits generated knowledge pages!
+
+        Do not run `pnpm knowledge:okf` or commit docs/knowledge/components/**
+        or docs/knowledge/index.md; main regenerates them after merge.
+
     format-check:
       run: npx --yes @biomejs/biome@2.5.3 ci --diagnostic-level=error .
       fail_text: |
