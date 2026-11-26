@@ -91,8 +91,8 @@ import recovery among them).
   policy, a rewritten helper, an older or unversioned stamp is not current, so
   the policies are re-applied (extra policies dropped) and re-stamped. A stamp
   with a NEWER version on any table is left alone with a warning
-  (`shell-rls-policies-newer`): an old replica restarting mid-rollout never puts
-  an older set back. The apply is one transaction under an advisory lock
+  (`shell-rls-policies-newer`): a restarting replica of a versioned release never
+  puts an older set back (releases before versioning cannot honor it). The apply is one transaction under an advisory lock
   with a lock timeout, so replicas starting together never interleave
   DROP/CREATE POLICY and no reader sees a table between them. A
   missing table says to run `smrt db:migrate`; every failure's reason goes to
