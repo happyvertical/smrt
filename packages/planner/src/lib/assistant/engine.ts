@@ -2,6 +2,7 @@ import type {
   WebLLMEngineLike,
   WebLLMLoadProgress,
 } from '@happyvertical/ai/local';
+import { browserHost } from './engine-host.ts';
 
 export type LoadProgress = Pick<WebLLMLoadProgress, 'progress' | 'text'>;
 
@@ -22,20 +23,7 @@ export interface EngineHost {
   ): Promise<WebLLMEngineLike>;
 }
 
-/** The real host: a module worker running WebLLM. */
-export const browserHost: EngineHost = {
-  createWorker: () =>
-    // Extensionless on purpose: Vite resolves it to `.ts` here and to the
-    // `.js` svelte-package emits in `dist/`, so a host bundling the package
-    // finds the worker (`./llm.worker.ts` broke the host's build).
-    new Worker(new URL('./llm.worker', import.meta.url), { type: 'module' }),
-  createEngine: async (worker, modelId, onProgress) => {
-    const { CreateWebWorkerMLCEngine } = await import('@mlc-ai/web-llm');
-    return CreateWebWorkerMLCEngine(worker, modelId, {
-      initProgressCallback: (report) => onProgress(report),
-    }) as Promise<WebLLMEngineLike>;
-  },
-};
+export { browserHost };
 
 /**
  * Download (or read from the browser cache) and compile a model in a worker.

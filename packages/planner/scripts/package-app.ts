@@ -6,7 +6,7 @@
  * absolute base into `404.html`, so it is removed for this build.
  */
 import { spawnSync } from 'node:child_process';
-import { cpSync, existsSync, rmSync } from 'node:fs';
+import { cpSync, existsSync, readdirSync, rmSync } from 'node:fs';
 
 const env = { ...process.env };
 delete env.BASE_PATH;
@@ -20,6 +20,17 @@ if (build.status !== 0) {
 }
 if (!existsSync('build/index.html')) {
   console.error('vite build produced no build/index.html.');
+  process.exit(1);
+}
+// ONNX Runtime comes from jsDelivr at run time (`vite.config.ts`); a copy in
+// the package is tens of megabytes that no page requests (#5707).
+const wasm = readdirSync('build', { recursive: true }).filter((file) =>
+  String(file).endsWith('.wasm'),
+);
+if (wasm.length > 0) {
+  console.error(
+    `The build emitted WebAssembly; app/ was not updated:\n  ${wasm.join('\n  ')}`,
+  );
   process.exit(1);
 }
 rmSync('app', { recursive: true, force: true });

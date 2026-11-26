@@ -748,7 +748,8 @@ into an isolated consumer, run the built CLI to generate `.smrt/register.js`,
 and import the generated file so every manifest-advertised root import is
 proven against the publish artifact. The planner's tarball is checked offline
 (`scripts/verify-packed-planner.mjs`): it must carry `app/`, `app/mcp.html`
-and a catalog whose every package is at the release version. The summary
+and a catalog whose every package is at the release version, stay within its
+tarball and widget byte budgets, and ship no WebAssembly. The summary
 verifies complete package membership and uniform versions. Before publication,
 `planner-release-gate` (`scripts/planner-release-gate.mjs`) runs the planner's
 browser suites, installs its tarball against the release tarballs, validates
