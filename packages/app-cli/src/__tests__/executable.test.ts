@@ -30,6 +30,32 @@ describe('smrt-app executable configuration', () => {
     expect(parsed.stdioMcp).toBe(false);
   });
 
+  it('forwards a validated agent status path and rejects off-server paths', () => {
+    const parsed = parseAppCliExecutableConfig(
+      [
+        '--agent-status-path',
+        '/api/tracker/agent-credentials/self',
+        '--',
+        'auth',
+      ],
+      ENV,
+    );
+    expect(parsed.cliOptions.agentStatusPath).toBe(
+      '/api/tracker/agent-credentials/self',
+    );
+    expect(
+      parseAppCliExecutableConfig([], {
+        ...ENV,
+        SMRT_APP_AGENT_STATUS_PATH: '/self',
+      }).cliOptions.agentStatusPath,
+    ).toBe('/self');
+    for (const bad of ['self', '//evil.test/self', '/a?b=1']) {
+      expect(() =>
+        parseAppCliExecutableConfig(['--agent-status-path', bad], ENV),
+      ).toThrow('Invalid agent status path configuration.');
+    }
+  });
+
   it('creates only the canonical app CLI and forwards command argv unchanged', async () => {
     const run = vi.fn(async () => undefined);
     const startMcpBridge = vi.fn(async () => undefined);

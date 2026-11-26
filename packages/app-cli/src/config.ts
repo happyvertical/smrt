@@ -92,6 +92,18 @@ export function resolveMcpPath(value: string | undefined): string {
   return path;
 }
 
+/**
+ * Validate the same-server path an app exposes for agent-credential
+ * introspection (`auth status` with a durable agent token).
+ */
+export function resolveAgentStatusPath(value: string): string {
+  try {
+    return resolveMcpPath(value);
+  } catch {
+    throw new TypeError('agentStatusPath must be a same-server absolute path.');
+  }
+}
+
 /** Enforce the executable-safe server URL policy without echoing URL values. */
 export function assertSecureServerUrl(value: string): void {
   let url: URL;

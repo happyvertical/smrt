@@ -13,6 +13,7 @@ import {
   getStoredToken,
   loadCliConfig,
   requestJson,
+  resolveAgentStatusPath,
   saveAuth,
 } from '../config.js';
 
@@ -45,6 +46,12 @@ export interface AuthCommandsOptions {
   noOpenDefault?: boolean;
   /** Override the polling sleep (tests pass 0). */
   sleepMs?: (ms: number) => Promise<void>;
+  /**
+   * Same-server path that introspects an agent credential. Agent tokens are
+   * rejected by the session endpoint, so `auth status` falls back to this
+   * path (for example `/api/tracker/agent-credentials/self`) when it is set.
+   */
+  agentStatusPath?: string;
 }
 
 export async function runAuthLogin(
@@ -174,6 +181,15 @@ export async function runAuthStatus(
     );
     stdout.write(`${JSON.stringify({ ...session, serverUrl }, null, 2)}\n`);
   } catch (error) {
+    if (options.agentStatusPath) {
+      const agent = await requestAgentStatus(options, options.agentStatusPath);
+      if (agent) {
+        stdout.write(
+          `${JSON.stringify({ authenticated: true, kind: 'agent-credential', ...agent, serverUrl }, null, 2)}\n`,
+        );
+        return;
+      }
+    }
     stdout.write(
       `${JSON.stringify(
         {
@@ -185,6 +201,26 @@ export async function runAuthStatus(
         2,
       )}\n`,
     );
+  }
+}
+
+async function requestAgentStatus(
+  options: AuthCommandsOptions,
+  path: string,
+): Promise<Record<string, unknown> | undefined> {
+  try {
+    const body = await requestJson<Record<string, unknown>>(
+      options.context,
+      resolveAgentStatusPath(path),
+      { method: 'GET' },
+    );
+    return body && typeof body === 'object' && !Array.isArray(body)
+      ? body
+      : undefined;
+  } catch {
+    // Not an agent credential (or the path is absent): report the original
+    // session error instead.
+    return undefined;
   }
 }
 
