@@ -189,6 +189,8 @@ Shared assistant adapters and legacy approval storage: [agents/shared-pieces.md]
 
 ## Tests and build
 
+`pnpm test:postgres` is the local aggregate of `vitest.postgres.config.ts`. CI runs it as the units `test:postgres:1of3` to `3of3`, each a hard-coded file list: a file added to `POSTGRES_SUITES` must join a unit, or `scripts/app-shell-postgres-units.test.mjs` fails. Each file creates and drops its own schemas and roles, so keep it self-sufficient.
+
 `pnpm test` is the local aggregate (default, pglite, dom, packed configs). CI runs it as the units `test:unit:1of2`, `test:unit:2of2` (default config `--shard`) and `test:configs` (the other three): a new Vitest config added to `test` must also join a unit, or `scripts/app-shell-test-units.test.mjs` fails. `vitest run` then `vitest run -c vitest.dom.config.ts` (the layout's jsdom component tests, `*.dom.test.ts`, over smrt-svelte's built `dist`; rebuild smrt-svelte first). Node suite: in-process, SQLite, temp dirs; `test-support.ts` seeds an owner
 and a member; it opens the real driver because the vitest setup would
 pre-create tables). `pnpm build` (tsc models, `svelte-kit sync`, `vite build`;
