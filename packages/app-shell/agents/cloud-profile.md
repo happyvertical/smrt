@@ -340,15 +340,29 @@ engine.md "SQLite to PostgreSQL in place") has moved it. v1 decisions:
 - **The kept `app.db`** stays until an operator removes it; it is a snapshot as of
   migration time, not a live fallback (the PostgreSQL app diverges at its first
   write).
-- **Downgrade** is unsupported once the app has taken writes on PostgreSQL. Before
-  any write, by hand: (1) stop the host; (2) check nothing was written (the
-  schema's `_app_meta` `version` equals the completion row's `version`, and
-  `_smrt_changes`/the tables hold no row newer than `migratedAt`); (3) `DROP SCHEMA
-  <app schema> CASCADE` (this removes the completion row) and delete
-  `postgres-migration.json`; (4) serve the app from SQLite again by starting the
-  host WITHOUT `appDatabase` (the profile setting that returns the app to its
-  `app.db`). With `appDatabase` still set, the host refuses the app after the row
-  is gone (it is offline) until `app.db` is served that way or it is migrated again.
+- **Downgrade** (`smrt-app-shell downgrade-to-sqlite --tenant <id> --user <owner id> [--json]`,
+  `downgradeOwnAppToSqlite`, engine `downgradeUserAppToSqlite`): the same
+  operator model as the move (`requireOwner`, hosted profile only, exit 0/1/2).
+  It takes the app back to the kept `app.db` only while the hosted app has taken
+  no writes since the migration; after any write it is refused by name
+  (`HostedWritesError`: "this app has taken writes on PostgreSQL since it was
+  migrated ...") with nothing changed. "Has taken writes" is read from the
+  signal the migration already recorded, with no write-time hook: the bundle
+  digest in the completion fact (rows of every table plus the version history).
+  The schema's current export, and the kept file, must both digest to it, so a
+  changed, added or removed row, a publish, an undo or a new version all refuse.
+  It is content-based on purpose: a write that was fully reverted leaves nothing
+  to lose. The check and the `DROP SCHEMA` (which removes the completion row)
+  run under the app's claim, so no host can write between them and a host
+  holding the app refuses it; then the marker is removed. It also refuses an
+  open draft, waiting changes or an unsettled approval (as the move does), a
+  missing or changed `app.db`, and an app that was never migrated. A crash after
+  the drop is finished by a rerun. Afterwards the hosted shell refuses to open
+  the app (it lives in a SQLite file) until it is migrated again, which
+  converges. The file stays in the tenant's live directory; handing it to the
+  owner's desktop is the operator's. Tests: `operator.test.ts` "going back to the
+  desktop" (allowed with no writes, refused after a write, refused for a
+  non-owner), `sqlite-to-postgres.test.ts`.
 - The completion row is an engine convention in the app's own schema, not
   tamper-evident against the same database role: a role that can write the schema
   can forge or remove it.

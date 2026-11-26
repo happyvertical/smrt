@@ -6,7 +6,8 @@
 // SIGTERM/SIGINT drain the shell and exit (src/lib/server/shutdown.ts).
 //
 // `smrt-app-shell migrate-to-postgres --tenant <id> --user <id>` runs that one
-// operator command instead and exits (build/operator.js, #5193).
-const commands = new Set(['migrate-to-postgres']);
+// operator command instead and exits (build/operator.js, #5193); so does
+// `downgrade-to-sqlite` (same flags).
+const commands = new Set(['migrate-to-postgres', 'downgrade-to-sqlite']);
 if (commands.has(process.argv[2])) await import('../build/operator.js');
 else await import('../build/index.js');
