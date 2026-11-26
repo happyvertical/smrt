@@ -559,18 +559,7 @@ export class Message extends SmrtObject {
         typeof mine === 'boolean'
           ? mine === mailFlag(stored[column])
           : canonValue(mine) === canonValue(stored[column]);
-      if (!same) {
-        process.stderr.write(
-          'DBGMISMATCH ' +
-            name +
-            ' ' +
-            canonValue(mine) +
-            ' | ' +
-            canonValue(stored[column]) +
-            '\n',
-        );
-        return false;
-      }
+      if (!same) return false;
     }
     return true;
   }
