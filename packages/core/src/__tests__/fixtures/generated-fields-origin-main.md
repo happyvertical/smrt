@@ -142,7 +142,7 @@ DDL, migration and OpenAPI digests have not moved since the recapture above.
 ## Re-baseline of the emitted routes for #5195
 
 `sourceRevision` (and `BASELINE` in the test) is now
-`bfe0e7a0d6c178bbf7ab2d037a1d0deed2773778`, the commit whose production sources
+`45e9002f44c2e6207b59e6efd8c9f33310462cc2`, the commit whose production sources
 under `packages/core/src` produced the current digests, so the capture gate
 (`SMRT_CAPTURE_ORIGIN_MAIN`, a clean `git diff` of production sources against
 that commit) applies to it. The digests were not recaptured from a pre-#5195
@@ -154,3 +154,9 @@ and item routes, `sync/apply`, `_changes`, `_events`). The manifest, schema,
 registry schema, OpenAPI, DDL (`ddl/*`), migration and `source/single/**` /
 `source/modular/**` digests, and the SQLite deployment SQL, are identical to
 the #4972 baseline `0f16192e1b3b5d64b639cce688aaa35075a71464`.
+
+Re-baselined again for the typecheck fix of the emitted denials (#5195): the
+`source/sveltekit/**` digests moved (list, item, `sync/apply`, `_changes`,
+`_events` routes of both cases) because denial bodies are built as a variable
+before `error()`. Every other digest is unchanged, and the revision above is the
+commit whose production sources produced them.

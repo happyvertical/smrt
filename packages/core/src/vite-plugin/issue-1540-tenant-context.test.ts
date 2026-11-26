@@ -129,9 +129,7 @@ describe('Issue #1540 (facet 2): tenant-context establishment', () => {
     expect(itemRoute).toContain('enterTenancy(locals, "update");');
     expect(itemRoute).toContain('enterTenancy(locals, "delete");');
     // A refusal is answered with its own status.
-    expect(collectionRoute).toContain(
-      'if (failure) throw error(failure.status, { message: failure.message, code: failure.code });',
-    );
+    expect(collectionRoute).toContain('throw error(failure.status, body);');
   });
 
   it('does NOT pull tenancy into a non-tenant object’s routes', async () => {

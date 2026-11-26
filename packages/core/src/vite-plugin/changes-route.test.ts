@@ -106,9 +106,9 @@ describe('generateChangesRoute (#1758)', () => {
     expect(content).toContain('apiPrincipalFromLocals(locals)');
     expect(content).toContain("permissionCollection: '_feed'");
     expect(content).toContain('publicAccess: false');
-    expect(content).toContain(
-      'throw error(decision.status, { message: decision.message, code: decision.code })',
-    );
+    expect(content).toContain('throw error(decision.status, body);');
+    // Never an object literal carrying `code`: `error()` rejects it (App.Error).
+    expect(content).not.toMatch(/error\(\s*[^,()]+,\s*\{[^}]*code/);
     expect(content).not.toContain('hasAuthenticatedPrincipal');
     expect(content).not.toContain('PUBLIC_ACCESS');
     // Reads through the tenant-scoped, authorization-aware cursor API (#3020).
