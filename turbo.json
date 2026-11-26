@@ -168,11 +168,160 @@
       ],
       "cache": true
     },
+    "test:unit:1of2": {
+      "dependsOn": [
+        "^build",
+        "build",
+        "generate:test",
+        "@happyvertical/smrt-core#build"
+      ],
+      "env": [
+        "NODE_ENV",
+        "VITEST_MAX_WORKERS"
+      ],
+      "inputs": [
+        "src/**",
+        "test/**",
+        "scripts/**",
+        "**/*.test.ts",
+        "**/*.spec.ts",
+        "conformance-baseline.yml",
+        "package.json",
+        "vitest.config.ts",
+        "vitest.config.js",
+        "!src/manifest/static-manifest.ts",
+        "!src/manifest/static-manifest.json",
+        "!src/manifest/smrt-knowledge.json",
+        "!src/**/smrt-generated/**",
+        "!src/types/virtual-modules.d.ts",
+        "!src/manifest/test-manifest.json",
+        "!src/manifest/test-manifest-stub.ts",
+        "!dist/**",
+        "!**/.svelte-kit/**",
+        "vitest.*.config.ts",
+        "vitest.*.config.js",
+        "test-support/**"
+      ],
+      "outputs": [
+        "coverage/**"
+      ],
+      "cache": true
+    },
+    "test:unit:2of2": {
+      "dependsOn": [
+        "^build",
+        "build",
+        "generate:test",
+        "@happyvertical/smrt-core#build"
+      ],
+      "env": [
+        "NODE_ENV",
+        "VITEST_MAX_WORKERS"
+      ],
+      "inputs": [
+        "src/**",
+        "test/**",
+        "scripts/**",
+        "**/*.test.ts",
+        "**/*.spec.ts",
+        "conformance-baseline.yml",
+        "package.json",
+        "vitest.config.ts",
+        "vitest.config.js",
+        "!src/manifest/static-manifest.ts",
+        "!src/manifest/static-manifest.json",
+        "!src/manifest/smrt-knowledge.json",
+        "!src/**/smrt-generated/**",
+        "!src/types/virtual-modules.d.ts",
+        "!src/manifest/test-manifest.json",
+        "!src/manifest/test-manifest-stub.ts",
+        "!dist/**",
+        "!**/.svelte-kit/**",
+        "vitest.*.config.ts",
+        "vitest.*.config.js",
+        "test-support/**"
+      ],
+      "outputs": [
+        "coverage/**"
+      ],
+      "cache": true
+    },
+    "test:configs": {
+      "dependsOn": [
+        "^build",
+        "build",
+        "generate:test",
+        "@happyvertical/smrt-core#build"
+      ],
+      "env": [
+        "NODE_ENV",
+        "VITEST_MAX_WORKERS"
+      ],
+      "inputs": [
+        "src/**",
+        "test/**",
+        "scripts/**",
+        "**/*.test.ts",
+        "**/*.spec.ts",
+        "conformance-baseline.yml",
+        "package.json",
+        "vitest.config.ts",
+        "vitest.config.js",
+        "!src/manifest/static-manifest.ts",
+        "!src/manifest/static-manifest.json",
+        "!src/manifest/smrt-knowledge.json",
+        "!src/**/smrt-generated/**",
+        "!src/types/virtual-modules.d.ts",
+        "!src/manifest/test-manifest.json",
+        "!src/manifest/test-manifest-stub.ts",
+        "!dist/**",
+        "!**/.svelte-kit/**",
+        "vitest.*.config.ts",
+        "vitest.*.config.js",
+        "test-support/**"
+      ],
+      "outputs": [
+        "coverage/**"
+      ],
+      "cache": true
+    },
     "test:watch": {
       "cache": false,
       "persistent": true
     },
     "test:postgres": {
+      "dependsOn": [
+        "build",
+        "generate:test"
+      ],
+      "env": [
+        "CI_POSTGRES_BASE_URL",
+        "CI_POSTGRES_ADMIN_URL",
+        "DATABASE_URL",
+        "TEST_DB_URL",
+        "TEST_DB_ADAPTER",
+        "SMRT_TEST_POSTGRES_URL",
+        "SMRT_TEST_POSTGRES_ADMIN_URL"
+      ],
+      "cache": false
+    },
+    "test:postgres:real": {
+      "dependsOn": [
+        "build",
+        "generate:test"
+      ],
+      "env": [
+        "CI_POSTGRES_BASE_URL",
+        "CI_POSTGRES_ADMIN_URL",
+        "DATABASE_URL",
+        "TEST_DB_URL",
+        "TEST_DB_ADAPTER",
+        "SMRT_TEST_POSTGRES_URL",
+        "SMRT_TEST_POSTGRES_ADMIN_URL"
+      ],
+      "cache": false
+    },
+    "test:postgres:pglite": {
       "dependsOn": [
         "build",
         "generate:test"
