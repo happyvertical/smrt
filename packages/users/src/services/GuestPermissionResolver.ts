@@ -14,7 +14,9 @@
  */
 
 import {
+  chunkArray,
   classifyDatabaseError,
+  IN_LIST_CHUNK_SIZE,
   isEffectivelySensitiveClass,
   isRlsBypassingRole,
   isRuntimeModelClass,
@@ -157,7 +159,10 @@ export function collectionPassesGuestCeiling(
   if (registered.tenantScopedConfig.autoFilter === false) return false;
   const config = ObjectRegistry.getConfig(qualifiedName);
   // An owner-scoped model derives access from the principal; a guest has no
-  // user id, so it is never a guest collection.
+  // user id, so it is never a guest collection. The generated policies are
+  // tenant-match only (nothing generated reads `smrt.user_id`), so ownership
+  // is detectable only through the principal-context opt-in and through
+  // explicit extra policy bindings (checked below).
   if ((config as { principalContext?: unknown }).principalContext === true) {
     return false;
   }
@@ -234,10 +239,6 @@ export class GuestPermissionResolver {
   private overrides!: TenantPermissionOverrideCollection;
   private permissions!: PermissionCollection;
   private tenantResolver!: PermissionResolver;
-  private targetsCache?: {
-    registrySize: number;
-    targets: PostgresPermissionPolicyTarget[];
-  };
 
   constructor(options: SmrtClassOptions, guest: GuestPermissionConfig) {
     this.options = options;
@@ -342,26 +343,24 @@ export class GuestPermissionResolver {
       for (const id of result.deniedPermissionIds) ids.add(id);
     }
     if (ids.size === 0) return denied;
-    const rows = await this.permissions.list({
-      where: { 'id in': [...ids] },
-      select: ['id', 'slug'],
-      limit: ids.size,
-    });
-    for (const row of rows) {
-      if (typeof row.slug === 'string' && row.slug) denied.add(row.slug);
+    // Chunked with an explicit limit like PermissionResolver: a truncated
+    // lookup would drop a DENY, which fails open.
+    for (const chunk of chunkArray([...ids], IN_LIST_CHUNK_SIZE)) {
+      const rows = await this.permissions.list({
+        where: { 'id in': chunk },
+        select: ['id', 'slug'],
+        limit: chunk.length,
+      });
+      for (const row of rows) {
+        if (typeof row.slug === 'string' && row.slug) denied.add(row.slug);
+      }
     }
     return denied;
   }
 
+  /** Generated policy targets, recomputed so refreshes and new bindings count. */
   private policyTargets(): PostgresPermissionPolicyTarget[] {
-    const registrySize = ObjectRegistry.getAllObjectMetadata().length;
-    if (this.targetsCache?.registrySize !== registrySize) {
-      this.targetsCache = {
-        registrySize,
-        targets: generatePostgresPermissionSql(this.options).targets,
-      };
-    }
-    return this.targetsCache.targets;
+    return generatePostgresPermissionSql(this.options).targets;
   }
 }
 
@@ -398,8 +397,16 @@ export interface GuestRuntimeState {
    * is refused.
    */
   rolePosture?: { rolsuper?: boolean; rolbypassrls?: boolean } | null;
-  /** FORCE ROW LEVEL SECURITY state of every ceiling table. */
+  /**
+   * FORCE ROW LEVEL SECURITY state of every ceiling table, from the catalog.
+   * Omitting it refuses guests: an unchecked catalog is not a passed check.
+   */
   ceilingTables?: readonly GuestRlsTablePosture[];
+  /**
+   * The ceiling tables the posture must cover. When given, a table with no
+   * posture row is refused.
+   */
+  expectedCeilingTables?: readonly string[];
 }
 
 export type GuestRuntimeDenyReason =
@@ -407,6 +414,7 @@ export type GuestRuntimeDenyReason =
   | 'tenancy-not-enabled'
   | 'role-posture-unknown'
   | 'role-bypasses-rls'
+  | 'ceiling-posture-unknown'
   | 'ceiling-table-not-forced';
 
 export type GuestRuntimeResult =
@@ -452,7 +460,22 @@ export function assertGuestRuntimeActive(
       'the connection role is SUPERUSER or BYPASSRLS',
     );
   }
-  for (const table of state.ceilingTables ?? []) {
+  if (!state.ceilingTables) {
+    return deny(
+      'ceiling-posture-unknown',
+      'row-level-security posture of the ceiling tables was not verified',
+    );
+  }
+  const seen = new Set(state.ceilingTables.map((table) => table.table));
+  for (const expected of state.expectedCeilingTables ?? []) {
+    if (!seen.has(expected)) {
+      return deny(
+        'ceiling-posture-unknown',
+        `no row-level-security posture for ceiling table ${expected}`,
+      );
+    }
+  }
+  for (const table of state.ceilingTables) {
     if (
       !table.rowSecurity ||
       !table.forceRowSecurity ||

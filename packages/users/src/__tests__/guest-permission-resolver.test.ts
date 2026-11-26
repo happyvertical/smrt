@@ -354,6 +354,24 @@ describe('GuestPermissionResolver (#5196)', () => {
     registered.runtimeModel = true;
   });
 
+  it('a read grant resolves, but never authorizes an aliased method', async () => {
+    const t = await tenant('gp-alias');
+    await grant(t.id!, 'gp5196_exports.read');
+    const held = await resolver.resolveGuestPermissions(t.id!);
+    expect([...held]).toEqual(['gp5196_exports.read']);
+    expect(
+      isGuestOperationAllowed(held, 'GpExport5196', 'gp5196_exports', 'list'),
+    ).toBe(true);
+    expect(
+      isGuestOperationAllowed(
+        held,
+        'GpExport5196',
+        'gp5196_exports',
+        'exportAll',
+      ),
+    ).toBe(false);
+  });
+
   it('an aliased custom method never maps to a guest kind', () => {
     const q = 'GpExport5196';
     expect(guestOperationKind(q, 'list')).toBe('read');
@@ -457,6 +475,26 @@ describe('assertGuestRuntimeActive (#5196)', () => {
       expect(result.reason).toBe(reason);
       expect(result.detail.length).toBeGreaterThan(0);
     }
+  });
+
+  it('refuses when the ceiling posture was never read', () => {
+    const { ceilingTables: _c, ...rest } = ok;
+    const result = assertGuestRuntimeActive(rest);
+    expect(result).toMatchObject({
+      active: false,
+      reason: 'ceiling-posture-unknown',
+    });
+  });
+
+  it('refuses an expected ceiling table with no posture row', () => {
+    const result = assertGuestRuntimeActive({
+      ...ok,
+      expectedCeilingTables: ['products', 'events'],
+    });
+    expect(result).toMatchObject({
+      active: false,
+      reason: 'ceiling-posture-unknown',
+    });
   });
 
   it('reads tenancy state itself when not supplied', () => {

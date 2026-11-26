@@ -584,6 +584,7 @@ export {
 } from './polymorphic-association';
 export {
   applyPostgresPermissions,
+  isRlsBypassingRole,
   type PostgresPermissionContract,
   type PostgresPermissionDiagnostic,
   type PostgresPermissionPlan,
