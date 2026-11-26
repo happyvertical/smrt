@@ -593,18 +593,34 @@ async function tolerateMissingSystemTable<T>(
   }
 }
 
-async function selectIds(
+/** A row selected for a CASCADE delete and the parent it referenced then. */
+interface ChildRow {
+  id: string;
+  parentId: string | null;
+}
+
+function quoteIdent(name: string): string {
+  return `"${name.replaceAll('"', '""')}"`;
+}
+
+/**
+ * Rows of `tableName` whose `column` references one of `parentIds`, with the
+ * parent each one referenced when selected. Reads need only SELECT.
+ */
+async function selectChildren(
   db: DatabaseInterface,
   tableName: string,
   column: string,
-  ids: string[],
-): Promise<string[]> {
-  const found: string[] = [];
-  for (const batch of chunkArray(ids, IN_LIST_CHUNK_SIZE)) {
+  parentIds: string[],
+): Promise<ChildRow[]> {
+  const found: ChildRow[] = [];
+  for (const batch of chunkArray(parentIds, IN_LIST_CHUNK_SIZE)) {
     const dialect = usesPostgresDialect(db) ? 'postgres' : 'sqlite';
     const where = buildWhere(idPredicate(column, batch), 1, dialect);
-    const table = `"${tableName.replaceAll('"', '""')}"`;
-    const sql = `SELECT CAST("id" AS VARCHAR) AS "id" FROM ${table} ${where.sql}`;
+    const sql =
+      `SELECT CAST("id" AS VARCHAR) AS "id", ` +
+      `CAST(${quoteIdent(column)} AS VARCHAR) AS "parent_id" ` +
+      `FROM ${quoteIdent(tableName)} ${where.sql}`;
     const rows = await tolerateMissingTable(
       () => db.query(sql, ...where.values).then((result) => result.rows),
       [] as Record<string, unknown>[],
@@ -612,29 +628,111 @@ async function selectIds(
     );
     for (const row of rows) {
       const id = row?.id;
-      if (typeof id === 'string' && id.length > 0) found.push(id);
+      if (typeof id !== 'string' || id.length === 0) continue;
+      const parentId = row.parent_id;
+      found.push({
+        id,
+        parentId: typeof parentId === 'string' ? parentId : null,
+      });
     }
   }
   return found;
 }
 
-async function deleteByIds(
+/**
+ * Child rows per guarded statement. Each statement binds the child ids plus the
+ * parent ids those children referenced, at most two lists of this size, so it
+ * stays under {@link IN_LIST_CHUNK_SIZE} binds (SQLite's legacy 999 limit).
+ */
+const CHILD_DELETE_CHUNK_SIZE = Math.floor(IN_LIST_CHUNK_SIZE / 2);
+
+/**
+ * Delete the selected children that still reference the parent they were
+ * selected under. The parent predicate makes the statement itself the
+ * authority: a child that moved to another parent and committed since the
+ * select no longer matches and is left alone. It needs only DELETE (plus the
+ * SELECT every predicate reads) and takes no row lock.
+ */
+async function deleteChildren(
   db: DatabaseInterface,
   identity: SyncRowIdentity,
-  ids: string[],
+  column: string,
+  children: ChildRow[],
 ): Promise<void> {
   const { tableName } = identity;
-  for (const batch of chunkArray(ids, IN_LIST_CHUNK_SIZE)) {
+  for (const batch of chunkArray(children, CHILD_DELETE_CHUNK_SIZE)) {
+    const parents = [
+      ...new Set(
+        batch.flatMap((child) =>
+          child.parentId === null ? [] : [child.parentId],
+        ),
+      ),
+    ];
+    if (parents.length === 0) continue;
     await tolerateMissingTable(
       () =>
-        deleteSyncRows(db, identity, idPredicate('id', batch), (affected) =>
-          recordCascadeWrite(db, { affected }),
+        deleteSyncRows(
+          db,
+          identity,
+          {
+            ...idPredicate(
+              'id',
+              batch.map((child) => child.id),
+            ),
+            ...idPredicate(column, parents),
+          },
+          (affected) => recordCascadeWrite(db, { affected }),
         ),
       undefined,
       { table: tableName, action: 'CASCADE delete' },
     );
   }
 }
+
+/**
+ * Ids of selected children that now reference a different parent (or none).
+ * A child still present under the parent it was selected under (a delete
+ * policy or trigger suppressed its removal) is not "moved" and is left as it
+ * is today. A row the caller cannot SELECT reads as gone.
+ */
+async function findMovedChildren(
+  db: DatabaseInterface,
+  tableName: string,
+  column: string,
+  children: ChildRow[],
+): Promise<string[]> {
+  const moved: string[] = [];
+  const selected = new Map(children.map((child) => [child.id, child.parentId]));
+  for (const batch of chunkArray(children, IN_LIST_CHUNK_SIZE)) {
+    const dialect = usesPostgresDialect(db) ? 'postgres' : 'sqlite';
+    const where = buildWhere(
+      idPredicate(
+        'id',
+        batch.map((child) => child.id),
+      ),
+      1,
+      dialect,
+    );
+    const result = await db.query(
+      `SELECT CAST("id" AS VARCHAR) AS "id", ` +
+        `CAST(${quoteIdent(column)} AS VARCHAR) AS "parent_id" ` +
+        `FROM ${quoteIdent(tableName)} ${where.sql}`,
+      ...where.values,
+    );
+    for (const row of result.rows) {
+      const id = String(row.id);
+      const now = typeof row.parent_id === 'string' ? row.parent_id : null;
+      if (selected.has(id) && now !== selected.get(id)) moved.push(id);
+    }
+  }
+  return moved;
+}
+
+/** Thrown inside a savepoint to roll back an attempt that saw a child move. */
+class ChildMovedSignal extends Error {}
+
+/** Rolled-back attempts per reference before the last one runs without undo. */
+const MAX_CASCADE_REDRIVES = 3;
 
 /**
  * Remove the framework-managed side rows owned by the given object ids.
@@ -684,6 +782,124 @@ async function deleteSystemRows(
         { table, action: 'framework-owned row cleanup' },
       );
     }
+  }
+}
+
+/**
+ * CASCADE one reference: select the children of `pending`, resolve their own
+ * references and framework rows, then delete them under the parent predicate.
+ *
+ * Descendants go before their child (a foreign key or the child's own delete
+ * would otherwise be blocked), so a child that moved to another parent between
+ * the select and the guarded delete has already lost its subtree when the
+ * delete skips it. On PostgreSQL the attempt therefore runs under a savepoint:
+ * when a selected child is found to reference another
+ * parent afterwards, the attempt rolls back and runs again from a fresh select,
+ * which no longer returns it. The re-drive is bounded; the last attempt runs
+ * without the undo (the guarded delete still spares the moved row) and never
+ * throws. Engines without a savepoint serialize writers, so a move between
+ * the statements is reachable only through the cascade's own triggers.
+ */
+async function cascadeChildren(
+  ctx: CascadeContext,
+  reference: CascadePlan['references'][number],
+  pending: string[],
+  depth: number,
+): Promise<void> {
+  const savepoints =
+    usesPostgresDialect(ctx.db) &&
+    typeof (ctx.db as TransactionCapable).transaction === 'function';
+  for (let attempt = 0; ; attempt++) {
+    const children = await selectChildren(
+      ctx.db,
+      reference.tableName,
+      reference.column,
+      pending,
+    );
+    if (children.length === 0) return;
+
+    const drive = async (bound: DatabaseInterface, verify: boolean) => {
+      const scoped: CascadeContext = { ...ctx, db: bound };
+      const childIds = children.map((child) => child.id);
+      await resolveReferences(
+        scoped,
+        reference.className,
+        reference.tableName,
+        childIds,
+        depth + 1,
+      );
+      await deleteSystemRows(
+        bound,
+        childIds,
+        ownerClassCandidates(ctx.registry, reference.className),
+      );
+      await deleteChildren(
+        bound,
+        {
+          tableName: reference.tableName,
+          model: toQualifiedClassName(ctx.registry, reference.className),
+          tenantColumn: ctx.registry.getOwnershipTenantColumn(
+            reference.className,
+          ),
+          sti: ctx.registry.getTableStrategy(reference.className) === 'sti',
+        },
+        reference.column,
+        children,
+      );
+      if (
+        verify &&
+        (
+          await findMovedChildren(
+            bound,
+            reference.tableName,
+            reference.column,
+            children,
+          )
+        ).length > 0
+      ) {
+        throw new ChildMovedSignal();
+      }
+    };
+
+    const undoable = savepoints && attempt < MAX_CASCADE_REDRIVES;
+    if (!undoable) {
+      if (savepoints) {
+        logger.warn(
+          `Cascade delete of '${reference.tableName}' kept moving children; ` +
+            'the last attempt keeps the moved rows but cannot restore their ' +
+            'descendants.',
+        );
+      }
+      await drive(ctx.db, false);
+    } else {
+      const visited = new Set(ctx.visited);
+      const tables = new Set(ctx.affectedTables);
+      const classes = new Map(ctx.affectedTableClasses);
+      try {
+        await withEmbeddedWriteTransaction(
+          ctx.db,
+          isEmbeddedDatabase(ctx.db),
+          (savepoint) => drive(savepoint, true),
+        );
+      } catch (error) {
+        if (!(error instanceof ChildMovedSignal)) throw error;
+        ctx.visited.clear();
+        for (const key of visited) ctx.visited.add(key);
+        ctx.affectedTables.clear();
+        for (const table of tables) ctx.affectedTables.add(table);
+        ctx.affectedTableClasses.clear();
+        for (const [table, name] of classes) {
+          ctx.affectedTableClasses.set(table, name);
+        }
+        continue;
+      }
+    }
+    ctx.affectedTables.add(reference.tableName);
+    ctx.affectedTableClasses.set(
+      reference.tableName,
+      toQualifiedClassName(ctx.registry, reference.className),
+    );
+    return;
   }
 }
 
@@ -776,43 +992,7 @@ async function resolveReferences(
 
     if (reference.action !== 'CASCADE') continue;
 
-    const childIds = await selectIds(
-      ctx.db,
-      reference.tableName,
-      reference.column,
-      pending,
-    );
-    if (childIds.length === 0) continue;
-
-    await resolveReferences(
-      ctx,
-      reference.className,
-      reference.tableName,
-      childIds,
-      depth + 1,
-    );
-    await deleteSystemRows(
-      ctx.db,
-      childIds,
-      ownerClassCandidates(ctx.registry, reference.className),
-    );
-    await deleteByIds(
-      ctx.db,
-      {
-        tableName: reference.tableName,
-        model: toQualifiedClassName(ctx.registry, reference.className),
-        tenantColumn: ctx.registry.getOwnershipTenantColumn(
-          reference.className,
-        ),
-        sti: ctx.registry.getTableStrategy(reference.className) === 'sti',
-      },
-      childIds,
-    );
-    ctx.affectedTables.add(reference.tableName);
-    ctx.affectedTableClasses.set(
-      reference.tableName,
-      toQualifiedClassName(ctx.registry, reference.className),
-    );
+    await cascadeChildren(ctx, reference, pending, depth);
   }
 
   for (const association of plan.polymorphic) {
