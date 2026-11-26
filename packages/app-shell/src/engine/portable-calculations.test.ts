@@ -4,17 +4,28 @@ import { mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import type { GeneratedExpression } from '@happyvertical/smrt-core';
-import { expect, it } from 'vitest';
+import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { hostOwner } from '../test/engine-principal.ts';
 import { AppHost, type Command, MemoryVersionStore } from './index.ts';
 
-it('accepts every portable node through addField and setCalculation, with date-only literals #4916', async () => {
+/**
+ * Each addField / setCalculation is an engine worker swap (a new worker thread
+ * boots per command, about 200 ms uncontended, several times that on a shared
+ * CI runner). Forty-one swaps in one `it` approached the 60 s budget under
+ * load (#5682), so every portable node is its own test over one shared host:
+ * the budget applies per node, and the cases still run in order because the
+ * tail tests read fields the cases add.
+ */
+describe('accepts every portable node through addField and setCalculation, with date-only literals #4916', () => {
   const dir = mkdtempSync(join(tmpdir(), 'portable-calcs-'));
   const store = new MemoryVersionStore();
-  let host = await AppHost.open(dir, { store });
+  let host: AppHost;
+  let row: Record<string, unknown>;
   const run = (cmd: Command) =>
     host.execute(hostOwner(host), cmd, { author: 'test', approved: true });
-  try {
+
+  beforeAll(async () => {
+    host = await AppHost.open(dir, { store });
     await run({
       type: 'defineModel',
       name: 'Portable',
@@ -25,126 +36,134 @@ it('accepts every portable node through addField and setCalculation, with date-o
         when: { type: 'date' },
       },
     });
-    const row = await host.create(hostOwner(host), 'Portable', {
+    row = await host.create(hostOwner(host), 'Portable', {
       unitPrice: 12.345,
       paid: false,
       label: ' AbC ',
       when: '2024-02-28',
     });
-    const n = { col: 'unitPrice' },
-      text = { col: 'label' };
-    const date = { value: { kind: 'date', iso: '2024-02-28' } } as const;
-    const next = { op: 'addDays', value: date, days: { value: 2 } } as const;
-    const cases: [
-      string,
-      'integer' | 'number' | 'text',
-      GeneratedExpression,
-      unknown,
-    ][] = [
-      [
-        'conditional',
-        'number',
-        { op: 'if', condition: { col: 'paid' }, then: { value: 0 }, else: n },
-        12.345,
-      ],
-      [
-        'branches',
-        'number',
-        {
-          op: 'case',
-          branches: [{ when: { col: 'paid' }, then: { value: 0 } }],
-          else: n,
-        },
-        12.345,
-      ],
-      [
-        'rounded',
-        'number',
-        { op: 'round', value: n, digits: { value: 2 } },
-        12.35,
-      ],
-      ['absolute', 'number', { op: 'abs', value: n }, 12.345],
-      ['floored', 'integer', { op: 'floor', value: n }, 12],
-      ['ceiling', 'integer', { op: 'ceil', value: n }, 13],
-      ['minimum', 'number', { op: 'least', operands: [n, { value: 10 }] }, 10],
-      [
-        'maximum',
-        'number',
-        { op: 'greatest', operands: [n, { value: 10 }] },
-        12.345,
-      ],
-      [
-        'remainder',
-        'number',
-        { op: 'mod', left: n, right: { value: 10 } },
-        2.345,
-      ],
-      [
-        'joined',
-        'text',
-        { op: 'concat', operands: [text, { value: "'$1" }] },
-        " AbC '$1",
-      ],
-      ['lowered', 'text', { op: 'lower', value: text }, ' abc '],
-      ['uppered', 'text', { op: 'upper', value: text }, ' ABC '],
-      ['trimmed', 'text', { op: 'trim', value: text }, 'AbC'],
-      ['size', 'integer', { op: 'length', value: text }, 5],
-      [
-        'part',
-        'text',
-        {
-          op: 'substring',
-          value: text,
-          start: { value: 2 },
-          length: { value: 2 },
-        },
-        'Ab',
-      ],
-      [
-        'emptyDuration',
-        'number',
-        {
-          op: 'secondsBetween',
-          later: { value: null },
-          earlier: { value: null },
-        },
-        null,
-      ],
-      ['calendarYear', 'integer', { op: 'year', value: next }, 2024],
-      ['calendarMonth', 'integer', { op: 'month', value: next }, 3],
-      ['calendarDay', 'integer', { op: 'day', value: next }, 1],
-      [
-        'elapsedDays',
-        'integer',
-        { op: 'daysBetween', later: next, earlier: date },
-        2,
-      ],
-    ];
+  });
+  afterAll(async () => {
+    await host.close();
+    rmSync(dir, { recursive: true, force: true });
+  });
 
-    for (const [field, type, calculated, expected] of cases) {
-      await run({
-        type: 'addField',
-        model: 'Portable',
-        field,
-        definition: { type, calculated },
-      });
-      const added = (
-        await host.get(hostOwner(host), 'Portable', String(row.id))
-      )[field];
-      if (typeof expected === 'number')
-        expect(Number(added), field).toBeCloseTo(expected, 8);
-      else expect(added, field).toBe(expected);
-      await run({
-        type: 'setCalculation',
-        model: 'Portable',
-        field,
-        calculated,
-      });
-      expect(
-        (await host.get(hostOwner(host), 'Portable', String(row.id)))[field],
-        field,
-      ).toEqual(added);
-    }
+  const n = { col: 'unitPrice' },
+    text = { col: 'label' };
+  const date = { value: { kind: 'date', iso: '2024-02-28' } } as const;
+  const next = { op: 'addDays', value: date, days: { value: 2 } } as const;
+  const cases: [
+    string,
+    'integer' | 'number' | 'text',
+    GeneratedExpression,
+    unknown,
+  ][] = [
+    [
+      'conditional',
+      'number',
+      { op: 'if', condition: { col: 'paid' }, then: { value: 0 }, else: n },
+      12.345,
+    ],
+    [
+      'branches',
+      'number',
+      {
+        op: 'case',
+        branches: [{ when: { col: 'paid' }, then: { value: 0 } }],
+        else: n,
+      },
+      12.345,
+    ],
+    [
+      'rounded',
+      'number',
+      { op: 'round', value: n, digits: { value: 2 } },
+      12.35,
+    ],
+    ['absolute', 'number', { op: 'abs', value: n }, 12.345],
+    ['floored', 'integer', { op: 'floor', value: n }, 12],
+    ['ceiling', 'integer', { op: 'ceil', value: n }, 13],
+    ['minimum', 'number', { op: 'least', operands: [n, { value: 10 }] }, 10],
+    [
+      'maximum',
+      'number',
+      { op: 'greatest', operands: [n, { value: 10 }] },
+      12.345,
+    ],
+    [
+      'remainder',
+      'number',
+      { op: 'mod', left: n, right: { value: 10 } },
+      2.345,
+    ],
+    [
+      'joined',
+      'text',
+      { op: 'concat', operands: [text, { value: "'$1" }] },
+      " AbC '$1",
+    ],
+    ['lowered', 'text', { op: 'lower', value: text }, ' abc '],
+    ['uppered', 'text', { op: 'upper', value: text }, ' ABC '],
+    ['trimmed', 'text', { op: 'trim', value: text }, 'AbC'],
+    ['size', 'integer', { op: 'length', value: text }, 5],
+    [
+      'part',
+      'text',
+      {
+        op: 'substring',
+        value: text,
+        start: { value: 2 },
+        length: { value: 2 },
+      },
+      'Ab',
+    ],
+    [
+      'emptyDuration',
+      'number',
+      {
+        op: 'secondsBetween',
+        later: { value: null },
+        earlier: { value: null },
+      },
+      null,
+    ],
+    ['calendarYear', 'integer', { op: 'year', value: next }, 2024],
+    ['calendarMonth', 'integer', { op: 'month', value: next }, 3],
+    ['calendarDay', 'integer', { op: 'day', value: next }, 1],
+    [
+      'elapsedDays',
+      'integer',
+      { op: 'daysBetween', later: next, earlier: date },
+      2,
+    ],
+  ];
+
+  it.each(cases)('%s', async (field, type, calculated, expected) => {
+    await run({
+      type: 'addField',
+      model: 'Portable',
+      field,
+      definition: { type, calculated },
+    });
+    const added = (await host.get(hostOwner(host), 'Portable', String(row.id)))[
+      field
+    ];
+    if (typeof expected === 'number')
+      expect(Number(added), field).toBeCloseTo(expected, 8);
+    else expect(added, field).toBe(expected);
+    await run({
+      type: 'setCalculation',
+      model: 'Portable',
+      field,
+      calculated,
+    });
+    expect(
+      (await host.get(hostOwner(host), 'Portable', String(row.id)))[field],
+      field,
+    ).toEqual(added);
+  });
+
+  it('rejects datetime literals, protects calculated fields, and survives a restart', async () => {
     await expect(
       host.plan({
         type: 'addField',
@@ -190,8 +209,5 @@ it('accepts every portable node through addField and setCalculation, with date-o
     expect(
       (await host.get(hostOwner(host), 'Portable', String(row.id))).rounded,
     ).toBe(3.46);
-  } finally {
-    await host.close();
-    rmSync(dir, { recursive: true, force: true });
-  }
+  });
 });
