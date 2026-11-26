@@ -11,8 +11,9 @@
  * finish minus start: it includes time spent next to the sibling task on the
  * other lane, which is what the balancer's weights mean. It leaves out the few
  * seconds of manifest generation before Vitest starts, and it is rounded to
- * the second. A block with no `Start at` line (a build, a generate task, a
- * cache hit) is skipped.
+ * the second. A block with no `Start at` line (a build, a generate task) is
+ * skipped, and so is a `cache hit, replaying logs` block, whose `Start at` is
+ * from the cached run, not this one.
  *
  * Usage: node scripts/measure-test-seconds.mjs [--min=30] <job-log>...
  * Fetch each log with
@@ -27,6 +28,7 @@ import { SPLIT_TEST_UNITS, unitId } from './test-shard-balance.mjs';
 // biome-ignore lint/suspicious/noControlCharactersInRegex: strips ANSI colour codes
 const ANSI = /\x1b\[[0-9;]*m/g;
 const GROUP = /^(\d{4}-\d{2}-\d{2})T(\d{2}):(\d{2}):(\d{2})\.\d+Z ##\[group\](.+)$/;
+const HIT = /^\S+Z cache hit, replaying logs/;
 const END = /^\S+Z ##\[endgroup\]/;
 const START = /^\S+Z\s+Start at\s+(\d{2}):(\d{2}):(\d{2})\s*$/;
 const DAY = 86400;
@@ -58,16 +60,18 @@ export function parseUnitSeconds(log) {
         key: unitKey(title.trim()),
         endOfDay: Number(hh) * 3600 + Number(mm) * 60 + Number(ss),
         startOfDay: null,
+        cached: false,
       };
       continue;
     }
     if (!open) continue;
+    if (HIT.test(line)) open.cached = true;
     const start = line.match(START);
     if (start && open.startOfDay === null) {
       open.startOfDay = Number(start[1]) * 3600 + Number(start[2]) * 60 + Number(start[3]);
     }
     if (END.test(line)) {
-      if (open.key && open.startOfDay !== null) {
+      if (open.key && !open.cached && open.startOfDay !== null) {
         const wall = (open.endOfDay - open.startOfDay + DAY) % DAY;
         units.set(open.key, (units.get(open.key) ?? 0) + wall);
       }

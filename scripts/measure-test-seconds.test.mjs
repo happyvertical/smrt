@@ -69,3 +69,14 @@ test('median and medianUnitSeconds handle odd, even and partial samples', () => 
     { a: 200, b: 8 },
   );
 });
+
+test('parseUnitSeconds skips a replayed cache-hit block', () => {
+  const log = [
+    `${stamp('20:46:00')} ##[group]@happyvertical/smrt-a:test`,
+    `${stamp('20:46:00')} cache hit, replaying logs abc`,
+    `${stamp('20:46:00')}    Start at  09:00:00`,
+    `${stamp('20:46:00')} ##[endgroup]`,
+    block('@happyvertical/smrt-b:test', '20:47:00', '20:45:00'),
+  ].join('\n');
+  assert.deepEqual([...parseUnitSeconds(log)], [['@happyvertical/smrt-b', 120]]);
+});
