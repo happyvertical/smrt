@@ -276,6 +276,10 @@ export {
 // Dispatch system (inter-agent communication)
 export * from './dispatch/index';
 export {
+  isEffectivelySensitiveClass,
+  isRuntimeModelClass,
+} from './effective-sensitivity';
+export {
   isEmbeddedDatabase,
   isPostgresDatabase,
   usesEmbeddedRevisionFallback,
@@ -579,6 +583,7 @@ export {
 } from './polymorphic-association';
 export {
   applyPostgresPermissions,
+  isRlsBypassingRole,
   type PostgresPermissionContract,
   type PostgresPermissionDiagnostic,
   type PostgresPermissionPlan,

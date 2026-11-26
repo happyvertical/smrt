@@ -60,6 +60,20 @@ export {
   type SetPinInput,
 } from './DeviceCredentialService.js';
 export {
+  applyGuestCeiling,
+  assertGuestRuntimeActive,
+  collectionPassesGuestCeiling,
+  type GuestPermissionConfig,
+  type GuestPermissionKind,
+  GuestPermissionResolver,
+  type GuestRlsTablePosture,
+  type GuestRuntimeDenyReason,
+  type GuestRuntimeResult,
+  type GuestRuntimeState,
+  guestOperationKind,
+  isGuestOperationAllowed,
+} from './GuestPermissionResolver.js';
+export {
   DEFAULT_LOGIN_ATTEMPT_WINDOW_SECONDS,
   DEFAULT_LOGIN_LOCKOUT_BASE_SECONDS,
   DEFAULT_LOGIN_LOCKOUT_FACTOR,
