@@ -22,6 +22,7 @@ import {
   it,
   vi,
 } from 'vitest';
+import { classifyDatabaseError } from '../../db-errors.js';
 import { ObjectRegistry } from '../../registry.js';
 import {
   readLastMigrateRecord,
@@ -44,11 +45,31 @@ vi.mock('@happyvertical/logger', async (importOriginal) => {
   };
 });
 
+/**
+ * SQLSTATE 55006 (`object_in_use`): another session is still connected. The
+ * SDK wraps the driver error, so the code sits on the cause chain.
+ */
+const isObjectInUse = (error: unknown) =>
+  classifyDatabaseError(error).driverCodes.includes('55006');
+
 const pgUrl = process.env.DATABASE_URL ?? process.env.SMRT_TEST_POSTGRES_URL;
 const warned = () =>
   warn.mock.calls
     .flat()
     .filter((message) => String(message).includes('no migrate record'));
+
+describe('object_in_use detection', () => {
+  it('finds 55006 on the cause of a wrapped driver error', () => {
+    const wrapped = Object.assign(new Error('Failed to execute raw query'), {
+      code: 'DATABASE_ERROR',
+      cause: Object.assign(new Error('database is being accessed'), {
+        code: '55006',
+      }),
+    });
+    expect(isObjectInUse(wrapped)).toBe(true);
+    expect(isObjectInUse(new Error('other'))).toBe(false);
+  });
+});
 
 describe.skipIf(!pgUrl)(
   'migrate dates a database without a record by its system tables (real PostgreSQL)',
@@ -141,10 +162,7 @@ describe.skipIf(!pgUrl)(
               await admin.query(`DROP DATABASE IF EXISTS ${name}`);
               break;
             } catch (error) {
-              const e = error as { code?: string; cause?: { code?: string } };
-              // The wrapper's own `code` is generic; SQLSTATE is on the cause.
-              const busy = e.cause?.code === '55006' || e.code === '55006';
-              if (attempt >= 20 || !busy) throw error;
+              if (attempt >= 20 || !isObjectInUse(error)) throw error;
               await new Promise((resolve) => setTimeout(resolve, 250));
             }
           }
