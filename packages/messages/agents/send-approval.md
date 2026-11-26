@@ -102,6 +102,13 @@ same authority as sending directly from it.
 
 ## Draft writes
 
+Writing a row into `sent` (new, moved into `sent`, or onto another account)
+needs `send` on its account; a sent record comes from the send path or trusted
+sync. The stored-row comparison behind the triage-only and send-path allowances
+covers meta and write-through fields of a host subclass like any column, and
+counts a registered field it cannot read back as changed. Triage write-back
+never changes `isDraft`; only a full sync does.
+
 The `draft` scope is needed: `Message.save()` and `Message.delete()`
 check it (`assertMailScopeOn`, `access.ts`) for unsent outgoing mail (below)
 now or when stored, by id or by the slug a new object would take over (its own
