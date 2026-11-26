@@ -629,6 +629,16 @@ describe('route parity: an STI subtype through its base (#5195)', () => {
       method: 'DELETE',
       path: `${v()}/${SEED.vehicle.truck}`,
     };
+    const updateTruck: ParityRequest = {
+      method: 'PUT',
+      path: `${v()}/${SEED.vehicle.truck}`,
+      body: { title: 'moved' },
+    };
+    const updateTruckForeignTenant: ParityRequest = {
+      method: 'PUT',
+      path: `${v()}/${SEED.vehicle.truck}`,
+      body: { title: 'moved', tenantId: TENANT_B },
+    };
     const createCar: ParityRequest = {
       method: 'POST',
       path: v(),
@@ -646,7 +656,9 @@ describe('route parity: an STI subtype through its base (#5195)', () => {
       expect(truck[transport].code).toBe('PERMISSION_DENIED');
       const anonymous = await answers('anonymous', createTruck);
       expect(anonymous[transport].status, `${transport}: anonymous`).toBe(401);
-      for (const request of [createTruck, deleteTruck]) {
+      // The base's update/delete grants are not the subtype's: the row's own
+      // model decides, so a row of the subtype read through the base is 403.
+      for (const request of [createTruck, deleteTruck, updateTruck]) {
         const baseOnly = await answers('baseOnlyWriter', request);
         expect(baseOnly[transport].status, `${transport}: base-only`).toBe(403);
         expect(baseOnly[transport].code).toBe('PERMISSION_DENIED');
@@ -655,6 +667,13 @@ describe('route parity: an STI subtype through its base (#5195)', () => {
           writer[transport].status,
         );
       }
+    }
+    for (const transport of ['rest', 'kit'] as const) {
+      const mismatch = await answers('writer', updateTruckForeignTenant);
+      expect(mismatch[transport].status, `${transport}: foreign tenant`).toBe(
+        403,
+      );
+      expect(mismatch[transport].code).toBe('TENANT_MISMATCH');
     }
   });
 });

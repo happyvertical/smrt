@@ -3310,6 +3310,9 @@ ${
 // subtype's policy too.
 function requireRowAccess(locals: unknown, row: object, op: string, body?: unknown): void {
   const model = foreignRowModel(row, TENANCY_MODEL);
+  // A row whose own model cannot be resolved is refused, never decided under
+  // the route's policy.
+  if (model === null) routeDenial({ status: 403, code: 'PERMISSION_DENIED', message: 'Permission denied.' });
   if (!model) return;
   const decision = modelDecision(locals, model, op, body);
   if (!decision.allow) routeDenial(decision);

@@ -314,7 +314,8 @@ function writeWorkspaceCoreShim(projectRoot: string): void {
       'export const stripTenantFilters = (principal, columns, where) => globalThis.__smrtGeneratedRequestHelpers.stripTenantFilters(principal, columns, where);',
       // The real policy of the model a write lands in, and the typed refusal.
       'export const modelRoutePolicy = (model) => globalThis.__smrtGeneratedRequestHelpers.modelRoutePolicy(model);',
-      'export const foreignRowModel = (row, model) => globalThis.__smrtGeneratedRequestHelpers.foreignRowModel(row, model);',
+      // This fixture loads plain-object rows, which no model owns; the real helper refuses a row it cannot resolve (fails closed), so only they are treated as the route's own.
+      'export const foreignRowModel = (row, model) => Object.getPrototypeOf(row) === Object.prototype ? undefined : globalThis.__smrtGeneratedRequestHelpers.foreignRowModel(row, model);',
       'export const RequestPrincipalRefusal = globalThis.__smrtGeneratedRequestHelpers.RequestPrincipalRefusal;',
       'export const publicSerializerOf = (value) => globalThis.__smrtGeneratedRequestHelpers.publicSerializerOf(value);',
       'export const toPublicJSONValue = (value, options) => globalThis.__smrtGeneratedRequestHelpers.toPublicJSONValue(value, options);',

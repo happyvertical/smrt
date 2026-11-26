@@ -51,16 +51,19 @@ export function modelOfInstance(instance: object): string | undefined {
 /**
  * The registry key of the model a loaded row belongs to when that is a
  * subtype of the model its route serves: an STI subtype read through its
- * base. `undefined` for a row of the route's own model, and for a route model
- * the registry does not know. The generated item routes decide a write under
- * this model, as the runtime REST handler does (#5195).
+ * base. `undefined` for a row of the route's own model (or of a route model the
+ * registry does not know), and `null` when the row's own model cannot be
+ * resolved at all: a caller must refuse the write then, not decide it under
+ * the route's policy. The generated item routes decide a write under this
+ * model, as the runtime REST handler does (#5195).
  */
 export function foreignRowModel(
   row: object,
   routeModel: string,
-): string | undefined {
+): string | undefined | null {
   const model = modelOfInstance(row);
-  if (!model || !ObjectRegistry.getClass(routeModel)) return undefined;
+  if (!model) return null;
+  if (!ObjectRegistry.getClass(routeModel)) return undefined;
   return ObjectRegistry.getDescendants(routeModel).includes(model)
     ? model
     : undefined;
