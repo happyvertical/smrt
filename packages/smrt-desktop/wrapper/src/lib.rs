@@ -3,6 +3,7 @@
 //! The behaviour lives in small, individually tested modules; `app` is the
 //! thin Tauri glue (tray, window, single instance, sidecar launch).
 
+mod documents;
 pub mod env;
 pub mod health;
 pub mod log;
@@ -14,5 +15,6 @@ pub mod signals;
 pub mod supervisor;
 
 mod app;
+mod document_ui;
 
 pub use app::run;

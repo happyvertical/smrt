@@ -1,0 +1,27 @@
+{
+  "valid": [
+    "/documents/:id/pdf",
+    "/admin/resume-assets/:id/pdf",
+    "/documents/ABC_123-456/pdf"
+  ],
+  "invalid": [
+    "/auth/:id",
+    "/AUTH/pdf",
+    "/api/_runtime/pdf",
+    "/owner-claim/pdf",
+    "/owner_link/pdf",
+    "/ownerlink/pdf",
+    "/sign-in/pdf",
+    "/session/pdf",
+    "/documents/./pdf",
+    "/documents/%2e/pdf",
+    "/documents/:other/pdf",
+    "/documents//pdf",
+    "/documents/id/pdf?x",
+    "/documents/proof/pdf",
+    "/pdf",
+    "//documents/pdf",
+    "/documents/pdf/",
+    "/documents/caf\u00e9/pdf"
+  ]
+}
