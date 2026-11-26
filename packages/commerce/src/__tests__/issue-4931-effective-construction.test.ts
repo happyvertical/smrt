@@ -104,11 +104,13 @@ describe.each([false, true])('#4931 app replacement = %s', (replace) => {
   for (const [name, scenario] of Object.entries({
     customerFunds: proveCustomerFunds,
     historicalFunds: proveHistoricalCustomerFunds,
-    // The sweep needs each construction site hit, not the 1110-line scale
-    // that historical-customer-funds.test.ts proves (#5682).
+    // The app-replacement variant keeps the 1110-line scale (past the
+    // 1000-row chunk) through the replaced constructors; the base variant
+    // needs only each site hit, and historical-customer-funds.test.ts proves
+    // the scale on base classes (#5682).
     historicalLines: (
       db: Parameters<typeof proveHistoricalSourceChildren>[0],
-    ) => proveHistoricalSourceChildren(db, 12),
+    ) => proveHistoricalSourceChildren(db, replace ? 1110 : 12),
     observedPurchase: proveObservedPurchasePrice,
   })) {
     it(`uses the effective constructors throughout ${name}`, async () => {
