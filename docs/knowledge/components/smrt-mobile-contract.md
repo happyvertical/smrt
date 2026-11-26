@@ -5,10 +5,10 @@ description: "SMRT mobile contract codegen: manifest + allowlist → mobile-cont
 status: "stable"
 generated:
   by: "smrt/scripts/generate-knowledge-okf.ts"
-  at: "2026-11-26T17:59:34Z"
+  at: "2026-11-26T18:24:00Z"
 audience: "internal"
 evidence_level: "manifest-described"
-source_revision: "sha256:cc3af5ec2f731ba0f4d8105733b2024360f5e50f66ec02b9fe50fd848ebd03b5"
+source_revision: "sha256:5341d17418f505a72955fae195c43edb1b684d6c255a78bcbc597eb26b72327e"
 sources:
   - id: "manifest"
     resource: "https://github.com/happyvertical/smrt/blob/main/packages/smrt-mobile-contract/package.json"
@@ -24,7 +24,7 @@ sources:
 
 - Directory: `packages/smrt-mobile-contract`
 - Private: no
-- Object source: `domain-artifact`
+- Object source: `none`
 - Evidence level: `manifest-described`
 
 ## Documentation

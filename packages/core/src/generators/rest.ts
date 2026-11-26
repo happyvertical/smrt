@@ -106,6 +106,11 @@ import {
   warnIfTenantScopedPublicRead,
 } from './conditional-get';
 import {
+  applyCorsHeaders,
+  type CorsConfig,
+  corsPreflightResponse,
+} from './cors';
+import {
   buildCustomActionInvocationArgs,
   customActionParameterInputName,
   declaresRuntimeRestRouteShape,
@@ -3367,85 +3372,30 @@ export class APIGenerator {
   }
 
   /**
-   * Resolve the allowed `Access-Control-Allow-Origin` for a request (#1540).
-   * Returns the request's `Origin` only when it is in the configured allowlist;
-   * never `*`. Returns null when CORS should not be applied.
+   * The CORS posture this handler applies (#5195): the explicit allow-list
+   * when `enableCors` is on, nothing otherwise. Resolution, preflight and
+   * header sets live in `./cors`, shared with the generated SvelteKit routes.
    */
-  private resolveAllowedOrigin(req: Request): string | null {
-    if (!this.config.enableCors) return null;
-    const allowed = this.config.allowedOrigins;
-    if (!allowed || allowed.length === 0) return null;
-    const origin = req.headers.get('origin');
-    return origin && allowed.includes(origin) ? origin : null;
-  }
-
-  /**
-   * Whether to emit `Access-Control-Allow-Credentials: true` (#1861). Only when
-   * explicitly opted in AND an origin actually resolved — credentials are never
-   * paired with a wildcard/absent origin (`resolveAllowedOrigin` already never
-   * returns `*`).
-   */
-  private shouldAllowCredentials(): boolean {
-    return this.config.allowCredentials === true;
+  private corsConfig(): CorsConfig | undefined {
+    if (!this.config.enableCors) return undefined;
+    return {
+      allowedOrigins: this.config.allowedOrigins,
+      allowCredentials: this.config.allowCredentials === true,
+    };
   }
 
   /**
    * Create CORS preflight response
    */
   private createCorsResponse(req: Request): Response {
-    const headers: Record<string, string> = {
-      'Access-Control-Allow-Methods': 'GET,POST,PUT,PATCH,DELETE,OPTIONS',
-      // `Last-Event-ID` is allow-listed for the `_events` SSE route (#1861): a
-      // fetch-based cross-origin SSE client that resumes from a cursor sends it
-      // as a request header, which is not CORS-safelisted and would otherwise
-      // fail preflight. Harmless on the other routes, which ignore it.
-      'Access-Control-Allow-Headers':
-        'Content-Type,Authorization,Last-Event-ID',
-      'Access-Control-Max-Age': '86400',
-    };
-    const origin = this.resolveAllowedOrigin(req);
-    if (origin) {
-      headers['Access-Control-Allow-Origin'] = origin;
-      headers.Vary = 'Origin';
-      if (this.shouldAllowCredentials()) {
-        headers['Access-Control-Allow-Credentials'] = 'true';
-      }
-    }
-    return new Response(null, { status: 200, headers });
+    return corsPreflightResponse(req, this.corsConfig());
   }
 
   /**
    * Add CORS headers to response
    */
   private addCorsHeaders(response: Response, req: Request): Response {
-    const origin = this.resolveAllowedOrigin(req);
-    if (!origin) return response;
-
-    const headers = new Headers(response.headers);
-    headers.set('Access-Control-Allow-Origin', origin);
-    headers.set('Vary', 'Origin');
-    headers.set(
-      'Access-Control-Allow-Methods',
-      'GET,POST,PUT,PATCH,DELETE,OPTIONS',
-    );
-    // `Last-Event-ID` so a fetch-based cross-origin SSE client can resume the
-    // `_events` stream from a cursor (#1861); see createCorsResponse.
-    headers.set(
-      'Access-Control-Allow-Headers',
-      'Content-Type,Authorization,Last-Event-ID',
-    );
-    // Credentialed CORS (#1861): only when opted in, and only alongside a
-    // concrete echoed origin (never `*`) so cookies can flow to an allow-listed
-    // cross-origin client (e.g. a credentialed EventSource on `_events`).
-    if (this.shouldAllowCredentials()) {
-      headers.set('Access-Control-Allow-Credentials', 'true');
-    }
-
-    return new Response(response.body, {
-      status: response.status,
-      statusText: response.statusText,
-      headers,
-    });
+    return applyCorsHeaders(response, req, this.corsConfig());
   }
 
   /**

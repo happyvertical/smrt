@@ -5,10 +5,10 @@ description: "Site lifecycle management for multi-tenant SMRT networks"
 status: "stable"
 generated:
   by: "smrt/scripts/generate-knowledge-okf.ts"
-  at: "2026-11-26T17:59:34Z"
+  at: "2026-11-26T18:24:00Z"
 audience: "internal"
 evidence_level: "source-inspected"
-source_revision: "sha256:c362364d4dd3c052be878b5f07dc4de2b816afc87dc1565698180c41ab6c5025"
+source_revision: "sha256:8bc7559e1898a334956b83ce0ae845740cfeab75280f08b3161144b6a42c949e"
 sources:
   - id: "manifest"
     resource: "https://github.com/happyvertical/smrt/blob/main/packages/sites/package.json"
@@ -24,7 +24,7 @@ sources:
 
 - Directory: `packages/sites`
 - Private: no
-- Object source: `domain-artifact`
+- Object source: `scanner`
 - Evidence level: `source-inspected`
 
 ## Documentation
@@ -52,27 +52,28 @@ sources:
 ## Models
 
 - `DnsZone` (collection `dnszones`, extends `SmrtObject`)
-- `DnsZoneCollection` (collection `dnszones`, extends `SmrtCollection`)
 - `Domain` (collection `domains`, extends `SmrtObject`)
-- `DomainCollection` (collection `domains`, extends `SmrtCollection`)
 - `ProjectDomain` (collection `projectdomains`, extends `SmrtObject`)
-- `ProjectDomainCollection` (collection `projectdomains`, extends `SmrtJunction`)
+- `ProjectDomainCollection` (collection `projectdomaincollections`, extends `SmrtJunction`)
 - `Site` (collection `sites`, extends `SmrtObject`)
 - `SiteAgentBinding` (collection `siteagentbindings`, extends `SmrtObject`)
-- `SiteAgentBindingCollection` (collection `siteagentbindings`, extends `SmrtCollection`)
-- `SiteCollection` (collection `sites`, extends `SmrtCollection`)
 
 ## MCP tools
 
-- `dnszone_get`: get on `@happyvertical/smrt-sites:DnsZone`
-- `dnszone_list`: list on `@happyvertical/smrt-sites:DnsZone`
-- `domain_get`: get on `@happyvertical/smrt-sites:Domain`
-- `domain_list`: list on `@happyvertical/smrt-sites:Domain`
-- `projectdomain_get`: get on `@happyvertical/smrt-sites:ProjectDomain`
-- `projectdomain_list`: list on `@happyvertical/smrt-sites:ProjectDomain`
-- `site_create`: create on `@happyvertical/smrt-sites:Site`
-- `site_get`: get on `@happyvertical/smrt-sites:Site`
-- `site_list`: list on `@happyvertical/smrt-sites:Site`
-- `site_update`: update on `@happyvertical/smrt-sites:Site`
-- `siteagentbinding_get`: get on `@happyvertical/smrt-sites:SiteAgentBinding`
-- `siteagentbinding_list`: list on `@happyvertical/smrt-sites:SiteAgentBinding`
+- `create_projectdomaincollections`: create on `@happyvertical/smrt-sites:ProjectDomainCollection`
+- `create_sites`: create on `@happyvertical/smrt-sites:Site`
+- `delete_projectdomaincollections`: delete on `@happyvertical/smrt-sites:ProjectDomainCollection`
+- `get_dnszones`: get on `@happyvertical/smrt-sites:DnsZone`
+- `get_domains`: get on `@happyvertical/smrt-sites:Domain`
+- `get_projectdomaincollections`: get on `@happyvertical/smrt-sites:ProjectDomainCollection`
+- `get_projectdomains`: get on `@happyvertical/smrt-sites:ProjectDomain`
+- `get_siteagentbindings`: get on `@happyvertical/smrt-sites:SiteAgentBinding`
+- `get_sites`: get on `@happyvertical/smrt-sites:Site`
+- `list_dnszones`: list on `@happyvertical/smrt-sites:DnsZone`
+- `list_domains`: list on `@happyvertical/smrt-sites:Domain`
+- `list_projectdomaincollections`: list on `@happyvertical/smrt-sites:ProjectDomainCollection`
+- `list_projectdomains`: list on `@happyvertical/smrt-sites:ProjectDomain`
+- `list_siteagentbindings`: list on `@happyvertical/smrt-sites:SiteAgentBinding`
+- `list_sites`: list on `@happyvertical/smrt-sites:Site`
+- `update_projectdomaincollections`: update on `@happyvertical/smrt-sites:ProjectDomainCollection`
+- `update_sites`: update on `@happyvertical/smrt-sites:Site`

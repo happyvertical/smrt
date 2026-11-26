@@ -24,6 +24,7 @@ import type {
   SmartObjectManifest,
 } from '../scanner/types';
 import type { RouteFilePlan } from './generated-route-files.js';
+import { applyRouteCors } from './route-cors.js';
 import { AUTO_GENERATED_ROUTE_HEADER } from './route-header.js';
 import {
   allowsSuperAdminBypass,
@@ -433,12 +434,15 @@ export function generateSyncApplyRoute(
   plan.emit({
     root: join(projectRoot, options.routesDir),
     routeDir,
-    content: generateSyncApplyRouteTemplate(
-      targets,
-      generateCollectionAccessImports(projectRoot, routeDir, options, [
-        'getCollection',
-      ]),
-      syncModelScope(manifest),
+    content: applyRouteCors(
+      generateSyncApplyRouteTemplate(
+        targets,
+        generateCollectionAccessImports(projectRoot, routeDir, options, [
+          'getCollection',
+        ]),
+        syncModelScope(manifest),
+      ),
+      options.cors,
     ),
     label: 'sync/apply',
     policy: 'yield',
