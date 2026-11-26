@@ -469,7 +469,11 @@ describe('draft scope on queued, received and sent mail (#5657)', () => {
     });
 
     describe('triage fields on queued rows', () => {
-      const reader = () => principal(drafter, { scopes: ['read'] });
+      // A person holding the triage scope (and send, which triage ignores).
+      const reader = () => principal(sender);
+      beforeEach(async () => {
+        await grant(sender.id, 'triage');
+      });
       const ROWS: Array<[string, Record<string, unknown>]> = [
         ['pending', { sendStatus: 'pending' }],
         ['failed', { sendStatus: 'failed' }],
@@ -507,6 +511,27 @@ describe('draft scope on queued, received and sent mail (#5657)', () => {
           }),
         ).rejects.toBeInstanceOf(MailAccessError);
         expect((await load(id)).subject).toBe('triaged');
+      });
+
+      it('needs the triage scope for a read or flag mark', async () => {
+        const id = await seed({ subject: 'triaged', sendStatus: 'pending' });
+        for (const who of [
+          principal(stranger),
+          principal(drafter, { scopes: ['read'] }),
+          null,
+        ]) {
+          await expect(
+            as(who, async () => (await load(id)).markRead()),
+          ).rejects.toBeInstanceOf(MailAccessError);
+        }
+        expect((await load(id)).isRead).toBe(false);
+        for (const who of [principal(owner), principal(sender)]) {
+          await as(who, async () => (await load(id)).markRead());
+        }
+        await system(async () => (await load(id)).toggleFlagged());
+        const row = await load(id);
+        expect(row.isRead).toBe(true);
+        expect(row.isFlagged).toBe(true);
       });
 
       it('does not let a triage-only save pass for a delete', async () => {

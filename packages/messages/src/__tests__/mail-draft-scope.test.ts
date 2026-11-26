@@ -490,7 +490,7 @@ describe('draft scope on message writes (#5616)', () => {
           return email.id as string;
         }),
       );
-      await as(principal(stranger), async () => {
+      await as(principal(owner), async () => {
         const email = await load(id);
         email.isRead = true;
         await email.save();
@@ -1104,7 +1104,7 @@ describe('draft scope on message writes (#5616)', () => {
         return row;
       }),
     );
-    await as(principal(stranger), async () => {
+    await as(principal(owner), async () => {
       tweet.isRead = true;
       await tweet.save();
       await tweet.delete();

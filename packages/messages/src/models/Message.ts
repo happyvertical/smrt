@@ -595,7 +595,12 @@ export class Message extends SmrtObject {
       }
     }
     if (result.refused) return result;
-    if (triageOnly) return result;
+    if (triageOnly) {
+      // Read and flag marks are not content, but they are triage: the stored
+      // row's account decides, under the triage scope instead of draft.
+      for (const id of priorAccountIds) if (id) result.keys.add(`triage:${id}`);
+      return result;
+    }
     const fresh = !stored && !takesOver;
     const outgoingNow = isMailWriteGated(row, write);
     if (!outgoingNow && !priorAccountIds.length) return result;

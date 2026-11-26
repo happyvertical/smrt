@@ -74,7 +74,7 @@ owners and call `configureMailAccess({ options, resolvePrincipal })` at startup
   an owned account, checked in `Message.save()`/`delete()` and
   `Attachment.save()`/`delete()`. Received mail (provider id, unflagged, plain
   `draft`) is never sent and may be deleted; a stored `sent` row cannot leave
-  `sent`; read/flag changes alone pass. Rules and bypasses:
+  `sent`; read/flag changes alone need only `triage`. Rules and bypasses:
   [agents/send-approval.md](agents/send-approval.md#draft-writes).
 - `Message.send()` needs the `send` scope on an owned account. Agent sends
   (principal `kind` other than `person`/`human`) on a mail account are held

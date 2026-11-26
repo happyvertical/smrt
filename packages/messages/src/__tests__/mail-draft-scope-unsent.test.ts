@@ -364,7 +364,7 @@ describe('draft scope on unsent outgoing mail (#5657)', () => {
       it('leaves received and sent mail alone', async () => {
         const received = await seedReceived(ownedId);
         const sent = await seedUnsent(ownedId, 'sent');
-        await as(principal(stranger), async () => {
+        await as(principal(owner), async () => {
           for (const id of [received, sent]) {
             const email = await load(id);
             email.isRead = true;

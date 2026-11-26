@@ -130,7 +130,7 @@ again. A fresh row needs `draft` too, except a row the send path itself creates
 (an unsaved message being sent) or the persona route queues, which needs
 `send` (the route saves through a module-private helper, `saveQueuedForSend`,
 valid only for a fresh row). A save that changes only `isRead` and `isFlagged`
-of a stored row needs neither scope, so triage marks work on queued rows, and
+of a stored row needs the `triage` scope instead of `draft`, so triage marks work on queued rows, and
 `markAllRead` / `markFolderRead` try every row before raising the first error.
 Sync stores received mail under `runWithMailSystemAccess`; a host that stores received mail itself does the same. A held
 send's binding hash still covers its attachment rows. The attachment check
