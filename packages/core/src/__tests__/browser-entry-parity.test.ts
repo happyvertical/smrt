@@ -253,6 +253,17 @@ const NODE_ONLY_GROUPS: ReadonlyArray<{
   },
   {
     reason:
+      'Shared route authorization decision for the runtime REST handler and generated SvelteKit routes; server-side request policy, not browser code (#5195)',
+    names: [
+      'apiPrincipalFromLocals',
+      'authorize',
+      'isMutatingOperation',
+      'isOperationPublic',
+      'stripTenantFilters',
+    ],
+  },
+  {
+    reason:
       'Test-database helper; belongs behind `@happyvertical/smrt-core/testing`',
     names: ['getTestDatabase'],
   },
