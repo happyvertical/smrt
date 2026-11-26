@@ -1,7 +1,11 @@
 import { expectNoA11yViolations } from '@happyvertical/smrt-ui/test-support/a11y';
 import { render, screen } from '@testing-library/svelte';
-import { describe, expect, it } from 'vitest';
+import userEvent from '@testing-library/user-event';
+import { describe, expect, it, vi } from 'vitest';
+import { createWidgetRegistry } from '../registry.js';
+import ActivityWidget from '../widgets/ActivityWidget.svelte';
 import ChartWidget from '../widgets/ChartWidget.svelte';
+import { registerCoreWidgets } from '../widgets/core.js';
 import MetricWidget from '../widgets/MetricWidget.svelte';
 import NoteWidget from '../widgets/NoteWidget.svelte';
 import RecordListWidget from '../widgets/RecordListWidget.svelte';
@@ -32,6 +36,7 @@ describe('core widget components', () => {
   it('survive any data shape without throwing', () => {
     for (const data of junk) {
       for (const Component of [
+        ActivityWidget,
         MetricWidget,
         ChartWidget,
         RecordListWidget,
@@ -321,5 +326,65 @@ describe('core widget components', () => {
         .querySelector('[data-smrt-component="ShortcutsWidget"]')
         ?.getAttribute('data-presentation'),
     ).toBe('plain');
+  });
+
+  it('registers activity in registerCoreWidgets and forwards enriched entries and dismissal controls', async () => {
+    const registry = createWidgetRegistry();
+    registerCoreWidgets(registry, {
+      activity: () => ({ entries: [] }),
+    });
+    expect(registry.get('activity')).toMatchObject({
+      type: 'activity',
+      defaultSpan: 4,
+    });
+
+    const seededRegistry = createWidgetRegistry();
+    registerCoreWidgets(seededRegistry, { activity: true });
+    expect(seededRegistry.get('activity')?.load).toBeUndefined();
+
+    const onDismiss = vi.fn();
+    const { container } = render(ActivityWidget, {
+      props: {
+        ...base,
+        span: 4,
+        options: { limit: 1 },
+        data: {
+          entries: [
+            {
+              id: 'act-1',
+              title: 'Ticket triaged',
+              detail: 'Escalated to platform engineering',
+              occurredAt: '2026-11-26T19:50:00.000Z',
+              href: '/app/support/act-1',
+              source: 'support',
+              sourceLabel: 'Support',
+              code: 'SUP-101',
+              context: { label: 'Platform', href: '/app/projects/platform' },
+              status: { label: 'Triaged', tone: 'success' },
+              meta: '2 comments',
+            },
+            {
+              id: 'act-2',
+              title: 'Clipped by limit option',
+              occurredAt: '2026-11-26T18:00:00.000Z',
+            },
+          ],
+          onDismiss,
+        },
+      },
+    });
+
+    expect(screen.getByText('Ticket triaged')).toBeInTheDocument();
+    expect(screen.getByText('SUP-101')).toBeInTheDocument();
+    expect(screen.getByText('Triaged')).toBeInTheDocument();
+    expect(
+      screen.queryByText('Clipped by limit option'),
+    ).not.toBeInTheDocument();
+
+    await userEvent.click(
+      screen.getByRole('button', { name: 'Dismiss Ticket triaged' }),
+    );
+    expect(onDismiss).toHaveBeenCalledWith('act-1');
+    await expectNoA11yViolations(container);
   });
 });

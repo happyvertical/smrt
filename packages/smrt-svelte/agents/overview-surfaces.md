@@ -228,6 +228,7 @@ shape. Data shapes are in `widgets/data.ts`.
 | `chart` | `title`, `model`*, `groupBy`, `measure`, `field`, `period`, `style` (bar/line/table/pie/stat), `filter` | `{ points: [{ label, value }], format?, currency?, href?, delta? }`, one measure of a runtime report |
 | `records` | `title`, `model`*, `sort`, `field`, `direction`, `limit`, `filter`, `columns`, `summaries` | `{ rows: [{ id, title, subtitle?, meta?, href?, cells? }], total?, href?, columns?, currency?, timeZone?, summaries? }`; the loader chooses the title field and the visible records; `field` is the FK for `filter: 'parent'`; with columns (the option, else `data.columns`) the rows are a table — see "Records tables" |
 | `shortcuts` | `title`, `section` | `{ items: [{ id, label, href, icon?, description?, count? }] }` (`count` draws as "N records"; widgets also receive the grid's `presentation` and the shortcuts widget drops its entry frame under `plain`); `shortcutsFromNav(sections, sectionId)` maps `resolveShellNavModel` / `useShellLayout().sections` (visible entries, user renames) |
+| `activity` | `title`, `limit` | `ActivityWidgetData`: `{ entries: ActivityListEntry[], emptyLabel?, caughtUpLabel?, sourceFilter?, onDismiss?, onDismissMany?, onRestore?, canUndo?, onUndo?, dismissedCount?, showDismissed?, onToggleShowDismissed? }`, rendered via `ActivityList` (`defaultSpan: 4`; pass `activity: loader` or `activity: true` for client-seeded overviews) |
 | `note` | `title`, `body` (Markdown) | none |
 
 `note` renders `parseMarkdown` output as elements (headings, paragraphs, lists,
@@ -472,7 +473,7 @@ and the person can undo the change.
 - **Phase 4, assistant (#3727, done).** See "Assistant operations" above;
   `createOverviewAssistantSurface` is wired to the stored user tier through
   `createOverviewStore(...).save` as shown there.
-- **Not built:** the activity widget (Track B, #3710) and agenda.
+- **Not built:** agenda.
 
 ## Record overviews (`record.ts`)
 

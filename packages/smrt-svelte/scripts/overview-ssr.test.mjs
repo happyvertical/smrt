@@ -51,3 +51,68 @@ test('OverviewGrid server rendering draws every widget from loaded data', async 
     await server.close();
   }
 });
+
+test('OverviewGrid server rendering draws the activity widget without AdminShell context', async () => {
+  const server = await createServer({
+    configFile: 'e2e/vite.config.ts',
+    cacheDir: resolve('node_modules/.vite/overview-ssr-activity'),
+    server: { middlewareMode: true },
+  });
+  try {
+    const { default: Harness } = await server.ssrLoadModule(
+      resolve('src/components/overview/__tests__/overview-harness.svelte'),
+    );
+    const { createWidgetRegistry } = await server.ssrLoadModule(
+      resolve('src/components/overview/registry.ts'),
+    );
+    const { registerCoreWidgets } = await server.ssrLoadModule(
+      resolve('src/components/overview/widgets/core.ts'),
+    );
+    const { defineOverview, resolveOverview } = await server.ssrLoadModule(
+      resolve('src/components/overview/model.ts'),
+    );
+    const { loadOverview } = await server.ssrLoadModule(
+      resolve('src/components/overview/load.ts'),
+    );
+    const { render } = await server.ssrLoadModule('svelte/server');
+
+    const registry = createWidgetRegistry();
+    registerCoreWidgets(registry, {
+      activity: () => ({
+        entries: [
+          {
+            id: 'a1',
+            title: 'Webhook retry escalated',
+            detail: 'Platform team notified',
+            occurredAt: '2026-11-26T19:00:00.000Z',
+            href: 'javascript:alert(1)',
+            source: 'support',
+            sourceLabel: 'Support',
+            code: 'SUP-42',
+            context: { label: 'Core API', href: '/app/projects/core' },
+            status: { label: 'Open', tone: 'warning' },
+          },
+        ],
+      }),
+    });
+    const definition = defineOverview({
+      id: 'work.home',
+      allowed: ['activity'],
+      defaults: [{ id: 'act', type: 'activity', span: 4, options: {} }],
+    });
+    const resolved = resolveOverview(definition, null, registry);
+    const loaded = await loadOverview(resolved.document, definition, registry, {});
+    const result = await render(Harness, {
+      props: {
+        options: { definition, registry, loaded },
+      },
+    });
+    assert.match(result.body, /Webhook retry escalated/);
+    assert.match(result.body, /SUP-42/);
+    assert.match(result.body, /Core API/);
+    assert.doesNotMatch(result.body, /completed/i);
+    assert.doesNotMatch(result.body, /javascript:/);
+  } finally {
+    await server.close();
+  }
+});
