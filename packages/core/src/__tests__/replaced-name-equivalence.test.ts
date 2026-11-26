@@ -210,7 +210,9 @@ describe.each(engines)('replaced qualified names on %s', (engine) => {
       },
     ]);
 
-    const result = await backfillLegacyQualifiedNames(db);
+    const result = await backfillLegacyQualifiedNames(db, {
+      engineHint: engine,
+    });
     expect(result.rewritten.map((entry) => entry.count)).toEqual([1, 1]);
     expect((await countLegacyQualifiedNameReferences(db)).total).toBe(0);
     const contracts = await db.query(
