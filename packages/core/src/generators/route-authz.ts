@@ -117,7 +117,11 @@ function holds(
   slug: string,
 ): boolean {
   if (!permissions) return false;
-  if (permissions instanceof Set) return permissions.has(slug);
+  // A `Set`, or the principal's read-only set view, answers in O(1).
+  const set = permissions as { has?: unknown };
+  if (typeof set.has === 'function') {
+    return (permissions as ReadonlySet<string>).has(slug);
+  }
   for (const granted of permissions) {
     if (granted === slug) return true;
   }

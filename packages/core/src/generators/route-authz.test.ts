@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import type { APIRequestPrincipal } from './request-principal';
 import {
   apiPrincipalFromLocals,
@@ -91,6 +91,21 @@ describe('authorize permission', () => {
   it('accepts a one-shot iterable of slugs', () => {
     const p = user({ permissions: new Set(['posts.create']) });
     expect(authorize({ ...base, principal: p, op: 'create' }).allow).toBe(true);
+  });
+  it('asks a set-like permission view with has(), without scanning it', () => {
+    const has = vi.fn((slug: string) => slug === 'posts.create');
+    const view = {
+      has,
+      [Symbol.iterator]() {
+        throw new Error('scanned');
+      },
+    } as unknown as ReadonlySet<string>;
+    const p = user({ permissions: view });
+    expect(authorize({ ...base, principal: p, op: 'create' }).allow).toBe(true);
+    expect(authorize({ ...base, principal: p, op: 'update' }).allow).toBe(
+      false,
+    );
+    expect(has).toHaveBeenCalledWith('posts.create');
   });
   it('public: true skips the permission, public read still needs it for writes', () => {
     const p = user({ permissions: [] });
