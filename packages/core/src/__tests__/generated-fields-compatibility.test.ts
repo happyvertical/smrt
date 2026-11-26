@@ -5,7 +5,7 @@
  * #4972 was merged into it (0f16192e1b3b5d64b639cce688aaa35075a71464) and have
  * not moved. The digests of the emitted routes were re-baselined by hand for
  * the #5195 route templates against the production sources of
- * bfe0e7a0d6c178bbf7ab2d037a1d0deed2773778 (see the fixture notes).
+ * 45e9002f44c2e6207b59e6efd8c9f33310462cc2 (see the fixture notes).
  * No output normalization is applied. Fixture provenance lives beside the JSON.
  */
 import { execFileSync } from 'node:child_process';
@@ -32,7 +32,7 @@ import { snapshotObjectRegistryState } from '../test-utils.js';
 import { getTestDatabase } from '../testing/database.js';
 import { generateSvelteKitRoutes } from '../vite-plugin/sveltekit-generator.js';
 
-const BASELINE = 'bfe0e7a0d6c178bbf7ab2d037a1d0deed2773778';
+const BASELINE = '45e9002f44c2e6207b59e6efd8c9f33310462cc2';
 const fixturePath = join(
   import.meta.dirname,
   'fixtures/generated-fields-origin-main.json',
