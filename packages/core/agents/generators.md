@@ -196,6 +196,24 @@ still configure `_events` alone and win over `cors` there; with none of its own,
 `_events` inherits the `cors` allow-list (its narrower GET-only header set is
 unchanged).
 
+**Parity contract** (#5195). The runtime REST handler and the emitted SvelteKit
+routes must answer the same request from the same caller identically: status,
+error code and message, body, CORS headers. `src/generators/route-parity.test.ts`
+enforces it. It scans fixture models (private, `api.public: 'read'`, `true`,
+super-admin opt-in), emits their routes with the real generator, sends one set of
+requests (CRUD, protected-field writes, `sync/apply` with mixed items, custom
+actions, CORS) from one set of principals to both paths over in-process SQLite,
+and fails on any difference. Differences that cannot be removed today are named
+in its `DIVERGENCES` list, each with a reason, and the list is closed both ways:
+a divergence that stops differing fails the test, and a new one fails it.
+Today: the list envelope (REST bare array, routes `{ items, count, limit,
+offset }`), the delete success answer (REST 204, routes 200 `{ success: true }`),
+the not-found message, item-scope and multi-segment custom actions (routes
+only), and `allowCrossTenant` principals (REST only; `locals` has no marker).
+Change an answer on one path and the test names the case; change both on
+purpose and update the test with them. The harness is
+`src/__tests__/fixtures/route-parity-harness.ts`.
+
 `APIConfig.resolvePrincipal(req)` returns the request's
 `APIRequestPrincipal` (`{ tenantId, allowCrossTenant, authenticated, userId?,
 permissions?, callerKind?, superAdminBypass? }`) or `null` (anonymous). The
