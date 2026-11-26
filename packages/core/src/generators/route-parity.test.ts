@@ -265,7 +265,33 @@ interface Divergence {
    */
   normalize?(outcome: Outcome): Outcome;
   /** Or state what the two answers must still share, when they differ wholly. */
-  shared?(rest: Outcome, kit: Outcome): boolean;
+  shared?(rest: Outcome, kit: Outcome, c: Case): boolean;
+}
+
+/** Callers holding every write permission, `<collection>.touch` included. */
+const HOLDS_ALL = new Set([
+  'writer',
+  'writerViaPermissionSet',
+  'writerViaSmrtPermissions',
+  'writerViaTenantContext',
+  'operator',
+]);
+
+/**
+ * A route only the generated paths serve still decides as the shared rule
+ * does: unsigned 401 `AUTHENTICATION_REQUIRED`; a write without
+ * `<collection>.<action>` 403 `PERMISSION_DENIED` (a read needs only
+ * sign-in); otherwise served (200).
+ */
+function servedLikeAction(kit: Outcome, c: Case): boolean {
+  const write = c.request.method !== 'GET';
+  if (c.principal === 'anonymous') {
+    return kit.status === 401 && kit.code === 'AUTHENTICATION_REQUIRED';
+  }
+  if (write && !HOLDS_ALL.has(c.principal)) {
+    return kit.status === 403 && kit.code === 'PERMISSION_DENIED';
+  }
+  return kit.status === 200;
 }
 
 /**
@@ -309,14 +335,14 @@ const DIVERGENCES: Divergence[] = [
     reason:
       'REST has no item-scope custom actions: /<collection>/<id>/<action> is not a route there (404, and never the shorter route). The generated routes serve it, deciding by the same permission rule.',
     applies: (c) => c.op === 'item-scope',
-    shared: (rest) => rest.status === 404,
+    shared: (rest, kit, c) => rest.status === 404 && servedLikeAction(kit, c),
   },
   {
     id: 'multi-segment-action',
     reason:
       'REST has no multi-segment custom action paths: /<collection>/reports/monthly is not a route there (404). The generated routes serve it.',
     applies: (c) => c.op === 'multi-segment',
-    shared: (rest) => rest.status === 404,
+    shared: (rest, kit, c) => rest.status === 404 && servedLikeAction(kit, c),
   },
   {
     id: 'not-found-message',
@@ -349,7 +375,7 @@ async function compare(c: Case): Promise<string | undefined> {
     return `${where}: divergence "${divergence.id}" is listed but the answers agree; remove it`;
   }
   if (divergence.shared) {
-    return divergence.shared(rest, kit)
+    return divergence.shared(rest, kit, c)
       ? undefined
       : `${where}: differs beyond "${divergence.id}"\n  rest ${show(restView)}\n  kit  ${show(kitView)}`;
   }
