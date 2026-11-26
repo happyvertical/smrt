@@ -39,8 +39,9 @@ This API is separate from the generated `sync/apply` protocol.
 `delete()` physically removes a tracked row and records its next sync revision
 in `_smrt_sync_tombstones` in the same transaction. Tracked cascade deletes do
 the same. A tracked SET NULL reference stays live and advances its writer,
-revision and timestamp. A trusted incoming `delete({ sync: { originDeviceId,
-revision } })` can record a deletion for an ID that has never been present
+revision and timestamp; an untracked one (on every adapter, the JSON adapter
+included) advances its timestamp so a stale copy conflicts on save. A trusted
+incoming `delete({ sync: { originDeviceId, revision } })` can record a deletion for an ID that has never been present
 locally. The ledger stores the physical table, row ID, qualified model and
 tenant, and remains available after change-feed retention. Its entries
 represent tombstones. Ordinary model reads only see live rows. A new identity
