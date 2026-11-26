@@ -35,3 +35,8 @@ export const queryWithGlobals: typeof NodeHost.queryWithGlobals =
 
 export const createAccountSecretService: typeof NodeHost.createAccountSecretService =
   serverRequired;
+
+export const resolveAttachmentStorageRoot: typeof NodeHost.resolveAttachmentStorageRoot =
+  serverRequired;
+export const readAttachmentFileUnderRoot: typeof NodeHost.readAttachmentFileUnderRoot =
+  serverRequired;

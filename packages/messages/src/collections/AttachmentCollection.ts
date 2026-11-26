@@ -26,8 +26,14 @@ export class AttachmentCollection extends SmrtCollection<Attachment> {
         if (!attachment.messageId) continue;
         const message = await messages.get({ id: attachment.messageId });
         if (!message?.accountId) continue;
-        attachment.accountId = message.accountId;
-        await attachment.save();
+        // A direct column write: a row stored before the attachment storage
+        // root existed may hold a path `save()` now refuses, and the backfill
+        // must still make it visible.
+        await this.db.update(
+          this.tableName,
+          { id: attachment.id },
+          { account_id: message.accountId },
+        );
         updated++;
       }
       return updated;

@@ -43,6 +43,7 @@ import {
   runWithMailSystemAccess,
   withoutListBounds,
 } from './access.js';
+import { isAttachmentStorageError } from './attachment-storage.js';
 import { notificationSha256, withTenant } from './host.js';
 import type { Account } from './models/Account.js';
 import type { Message } from './models/Message.js';
@@ -313,6 +314,18 @@ function attachmentBinding(
   ];
 }
 
+/** A refused path binds like an unreadable file: the send fails the same way. */
+async function readBoundContent(row: {
+  readContent(): Promise<Uint8Array | null>;
+}): Promise<Uint8Array | null> {
+  try {
+    return await row.readContent();
+  } catch (error) {
+    if (isAttachmentStorageError(error)) return null;
+    throw error;
+  }
+}
+
 function sortBindings(bound: unknown[][]): unknown[][] {
   return bound.sort((a, b) => String(a[0]).localeCompare(String(b[0])));
 }
@@ -387,7 +400,7 @@ export async function mailSendBindingHash(
           bound.push(
             attachmentBinding(
               row,
-              row.filePath ? await row.readContent() : null,
+              row.filePath ? await readBoundContent(row) : null,
             ),
           );
         }

@@ -5,10 +5,10 @@ description: "Unified multi-channel messaging with STI-based hierarchies"
 status: "stable"
 generated:
   by: "smrt/scripts/generate-knowledge-okf.ts"
-  at: "2026-11-24T09:42:36Z"
+  at: "2026-11-25T22:47:28Z"
 audience: "internal"
 evidence_level: "source-inspected"
-source_revision: "sha256:ff67afd1fdad7e4675cee768168f4c3a7dc743185ad570e724e9ce2ba6a3e266"
+source_revision: "sha256:ef897e351e6b70630dbee7a0eb9599833e6a3bc29c7b1f35858a3bc24b5bce11"
 sources:
   - id: "manifest"
     resource: "https://github.com/happyvertical/smrt/blob/main/packages/messages/package.json"
@@ -17,15 +17,18 @@ sources:
     resource: "https://github.com/happyvertical/smrt/blob/main/packages/messages/AGENTS.md"
     title: "@happyvertical/smrt-messages packages/messages/AGENTS.md"
   - id: "agents-2"
+    resource: "https://github.com/happyvertical/smrt/blob/main/packages/messages/agents/attachment-storage.md"
+    title: "@happyvertical/smrt-messages packages/messages/agents/attachment-storage.md"
+  - id: "agents-3"
     resource: "https://github.com/happyvertical/smrt/blob/main/packages/messages/agents/mail-search.md"
     title: "@happyvertical/smrt-messages packages/messages/agents/mail-search.md"
-  - id: "agents-3"
+  - id: "agents-4"
     resource: "https://github.com/happyvertical/smrt/blob/main/packages/messages/agents/notification-outbox.md"
     title: "@happyvertical/smrt-messages packages/messages/agents/notification-outbox.md"
-  - id: "agents-4"
+  - id: "agents-5"
     resource: "https://github.com/happyvertical/smrt/blob/main/packages/messages/agents/profile-recipients.md"
     title: "@happyvertical/smrt-messages packages/messages/agents/profile-recipients.md"
-  - id: "agents-5"
+  - id: "agents-6"
     resource: "https://github.com/happyvertical/smrt/blob/main/packages/messages/agents/send-approval.md"
     title: "@happyvertical/smrt-messages packages/messages/agents/send-approval.md"
 ---
@@ -42,6 +45,7 @@ sources:
 ## Documentation
 
 - `packages/messages/AGENTS.md`
+- `packages/messages/agents/attachment-storage.md`
 - `packages/messages/agents/mail-search.md`
 - `packages/messages/agents/notification-outbox.md`
 - `packages/messages/agents/profile-recipients.md`
