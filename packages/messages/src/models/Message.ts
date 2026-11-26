@@ -36,8 +36,8 @@ import {
   assertMailScopeOn,
   decideMailAccess,
   inMailSystemAccess,
+  isMailWriteGated,
   isReceivedMail,
-  isUnsentOutgoing,
   learnMailAccessOptions,
   MailAccessError,
   type MailPrincipal,
@@ -173,14 +173,14 @@ interface DraftRequirements {
   keys: Set<string>;
   /** A stored `sent` row moved out of `sent`: sent mail is a record. */
   refused: boolean;
-  /** An authorised lifecycle save of a stored row with nothing else changed. */
-  storedLifecycle: boolean;
+  /** The send path's own save: a fresh row, or a stored row otherwise unchanged. */
+  lifecycle: boolean;
 }
 
 const emptyRequirements = (): DraftRequirements => ({
   keys: new Set(),
   refused: false,
-  storedLifecycle: false,
+  lifecycle: false,
 });
 
 const DATE_LIKE =
@@ -451,16 +451,15 @@ export class Message extends SmrtObject {
   /**
    * Creating, changing or deleting mail that a later send would transmit
    * needs the `draft` scope on an owned account, whichever route the write
-   * takes. That is every row that is not `sent` and not received mail
-   * ({@link isUnsentOutgoing}): flagged drafts, `draft` rows with no provider
-   * id, `pending`, `scheduled`, `sending`, `failed` and unknown statuses. A
-   * row counts by its stored state and by the state it is moved into, so it
-   * cannot be edited by first relabelling it, and both accounts count when it
-   * moves. A fresh row on an owned account needs the scope too. Received mail
-   * (provider-tagged, unflagged, plain `draft`) is a record and is never sent
-   * ({@link Message.send} refuses it), and a stored row cannot leave `sent`.
-   * The stored row decides, whatever class this instance is. Trusted system
-   * work, unowned accounts and rows that are only received or sent mail are
+   * takes ({@link isMailWriteGated}): every row that is not `sent`, received
+   * mail included when it is saved, so content cannot be written without the
+   * scope and then flipped into a draft. A row counts by its stored state and
+   * by the state it is moved into, so it cannot be edited by first relabelling
+   * it, and both accounts count when it moves. A fresh row needs the scope
+   * too. Received mail (provider-tagged, unflagged, plain `draft`) is never
+   * sent ({@link Message.send} refuses it), may be deleted, and a stored
+   * `sent` row cannot leave `sent`. The stored row decides, whatever class
+   * this instance is. Trusted system work, unowned accounts and sent mail are
    * unaffected.
    *
    * A save that changes only the triage fields (read and flagged state) of a
@@ -491,10 +490,10 @@ export class Message extends SmrtObject {
         key.slice(0, at) as MailScope,
         rootOptions,
         // A queued row whose account was deleted is marked failed by the send
-        // path with nothing else changed; there is no owner left to protect.
+        // path; there is no owner left to protect and nothing it can send.
         {
           allowMissing:
-            required.storedLifecycle &&
+            required.lifecycle &&
             this.sendStatus === 'failed' &&
             key.startsWith('send:'),
         },
@@ -535,6 +534,7 @@ export class Message extends SmrtObject {
   ): Promise<DraftRequirements> {
     const result = emptyRequirements();
     const row = this as unknown as Record<string, unknown>;
+    const write = save ? 'save' : 'delete';
     const priorAccountIds: string[] = [];
     let stored: Record<string, unknown> | null = null;
     let unchanged = false;
@@ -542,7 +542,7 @@ export class Message extends SmrtObject {
     if (this.id) {
       stored = await this.getCanonicalPersistedRow({ id: this.id });
       if (stored) {
-        if (isUnsentOutgoing(stored)) {
+        if (isMailWriteGated(stored, write)) {
           priorAccountIds.push(String(stored.account_id ?? ''));
         }
         if (stored.send_status === 'sent' && row.sendStatus !== 'sent') {
@@ -583,7 +583,7 @@ export class Message extends SmrtObject {
             if (keyed.send_status === 'sent' && row.sendStatus !== 'sent') {
               result.refused = true;
             }
-            if (isUnsentOutgoing(keyed)) {
+            if (isMailWriteGated(keyed, write)) {
               priorAccountIds.push(String(keyed.account_id ?? ''));
             }
           }
@@ -593,13 +593,13 @@ export class Message extends SmrtObject {
     if (result.refused) return result;
     if (triageOnly) return result;
     const fresh = !stored && !takesOver;
-    const outgoingNow = isUnsentOutgoing(row);
+    const outgoingNow = isMailWriteGated(row, write);
     if (!outgoingNow && !priorAccountIds.length) return result;
     const sanctioned =
       (lifecycle && ((stored && unchanged) || fresh)) ||
       (fresh && queuedCreates.has(this));
     const scope: MailScope = sanctioned ? 'send' : 'draft';
-    result.storedLifecycle = Boolean(lifecycle && stored && unchanged);
+    result.lifecycle = Boolean(lifecycle && ((stored && unchanged) || fresh));
     for (const id of [outgoingNow ? this.accountId : '', ...priorAccountIds]) {
       if (id) result.keys.add(`${scope}:${id}`);
     }
@@ -633,6 +633,8 @@ export class Message extends SmrtObject {
       ) {
         continue;
       }
+      // A class without the property cannot carry a value for it.
+      if (!(name in this)) continue;
       const column = name.replace(/[A-Z]/g, (c) => `_${c.toLowerCase()}`);
       // A property with no column cannot be stored, so it cannot carry an edit.
       if (!(column in stored)) continue;
@@ -886,7 +888,15 @@ export class Message extends SmrtObject {
       };
     }
     // Received mail is a record of what arrived, never an outgoing message.
-    if (isReceivedMail(this as unknown as Record<string, unknown>)) {
+    // The stored row counts too: a base `Message` handle carries no
+    // provider-id fields of its subclass.
+    const storedRow = this.id
+      ? await this.getCanonicalPersistedRow({ id: this.id })
+      : null;
+    if (
+      isReceivedMail(this as unknown as Record<string, unknown>) ||
+      (storedRow && isReceivedMail(storedRow))
+    ) {
       return {
         success: false,
         error: 'Cannot send: this is received mail',

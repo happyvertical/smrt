@@ -172,24 +172,27 @@ describe('mail account access (#5129)', () => {
       });
       await folder.initialize();
       await folder.save();
-      const email = new Email({
-        ...options,
-        tenantId,
-        accountId: id,
-        subject: `${name} subject`,
-        messageId: `<${name}@example.com>`,
-        folderId: folder.id as string,
+      // Synced mail is stored by trusted work, as sync does.
+      await runWithMailSystemAccess(async () => {
+        const email = new Email({
+          ...options,
+          tenantId,
+          accountId: id,
+          subject: `${name} subject`,
+          messageId: `<${name}@example.com>`,
+          folderId: folder.id as string,
+        });
+        await email.initialize();
+        await email.save();
+        const attachment = new Attachment({
+          ...options,
+          tenantId,
+          messageId: email.id as string,
+          filename: `${name}.pdf`,
+        });
+        await attachment.initialize();
+        await attachment.save();
       });
-      await email.initialize();
-      await email.save();
-      const attachment = new Attachment({
-        ...options,
-        tenantId,
-        messageId: email.id as string,
-        filename: `${name}.pdf`,
-      });
-      await attachment.initialize();
-      await attachment.save();
       return id;
     });
   }
@@ -593,7 +596,7 @@ describe('mail account access (#5129)', () => {
           filename: 'late.pdf',
         });
         await added.initialize();
-        await added.save();
+        await runWithMailSystemAccess(() => added.save());
         expect(added.accountId).toBe(privateAccountId);
         // A row from before the column existed: no accountId, found via its message.
         const legacy = new Attachment({
@@ -681,7 +684,7 @@ describe('mail account access (#5129)', () => {
           filename: 'forged.pdf',
         });
         await forged.initialize();
-        await forged.save();
+        await runWithMailSystemAccess(() => forged.save());
         expect(forged.accountId).toBe(privateAccountId);
       });
       current = principalFor(stranger);
@@ -707,7 +710,7 @@ describe('mail account access (#5129)', () => {
           messageId: '<app@example.com>',
         });
         await subclassed.initialize();
-        await subclassed.save();
+        await runWithMailSystemAccess(() => subclassed.save());
       });
       expect(await subjects(principalFor(stranger))).toEqual(['open subject']);
       expect(await subjects(principalFor(owner))).toContain('app subject');

@@ -112,25 +112,29 @@ grants and account owner are read before the write (a single-connection
 engine cannot serve the policy handle inside a transaction); the write then
 re-reads the stored row and refuses a save that now needs more.
 `Attachment.save()`/`delete()` need the same scope when the message they
-belong to (or are moved from) is unsent outgoing mail on an owned account
-(`isUnsentOutgoing`). Unsent outgoing mail is any row a later send would
-transmit: every row that is not `sent` and not received mail. Received mail
-is a provider-tagged row (`messageId`, `folderId`, `tweetId` or `slackTs` set)
-that is unflagged and still `draft`; `Message.send()` refuses it, so it is a
-record. A `draft` row with no provider id, a flagged draft, and `pending`,
-`scheduled`, `sending`, `failed` or an unknown status all count. `Message.save()`/
-`delete()` apply the same test to the stored row and to the state a row is
-moved into, so a received row cannot be relabelled or stripped of its provider
-id around the check. A stored `sent` row cannot be moved out of `sent` by a
-principal (sent mail is a record). A fresh row in any of these states needs
-`draft` too; the only exception is a row the send path itself creates (an
-unsaved message being sent) or the persona route queues, which needs `send`
-(the route saves through a module-private helper, `saveQueuedForSend`, valid
-only for a fresh row). A save that changes only `isRead` and `isFlagged` of a
-stored row needs neither scope, so triage marks work on queued rows, and
+belong to (or are moved from) is gated (`isMailWriteGated`). A write is gated
+for every row that is not `sent`, because a later send would transmit it. That
+includes received mail when it is saved, so content cannot be written without
+the scope and then flipped into a draft; deleting received mail (and its
+attachments) stays open. Received mail is a provider-tagged row (`messageId`,
+`providerMessageId`, `folderId`, `tweetId` or `slackTs` set) that is unflagged
+and still `draft`; `Message.send()` refuses it, stored row included. A `draft`
+row with no provider id, a flagged draft, and `pending`, `scheduled`,
+`sending`, `failed` or an unknown status are gated like any other.
+`Message.save()`/`delete()` apply the same test to the stored row and to the
+state a row is moved into, so a row cannot be relabelled or stripped of its
+provider id around the check. A stored `sent` row cannot be moved out of
+`sent` by a principal (sent mail is a record); an instance loaded before the
+row was sent is refused the same way, so a stale save cannot make it sendable
+again. A fresh row needs `draft` too, except a row the send path itself creates
+(an unsaved message being sent) or the persona route queues, which needs
+`send` (the route saves through a module-private helper, `saveQueuedForSend`,
+valid only for a fresh row). A save that changes only `isRead` and `isFlagged`
+of a stored row needs neither scope, so triage marks work on queued rows, and
 `markAllRead` / `markFolderRead` try every row before raising the first error.
-A held send's binding hash still covers its attachment rows. The attachment
-check runs just before the write, not inside it.
+Sync stores received mail under `runWithMailSystemAccess`; a host that stores received mail itself does the same. A held
+send's binding hash still covers its attachment rows. The attachment check
+runs just before the write, not inside it.
 That covers generated routes, collection `delete`/`getOrUpsert`,
 `createReply`/`createForward` + `save()` and `MailDraftService`. Trusted work
 (`runWithMailSystemAccess`: sync, outbox, triage write-back, approval edits)

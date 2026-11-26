@@ -1179,9 +1179,8 @@ describe('draft scope on message writes (#5616)', () => {
     });
 
     describe('unchanged behaviour', () => {
-      it('leaves attachments of unowned drafts, sent and received mail alone', async () => {
+      it('leaves attachments of unowned drafts and sent mail alone', async () => {
         const openDraft = await seedDraft(openId);
-        const received = await seedReceived(ownedId);
         const sent = await withTenant({ tenantId }, () =>
           runWithMailSystemAccess(async () => {
             const email = await newDraft(ownedId, 'sent');
@@ -1191,7 +1190,7 @@ describe('draft scope on message writes (#5616)', () => {
           }),
         );
         await as(principal(stranger), async () => {
-          for (const messageId of [openDraft, received, sent]) {
+          for (const messageId of [openDraft, sent]) {
             const row = await addAttachment(messageId);
             await row.delete();
           }
@@ -1435,12 +1434,11 @@ describe('draft scope on message writes (#5616)', () => {
       ).rejects.toThrow();
     });
 
-    it('leaves unowned, sent and received mail alone', async () => {
+    it('leaves unowned and sent mail alone', async () => {
       const openPending = await seedUnsent(openId, 'pending');
       const sent = await seedUnsent(ownedId, 'sent');
-      const received = await seedReceived(ownedId);
       await as(principal(stranger), async () => {
-        for (const messageId of [openPending, sent, received]) {
+        for (const messageId of [openPending, sent]) {
           const row = await (await collection()).create({
             tenantId,
             messageId,
@@ -1858,10 +1856,42 @@ describe('draft scope on message writes (#5616)', () => {
           return email.save();
         });
 
-      it('is never sent, whoever rewrites it', async () => {
+      it('cannot be rewritten without the draft scope', async () => {
         const id = await seedReceived(ownedId);
-        // A reader may still edit the local copy; it is a record, not outgoing.
-        await rewrite(id, principal(drafter, { scopes: ['read'] }));
+        for (const who of [
+          principal(stranger),
+          principal(drafter, { scopes: ['read'] }),
+          principal(sender),
+        ]) {
+          await expect(rewrite(id, who)).rejects.toBeInstanceOf(
+            MailAccessError,
+          );
+        }
+        expect((await load(id)).body).not.toBe('rewritten');
+      });
+
+      it('takes no attachment without the draft scope, but may lose one', async () => {
+        const id = await seedReceived(ownedId);
+        const attachments = await import(
+          '../collections/AttachmentCollection.js'
+        );
+        await expect(
+          as(principal(drafter, { scopes: ['read'] }), async () =>
+            (
+              await (
+                await attachments.AttachmentCollection.create(options)
+              ).create({
+                tenantId,
+                messageId: id,
+                filename: 'planted.txt',
+              })
+            ).save(),
+          ),
+        ).rejects.toBeInstanceOf(MailAccessError);
+      });
+
+      it('is never sent, by any principal', async () => {
+        const id = await seedReceived(ownedId);
         const result = await as(principal(sender), async () =>
           (await load(id)).send(),
         );
@@ -1908,25 +1938,31 @@ describe('draft scope on message writes (#5616)', () => {
         expect((await load(id)).isDraft).toBe(true);
       });
 
-      it('lets a forged received row exist but never be sent', async () => {
-        const id = await as(principal(stranger), async () => {
-          const email = new Email({
-            ...options,
-            tenantId,
-            accountId: ownedId,
-            subject: 'forged',
-            fromAddress: 'owned@example.com',
-            messageId: '<forged@example.com>',
-          });
-          await email.initialize();
-          await email.save();
-          return email.id as string;
+      it('cannot be forged without the draft scope', async () => {
+        await expect(
+          as(principal(stranger), async () => {
+            const email = new Email({
+              ...options,
+              tenantId,
+              accountId: ownedId,
+              subject: 'forged',
+              messageId: '<forged@example.com>',
+            });
+            await email.initialize();
+            return email.save();
+          }),
+        ).rejects.toBeInstanceOf(MailAccessError);
+      });
+
+      it('may be deleted by a reader, and a provider-id-only row counts as received', async () => {
+        const id = await seed({
+          subject: 'synced',
+          providerMessageId: 'uid-1',
         });
-        const result = await as(principal(sender), async () =>
-          (await load(id)).send(),
+        await as(principal(drafter, { scopes: ['read'] }), async () =>
+          (await load(id)).delete(),
         );
-        expect(result.success).toBe(false);
-        expect(providerSend).not.toHaveBeenCalled();
+        expect(await exists(id)).toBe(false);
       });
 
       it('keeps a plain row with no provider id under the scope', async () => {
@@ -2048,6 +2084,30 @@ describe('draft scope on message writes (#5616)', () => {
       });
     });
 
+    describe('a stale instance of a row that was sent meanwhile', () => {
+      it('cannot write the row back to unsent', async () => {
+        const id = await seed({ subject: 'racing', sendStatus: 'pending' });
+        const stale = await load(id);
+        await system(async () => {
+          const email = await load(id);
+          email.sendStatus = 'sent';
+          await email.save();
+        });
+        for (const who of [
+          principal(owner),
+          principal(drafter, { scopes: ['read'] }),
+        ]) {
+          await expect(
+            as(who, async () => {
+              stale.isRead = true;
+              return stale.save();
+            }),
+          ).rejects.toBeInstanceOf(MailAccessError);
+        }
+        expect((await load(id)).sendStatus).toBe('sent');
+      });
+    });
+
     describe('a queued row whose account was deleted', () => {
       const deleteAccount = (accountId: string) =>
         system(async () => {
@@ -2090,6 +2150,23 @@ describe('draft scope on message writes (#5616)', () => {
         expect(row.sendStatus).toBe('failed');
         expect(row.sendError).toBe('No account associated with this message');
         expect(providerSend).not.toHaveBeenCalled();
+      });
+
+      it('lets an unsaved message to a missing account fail without a scope', async () => {
+        // The engine's foreign key would refuse the row; take it out of the way.
+        await db.query('PRAGMA foreign_keys=OFF');
+        const result = await as(principal(sender), async () => {
+          const email = new Email({
+            ...options,
+            tenantId,
+            accountId: randomUUID(),
+            subject: 'nowhere',
+          });
+          await email.initialize();
+          return email.send();
+        });
+        expect(result.success).toBe(false);
+        expect(result.error).toBe('No account associated with this message');
       });
 
       it('still refuses a content change on it without the scope', async () => {

@@ -507,6 +507,7 @@ export function isUnsentDraft(sendStatus: unknown, isDraft: unknown): boolean {
 /** Fields only a provider sync sets: they tie a row to mail that arrived. */
 const PROVENANCE_FIELDS = [
   ['messageId', 'message_id'],
+  ['providerMessageId', 'provider_message_id'],
   ['folderId', 'folder_id'],
   ['tweetId', 'tweet_id'],
   ['slackTs', 'slack_ts'],
@@ -535,15 +536,19 @@ export function isReceivedMail(row: Record<string, unknown>): boolean {
 }
 
 /**
- * Unsent outgoing mail: anything a later send would transmit. That is every
- * row that is not `sent` and not received mail ({@link isReceivedMail}):
- * flagged drafts, `draft` rows with no provider id, `pending`, `scheduled`,
- * `sending`, `failed` and any unknown status (which fails closed).
+ * Whether a write to this row (instance or stored) needs the `draft` scope.
+ * Every row that is not `sent` is, because a later send would transmit it.
+ * Saving counts received mail ({@link isReceivedMail}) too, so its content
+ * cannot be written without the scope and then flipped into a draft; deleting
+ * received mail removes nothing a send would transmit, so it stays open.
  */
-export function isUnsentOutgoing(row: Record<string, unknown>): boolean {
+export function isMailWriteGated(
+  row: Record<string, unknown>,
+  write: 'save' | 'delete',
+): boolean {
   const status = row.sendStatus ?? row.send_status;
   if (status === 'sent') return false;
-  return !isReceivedMail(row);
+  return write === 'save' || !isReceivedMail(row);
 }
 
 /**
