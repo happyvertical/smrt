@@ -316,6 +316,24 @@ jobs:
           test "$(pnpm --version)" = "11.13.1"
           node scripts/check-readmes.mjs
 
+      # Generated knowledge pages are regenerated after merge to main and land
+      # through the rolling chore/knowledge-regenerate PR (#5705); any other PR
+      # that edits them re-creates the queue-ejecting conflicts. The file list
+      # comes from the API (no history needed); merge groups skip it because
+      # the regeneration PR legitimately carries those pages.
+      - name: Check generated knowledge pages are not edited
+        if: >-
+          github.event_name == 'pull_request' &&
+          !(github.event.pull_request.head.repo.full_name == github.repository &&
+          github.event.pull_request.head.ref == 'chore/knowledge-regenerate')
+        env:
+          GH_TOKEN: ${{ github.token }}
+          PR_FILES_URL: repos/${{ github.repository }}/pulls/${{ github.event.pull_request.number }}/files
+          PR_FILES_OUT: ${{ runner.temp }}/pr-files.txt
+        run: |
+          gh api --paginate "$PR_FILES_URL" --jq '.[] | .filename, (.previous_filename // empty)' > "$PR_FILES_OUT"
+          node scripts/check-generated-knowledge-untouched.mjs --files-from "$PR_FILES_OUT"
+
       # DAG guardrails (#1582). Node-only, no node_modules: inter-smrt
       # peerDependencies drive pnpm's per-peer-set physical fan-out, and a
       # cross-package cycle is what let the smrt-svelte keystone re-form.

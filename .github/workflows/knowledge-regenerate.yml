@@ -1,0 +1,119 @@
+name: Regenerate Knowledge Pages
+
+# Generated knowledge pages (docs/knowledge/components/**, docs/knowledge/index.md)
+# are not committed in feature PRs (#5705): every PR that touched them made the
+# next queued PR conflict and leave the merge queue. After each push to main
+# this workflow regenerates them and opens or updates ONE rolling PR from the
+# fixed bot branch below. It never pushes to main and never enables auto-merge;
+# the PR lands through the normal merge queue when a maintainer queues it.
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+# Latest main wins: a run for an older push is cancelled, never queued.
+concurrency:
+  group: knowledge-regenerate
+  cancel-in-progress: true
+
+env:
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: 'true'
+  BOT_BRANCH: chore/knowledge-regenerate
+
+permissions:
+  contents: read
+  packages: read
+
+jobs:
+  regenerate:
+    name: Regenerate and update rolling PR
+    if: github.repository == 'happyvertical/smrt'
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+    steps:
+      - name: Checkout main
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          ref: ${{ github.sha }}
+          persist-credentials: false
+
+      - name: Setup environment
+        uses: ./.github/actions/setup-environment
+        with:
+          node-version: '26.12.1'
+          install-deps: 'true'
+          setup-playwright: 'false'
+          registry-url: 'https://npm.pkg.github.com'
+          auth-token: ${{ secrets.GITHUB_TOKEN }}
+
+      # The generator reads the built knowledge artifacts (see
+      # docs/knowledge/maintenance.md), so a full build comes first.
+      - name: Build knowledge artifacts
+        run: pnpm run build
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Regenerate pages
+        run: pnpm knowledge:okf
+
+      # The same App the release uses, so the pushed branch and the PR trigger
+      # Required CI (a GITHUB_TOKEN push would not). Minted after the build so
+      # it cannot expire during it.
+      - name: Generate token from GitHub App
+        id: generate_token
+        uses: tibdex/github-app-token@3beb63f4bd073e61482598c45c71c1019b59b73a # v2
+        with:
+          app_id: ${{ secrets.HAVE_RELEASE_APP_ID }}
+          private_key: ${{ secrets.HAVE_RELEASE_APP_PRIVATE_KEY }}
+          # Least privilege: only this repository, only branch pushes and PRs.
+          repositories: '["smrt"]'
+          permissions: '{"contents":"write","pull_requests":"write","metadata":"read"}'
+
+      - name: Update the rolling regeneration pull request
+        env:
+          GH_TOKEN: ${{ steps.generate_token.outputs.token }}
+          REPO: ${{ github.repository }}
+          MAIN_SHA: ${{ github.sha }}
+        run: |
+          set -euo pipefail
+          paths=(docs/knowledge/components docs/knowledge/index.md)
+          auth="$(printf 'x-access-token:%s' "$GH_TOKEN" | base64 -w0)"
+          echo "::add-mask::$auth"
+          gh_git() {
+            git -c "http.https://github.com/.extraheader=AUTHORIZATION: basic $auth" "$@"
+          }
+          existing="$(gh pr list --repo "$REPO" --head "$BOT_BRANCH" --state open \
+            --json number --jq '.[0].number // empty')"
+
+          git add -- "${paths[@]}"
+          if git diff --cached --quiet; then
+            echo "Generated pages already match main."
+            if [ -n "$existing" ]; then
+              gh pr close "$existing" --repo "$REPO" \
+                --comment "Main at $MAIN_SHA already matches the generated pages; nothing to regenerate."
+            fi
+            exit 0
+          fi
+
+          # Leave an up-to-date PR alone: a push to a queued branch dequeues it.
+          if gh_git fetch --no-tags --depth=1 origin "$BOT_BRANCH" 2>/dev/null \
+            && [ -n "$existing" ] \
+            && git diff --cached --quiet FETCH_HEAD -- "${paths[@]}"; then
+            echo "PR #$existing already carries these pages."
+            exit 0
+          fi
+
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git commit -m 'chore(knowledge): regenerate generated pages'
+          # The bot branch is throwaway and rebuilt from main each run.
+          gh_git push --force origin "HEAD:refs/heads/$BOT_BRANCH"
+
+          if [ -z "$existing" ]; then
+            gh pr create --repo "$REPO" --base main --head "$BOT_BRANCH" \
+              --title 'chore(knowledge): regenerate generated pages' \
+              --body "Automated: regenerates \`docs/knowledge/components/**\` and \`docs/knowledge/index.md\` from main at $MAIN_SHA with \`pnpm knowledge:okf\` (#5705). Rolling PR: updated in place after later pushes to main. Not auto-merged; queue it when convenient."
+          else
+            gh pr comment "$existing" --repo "$REPO" \
+              --body "Regenerated from main at $MAIN_SHA."
+          fi

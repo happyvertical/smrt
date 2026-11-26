@@ -81,13 +81,17 @@ test('ships the full intent set with smrt-dev-mcp too, and with no other package
   assert.equal(existsSync(join(jobs, 'dist/knowledge/intents')), false);
 });
 
-test('skips private and dist-less packages but fails on a public package without a page', (t) => {
+test('skips private and dist-less packages and warns, not fails, on a public package without a page (#5705)', (t) => {
   const root = workspace(t);
   const priv = pkg(root, 'priv', { name: '@happyvertical/smrt-priv', private: true });
   const noDist = pkg(root, 'tpl', { name: '@happyvertical/smrt-tpl' }, { dist: false });
   assert.deepEqual(shipPackageKnowledge(priv, root), []);
   assert.deepEqual(shipPackageKnowledge(noDist, root), []);
 
-  pkg(root, 'orphan', { name: '@happyvertical/smrt-orphan' });
-  assert.throws(() => shipAllKnowledge(root), /pnpm knowledge:okf/);
+  const orphan = pkg(root, 'orphan', { name: '@happyvertical/smrt-orphan' });
+  writeFileSync(join(orphan, 'dist', SHIPPED_COMPONENT_PAGE), 'left over');
+  const warn = t.mock.method(console, 'warn', () => {});
+  assert.deepEqual(shipPackageKnowledge(orphan, root), []);
+  assert.match(String(warn.mock.calls[0].arguments[0]), /no knowledge page yet/);
+  assert.equal(existsSync(join(orphan, 'dist', SHIPPED_COMPONENT_PAGE)), false);
 });

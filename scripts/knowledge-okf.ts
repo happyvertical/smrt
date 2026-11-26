@@ -677,13 +677,19 @@ export function extractAbsoluteLinks(markdown: string): string[] {
 }
 
 /**
- * Verify the bundle against the current inputs. Returns one issue per problem;
- * an empty list means the bundle is fresh, complete, unedited, and every
- * hand-authored absolute link resolves.
+ * Verify the bundle against the current inputs. Returns one issue per problem.
+ *
+ * Generated pages are regenerated after merge to main (#5705), so by default
+ * only the inputs and the hand-authored pages are checked: generation must
+ * succeed, every hand-authored page needs valid frontmatter, and every
+ * absolute link must resolve to an existing or to-be-generated page. With
+ * `generated: true` (`knowledge:check --generated`) an empty list also means
+ * every generated page is fresh, complete and unedited.
  */
 export function checkBundle(
   models: readonly ComponentModel[],
   bundleDir: string,
+  options: { generated?: boolean } = {},
 ): OkfIssue[] {
   const issues: OkfIssue[] = [];
   const display = (path: string) =>
@@ -691,7 +697,11 @@ export function checkBundle(
   const plan = planBundle(models, bundleDir, new Date(0));
   const byPath = new Map(models.map((model) => [model.id.slice(1), model]));
 
-  for (const [relativePath, expected] of plan) {
+  // Generated pages are regenerated after merge to main, never in a PR
+  // (#5705), so by default their on-disk content is not compared with the
+  // generator. `plan` above still ran: a generator failure is an error.
+  const checkGenerated = options.generated === true;
+  for (const [relativePath, expected] of checkGenerated ? plan : []) {
     const file = display(relativePath);
     const path = join(bundleDir, relativePath);
     if (!existsSync(path)) {
@@ -748,7 +758,9 @@ export function checkBundle(
     }
   }
 
-  for (const file of walkMarkdown(join(bundleDir, 'components'))) {
+  for (const file of checkGenerated
+    ? walkMarkdown(join(bundleDir, 'components'))
+    : []) {
     const relativePath = relative(bundleDir, file).split(sep).join('/');
     if (!plan.has(relativePath)) {
       issues.push({
@@ -765,6 +777,9 @@ export function checkBundle(
   for (const file of walkMarkdown(bundleDir)) {
     const relativePath = relative(bundleDir, file).split(sep).join('/');
     if (generatedPaths.has(relativePath)) continue;
+    // `components/` is generator-owned: without `generated`, a page left over
+    // from a removed package is not ours to judge until regeneration (#5705).
+    if (!checkGenerated && relativePath.startsWith('components/')) continue;
     const text = readFileSync(file, 'utf8');
     const parsed = parsePage(text);
     const reserved = /(^|\/)(index|log)\.md$/.test(relativePath);
@@ -787,7 +802,12 @@ export function checkBundle(
       }
     }
     for (const target of new Set(extractAbsoluteLinks(text))) {
-      if (!existsSync(join(bundleDir, target))) {
+      // A link to a page the generator will write resolves even before the
+      // post-merge regeneration has committed that page (#5705).
+      if (
+        !existsSync(join(bundleDir, target)) &&
+        !plan.has(target.replace(/^\//, ''))
+      ) {
         issues.push({
           code: 'okf-dangling-link',
           file: display(relativePath),

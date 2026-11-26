@@ -31,8 +31,10 @@ You submit the PR, so read and understand every line of it before opening it.
    matches no package exits 0 having run nothing. Confirm tests actually ran.
 7. **Format, then lint:** `pnpm format` then `pnpm lint`.
 8. **Generated pages.** When a package manifest, an `AGENTS.md`, an intent or a
-   playbook changed, run `pnpm knowledge:check --strict --format markdown` and
-   `pnpm knowledge:okf`, and commit the regenerated pages (they are checked in).
+   playbook changed, run `pnpm knowledge:check --strict --format markdown`.
+   Do not run `pnpm knowledge:okf` or commit `docs/knowledge/components/**` or
+   `docs/knowledge/index.md`: maintainers' CI regenerates them after merge, and
+   a PR that edits them fails.
    Keep root `AGENTS.md` chain under the 32 KB cap: `pnpm check:agents-chain`.
 9. **Commit** with conventional commits (`fix(core): preserve tenant scope`).
    Never author `.changeset/*.md`; release automation writes them.

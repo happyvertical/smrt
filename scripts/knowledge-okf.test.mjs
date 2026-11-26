@@ -138,6 +138,8 @@ test('component pages carry the issue frontmatter and only generator evidence le
   );
 });
 
+const GENERATED = { generated: true };
+
 test('generation is deterministic and keeps generated.at while content is unchanged', (t) => {
   const { bundleDir, jobs, core } = setup(t);
   const models = buildComponentModels(indexOf(jobs, core));
@@ -204,7 +206,7 @@ test('adding one intent changes only that package page and moves its pin', (t) =
   assert.match(later.get('components/smrt-jobs.md'), /jobs\.run/);
 
   assert.deepEqual(
-    checkBundle(after, bundleDir).map((issue) => [issue.code, issue.file]),
+    checkBundle(after, bundleDir, GENERATED).map((issue) => [issue.code, issue.file]),
     [['okf-page-stale', 'docs/knowledge/components/smrt-jobs.md']],
   );
 });
@@ -219,6 +221,7 @@ test('an AGENTS hash or dependency change turns the pin stale', (t) => {
     const issues = checkBundle(
       buildComponentModels(indexOf({ ...jobs, ...override }, core)),
       bundleDir,
+      GENERATED,
     );
     assert.deepEqual(
       issues.map((issue) => issue.code),
@@ -260,7 +263,7 @@ test('hand edits, missing and extra generated pages fail the check', (t) => {
   const original = readFileSync(page, 'utf8');
   writeFileSync(page, `${original}\nHand-written note.\n`);
   assert.deepEqual(
-    checkBundle(models, bundleDir).map((issue) => issue.code),
+    checkBundle(models, bundleDir, GENERATED).map((issue) => issue.code),
     ['okf-page-edited'],
   );
   writeFileSync(page, original);
@@ -268,14 +271,14 @@ test('hand edits, missing and extra generated pages fail the check', (t) => {
   const ghost = join(bundleDir, 'components/smrt-ghost.md');
   writeFileSync(ghost, '---\ntype: Component\n---\n');
   assert.deepEqual(
-    checkBundle(models, bundleDir).map((issue) => issue.code),
+    checkBundle(models, bundleDir, GENERATED).map((issue) => issue.code),
     ['okf-page-extra'],
   );
   rmSync(ghost);
 
   rmSync(join(bundleDir, 'components/smrt-core.md'));
   assert.deepEqual(
-    checkBundle(models, bundleDir).map((issue) => issue.code),
+    checkBundle(models, bundleDir, GENERATED).map((issue) => issue.code),
     ['okf-page-missing'],
   );
 });
@@ -334,4 +337,37 @@ test('two packages mapping to one concept ID fail loudly', (t) => {
     relativeDirectory: 'packages/other',
   });
   assert.throws(() => buildComponentModels(indexOf(a, b)), /collision/);
+});
+
+test('without `generated`, stale, edited, missing and extra generated pages pass (#5705)', (t) => {
+  const { bundleDir, jobs, core } = setup(t);
+  const models = buildComponentModels(indexOf(jobs, core));
+  writeBundle(models, bundleDir, NOW);
+
+  const page = join(bundleDir, 'components/smrt-jobs.md');
+  writeFileSync(page, `${readFileSync(page, 'utf8')}\nEdited.\n`);
+  writeFileSync(
+    join(bundleDir, 'components/smrt-ghost.md'),
+    '---\ntype: Component\n---\n[x](/components/gone.md)\n',
+  );
+  rmSync(join(bundleDir, 'components/smrt-core.md'));
+  const changed = buildComponentModels(
+    indexOf({ ...jobs, agentDocSha256: 'b'.repeat(64) }, core),
+  );
+  assert.deepEqual(checkBundle(changed, bundleDir), []);
+  assert.notDeepEqual(checkBundle(changed, bundleDir, GENERATED), []);
+});
+
+test('a hand-authored link to a page the generator will write resolves before it exists (#5705)', (t) => {
+  const { bundleDir, jobs, core } = setup(t);
+  const models = buildComponentModels(indexOf(jobs, core));
+  mkdirSync(join(bundleDir, 'intents'), { recursive: true });
+  writeFileSync(
+    join(bundleDir, 'intents/new.md'),
+    '---\ntype: Intent\n---\nSee [jobs](/components/smrt-jobs.md) and [x](/components/nope.md).\n',
+  );
+  assert.deepEqual(
+    checkBundle(models, bundleDir).map((issue) => issue.code),
+    ['okf-dangling-link'],
+  );
 });
