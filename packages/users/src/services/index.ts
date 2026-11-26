@@ -277,9 +277,12 @@ export {
   applyPostgresPermissionPolicies,
   applyScopedPostgresPermissionPolicies,
   type GeneratePostgresPermissionSqlResult,
+  type GuestAuditPolicyOptions,
+  generateGuestAuditInsertPolicySql,
   generatePostgresPermissionSql,
   type PostgresPermissionPolicyReportItem,
   type PostgresPermissionPolicyTarget,
+  type PostgresPolicyExtras,
   type PostgresPolicyScope,
 } from './PostgresPermissionPolicies.js';
 export {
