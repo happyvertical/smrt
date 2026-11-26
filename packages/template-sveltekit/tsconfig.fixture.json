@@ -19,8 +19,8 @@
   },
   "include": [
     "__tests__/commerceBootstrap.test.ts",
-    "__tests__/cookbookApply.test.ts",
-    "__tests__/cookbookHost.test.ts",
+    "__tests__/cookbookApply.*.test.ts",
+    "__tests__/cookbookHost.part*.test.ts",
     "__tests__/cookbookClient.test.ts",
     "__tests__/cookbookPluginMode.test.ts",
     "__tests__/onboardingWriteThrough.test.ts",

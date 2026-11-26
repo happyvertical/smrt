@@ -1,21 +1,35 @@
 #!/usr/bin/env node
 /**
- * The M5 aggregate gate (#2579).
+ * The M5 aggregate gate (#2579), split into parallel parts (#5694).
  *
  * Runs every completed M5 profile case and reports one verdict. Its whole
  * reason to exist is that a required check must not be able to pass by not
- * running: each case below is matched against the reporter's own output by
- * name, and a case that is missing, skipped, or todo fails the gate exactly
- * as loudly as one that failed.
+ * running: each case is matched against the reporter's own output by name, and
+ * a case that is missing, skipped, or todo fails the gate exactly as loudly as
+ * one that failed. What must run, and the verdict over what did, live in
+ * `gateSpec.mjs`; this file only runs things.
  *
- * Usage: node e2e/support/gate.mjs [--skip-browser]
+ * Usage:
+ *   node e2e/support/gate.mjs [--skip-browser]
+ *       Every part in sequence, then the verdict. This is `pnpm test:m5`.
+ *   node e2e/support/gate.mjs part <id> [--skip-browser]
+ *       One part (`template-1|2|3`, `postgres`, `browser`) into
+ *       `m5-part-<id>.json`. CI runs the parts as parallel jobs. Never run two
+ *       parts concurrently in one checkout: the vitest global setup writes and
+ *       then removes `template/.svelte-kit/`.
+ *   node e2e/support/gate.mjs verdict --parts-dir <dir> --expected-parts <n>
+ *       --template <result> --postgres <result> --browser <result> [--out <file>]
+ *       The verdict over the downloaded part results, from a bare checkout
+ *       (node built-ins only, no install). `<result>` is the CI
+ *       `needs.<job>.result` of that job group.
  *
  * Environment:
- *   SMRT_TEST_POSTGRES_URL  required; the PostgreSQL half cannot opt out.
+ *   SMRT_TEST_POSTGRES_URL  required by the `postgres` part; it cannot opt out.
  *
  * Output: a sanitized summary, written to `m5-gate-summary.json` beside this
- * package and echoed on stdout. Case ids and booleans only — no paths, no
- * messages, no payloads — so the summary is safe to upload.
+ * package and echoed on stdout (parts write `m5-part-<id>.json`). Case ids,
+ * booleans, counts and relative test file names only — no paths, no messages,
+ * no payloads — so the file is safe to upload.
  *
  * Child reporters write to stderr, never stdout. Vitest and Playwright emit
  * assertion text, absolute paths, and stack frames; if that shared stdout with
@@ -23,345 +37,178 @@
  */
 
 import { spawnSync } from 'node:child_process';
-import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import {
+  existsSync,
+  mkdtempSync,
+  readdirSync,
+  readFileSync,
+  rmSync,
+  statSync,
+  writeFileSync,
+} from 'node:fs';
 import { tmpdir } from 'node:os';
-import { dirname, join, resolve } from 'node:path';
+import { dirname, join, relative, resolve, sep } from 'node:path';
 import { fileURLToPath } from 'node:url';
+
+import {
+  evaluateBrowserCases,
+  evaluateGate,
+  evaluateVitestCases,
+  listTemplateTestFiles,
+  NEEDS_GROUPS,
+  OWNING_PACKAGE_FILES,
+  PARTS,
+  partSuites,
+  POSTGRES_FILES,
+  SCHEMA_VERSION,
+  templateShardFiles,
+  vocabularyViolations,
+} from './gateSpec.mjs';
 
 const packageRoot = resolve(dirname(fileURLToPath(import.meta.url)), '..', '..');
 const packagesRoot = resolve(packageRoot, '..');
 
-/** The files that connect to the one disposable PostgreSQL database. */
-const POSTGRES_FILES = '.postgres.optional.test.ts';
-
-/**
- * Where vitest cases run. The two `template` passes are this package's whole
- * suite: every file is in exactly one of them. The others are the owning
- * packages of code the template used to copy (#3367): a case whose
- * implementation moved out of the template is proven where that code now
- * lives, and is matched by name exactly like the template's own.
- *
- * Files named `*.postgres.optional.test.ts` share one disposable database, so
- * they run one at a time. Every other template file opens its own SQLite
- * database and runs two at a time: one at a time took 18 of this job's 25
- * minutes (#5045). Two workers alone on a runner is the shape the package's
- * dedicated `test` shard already runs; more starves the SQLite onboarding
- * cases into SQLITE_PROTOCOL (#4990). A test that connects to the PostgreSQL
- * database must carry the `.postgres.optional` name.
- */
-const VITEST_SUITES = [
-  {
-    id: 'template',
-    cwd: packageRoot,
-    args: [
-      '--file-parallelism',
-      '--maxWorkers=2',
-      `--exclude=**/*${POSTGRES_FILES}`,
-    ],
-  },
-  {
-    id: 'template',
-    cwd: packageRoot,
-    args: ['--no-file-parallelism', POSTGRES_FILES],
-  },
-  {
-    id: 'cli',
-    cwd: join(packagesRoot, 'cli'),
-    args: [
-      '--no-file-parallelism',
-      'src/app/__tests__/portability-assets.test.ts',
-    ],
-  },
-  {
-    id: 'app-runtime',
-    cwd: join(packagesRoot, 'app-runtime'),
-    args: ['--no-file-parallelism', 'src/sveltekit.test.ts'],
-  },
-];
-
-/**
- * Every M5 profile/gate case this milestone claims to cover.
- *
- * `match` is tested against the full vitest test name. `dependsOn` records
- * the prerequisite issue that lands the case, so a red gate says which
- * dependency is outstanding instead of just "missing". `suite` names the
- * {@link VITEST_SUITES} entry the case must come from (default `template`), so
- * a same-named test elsewhere can never satisfy it.
- */
-const REQUIRED_VITEST_CASES = [
-  {
-    id: 'sqlite-file-backed-workload',
-    profile: 'sqlite',
-    match: /seeds ordinary owner, tenant, asset, and queued-workflow state on file-backed SQLite/i,
-    dependsOn: '#2575',
-  },
-  {
-    id: 'cross-profile-source-snapshot',
-    profile: 'managed-cloud',
-    match: /copies and generates one unchanged source tree for all supported profiles/i,
-    dependsOn: '#2575',
-  },
-  {
-    id: 'cross-profile-agent-surface',
-    profile: 'managed-cloud',
-    match: /emits the same declared agent surface under every runtime profile/i,
-    dependsOn: '#2575',
-  },
-  {
-    id: 'asset-manifest-portability',
-    profile: 'sqlite',
-    // `smrt app export`/`import` (#3371) own asset-aware portability.
-    suite: 'cli',
-    match: /round-trips the owner, tenant, record, association, bytes, and digest/i,
-    dependsOn: '#2576',
-  },
-  {
-    id: 'diagnostics-authorization',
-    profile: 'sqlite',
-    // The template mounts `createRuntimeDiagnosticsHandler` (#3369); the
-    // browser cases below exercise that mounted route end to end.
-    suite: 'app-runtime',
-    match: /runtime diagnostics route authorizes before projection and returns only stable errors/i,
-    dependsOn: '#2577',
-  },
-  {
-    id: 'cross-profile-generated-surface-parity',
-    profile: 'managed-cloud',
-    match: /emits one identical domain surface under local, self-hosted, and cloud/i,
-    dependsOn: '#2578',
-  },
-  {
-    id: 'cross-profile-policy-parity',
-    profile: 'managed-cloud',
-    match: /keeps every declared policy field identical while the infrastructure composition differs/i,
-    dependsOn: '#2578',
-  },
-  {
-    id: 'operational-exception-allowlist',
-    profile: 'managed-cloud',
-    match: /allows exactly one documented operational exception/i,
-    dependsOn: '#2578',
-  },
-  {
-    id: 'managed-cloud-configuration-snapshot',
-    profile: 'managed-cloud',
-    match: /validates the managed-cloud case as configuration only/i,
-    dependsOn: '#2578',
-  },
-  {
-    id: 'embedded-job-parity',
-    profile: 'sqlite',
-    match: /completes the same enqueued workflow under local embedded execution/i,
-    dependsOn: '#2578',
-  },
-  {
-    id: 'postgres-schema-portability',
-    profile: 'postgres',
-    match: /migrates the generated fixture schema on the disposable PostgreSQL service/i,
-    dependsOn: '#2575',
-  },
-  {
-    id: 'postgres-asset-portability',
-    profile: 'postgres',
-    suite: 'cli',
-    match: /imports the same record, authorization links, association, and verified blob/i,
-    dependsOn: '#2576',
-  },
-  {
-    id: 'postgres-external-worker-job-parity',
-    profile: 'postgres',
-    match: /completes the same enqueued workflow with the same domain result/i,
-    dependsOn: '#2578',
-  },
-];
-
-/**
- * The browser half, held to the same standard as the vitest half.
- *
- * Playwright exits 0 when a test is skipped, renamed out of the spec glob, or
- * disabled by a conditional `test.skip()`, so an exit code alone would let the
- * one case this issue exists to add pass by not running.
- */
-const REQUIRED_BROWSER_CASES = [
-  {
-    id: 'browser-startup-and-onboarding',
-    match: /completes owner onboarding without exposing the bootstrap token/i,
-  },
-  {
-    id: 'browser-process-identity',
-    match: /proves process identity before the browser drives it/i,
-  },
-  {
-    id: 'browser-clean-state-root',
-    match: /starts from a clean temporary checkout copy and state root/i,
-  },
-  {
-    id: 'browser-discovery-inventory',
-    match: /registers the bounded domain inventory plus exactly one diagnostic tool/i,
-  },
-  {
-    id: 'browser-boundary-isolation',
-    match: /exposes the WebMCP boundary and nothing else to the page/i,
-  },
-  {
-    id: 'browser-permitted-execution',
-    match: /executes a permitted read as the page user and sees persisted state/i,
-  },
-  {
-    id: 'browser-authenticated-diagnostics',
-    match: /reads authenticated runtime diagnostics through the real route/i,
-  },
-  {
-    id: 'browser-consent-boundary',
-    match: /keeps non-read effects behind their declared consent boundary/i,
-  },
-  {
-    id: 'browser-no-self-confirmation',
-    match: /the harness never self-confirms on the user's behalf/i,
-  },
-  {
-    id: 'browser-anonymous-fails-closed',
-    match: /an anonymous context cannot read diagnostics or protected domain data/i,
-  },
-  {
-    id: 'browser-forged-session-fails-closed',
-    match: /a forged session fails closed at both boundaries and leaks nothing/i,
-  },
-  {
-    id: 'browser-no-duplicate-registrations',
-    match: /mount, navigation, and unmount leave no duplicate live registrations/i,
-  },
-  {
-    id: 'browser-reload-resets-context',
-    match: /a full page reload starts from an empty model context/i,
-  },
-  {
-    id: 'browser-diagnostics-redaction',
-    match: /captured diagnostics responses carry no prohibited fields/i,
-  },
-  {
-    id: 'browser-failure-redaction',
-    match: /runtime route failures return no server detail/i,
-  },
-  {
-    id: 'browser-artifact-redaction',
-    match: /retained Playwright artifacts pass the redaction corpus/i,
-  },
-];
-
-/**
- * Each child's exit status.
- *
- * The named case tables cover 13 vitest tests and all 16 browser tests, but
- * `test:m5` runs the package's whole suite plus the owning-package files. A
- * failure outside the named set — an unrelated test, a global teardown, an
- * unhandled rejection after results were reported — must not be swallowed by
- * a verdict computed only from the named cases. `vitest` is the first
- * non-zero exit among the suites.
- */
-const exitStatuses = { vitest: null, playwright: null };
-
-/** The one file CI uploads. Overwritten on every run. */
+/** The one file CI uploads from the aggregator. Overwritten on every run. */
 const SUMMARY_PATH = join(packageRoot, 'm5-gate-summary.json');
+
+const partPath = (id) => join(packageRoot, `m5-part-${id}.json`);
 
 function fail(message) {
   process.stderr.write(`m5-gate: ${message}\n`);
   process.exitCode = 1;
 }
 
-/**
- * Emit the summary. Written to disk for the CI artifact and echoed on stdout,
- * which by construction has carried nothing else.
- */
-function emit(summary) {
-  // Structural guard, not a pattern scan: the summary may only ever contain
-  // the fixed vocabulary below. Anything else — a message, a path, a
-  // diagnostic — is a defect in this script, and failing here is cheaper than
-  // discovering it in an uploaded artifact.
-  const allowedStrings = new Set([
-    'm5',
-    ...REQUIRED_VITEST_CASES.map((entry) => entry.id),
-    ...REQUIRED_VITEST_CASES.map((entry) => entry.profile),
-    ...REQUIRED_BROWSER_CASES.map((entry) => entry.id),
-    'postgres-service',
-    'vitest-suite-exit',
-    'browser-suite-exit',
-    'sqlite',
-  ]);
-  for (const value of JSON.stringify(summary)
-    .match(/"[^"]*"/g)
-    ?.map((quoted) => quoted.slice(1, -1)) ?? []) {
-    if (
-      typeof value === 'string' &&
-      !allowedStrings.has(value) &&
-      !['schemaVersion', 'gate', 'cases', 'id', 'profile', 'passed', 'observed', 'skipped'].includes(
-        value,
-      )
-    ) {
-      throw new Error('m5-gate summary contains an unexpected value.');
-    }
+/** Write one sanitized JSON document, after the vocabulary guard. */
+function emit(path, document) {
+  if (vocabularyViolations(document).length > 0) {
+    throw new Error('m5-gate output contains an unexpected value.');
   }
-  const text = `${JSON.stringify(summary, null, 2)}\n`;
-  writeFileSync(SUMMARY_PATH, text, { mode: 0o600 });
+  const text = `${JSON.stringify(document, null, 2)}\n`;
+  writeFileSync(path, text, { mode: 0o600 });
   process.stdout.write(text);
 }
 
-function collectVitestCases() {
-  return VITEST_SUITES.flatMap((suite) =>
-    collectVitestSuite(suite).map((entry) => ({ ...entry, suite: suite.id })),
-  );
+// ---------------------------------------------------------------------------
+// Running
+// ---------------------------------------------------------------------------
+
+/**
+ * Where vitest cases run, per part. Template files named
+ * `*.postgres.optional.test.ts` share one disposable database, so they run one
+ * at a time, in the `postgres` part. Every other template file opens its own
+ * SQLite database and runs two at a time: one at a time took 18 of the old
+ * single job's 25 minutes (#5045). Two workers alone on a runner is the shape
+ * the package's dedicated `test` shard already runs; more starves the SQLite
+ * onboarding cases into SQLITE_PROTOCOL (#4990). A test that connects to the
+ * PostgreSQL database must carry the `.postgres.optional` name.
+ */
+function vitestRuns(partId) {
+  if (partId === 'postgres') {
+    return [
+      {
+        id: 'template',
+        cwd: packageRoot,
+        args: ['--no-file-parallelism', POSTGRES_FILES],
+      },
+      {
+        id: 'cli',
+        cwd: join(packagesRoot, 'cli'),
+        args: ['--no-file-parallelism', OWNING_PACKAGE_FILES.cli],
+      },
+      {
+        id: 'app-runtime',
+        cwd: join(packagesRoot, 'app-runtime'),
+        args: ['--no-file-parallelism', OWNING_PACKAGE_FILES['app-runtime']],
+      },
+    ];
+  }
+  const all = listTemplateTestFiles(packageRoot);
+  const mine = templateShardFiles(partId, all);
+  const named = partId !== 'template-3';
+  return [
+    {
+      id: 'template',
+      cwd: packageRoot,
+      args: [
+        '--file-parallelism',
+        '--maxWorkers=2',
+        // Positional filters are substring matches; every named file is
+        // unique, and the verdict proves the union against the include glob.
+        ...(named
+          ? mine
+          : [
+              `--exclude=**/*${POSTGRES_FILES}`,
+              ...all
+                .filter((file) => !file.endsWith(POSTGRES_FILES))
+                .filter((file) => !mine.includes(file))
+                .map((file) => `--exclude=**/${file}`),
+            ]),
+      ],
+    },
+  ];
 }
 
-function collectVitestSuite(suite) {
+/** Run one vitest invocation; its names and statuses stay in memory. */
+function runVitest(run, exits) {
   const outputDirectory = mkdtempSync(join(tmpdir(), 'm5-gate-'));
   const outputFile = join(outputDirectory, 'vitest.json');
   try {
-    const run = spawnSync(
+    const result = spawnSync(
       'pnpm',
       [
         'exec',
         'vitest',
         'run',
         // Human-readable failures go to stderr, which by design never reaches
-        // the uploaded artifact — that is the file `emit()` writes. A gate
-        // that reported only a case id would make a red merge group
-        // undiagnosable without local reproduction.
+        // the uploaded artifact. A gate that reported only a case id would make
+        // a red merge group undiagnosable without local reproduction.
         '--reporter=default',
         '--reporter=json',
         `--outputFile=${outputFile}`,
-        ...suite.args,
+        ...run.args,
       ],
-      // stdout to fd 2: the reporter is for a human reading the log, and
-      // this process's stdout carries only the sanitized summary.
-      { cwd: suite.cwd, stdio: ['ignore', 2, 2] },
+      // stdout to fd 2: the reporter is for a human reading the log, and this
+      // process's stdout carries only the sanitized summary.
+      { cwd: run.cwd, stdio: ['ignore', 2, 2] },
     );
-    if (run.error) {
-      throw new Error(`vitest could not be started: ${run.error.code ?? 'unknown'}`);
+    if (result.error) {
+      throw new Error(
+        `vitest could not be started: ${result.error.code ?? 'unknown'}`,
+      );
     }
-    if (exitStatuses.vitest === null || exitStatuses.vitest === 0) {
-      exitStatuses.vitest = run.status;
+    if (exits.vitest === undefined || exits.vitest === 0) {
+      exits.vitest = result.status;
     }
     const report = JSON.parse(readFileSync(outputFile, 'utf8'));
-    return report.testResults.flatMap((file) =>
-      file.assertionResults.map((assertion) => ({
-        name: [...(assertion.ancestorTitles ?? []), assertion.title].join(' '),
-        status: assertion.status,
-      })),
-    );
+    return report.testResults.map((file) => {
+      const assertions = file.assertionResults ?? [];
+      const name = relative(run.cwd, file.name).split(sep).join('/');
+      return {
+        file: name,
+        suite: run.id,
+        passed: assertions.filter((entry) => entry.status === 'passed').length,
+        failed: assertions.filter((entry) => entry.status === 'failed').length,
+        tests: assertions.map((assertion) => ({
+          name: [...(assertion.ancestorTitles ?? []), assertion.title].join(' '),
+          status: assertion.status,
+          suite: run.id,
+        })),
+      };
+    });
   } finally {
     rmSync(outputDirectory, { recursive: true, force: true });
   }
 }
 
 /**
- * Run the browser half and read its own reporter output, so a skipped or
- * renamed spec is observable rather than merely a zero exit code.
+ * The part's fresh Playwright output root, so two runs on one machine never
+ * share (or empty) each other's directory. Matches `playwright.config.ts`.
  */
-function collectPlaywrightCases() {
+function runPlaywright(partId, exits) {
   const outputDirectory = mkdtempSync(join(tmpdir(), 'm5-gate-browser-'));
   const outputFile = join(outputDirectory, 'playwright.json');
   try {
-    const run = spawnSync(
+    const result = spawnSync(
       'pnpm',
       [
         'exec',
@@ -374,16 +221,20 @@ function collectPlaywrightCases() {
       ],
       {
         cwd: packageRoot,
-        env: { ...process.env, PLAYWRIGHT_JSON_OUTPUT_NAME: outputFile },
+        env: {
+          ...process.env,
+          PLAYWRIGHT_JSON_OUTPUT_NAME: outputFile,
+          SMRT_M5_PART: partId,
+        },
         stdio: ['ignore', 2, 2],
       },
     );
-    if (run.error) {
+    if (result.error) {
       throw new Error(
-        `playwright could not be started: ${run.error.code ?? 'unknown'}`,
+        `playwright could not be started: ${result.error.code ?? 'unknown'}`,
       );
     }
-    exitStatuses.playwright = run.status;
+    exits.playwright = result.status;
     const report = JSON.parse(readFileSync(outputFile, 'utf8'));
     const cases = [];
     const walk = (suite) => {
@@ -406,112 +257,192 @@ function collectPlaywrightCases() {
   }
 }
 
-function main() {
-  const skipBrowser = process.argv.includes('--skip-browser');
-  const summary = { schemaVersion: 1, gate: 'm5', cases: [] };
-
-  // `run-with-ci-postgres.mjs` creates and drops a uniquely named database
-  // only when it was given a managed base URL. Its unmanaged fallback hands
-  // through a developer's own `DATABASE_URL`, and the gate would then migrate
-  // the M5 fixture schema into a real database and never drop it. Refuse.
-  //
-  // The wrapper stamps its own verdict into `CI_POSTGRES_MANAGED`. Do not
-  // re-derive it here: `CI_POSTGRES_BASE_URL_FILE` pointing at a missing or
-  // empty file is unmanaged to the wrapper, and any local reimplementation of
-  // that rule is one refactor away from disagreeing with the component that
-  // actually creates and drops the database.
+/**
+ * `run-with-ci-postgres.mjs` creates and drops a uniquely named database only
+ * when it was given a managed base URL. Its unmanaged fallback hands through a
+ * developer's own `DATABASE_URL`, and the gate would then migrate the M5
+ * fixture schema into a real database and never drop it. Refuse.
+ *
+ * The wrapper stamps its own verdict into `CI_POSTGRES_MANAGED`. Do not
+ * re-derive it here: `CI_POSTGRES_BASE_URL_FILE` pointing at a missing or
+ * empty file is unmanaged to the wrapper, and any local reimplementation of
+ * that rule is one refactor away from disagreeing with the component that
+ * actually creates and drops the database.
+ */
+function postgresServiceProblem() {
   if (
     process.env.SMRT_TEST_POSTGRES_URL &&
     process.env.CI_POSTGRES_MANAGED !== '1'
   ) {
-    fail(
-      'Refusing an unmanaged PostgreSQL target. Set CI_POSTGRES_BASE_URL so a disposable database is created and dropped; DATABASE_URL alone would be migrated in place.',
-    );
-    summary.cases.push({ id: 'postgres-service', passed: false });
-    summary.passed = false;
-    emit(summary);
-    return;
+    return 'Refusing an unmanaged PostgreSQL target. Set CI_POSTGRES_BASE_URL so a disposable database is created and dropped; DATABASE_URL alone would be migrated in place.';
   }
-
   if (!process.env.SMRT_TEST_POSTGRES_URL) {
-    fail(
-      'SMRT_TEST_POSTGRES_URL is required. The PostgreSQL profile is part of the gate and cannot be skipped.',
-    );
-    summary.cases.push({ id: 'postgres-service', passed: false });
-    summary.passed = false;
-    emit(summary);
-    return;
+    return 'SMRT_TEST_POSTGRES_URL is required. The PostgreSQL profile is part of the gate and cannot be skipped.';
   }
-  summary.cases.push({ id: 'postgres-service', passed: true });
+  return null;
+}
 
-  const observed = collectVitestCases();
-  for (const required of REQUIRED_VITEST_CASES) {
-    const matches = observed.filter(
-      (entry) =>
-        entry.suite === (required.suite ?? 'template') &&
-        required.match.test(entry.name),
+/** Run one part and return its sanitized result. */
+function runPart(partId, { skipBrowser = false } = {}) {
+  const definition = PARTS.find((entry) => entry.id === partId);
+  if (!definition) {
+    throw new Error(
+      `unknown part ${JSON.stringify(partId)}; expected one of ${PARTS.map((entry) => entry.id).join(', ')}`,
     );
-    const passed =
-      matches.length > 0 && matches.every((entry) => entry.status === 'passed');
-    summary.cases.push({
-      id: required.id,
-      profile: required.profile,
-      passed,
-      // Distinguishes "ran and failed" from "never ran", without echoing
-      // any test output.
-      observed: matches.length,
-    });
-    if (!passed) {
-      fail(
-        matches.length === 0
-          ? `required case ${required.id} did not run (landed by ${required.dependsOn})`
-          : `required case ${required.id} did not pass`,
-      );
+  }
+  const result = {
+    schemaVersion: SCHEMA_VERSION,
+    gate: 'm5',
+    part: partId,
+    exits: {},
+    cases: [],
+    files: [],
+  };
+
+  if (definition.kind === 'browser') {
+    if (skipBrowser) {
+      for (const entry of evaluateBrowserCases([])) {
+        result.cases.push({ id: entry.id, passed: false, skipped: true });
+      }
+      fail('the browser cases were skipped explicitly; this is not a passing gate');
+      result.exits.playwright = 1;
+      return result;
     }
+    result.cases.push(...evaluateBrowserCases(runPlaywright(partId, result.exits)));
+    return result;
   }
 
-  if (skipBrowser) {
-    for (const required of REQUIRED_BROWSER_CASES) {
-      summary.cases.push({ id: required.id, passed: false, skipped: true });
+  if (partId === 'postgres') {
+    const problem = postgresServiceProblem();
+    if (problem) {
+      fail(problem);
+      result.cases.push({ id: 'postgres-service', passed: false });
+      result.exits.vitest = 1;
+      return result;
     }
-    fail('the browser cases were skipped explicitly; this is not a passing gate');
-  } else {
-    const observed = collectPlaywrightCases();
-    for (const required of REQUIRED_BROWSER_CASES) {
-      const matches = observed.filter((entry) => required.match.test(entry.name));
-      const passed =
-        matches.length > 0 &&
-        matches.every((entry) => entry.status === 'passed');
-      summary.cases.push({
-        id: required.id,
-        profile: 'sqlite',
-        passed,
-        observed: matches.length,
+    result.cases.push({ id: 'postgres-service', passed: true });
+  }
+
+  const observed = [];
+  for (const run of vitestRuns(partId)) {
+    for (const file of runVitest(run, result.exits)) {
+      observed.push(...file.tests);
+      result.files.push({
+        file: file.file,
+        suite: file.suite,
+        tests: file.tests.length,
+        passed: file.passed,
+        failed: file.failed,
       });
-      if (!passed) {
-        fail(
-          matches.length === 0
-            ? `required browser case ${required.id} did not run`
-            : `required browser case ${required.id} did not pass`,
-        );
+    }
+  }
+  result.cases.push(...evaluateVitestCases(observed, partSuites(partId)));
+  return result;
+}
+
+// ---------------------------------------------------------------------------
+// Verdict
+// ---------------------------------------------------------------------------
+
+function finish(partResults, loadProblems, needs, expectedPartCount, out = SUMMARY_PATH) {
+  const verdict = evaluateGate({
+    parts: partResults,
+    loadProblems,
+    needs,
+    expectedFiles: listTemplateTestFiles(packageRoot),
+    expectedPartCount,
+  });
+  for (const message of verdict.failures) fail(message);
+  emit(out, verdict.summary);
+  if (!verdict.passed) process.exitCode = 1;
+}
+
+/** Every `m5-part-*.json` below `directory`, one per downloaded artifact. */
+function loadPartResults(directory) {
+  const parts = [];
+  const problems = [];
+  if (!existsSync(directory) || !statSync(directory).isDirectory()) {
+    return { parts, problems: ['the part results directory does not exist'] };
+  }
+  const walk = (current) => {
+    for (const entry of readdirSync(current, { withFileTypes: true })) {
+      const path = join(current, entry.name);
+      if (entry.isDirectory()) {
+        walk(path);
+      } else if (/^m5-part-.*\.json$/.test(entry.name)) {
+        try {
+          const text = readFileSync(path, 'utf8');
+          if (text.trim() === '') {
+            problems.push('a part result file is empty');
+            continue;
+          }
+          parts.push(JSON.parse(text));
+        } catch {
+          problems.push('a part result file is not valid JSON');
+        }
       }
     }
+  };
+  walk(directory);
+  return { parts, problems };
+}
+
+function option(name) {
+  const index = process.argv.indexOf(`--${name}`);
+  return index === -1 ? undefined : process.argv[index + 1];
+}
+
+function main() {
+  const [command, argument] = process.argv.slice(2);
+  const skipBrowser = process.argv.includes('--skip-browser');
+
+  if (command === 'part') {
+    const result = runPart(argument, { skipBrowser });
+    emit(partPath(argument), result);
+    const failed =
+      Object.values(result.exits).some((status) => status !== 0) ||
+      result.cases.some((entry) => entry.passed === false);
+    if (failed) process.exitCode = 1;
+    return;
   }
 
-  for (const [id, status] of [
-    ['vitest-suite-exit', exitStatuses.vitest],
-    ['browser-suite-exit', exitStatuses.playwright],
-  ]) {
-    if (status === null) continue;
-    const passed = status === 0;
-    summary.cases.push({ id, passed });
-    if (!passed) {
-      fail(`the ${id.replace('-exit', '')} run exited non-zero`);
-    }
+  if (command === 'verdict') {
+    const { parts, problems } = loadPartResults(
+      resolve(option('parts-dir') ?? ''),
+    );
+    const needs = Object.fromEntries(
+      NEEDS_GROUPS.map((group) => [group, option(group)]),
+    );
+    finish(
+      parts,
+      problems,
+      needs,
+      Number(option('expected-parts')),
+      option('out') ? resolve(option('out')) : SUMMARY_PATH,
+    );
+    return;
   }
 
-  summary.passed = summary.cases.every((entry) => entry.passed);
-  emit(summary);
+  // Serial: the local `pnpm test:m5`. The PostgreSQL requirement is checked
+  // before anything slow runs, as it always was.
+  const problem = postgresServiceProblem();
+  if (problem) {
+    finish([], [problem], {}, PARTS.length);
+    return;
+  }
+  const results = PARTS.map((definition) => {
+    const result = runPart(definition.id, { skipBrowser });
+    writeFileSync(partPath(definition.id), `${JSON.stringify(result)}\n`, {
+      mode: 0o600,
+    });
+    return result;
+  });
+  finish(
+    results,
+    [],
+    Object.fromEntries(NEEDS_GROUPS.map((group) => [group, 'success'])),
+    PARTS.length,
+  );
 }
 
 main();

@@ -127,7 +127,7 @@ configuration unchanged. `smrt source build` forwards the app/workspace framewor
 closure to Turbo using the existing active-Node package-manager runner. It is a
 no-op without a checkout. No machine path belongs in a committed lockfile.
 
-`template-sveltekit/__tests__/cookbookApply.test.ts` creates a second host for each
+`template-sveltekit/__tests__/cookbookApply.<name>.test.ts` (one file per bundled fixture, sharing `__tests__/support/cookbookApplyProof.ts`) creates a second host for each
 bundled fixture with the real installer and apply-owned build, then
 boots adapter-node's SvelteKit Server in process. It checks health, anonymous
 denial, launch-secret rejection, owner sign-in, Customer REST/model page,
