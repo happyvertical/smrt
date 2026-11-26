@@ -1631,7 +1631,7 @@ export class APIGenerator {
    * The 401 a host-resolved principal gets for a route it may not reach
    * unsigned: every route not opened by `@smrt({ api: { public } })`
    * (`'read'` opens reads only), decided as the generated SvelteKit routes'
-   * `requireRouteAuth` decides it. `undefined` when admitted, or when the
+   * `requireRouteAccess` decides it (both ask `authorize`, `route-authz.ts`). `undefined` when admitted, or when the
    * host does not resolve principals.
    */
   private signInRefusal(
