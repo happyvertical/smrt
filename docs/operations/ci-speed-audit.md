@@ -37,7 +37,7 @@ inspected end to end (33.9, 21.9, 21.9 minutes from run start to `Required CI`).
 | Job | p50 run | p90 run |
 | --- | --- | --- |
 | affected-package-tests (2/5) | 20.7 | 27.1 |
-| M5 Reference Fixture Gate | 19.4 (step "Run the M5 aggregate gate" 14.9) | 23.4 |
+| M5 Reference Fixture Gate (single job, before #5694) | 19.4 (step "Run the M5 aggregate gate" 14.9) | 23.4 |
 | affected-package-tests (1/5) | 15.5 | 19.8 |
 | Affected Typecheck | 12.5 | 18.3 |
 | affected-package-tests (3/5, 4/5, 5/5) | 12.9 to 13.7 | 17.5 to 18.3 |
@@ -218,7 +218,7 @@ rough.
 | 2 | Shipped here: weight fix for `app-shell` | 3 to 6 | Low | Done | No |
 | 3 | Shipped here: install and apt retries | 0 p50, removes about 1 in 80 failed runs (about 25 to 30 minutes each with a re-run) | Low | Done | No |
 | 4 | Refresh `TEST_SECONDS` / `POSTGRES_TEST_SECONDS` automatically, from a nightly job summing per-package `Duration`, instead of by hand. Package attribution from raw job logs is unreliable; use `turbo run --summarize` output | Keeps 2 from regressing | Low | Medium | No |
-| 5 | Shorten the M5 Reference Fixture Gate (19.4 min p50 on every PR, 14.9 in one step) by caching its reference application closure build, or splitting it | 2 to 5 once shard 2/5 is fixed (it becomes the PR critical path) | Medium | Medium | No |
+| 5 | Shorten the M5 Reference Fixture Gate (19.4 min p50 on every PR, 14.9 in one step) by caching its reference application closure build, or splitting it (split into five parallel part jobs and an aggregator by #5694; M5 is not the merge-queue critical path, `test-packages` shards are, so the win is mainly the PR lane) | 2 to 5 once shard 2/5 is fixed (it becomes the PR critical path) | Medium | Medium | No |
 | 6 | Run the PostgreSQL merge-queue lane only on a cheap subset or drop it when the PR run on the same code was green (**proposal only, not implemented**). Today 39 of 40 merge groups re-ran all five shards for 68 runner-minutes and 19 minutes wall | up to 19 min of queue time per merge, 68 runner-minutes | Medium to high (the merge result can differ from the PR head, and the queue is the last gate) | Low (workflow condition) | **Yes.** Re-measure after #5366 has been live a week; it may already have taken most of this |
 | 7a | Shipped on `release/ci-wall-clock` (#5649): `core`'s PGlite half (42 files, 721 to 1227 s) runs as its own PostgreSQL-lane unit beside its real-PostgreSQL half (100 files, about 360 s); `app-shell` (1172 s) is weighed instead of defaulting to 12 s. Expected to bring the `remaining:1/3` pole of 29.8 min near its neighbours; measure on the first merge group | to be measured | Low | Done | No |
 | 7 | Rebalance PostgreSQL `remaining` groups: `remaining:1/3` is 2.4 min behind the next shard and failed 14 times; move one large package (`smrt-users` 606 s or `smrt-education` 325 s) | 1 to 2 | Low | Low | No |

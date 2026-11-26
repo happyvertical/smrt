@@ -565,32 +565,105 @@ jobs:
           retention-days: 7
           if-no-files-found: ignore
 
-  m5-reference-gate:
-    name: M5 Reference Fixture Gate
-    # The aggregate acceptance gate for milestone M5 (#2547, closed by #2579).
-    # One job so the profiles cannot drift apart: file-backed SQLite plus a
-    # fresh-browser WebMCP pass, the PostgreSQL portability/parity cases, and
-    # the managed-cloud configuration snapshot all run here, and
-    # `e2e/support/gate.mjs` fails if any of them is missing rather than
-    # merely absent from the log.
+  # The M5 Reference Fixture Gate is five parallel part jobs and one aggregator
+  # (#5694). The single job ran 17-20 minutes in both lanes; its parts do not
+  # depend on each other, so they run side by side and `m5-reference-gate`
+  # below is the one required result.
+  #
+  #   m5-template  x3  the template package's vitest suite, three file shards
+  #   m5-postgres      the PostgreSQL pass plus the cli and app-runtime files;
+  #                    the only job with a `services:` block, and the only one
+  #                    that may report `postgres-service`
+  #   m5-browser       the Playwright pass
+  #
+  # Every part needs a checkout of its own: the vitest global setup writes and
+  # then removes `template/.svelte-kit/`, and the gate's Playwright output root
+  # is per part, so two parts must never share one. Each part uploads one JSON
+  # result (case ids, counts and relative test file names only), and
+  # `e2e/support/gate.mjs verdict` reads all of them. Merge-group runs are the
+  # only place the whole lane runs under the merge queue's synthetic commit.
+  #
+  # Deliberately not behind a paths filter. The gate serves a real generated
+  # application, so its blast radius is template-sveltekit's whole workspace
+  # closure — twenty directories whose names do not match their package names
+  # (`@happyvertical/smrt-users` lives in `packages/users`), plus the lockfile
+  # that pins the toolchain it serves the app with. A hand-maintained list of
+  # that closure is a silent-skip generator: two rounds of widening it still
+  # left `packages/scanner` out, and the scanner builds the very inventory
+  # `discovery.spec.ts` compares the browser against. `build` is skipped in
+  # affected mode, so only `full` waits on it.
+  m5-template:
+    name: M5 Gate (${{ matrix.part }})
     needs: build
-    # Deliberately not behind a paths filter. The gate serves a real generated
-    # application, so its blast radius is template-sveltekit's whole workspace
-    # closure — twenty directories whose names do not match their package names
-    # (`@happyvertical/smrt-users` lives in `packages/users`), plus the lockfile
-    # that pins the toolchain it serves the app with. A hand-maintained list of
-    # that closure is a silent-skip generator: two rounds of widening it still
-    # left `packages/scanner` out, and the scanner builds the very inventory
-    # `discovery.spec.ts` compares the browser against. `build` is skipped in
-    # affected mode, so only `full` waits on it.
+    # The `build` job is skipped in affected mode, so a bare `needs` would skip
+    # every part with it. `!cancelled()` plus the same admission the old single
+    # job used keeps the parts running in both modes.
     if: >-
-      always() &&
+      !cancelled() &&
       (inputs.mode == 'affected' || needs.build.result == 'success')
-    # GitHub-hosted Ubuntu provides the service container required by this gate.
     runs-on: ubuntu-latest
-    # Below the 90-minute standard on purpose: the work is bounded (one app
-    # build plus one browser pass), and the gate's own Playwright
-    # `globalTimeout` is 30 minutes, so a run still going at 60 is stuck.
+    # Below the 90-minute standard on purpose: each part is bounded work, and a
+    # shard still going at 60 is stuck.
+    timeout-minutes: 60
+    strategy:
+      fail-fast: false
+      # One runner per shard (the matrix size is pinned with the aggregator's
+      # M5_EXPECTED_PARTS).
+      max-parallel: 3
+      matrix:
+        part: ['template-1', 'template-2', 'template-3']
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          ref: ${{ env.CHECKOUT_REF }}
+
+      # No PostgreSQL service and no Playwright browser: this part only runs
+      # vitest.
+      - name: Setup environment
+        uses: ./.github/actions/setup-environment
+        with:
+          node-version: '26.12.1'
+          install-deps: 'true'
+          setup-playwright: 'false'
+          registry-url: 'https://npm.pkg.github.com'
+          auth-token: ${{ secrets.GITHUB_TOKEN }}
+
+      # The gate provisions a copy of the generated app that resolves its
+      # dependencies through this package, so those workspace packages must be
+      # built from this commit before the copy is served.
+      - name: Build the reference application closure
+        run: >-
+          pnpm turbo run build
+          --filter='@happyvertical/smrt-template-sveltekit...'
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Run M5 part ${{ matrix.part }}
+        run: pnpm --filter @happyvertical/smrt-template-sveltekit test:m5:part ${{ matrix.part }}
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          NODE_ENV: test
+
+      # The part's own sanitized result, written by `gate.mjs`: case ids,
+      # counts and relative file names, never assertion text or paths.
+      - name: Upload M5 part result
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        with:
+          name: m5-part-template-${{ strategy.job-index }}
+          path: packages/template-sveltekit/m5-part-${{ matrix.part }}.json
+          if-no-files-found: error
+          retention-days: 7
+
+  m5-postgres:
+    name: M5 Gate (postgres)
+    needs: build
+    if: >-
+      !cancelled() &&
+      (inputs.mode == 'affected' || needs.build.result == 'success')
+    # GitHub-hosted Ubuntu provides the service container required by this part.
+    runs-on: ubuntu-latest
     timeout-minutes: 60
     services:
       postgres:
@@ -613,24 +686,18 @@ jobs:
           ref: ${{ env.CHECKOUT_REF }}
 
       - name: Setup environment
-        id: setup-environment
         uses: ./.github/actions/setup-environment
         with:
           node-version: '26.12.1'
           install-deps: 'true'
-          setup-playwright: 'true'
+          setup-playwright: 'false'
           registry-url: 'https://npm.pkg.github.com'
           auth-token: ${{ secrets.GITHUB_TOKEN }}
 
-      - name: Install Playwright system dependencies after a browser cache hit
-        if: steps.setup-environment.outputs.playwright-cache-hit == 'true'
-        run: pnpm exec playwright install-deps chromium
-
-      # This is the second consumer of the dind lane and the first non-dormant
-      # one, so prove the two things the gate silently assumes about it before
-      # spending a build on them: the libpq client binaries the PostgreSQL
-      # wrapper shells out to, and a reachable service container. Failing here
-      # names the cause; failing inside the wrapper does not.
+      # Prove the things the part silently assumes about the service lane
+      # before spending a build on them: the libpq client binaries the
+      # PostgreSQL wrapper shells out to, and a reachable service container.
+      # Failing here names the cause; failing inside the wrapper does not.
       - name: Preflight the PostgreSQL service lane
         env:
           PGPASSWORD: postgres
@@ -644,6 +711,57 @@ jobs:
             }
           done
           psql -h 127.0.0.1 -p 5432 -U postgres -d postgres -c 'SELECT 1' >/dev/null
+
+      - name: Build the reference application closure
+        run: >-
+          pnpm turbo run build
+          --filter='@happyvertical/smrt-template-sveltekit...'
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Run M5 part postgres
+        run: pnpm --filter @happyvertical/smrt-template-sveltekit test:m5:part:postgres
+        env:
+          CI_POSTGRES_BASE_URL: postgresql://postgres:postgres@127.0.0.1:5432/postgres
+          NODE_AUTH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          NODE_ENV: test
+
+      - name: Upload M5 part result
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        with:
+          name: m5-part-postgres
+          path: packages/template-sveltekit/m5-part-postgres.json
+          if-no-files-found: error
+          retention-days: 7
+
+  m5-browser:
+    name: M5 Gate (browser)
+    needs: build
+    if: >-
+      !cancelled() &&
+      (inputs.mode == 'affected' || needs.build.result == 'success')
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          ref: ${{ env.CHECKOUT_REF }}
+
+      - name: Setup environment
+        id: setup-environment
+        uses: ./.github/actions/setup-environment
+        with:
+          node-version: '26.12.1'
+          install-deps: 'true'
+          setup-playwright: 'true'
+          registry-url: 'https://npm.pkg.github.com'
+          auth-token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Install Playwright system dependencies after a browser cache hit
+        if: steps.setup-environment.outputs.playwright-cache-hit == 'true'
+        run: pnpm exec playwright install-deps chromium
 
       # The proven browser consumer (`workbench-browser`) runs on the nodocker
       # pool; this is the first browser job on the dind pool, whose Pod profile
@@ -666,9 +784,6 @@ jobs:
               });
           "
 
-      # The gate provisions a copy of the generated app that resolves its
-      # dependencies through this package, so those workspace packages must be
-      # built from this commit before the copy is served.
       - name: Build the reference application closure
         run: >-
           pnpm turbo run build
@@ -676,20 +791,69 @@ jobs:
         env:
           NODE_AUTH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
-      - name: Run the M5 aggregate gate
-        run: pnpm --filter @happyvertical/smrt-template-sveltekit test:m5
+      - name: Run M5 part browser
+        run: pnpm --filter @happyvertical/smrt-template-sveltekit test:m5:part browser
         env:
-          CI_POSTGRES_BASE_URL: postgresql://postgres:postgres@127.0.0.1:5432/postgres
           NODE_AUTH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           NODE_ENV: test
 
-      # `gate.mjs` writes this file itself and sends every child reporter to
-      # stderr, so the artifact carries case ids and booleans only — never the
-      # assertion text, absolute paths, or stack frames a reporter emits. No
-      # databases, export bundles, browser
-      # profiles, cookies, bootstrap artifacts, or traces: the gate disables
-      # tracing, video and screenshots outright, and its temporary roots are
-      # removed before this step runs.
+      - name: Upload M5 part result
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        with:
+          name: m5-part-browser
+          path: packages/template-sveltekit/m5-part-browser.json
+          if-no-files-found: error
+          retention-days: 7
+
+  # The one M5 result. Keeps its old id and name: it is what the rest of the
+  # workflow and the branch rules know. The `if` is `!cancelled()` and nothing
+  # else, so it can never evaluate false in either mode: a part job that was
+  # skipped, failed or cancelled must reach the verdict, which rejects it by its
+  # explicit `needs.<job>.result` instead of this job being skipped with it (a
+  # skipped gate is a gate that passes). Pinned by
+  # ci-control-plane-workflow.test.mjs.
+  m5-reference-gate:
+    name: M5 Reference Fixture Gate
+    needs: [m5-template, m5-postgres, m5-browser]
+    if: ${{ !cancelled() }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    env:
+      # Must equal the `m5-template` matrix size plus the two single part jobs
+      # (pinned), and `PARTS.length` in `e2e/support/gateSpec.mjs`.
+      M5_EXPECTED_PARTS: '5'
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          ref: ${{ env.CHECKOUT_REF }}
+
+      # One folder per artifact (no merge-multiple) so a duplicate part result
+      # is visible to the verdict instead of silently overwriting.
+      - name: Download M5 part results
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8
+        with:
+          pattern: m5-part-*
+          path: ${{ runner.temp }}/m5-parts
+
+      # Runner Node, no install: the verdict uses node built-ins only.
+      - name: M5 verdict
+        run: >-
+          node packages/template-sveltekit/e2e/support/gate.mjs verdict
+          --parts-dir "${{ runner.temp }}/m5-parts"
+          --expected-parts "$M5_EXPECTED_PARTS"
+          --template "$M5_TEMPLATE"
+          --postgres "$M5_POSTGRES"
+          --browser "$M5_BROWSER"
+        env:
+          M5_TEMPLATE: ${{ needs.m5-template.result }}
+          M5_POSTGRES: ${{ needs.m5-postgres.result }}
+          M5_BROWSER: ${{ needs.m5-browser.result }}
+
+      # `gate.mjs` writes this file itself, so the artifact carries case ids and
+      # booleans only — never the assertion text, absolute paths, or stack
+      # frames a reporter emits.
       - name: Upload sanitized M5 gate summary
         if: always()
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
@@ -698,7 +862,6 @@ jobs:
           path: packages/template-sveltekit/m5-gate-summary.json
           if-no-files-found: warn
           retention-days: 7
-
 
   knowledge:
     name: Knowledge Freshness

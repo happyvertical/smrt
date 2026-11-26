@@ -26,16 +26,30 @@ presented as WebMCP execution.
 - `pnpm test:m5` runs the whole aggregate gate through
   `e2e/support/gate.mjs`, which requires a PostgreSQL service and fails when a
   required profile case is missing rather than merely absent from the log.
-  Its Vitest half runs this package's whole suite in two passes: files named
-  `*.postgres.optional.test.ts` share the gate's one disposable database and
-  run one at a time; every other file runs two at a time. A test that connects
-  to that database must carry the `.postgres.optional` name.
+  CI runs the gate as five parallel part jobs and one aggregator (#5694):
+  `template-1`, `template-2` and `template-3` (this package's vitest suite in
+  three file shards, two files at a time), `postgres` (the
+  `*.postgres.optional.test.ts` files, which share the gate's one disposable
+  database and run one at a time, plus the cli and app-runtime files; the only
+  part that owns the PostgreSQL service and reports `postgres-service`) and
+  `browser`. `pnpm test:m5:part <id>` runs one part into `m5-part-<id>.json`;
+  `gate.mjs verdict` is the aggregator's check, and `pnpm test:m5` runs every
+  part in sequence and then the same verdict. Never run two parts concurrently
+  in one checkout (the vitest global setup writes and removes
+  `template/.svelte-kit/`). What must run lives in `e2e/support/gateSpec.mjs`:
+  the shard assignment (`template-3` is "every other file", so a new test file
+  can never fall out of every shard, and the verdict also proves the shards'
+  files are exactly the include glob, each once), the required cases and the
+  per-file floors for the split `cookbookHost.part*` and `cookbookApply.<name>`
+  files. A test that connects to the database must carry the
+  `.postgres.optional` name.
 - Tracing, video, and screenshots stay off: onboarding carries a single-use
   bootstrap token in a URL.
-- `m5-gate-summary.json` is the one file the gate writes inside the package;
-  it is gitignored, overwritten every run, and is what CI uploads. Everything
-  else it generates stays in a test-owned temporary root. Playwright's
-  `outputDir` is `$TMPDIR/smrt-m5-artifacts`, emptied by
+- `m5-part-<id>.json` and `m5-gate-summary.json` are the only files the gate
+  writes inside the package; they are gitignored, overwritten every run, and
+  are what CI uploads. Everything else it generates stays in a test-owned
+  temporary root. Playwright's `outputDir` is
+  `$TMPDIR/smrt-m5-artifacts-<part>` (`smrt-m5-artifacts` outside the gate), emptied by
   `e2e/support/globalTeardown.ts`; `e2e/redaction.spec.ts` reads that path back
   from `testInfo.project.outputDir` and asserts it is outside the repository.
   The harness gives the copied app a real `node_modules` directory of
@@ -49,9 +63,10 @@ presented as WebMCP execution.
 - `e2e/` is outside `biome.json`'s include globs, as every package's `e2e/` is,
   so a green `Lint` job says nothing about this tree. `pnpm typecheck` covers
   the `.ts` files (`tsconfig.fixture.json` includes `e2e/**/*.ts`) but NOT
-  `e2e/support/gate.mjs`, which no static analysis reaches. Its `emit()`
-  vocabulary guard is the runtime backstop; edit it carefully and run
-  `pnpm test:m5` after any change to it.
+  `e2e/support/gate.mjs` or `gateSpec.mjs`, which no static analysis reaches.
+  `scripts/m5-gate-verdict.test.mjs` (run by `pnpm test:ci-scripts`) covers the
+  verdict, and the `vocabularyViolations()` guard is the runtime backstop;
+  edit them carefully and run `pnpm test:m5` after any change.
 
 See [the M5 reference fixture gate](../../docs/content/m5-reference-fixture.md)
 for what the milestone proves, what it does not, and the recovery commands.
