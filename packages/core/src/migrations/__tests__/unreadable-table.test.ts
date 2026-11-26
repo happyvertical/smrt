@@ -377,6 +377,46 @@ describe('an existing table that cannot be read stops the migrate', () => {
     }
   });
 
+  it('SQLite: prototype-like SQL column names remain own columns and compare as unchanged', async () => {
+    const db = await open('sqlite');
+    await db.query(
+      'CREATE TABLE unreadable_reserved (id TEXT PRIMARY KEY, "__proto__" TEXT, constructor TEXT, "toString" TEXT)',
+    );
+    const scoped = queryOnly(db);
+    const described = await inspectTableSchema(
+      scoped,
+      'unreadable_reserved',
+      'sqlite',
+    );
+    expect(Object.keys(described?.columns ?? {})).toEqual([
+      'id',
+      '__proto__',
+      'constructor',
+      'toString',
+    ]);
+    expect(Object.hasOwn(described?.columns ?? {}, '__proto__')).toBe(true);
+    expect(Object.getPrototypeOf(described?.columns)).toBe(Object.prototype);
+    const diff = await new SchemaComparer(scoped, {
+      engineHint: 'sqlite',
+    }).compare({
+      unreadable_reserved: {
+        tableName: 'unreadable_reserved',
+        columns: Object.fromEntries(
+          ['id', '__proto__', 'constructor', 'toString'].map((name) => [
+            name,
+            { type: 'TEXT' as const, primaryKey: name === 'id' },
+          ]),
+        ),
+        indexes: [],
+        triggers: [],
+        foreignKeys: [],
+        dependencies: [],
+        version: 'reserved-column-test',
+      },
+    });
+    expect(diff.has_changes).toBe(false);
+  });
+
   it('SQLite: a handle without an inspector describes an index whose name only resembles the internal prefix', async () => {
     const db = await open('sqlite');
     await db.query(

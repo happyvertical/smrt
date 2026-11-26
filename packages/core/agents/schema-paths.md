@@ -1190,6 +1190,8 @@ a composite primary key, while the reader describes both. The reader names the
 `main` schema in every pragma, so a temporary table of the same name never
 answers for the permanent one, and matches names exactly;
 `unreadable-table.test.ts` holds them side by side, so change them together.
+Column names, including `__proto__`, are defined as own properties rather than
+invoking object prototype setters.
 
 A table the catalog lists that still cannot be described throws
 `TableSchemaUnreadableError` from `compare()` and `compareTable()`, before

@@ -204,17 +204,20 @@ async function inspectSqliteTableSchema(
     "SELECT * FROM pragma_table_info(?, 'main')",
     tableName,
   );
-  const columns: TableSchemaInfo['columns'] = {};
-  for (const row of columnRows.rows) {
-    columns[String(row.name)] = {
-      type: row.type as string,
-      // `pk` is the one-based position within the key: every positive
-      // position is a key column, not only the first of a composite key.
-      primaryKey: Number(row.pk) > 0,
-      notNull: row.notnull === 1,
-      defaultValue: row.dflt_value,
-    };
-  }
+  // Define own properties rather than assigning: `__proto__` is a valid SQL
+  // column name and must not invoke Object.prototype's legacy setter.
+  const columns: TableSchemaInfo['columns'] = Object.fromEntries(
+    columnRows.rows.map((row) => [
+      String(row.name),
+      {
+        type: row.type as string,
+        // `pk` is one-based: every component of a composite key is a key column.
+        primaryKey: Number(row.pk) > 0,
+        notNull: row.notnull === 1,
+        defaultValue: row.dflt_value,
+      },
+    ]),
+  );
   const indexRows = await db.query(
     `SELECT name, sql FROM sqlite_master
       WHERE type = 'index' AND tbl_name = ? AND ${sqliteUserObjectName()}`,
