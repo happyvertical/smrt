@@ -142,6 +142,7 @@ const SEND_PATH_MAY_CHANGE = new Set([
   // A row created in this process holds its in-memory timestamp, which the
   // stored one can differ from; the send path never reads it back.
   'createdAt',
+  'created_at',
 ]);
 
 const DATE_LIKE =
