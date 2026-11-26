@@ -632,7 +632,7 @@ default: without `--bridge` it fails with `bridge_missing`.
 the app's `dependencies` and pass its path:
 
 ```sh
---bridge node_modules/@happyvertical/smrt-app-cli/dist/bridge/smrt-mcp-bridge.mjs
+--bridge node_modules/@happyvertical/smrt-app-cli/dist/bin/smrt-mcp-bridge.mjs
 ```
 
 Releases up to 0.72.0 do not ship it. With one of those, produce the file
@@ -906,7 +906,7 @@ jobs:
     with:
       app_dir: .
       targets: aarch64-apple-darwin,x86_64-unknown-linux-gnu
-      bridge_path: node_modules/@happyvertical/smrt-app-cli/dist/bridge/smrt-mcp-bridge.mjs
+      bridge_path: node_modules/@happyvertical/smrt-app-cli/dist/bin/smrt-mcp-bridge.mjs
       smrt_desktop_version: <the version the lockfile resolves>
       # Unsigned on pull requests; signed and published only from main.
       release: ${{ github.event_name == 'push' }}

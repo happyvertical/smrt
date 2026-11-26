@@ -22,7 +22,7 @@ Application CLI support for SMRT-based apps.
   `smrt-mcp-bridge` parses argv with `parseMcpBridgeArgs`: empty, missing or
   repeated value options and an explicit invalid (even empty) path are usage
   errors (exit 2) — never silently the default.
-- `./mcp-bridge` (`dist/bridge/smrt-mcp-bridge.mjs`, `vite.bridge.config.ts`)
+- `./mcp-bridge` (`dist/bin/smrt-mcp-bridge.mjs`, `vite.bridge.config.ts`)
   is the `smrt-mcp-bridge` bin with every dependency inlined: a desktop bundle
   ships it byte for byte, so it must import only Node built-ins.
   `postbuild.mjs` runs it alone and fails the build otherwise.

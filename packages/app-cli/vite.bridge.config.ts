@@ -8,7 +8,10 @@ import { defineConfig } from 'vite';
 export default defineConfig({
   build: {
     ssr: 'src/bin/smrt-mcp-bridge.ts',
-    outDir: 'dist/bridge',
+    // Beside the bin build, whose output must stay: and `dist/bin/<name>` is
+    // what maps the export back to its source for workspace test aliases.
+    outDir: 'dist/bin',
+    emptyOutDir: false,
     target: 'node24',
     rollupOptions: {
       output: {

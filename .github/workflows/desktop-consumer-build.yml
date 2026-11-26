@@ -111,7 +111,7 @@ on:
           build; REQUIRED when release is true (the release preflight refuses
           an empty value). An app that depends on @happyvertical/smrt-app-cli
           can point at the file that package ships:
-          node_modules/@happyvertical/smrt-app-cli/dist/bridge/smrt-mcp-bridge.mjs
+          node_modules/@happyvertical/smrt-app-cli/dist/bin/smrt-mcp-bridge.mjs
           (prefixed with app_dir when that is not the repository root).
         type: string
         default: ''

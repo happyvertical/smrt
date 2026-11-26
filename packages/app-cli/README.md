@@ -218,7 +218,7 @@ The token is sent only when `<PREFIX>_SERVER_URL` matches the target server.
 Revoke a token with `smrt app token revoke <id>`.
 
 For a desktop bundle, `@happyvertical/smrt-app-cli/mcp-bridge`
-(`dist/bridge/smrt-mcp-bridge.mjs`) is the same binary as one self-contained
+(`dist/bin/smrt-mcp-bridge.mjs`) is the same binary as one self-contained
 file that imports only Node built-ins; pass its path to `smrt desktop bundle
 --bridge`.
 

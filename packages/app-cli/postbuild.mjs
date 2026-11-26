@@ -82,7 +82,7 @@ for (const binPath of binPaths) {
 const isolated = mkdtempSync(join(tmpdir(), 'smrt-mcp-bridge-'));
 try {
   const bridge = join(isolated, 'smrt-mcp-bridge.mjs');
-  copyFileSync(join(distRoot.pathname, 'bridge/smrt-mcp-bridge.mjs'), bridge);
+  copyFileSync(join(distRoot.pathname, 'bin/smrt-mcp-bridge.mjs'), bridge);
   const initialize = JSON.stringify({
     jsonrpc: '2.0',
     id: 1,

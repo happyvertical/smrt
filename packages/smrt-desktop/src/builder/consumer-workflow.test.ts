@@ -381,7 +381,7 @@ describe('the consumer workflow keeps secret custody (smrt#4965)', () => {
             APP_DIR: '.',
             TARGETS: 'aarch64-apple-darwin',
             BRIDGE_PATH:
-              'node_modules/@happyvertical/smrt-app-cli/dist/bridge/smrt-mcp-bridge.mjs',
+              'node_modules/@happyvertical/smrt-app-cli/dist/bin/smrt-mcp-bridge.mjs',
             DESKTOP_VERSION: '',
             GITHUB_OUTPUT: out,
             ...env,
