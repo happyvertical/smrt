@@ -225,19 +225,16 @@ function scrub(value: unknown): unknown {
 }
 
 /**
- * What an answer is compared on: the status; for a refusal the code and the
- * message, whichever envelope carries them; otherwise the scrubbed body; and
- * the CORS headers.
+ * What an answer is compared on: the status, the error code, the whole scrubbed
+ * body (a refusal's `details`, `ok` and `status` included), and the CORS
+ * headers. Only a listed divergence may reduce the body first.
  */
 function project(outcome: Outcome): unknown {
-  const body = outcome.body as Record<string, unknown> | null;
   const refused = outcome.status >= 400;
-  const inner = (body?.error ?? body ?? {}) as Record<string, unknown>;
   return {
     status: outcome.status,
-    ...(refused
-      ? { code: outcome.code ?? null, message: inner.message ?? null }
-      : { body: scrub(outcome.body) }),
+    ...(refused ? { code: outcome.code ?? null } : {}),
+    body: scrub(outcome.body),
     cors: Object.fromEntries(
       Object.entries(outcome.cors).filter(([, header]) => header !== null),
     ),
@@ -329,6 +326,30 @@ const DIVERGENCES: Divergence[] = [
     applies: (c, rest, kit) =>
       c.op === 'cross-tenant-list' && rest.status === 200 && kit.status === 200,
     normalize: (outcome) => ({ ...outcome, body: null }),
+  },
+  {
+    id: 'thrown-error-envelope',
+    reason:
+      'A refusal the generated route throws with SvelteKit error() is the body { message, code }; REST answers { error: { code, message, ok, status } }. They carry the same code and message; a typed error either path returns (validation, with details) is the same envelope on both and is compared whole.',
+    applies: (_c, rest, kit) => {
+      const body = kit.body as Record<string, unknown> | null;
+      return (
+        rest.status >= 400 &&
+        kit.status >= 400 &&
+        !!rest.code &&
+        !!body &&
+        typeof body === 'object' &&
+        !('error' in body)
+      );
+    },
+    normalize: (outcome) => {
+      const body = outcome.body as Record<string, unknown>;
+      const inner = (body.error ?? body) as Record<string, unknown>;
+      return {
+        ...outcome,
+        body: { code: inner.code ?? null, message: inner.message ?? null },
+      };
+    },
   },
   {
     id: 'item-scope-action',
@@ -638,6 +659,31 @@ describe('route parity: protected fields (#5604)', () => {
     'anonymous',
     'superAdmin',
   ])('%s', (principal) => expectParity(cases(principal)));
+});
+
+describe('route parity: a protected-field refusal names the field on both paths', () => {
+  it.each(['update', 'create'] as const)('%s', async (op) => {
+    const request: ParityRequest =
+      op === 'update'
+        ? {
+            method: 'PUT',
+            path: `${segment.note}/${SEED.note.own}`,
+            body: { secret: 'changed' },
+          }
+        : {
+            method: 'POST',
+            path: segment.note,
+            body: { title: 'x', secret: 'planted' },
+          };
+    for (const transport of ['rest', 'kit'] as const) {
+      const answer = await fx.run(transport, principals().writer, request);
+      expect(answer.status, transport).toBe(400);
+      expect(
+        (answer.body as { error: { details: unknown } }).error.details,
+        transport,
+      ).toEqual({ field: 'secret' });
+    }
+  });
 });
 
 describe('route parity: sync/apply', () => {
