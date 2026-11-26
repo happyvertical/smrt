@@ -30,8 +30,11 @@ import {
   applyShellRls,
   bindShellScope,
   protectShellTables,
+  SHELL_RLS_POLICY_VERSION,
   SHELL_TENANT_MODELS,
   shellPoliciesCurrent,
+  shellPolicyDigest,
+  shellPolicyStatus,
   shellRlsState,
 } from './shell-tenancy.ts';
 
@@ -286,6 +289,89 @@ describe.each(backends)('shell tables, forced RLS (%s)', (backend) => {
           `CREATE OR REPLACE FUNCTION "${schema}".smrt_has_permission(required_permission text) RETURNS boolean LANGUAGE sql STABLE AS 'SELECT true'`,
         );
       });
+    });
+  });
+
+  describe('the policy set carries an ordered version', () => {
+    const stampOf = async () =>
+      String(
+        rowsOf(
+          await db.query(
+            `SELECT obj_description(to_regclass('"${schema}"."apps"'), 'pg_class') AS s`,
+          ),
+        )[0]?.s,
+      );
+    const catalogText = async () =>
+      JSON.stringify(
+        rowsOf(
+          await db.query(
+            `SELECT c.relname AS t, p.polname AS n, pg_get_expr(p.polqual, p.polrelid) AS q FROM pg_policy p JOIN pg_class c ON c.oid = p.polrelid WHERE c.relnamespace = to_regnamespace('${schema}') ORDER BY 1, 2`,
+          ),
+        ),
+      );
+
+    it('pins the policy text to its version (bump SHELL_RLS_POLICY_VERSION when this digest changes)', async () => {
+      const pinned: Record<number, string> = {
+        1: '664b71d5cfa8cf2b546e0a13205a62dbf4b44390de58949e78729e148277e2b5',
+      };
+      expect(await shellPolicyDigest('public')).toBe(
+        pinned[SHELL_RLS_POLICY_VERSION],
+      );
+    });
+
+    it('stamps the applied set with the version', async () => {
+      expect(await stampOf()).toMatch(
+        new RegExp(`^smrt-app-shell:rls:v${SHELL_RLS_POLICY_VERSION}:`),
+      );
+    });
+
+    it('re-applies over an older (and an unversioned) stamp', async () => {
+      const stamp = await stampOf();
+      const unversioned = stamp.replace(/:v\d+:/, ':');
+      await db.query(`COMMENT ON TABLE "${schema}"."apps" IS '${unversioned}'`);
+      expect(await shellPolicyStatus(db as never)).toBe('stale');
+      await applyShellRls(db as never);
+      expect(await stampOf()).toBe(stamp);
+      expect(await shellPolicyStatus(db as never)).toBe('current');
+    });
+
+    it('leaves a newer set alone, with a warning, and re-applies at its own version', async () => {
+      const newer = SHELL_RLS_POLICY_VERSION + 1;
+      await applyShellRls(db as never, { version: newer });
+      const text = await catalogText();
+      const stamp = await stampOf();
+      expect(stamp).toMatch(new RegExp(`:v${newer}:`));
+      // An older replica restarts: it must not put its set back.
+      expect(await shellPolicyStatus(db as never)).toBe('newer');
+      const statements: string[] = [];
+      const warnings: Array<Record<string, unknown>> = [];
+      const spy = {
+        engine: 'pglite',
+        query: (sql: string, ...params: unknown[]) => {
+          statements.push(sql);
+          return db.query(sql, ...params);
+        },
+        transaction: undefined,
+      };
+      await applyShellRls(spy as never, { warn: (e) => warnings.push(e) });
+      expect(
+        statements.filter((q) => /\b(CREATE|DROP|ALTER|COMMENT)\b/i.test(q)),
+      ).toEqual([]);
+      expect(warnings).toHaveLength(1);
+      expect(await catalogText()).toBe(text);
+      expect(await stampOf()).toBe(stamp);
+      // The newer host itself stays current, and a later release re-applies.
+      expect(await shellPolicyStatus(db as never, newer)).toBe('current');
+      expect(await shellPolicyStatus(db as never, newer + 1)).toBe('stale');
+      // Restore this release's version for the tests that follow.
+      for (const r of rowsOf(
+        await db.query(
+          `SELECT c.relname AS t FROM pg_class c WHERE c.relnamespace = to_regnamespace('${schema}') AND obj_description(c.oid, 'pg_class') LIKE 'smrt-app-shell:rls:%'`,
+        ),
+      ))
+        await db.query(`COMMENT ON TABLE "${schema}"."${r.t}" IS NULL`);
+      await applyShellRls(db as never);
+      expect(await shellPolicyStatus(db as never)).toBe('current');
     });
   });
 

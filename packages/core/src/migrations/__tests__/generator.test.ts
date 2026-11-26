@@ -729,7 +729,7 @@ describe('MigrationGenerator', () => {
             mismatch: { expected: 'INTEGER', actual: 'REAL' },
             sql: 'ALTER TABLE "ad_campaigns" ALTER COLUMN "target_clicks" TYPE BIGINT USING "target_clicks"::bigint',
             sqlStatements: [
-              'DO $$ BEGIN IF EXISTS (SELECT 1 FROM "ad_campaigns" WHERE "target_clicks" IS NOT NULL AND "target_clicks" <> trunc("target_clicks")) THEN RAISE EXCEPTION \'Cannot convert ad_campaigns.target_clicks to INTEGER: found non-integer values\'; END IF; END $$',
+              'DO $$ BEGIN IF EXISTS (SELECT 1 FROM "ad_campaigns" WHERE "target_clicks" IS NOT NULL AND "target_clicks" <> trunc("target_clicks")) THEN RAISE EXCEPTION \'Cannot convert ad_campaigns.target_clicks to INTEGER: found non-integer values\' USING ERRCODE = \'P0\' || \'S01\'; END IF; END $$',
               'ALTER TABLE "ad_campaigns" ALTER COLUMN "target_clicks" TYPE BIGINT USING "target_clicks"::bigint',
             ],
           },

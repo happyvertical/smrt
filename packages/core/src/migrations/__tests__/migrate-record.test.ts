@@ -179,7 +179,9 @@ describe.each([
         input: { ...input, release: 'next' },
         engineHint: engine,
       }),
-    ).rejects.toThrow('injected insert failure');
+    ).rejects.toThrow(
+      'recording the migrate run failed (SQLSTATE unavailable; database message withheld)',
+    );
     expect(await readLastMigrateRecord(db, { engineHint: engine })).toEqual(
       previous,
     );

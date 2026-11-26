@@ -376,6 +376,7 @@ describe('the route-file plan', () => {
   });
 
   it('detects this volume as case-sensitive when a case-swapped name does not exist', () => {
+    place('Probe.txt', '');
     const plan = new RouteFilePlan();
     plan.emit({
       root: routes(),

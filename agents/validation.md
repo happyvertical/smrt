@@ -1,6 +1,10 @@
 # Validation checks
 
 Use the Node/pnpm versions from root `package.json`; `pnpm install`, `pnpm build`.
+On macOS, set `TMPDIR`, `TMP`, `TEMP`, and `CI_TEST_TMPDIR` to a writable
+canonical directory such as `$HOME/Work/tmp/smrt-validation` before testing.
+The `/var` alias can make lexical and physical paths disagree in route,
+watcher, and secure SQLite custody tests.
 Run package checks first, then the root gates:
 
 - `pnpm test`, `pnpm typecheck`, `pnpm lint`, `pnpm format-check`.

@@ -336,6 +336,10 @@ const digest = (value: unknown) =>
   createHash('sha256').update(JSON.stringify(value)).digest('hex');
 
 /** The digest of what the generator would run: the code's whole expected policy set. */
+export async function shellPolicyDigest(schemaName: string): Promise<string> {
+  return expectedDigest(schemaName);
+}
+
 async function expectedDigest(schemaName: string): Promise<string> {
   const { generatePostgresPermissionSql } = await import(
     '@happyvertical/smrt-users/postgres-policies'
@@ -377,19 +381,40 @@ async function liveDigest(
 const STAMP_PREFIX = 'smrt-app-shell:rls:';
 
 /**
+ * The ordered version of the shell's policy set. BUMP IT whenever the policy
+ * text changes (a predicate, a slug, a helper body): the stamp carries it, so
+ * a host only re-applies when its version is newer than, or equal to, the one
+ * in the database, and an old-release replica restarting mid-rollout leaves a
+ * newer set alone instead of putting the older one back. A unit test pins the
+ * expected policy digest to this number, so changing the text without bumping
+ * it fails.
+ */
+export const SHELL_RLS_POLICY_VERSION = 1;
+
+const STAMP_PATTERN =
+  /^smrt-app-shell:rls:(?:v(\d+):)?([0-9a-f]{64}):([0-9a-f]{64})$/;
+
+/** What the stamps say about the database's policies, relative to this host. */
+export type ShellPolicyStatus = 'current' | 'stale' | 'newer';
+
+/**
  * Whether every shell table is exactly what applying the policies would leave:
  * the table's stamp (written with the policies, in the same transaction) names
- * the digest of the expected policy set AND the digest of what the catalog
- * held when it was written, and the catalog still digests the same. Any
- * difference (a changed predicate, a removed slug, an extra or missing policy,
- * a rewritten helper, a changed release's expected set) is not current, so the
- * policies are re-applied. A release that changes the policies makes a start
- * of the new code re-apply them; an old replica that restarts afterwards
- * re-applies the old set (last start wins).
+ * the policy version, the digest of the expected policy set AND the digest of
+ * what the catalog held when it was written, and the catalog still digests the
+ * same. Any difference (a changed predicate, a removed slug, an extra or
+ * missing policy, a rewritten helper, an older version) is `stale`: the
+ * policies are re-applied. A stamp from a NEWER version on any table is
+ * `newer`: this host is an older release and must not put its policies back.
+ * A stamp with no version (written before versioning) is version 0.
  */
-export async function shellPoliciesCurrent(db: Queryable): Promise<boolean> {
+export async function shellPolicyStatus(
+  db: Queryable,
+  version: number = SHELL_RLS_POLICY_VERSION,
+): Promise<ShellPolicyStatus> {
   const schema = await currentSchema(db);
   const expected = await expectedDigest(schema);
+  let status: ShellPolicyStatus = 'current';
   for (const table of shellTables().keys()) {
     const stamp = String(
       rowsOf(
@@ -398,19 +423,38 @@ export async function shellPoliciesCurrent(db: Queryable): Promise<boolean> {
         ),
       )[0]?.stamp ?? '',
     );
+    const m = STAMP_PATTERN.exec(stamp);
+    const stamped = m ? Number(m[1] ?? 0) : -1;
+    if (stamped > version) return 'newer';
+    if (!m || stamped !== version) {
+      status = 'stale';
+      continue;
+    }
     const live = await liveDigest(db, schema, table);
-    if (stamp !== `${STAMP_PREFIX}${expected}:${live}`) return false;
+    if (m[2] !== expected || m[3] !== live) status = 'stale';
   }
-  return true;
+  return status;
+}
+
+/** Whether the policies are exactly the current version's, as applied. */
+export async function shellPoliciesCurrent(
+  db: Queryable,
+  version: number = SHELL_RLS_POLICY_VERSION,
+): Promise<boolean> {
+  return (await shellPolicyStatus(db, version)) === 'current';
 }
 
 /** Write the stamp of the policies just applied (inside the same transaction). */
-async function stampPolicies(db: Queryable, schema: string): Promise<void> {
+async function stampPolicies(
+  db: Queryable,
+  schema: string,
+  version: number,
+): Promise<void> {
   const expected = await expectedDigest(schema);
   for (const table of shellTables().keys()) {
     const live = await liveDigest(db, schema, table);
     await db.query(
-      `COMMENT ON TABLE ${qualified(schema, table)} IS ${quote(`${STAMP_PREFIX}${expected}:${live}`)}`,
+      `COMMENT ON TABLE ${qualified(schema, table)} IS ${quote(`${STAMP_PREFIX}v${version}:${expected}:${live}`)}`,
     );
   }
 }
@@ -460,8 +504,16 @@ async function dropUnexpectedPolicies(
  * problems found (empty when every table is protected and the login is subject
  * to the policies).
  */
-export async function applyShellRls(db: Queryable): Promise<string[]> {
+export async function applyShellRls(
+  db: Queryable,
+  options: {
+    /** Override the policy version (tests simulate another release). */
+    version?: number;
+    warn?: (entry: Record<string, unknown>) => void;
+  } = {},
+): Promise<string[]> {
   requireShellTenancy();
+  const version = options.version ?? SHELL_RLS_POLICY_VERSION;
   const schemaName = await currentSchema(db);
   const tables = shellTables();
   const present = new Set((await shellRlsState(db)).map((s) => s.table));
@@ -477,7 +529,9 @@ export async function applyShellRls(db: Queryable): Promise<string[]> {
   let result:
     | Awaited<ReturnType<typeof applyScopedPostgresPermissionPolicies>>
     | undefined;
-  if (!(await shellPoliciesCurrent(db))) {
+  const initial = await shellPolicyStatus(db, version);
+  if (initial === 'newer') warnNewer(options.warn, version);
+  if (initial === 'stale') {
     const transaction = (
       db as {
         transaction?: <T>(fn: (tx: Queryable) => Promise<T>) => Promise<T>;
@@ -487,12 +541,17 @@ export async function applyShellRls(db: Queryable): Promise<string[]> {
       await tx.query("SELECT set_config('lock_timeout', '10s', true)");
       await tx.query(`SELECT pg_advisory_xact_lock(${APPLY_LOCK})`);
       // Another replica may have applied while this one waited.
-      if (await shellPoliciesCurrent(tx)) return undefined;
+      const again = await shellPolicyStatus(tx, version);
+      if (again === 'current') return undefined;
+      if (again === 'newer') {
+        warnNewer(options.warn, version);
+        return undefined;
+      }
       const applied = await applyScopedPostgresPermissionPolicies(tx, scope);
       // Policies not in the expected set (an extra one) are dropped: the stamp
       // is only true of a table that holds exactly the expected policies.
       await dropUnexpectedPolicies(tx, schemaName, applied.statements);
-      await stampPolicies(tx, schemaName);
+      await stampPolicies(tx, schemaName, version);
       return applied;
     };
     result = (
@@ -529,6 +588,18 @@ export async function applyShellRls(db: Queryable): Promise<string[]> {
   return problems;
 }
 
+function warnNewer(
+  warn: ((entry: Record<string, unknown>) => void) | undefined,
+  version: number,
+): void {
+  (warn ?? ((e) => void process.stderr.write(`${JSON.stringify(e)}\n`)))({
+    level: 'warn',
+    event: 'shell-rls-policies-newer',
+    message: `the database holds a newer shell policy set than this release (version ${version}); leaving it in place`,
+    version,
+  });
+}
+
 /** The named opt-out for a login that bypasses row-level security (tests, local development). */
 export const ALLOW_RLS_BYPASS_ENV = 'SMRT_UNSAFE_ALLOW_RLS_BYPASS';
 
@@ -554,7 +625,7 @@ export async function protectShellTables(
   const env = options.env ?? process.env;
   let problems: string[];
   try {
-    problems = await applyShellRls(db as Queryable);
+    problems = await applyShellRls(db as Queryable, { warn });
   } catch (error) {
     // The runtime reports a failed start generically: say why here.
     warn({
