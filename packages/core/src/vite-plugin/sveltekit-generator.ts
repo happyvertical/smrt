@@ -3234,27 +3234,104 @@ function smrtRouteErrorResponse(cause: unknown, request: Request) {
 }
 
 /**
- * Emit `requireCreateTargetAccess(locals, model)`: an STI subtype selected
- * through its base authorizes the create itself. A subtype that is not
- * \`api.public: true\` needs an authenticated principal and the family's
- * \`<collection>.create\` permission even when the base is public.
+ * The policy of every member of a model's STI family, keyed by the member's
+ * registry key (and its simple name), read from the manifest: what the shared
+ * decision is told about a subtype that is selected through its base (a create
+ * target) or that a row loaded through the base belongs to. `undefined` for a
+ * model with no family.
  */
-function generateCreateTargetAccessHelper(): string {
-  return `
-function requireCreateTargetAccess(locals: unknown, model: string): void {
-  const api = ObjectRegistry.getConfig(model).api;
-  const publicAccess = api && typeof api === 'object' ? (api as { public?: unknown }).public : undefined;
-  const decision = authorize({
+function familyPolicyOf(
+  objectDef: SmartObjectDefinition,
+  manifest: SmartObjectManifest | undefined,
+):
+  | Record<
+      string,
+      {
+        publicAccess: boolean | 'read';
+        permissionCollection: string;
+        allowSuperAdminBypass: boolean;
+        tenantColumns: string[];
+      }
+    >
+  | undefined {
+  if (!tenancyFamilyScope(objectDef, manifest)) return undefined;
+  const policy: NonNullable<ReturnType<typeof familyPolicyOf>> = {};
+  for (const member of collectStiHierarchyObjects(objectDef, manifest)) {
+    const entry = {
+      publicAccess: getApiPublicAccess(member.decoratorConfig?.api),
+      permissionCollection: resolvePermissionCollection(member),
+      allowSuperAdminBypass: allowsSuperAdminBypass(member),
+      tenantColumns: manifestTenantColumns(member),
+    };
+    policy[readScopeModelName(member, member.className)] = entry;
+    policy[member.className] ??= entry;
+  }
+  return policy;
+}
+
+/**
+ * Emit `requireModelAccess(locals, model, op, body?)`: the decision REST makes
+ * for the model a write lands in when that is not the route's own model (an
+ * STI subtype selected through its base on create, or the subtype a loaded row
+ * belongs to on update and delete, #5195). The subtype decides under its own
+ * `api.public`, `<collection>.<action>` permission slug, super-admin opt-in and
+ * tenant columns, as `authorizeRowModel` and `assertWriteBody` do in REST. A
+ * model the manifest does not list gets the strictest policy: signed in, the
+ * family's permission, no bypass.
+ */
+function generateFamilyAccessHelper(
+  objectDef: SmartObjectDefinition,
+  manifest: SmartObjectManifest | undefined,
+  options: { rowAccess: boolean },
+): string {
+  const policy = familyPolicyOf(objectDef, manifest);
+  if (!policy) return '';
+  return `${options.rowAccess ? '' : "\nimport { RequestPrincipalRefusal } from '@happyvertical/smrt-core';"}
+// Policy of each STI family member (#5195): a write that lands in a subtype is
+// decided under the subtype's own policy, as the runtime REST handler does.
+const FAMILY_POLICY: Record<string, { publicAccess: boolean | 'read'; permissionCollection: string; allowSuperAdminBypass: boolean; tenantColumns: string[] }> = ${JSON.stringify(policy)};
+
+function modelDecision(locals: unknown, model: string, op: string, body?: unknown) {
+  const policy = FAMILY_POLICY[model];
+  return authorize({
     principal: routePrincipal(locals),
-    op: 'create',
-    permissionCollection: PERMISSION_COLLECTION,
-    publicAccess: publicAccess === true,
-    // The subtype's own opt-in, as REST reads it (a base's does not carry over).
-    allowSuperAdminBypass: ObjectRegistry.getTenantScopedConfig(model)?.allowSuperAdminBypass === true,
+    op,
+    mutating: true,
+    permissionCollection: policy?.permissionCollection ?? PERMISSION_COLLECTION,
+    publicAccess: policy?.publicAccess ?? false,
+    allowSuperAdminBypass: policy?.allowSuperAdminBypass ?? false,
+    tenantColumns: new Set(policy?.tenantColumns ?? []),
+    ...(body === undefined ? {} : { body }),
   });
+}
+
+function requireModelAccess(locals: unknown, model: string, op: string, body?: unknown): void {
+  const decision = modelDecision(locals, model, op, body);
   if (!decision.allow) routeDenial(decision);
 }
-`;
+${
+  options.rowAccess
+    ? ''
+    : `
+// The create target is decided inside the handler's try block, so a refusal is
+// thrown as the typed error the block answers, with REST's envelope and code.
+function requireCreateTargetAccess(locals: unknown, model: string, body: unknown): void {
+  const decision = modelDecision(locals, model, 'create', body);
+  if (!decision.allow) throw new RequestPrincipalRefusal(decision.status, decision.code, decision.message);
+}
+`
+}${
+  options.rowAccess
+    ? `
+// A row loaded through the base that belongs to a subtype is written under the
+// subtype's policy too (#5195).
+function requireRowAccess(locals: unknown, row: object, op: string, body?: unknown): void {
+  const model = modelOfInstance(row);
+  if (model && model !== TENANCY_MODEL) requireModelAccess(locals, model, op, body);
+}
+`
+    : ''
+}`;
 }
 
 /**
@@ -3266,7 +3343,7 @@ function generateRouteReadErrorHelper(): string {
   return `
 function rejectRouteRead(cause: unknown): never {
   const failure = normalizeTypedHttpError(cause);
-  if (failure) throw error(failure.status, failure.message);
+  if (failure) throw error(failure.status, { message: failure.message, code: failure.code });
   throw cause;
 }
 `;
@@ -3371,7 +3448,7 @@ ${serializerImports ? `${serializerImports}\n` : ''}${hasPost ? "import { assert
 ${modelType.importStatement ? `${modelType.importStatement}\n` : ''}import type { RequestHandler } from './$types';
 ${collectionAccessImports}
 // Note: ${className} is auto-registered by the Vite plugin scanner
-${generateAuthGuardHelper(objectDef, semanticManifest)}${generateTenantContextHelper(usesPrincipalContext(objectDef), readScopeModelName(objectDef, className), tenancyFamilyScope(objectDef, semanticManifest))}${hasPost ? generateTypedRouteErrorHelper() : ''}${hasPost ? generateCreateTargetAccessHelper() : ''}${hasGet ? generateListBoundsHelper(objectDef) : ''}${hasGet ? generateListQueryHelper(className) : ''}${hasGet ? generateConditionalGetRouteHelper(objectDef.decoratorConfig?.api, { runtimeExposure: true, tenantScoped: isTenantScoped(objectDef), permissionScoped: listUsesPermissionScopedBody, modelName: className, readScopeModel: readScopeModelName(objectDef, className), useBodyHash: listUsesBodyHash, manifestHash: webManifestHash }) : ''}`;
+${generateAuthGuardHelper(objectDef, semanticManifest)}${generateTenantContextHelper(usesPrincipalContext(objectDef), readScopeModelName(objectDef, className), tenancyFamilyScope(objectDef, semanticManifest))}${hasPost ? generateTypedRouteErrorHelper() : ''}${hasPost ? generateFamilyAccessHelper(objectDef, semanticManifest, { rowAccess: false }) : ''}${hasGet ? generateListBoundsHelper(objectDef) : ''}${hasGet ? generateListQueryHelper(className) : ''}${hasGet ? generateConditionalGetRouteHelper(objectDef.decoratorConfig?.api, { runtimeExposure: true, tenantScoped: isTenantScoped(objectDef), permissionScoped: listUsesPermissionScopedBody, modelName: className, readScopeModel: readScopeModelName(objectDef, className), useBodyHash: listUsesBodyHash, manifestHash: webManifestHash }) : ''}`;
 
   // #1782: tenant-scoped reads fail closed to global (NULL-tenant) rows when no
   // tenant context is active (public/anonymous read). The scope is resolved at
@@ -3447,7 +3524,7 @@ ${routeGuardPreamble(objectDef, true, 'create')}
     // A subtype whose own surface closes create is not a target here, and
     // a subtype authorizes its own create as well as the base.
     assertCreateTargetSurface('${className}', target, 'api');
-    if (target.collectionName !== '${className}') requireCreateTargetAccess(locals, target.name);
+${familyPolicyOf(objectDef, semanticManifest) ? `    if (target.collectionName !== '${className}') requireCreateTargetAccess(locals, target.name, body);\n` : ''}
     // A create sets no field the caller may not write: server-managed keys
     // are skipped, a protected field sent with a value is refused.
     const data = prepareWriteInput(target.collectionName, target.data);
@@ -3579,10 +3656,10 @@ function generateItemRouteTemplate(
 // DO NOT EDIT - changes will be overwritten
 
 import { error${hasPut || hasDelete ? ', json' : ''} } from '@sveltejs/kit';
-${serializerImports ? `${serializerImports}\n` : ''}${hasGet || hasPut || hasDelete ? "import { normalizeTypedHttpError, reportUnexpectedHttpError } from '@happyvertical/smrt-core';\n" : ''}${hasPut ? "import { applyUpdateInput, prepareWriteInput, ObjectRegistry } from '@happyvertical/smrt-core';\n" : ''}${hasGet ? "import { tenancyReadScope } from '@happyvertical/smrt-core';\n" : ''}
+${serializerImports ? `${serializerImports}\n` : ''}${hasGet || hasPut || hasDelete ? "import { normalizeTypedHttpError, reportUnexpectedHttpError } from '@happyvertical/smrt-core';\n" : ''}${hasPut ? "import { applyUpdateInput, prepareWriteInput, ObjectRegistry } from '@happyvertical/smrt-core';\n" : ''}${(hasPut || hasDelete) && familyPolicyOf(objectDef, semanticManifest) ? "import { modelOfInstance } from '@happyvertical/smrt-core';\n" : ''}${hasGet ? "import { tenancyReadScope } from '@happyvertical/smrt-core';\n" : ''}
 ${modelType.importStatement ? `${modelType.importStatement}\n` : ''}import type { RequestHandler } from './$types';
 ${collectionAccessImports}
-${generateAuthGuardHelper(objectDef, semanticManifest)}${generateTenantContextHelper(usesPrincipalContext(objectDef), readScopeModelName(objectDef, className), tenancyFamilyScope(objectDef, semanticManifest))}${hasPut || hasDelete ? generateTypedRouteErrorHelper() : ''}${hasGet || hasPut || hasDelete ? generateRouteReadErrorHelper() : ''}${hasGet ? generateConditionalGetRouteHelper(objectDef.decoratorConfig?.api, { runtimeExposure: true, tenantScoped: isTenantScoped(objectDef), permissionScoped: getUsesPermissionScopedBody, modelName: className, readScopeModel: readScopeModelName(objectDef, className), useBodyHash: getUsesBodyHash, manifestHash: webManifestHash }) : ''}`;
+${generateAuthGuardHelper(objectDef, semanticManifest)}${generateTenantContextHelper(usesPrincipalContext(objectDef), readScopeModelName(objectDef, className), tenancyFamilyScope(objectDef, semanticManifest))}${hasPut || hasDelete ? generateTypedRouteErrorHelper() : ''}${hasGet || hasPut || hasDelete ? generateRouteReadErrorHelper() : ''}${hasPut || hasDelete ? generateFamilyAccessHelper(objectDef, semanticManifest, { rowAccess: true }) : ''}${hasGet ? generateConditionalGetRouteHelper(objectDef.decoratorConfig?.api, { runtimeExposure: true, tenantScoped: isTenantScoped(objectDef), permissionScoped: getUsesPermissionScopedBody, modelName: className, readScopeModel: readScopeModelName(objectDef, className), useBodyHash: getUsesBodyHash, manifestHash: webManifestHash }) : ''}`;
 
   // #1782: a tenant-scoped single read fails closed to global (NULL-tenant)
   // rows when no tenant context is active, so a public/anonymous GET /:id can't
@@ -3642,7 +3719,7 @@ ${generateNotFoundError(className)}
 
   const body: unknown = await request.json();
   requireRouteBody(locals, 'update', body);
-  try {
+${familyPolicyOf(objectDef, semanticManifest) ? "  requireRowAccess(locals, item, 'update', body);\n" : ''}  try {
     // A field the caller may not write is compared with the loaded row: an
     // unchanged value is accepted, a changed one refused.
     const data = prepareWriteInput(${JSON.stringify(className)}, body, item, publicJsonOptions);
@@ -3675,7 +3752,7 @@ ${routeGuardPreamble(objectDef, true, 'delete')}
 ${generateCollectionLoad(className, { typeName: modelType.typeName })}
   const item = await collection.get(params.id).catch(rejectRouteRead);
 ${generateNotFoundError(className)}
-
+${familyPolicyOf(objectDef, semanticManifest) ? "  requireRowAccess(locals, item, 'delete');\n" : ''}
   try {
     await collection.delete(params.id);
   } catch (cause) {

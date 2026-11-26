@@ -18,6 +18,7 @@
 import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
 import {
   type Outcome,
+  PARITY_PACKAGE,
   ParityFixture,
   type ParityPrincipal,
   type ParityRequest,
@@ -45,12 +46,18 @@ vi.mock('$lib/server/smrt-register', () =>
   projectModule('src/lib/server/smrt-register.ts'),
 );
 
+/** The STI selector of the private subtype (its registry key). */
+const TRUCK = `${PARITY_PACKAGE}:ParityTruck`;
+
 const ALLOWED_ORIGIN = 'https://app.example.com';
 const OTHER_ORIGIN = 'https://evil.example.net';
 
 let fx: ParityFixture;
 /** Route segment of each model's collection. */
-let segment: Record<'note' | 'bypass' | 'readable' | 'open', string>;
+let segment: Record<
+  'note' | 'bypass' | 'readable' | 'open' | 'vehicle' | 'truck',
+  string
+>;
 
 beforeAll(async () => {
   fx = await ParityFixture.create({
@@ -66,6 +73,8 @@ beforeAll(async () => {
     bypass: fx.collectionSegment('ParityBypass'),
     readable: fx.collectionSegment('ParityReadable'),
     open: fx.collectionSegment('ParityOpen'),
+    vehicle: fx.collectionSegment('ParityVehicle'),
+    truck: fx.collectionSegment('ParityTruck'),
   };
 }, 60_000);
 
@@ -111,6 +120,7 @@ function signedIn(
 function principals(): Record<string, ParityPrincipal> {
   const all = [
     ...writes(segment),
+    ...writes(segment, ['vehicle', 'truck']),
     `${segment.note}.archive`,
     `${segment.note}.touch`,
   ];
@@ -125,6 +135,8 @@ function principals(): Record<string, ParityPrincipal> {
     signedInNoPermissionSet: signedIn(undefined),
     writer: signedIn(all),
     createOnly: signedIn([`${segment.note}.create`]),
+    // May write the STI base, not its private subtype.
+    baseOnlyWriter: signedIn(writes(segment, ['vehicle'])),
     // A verified super-admin: no permission slugs, bypass on opt-in models.
     superAdmin: signedIn(
       [],
@@ -174,6 +186,7 @@ const PRINCIPAL_NAMES = [
   'signedInNoPermissionSet',
   'writer',
   'createOnly',
+  'baseOnlyWriter',
   'superAdmin',
   'writerViaPermissionSet',
   'writerViaSmrtPermissions',
@@ -515,6 +528,134 @@ describe('route parity: CRUD', () => {
     it.each(PRINCIPAL_NAMES)(`${model}: %s`, (principal) =>
       expectParity(crud(principal, model)));
   }
+});
+
+describe('route parity: an STI subtype through its base (#5195)', () => {
+  const v = () => segment.vehicle;
+  const cases = (principal: string): Case[] => [
+    {
+      op: 'create',
+      label: 'create the base through the base',
+      principal,
+      request: { method: 'POST', path: v(), body: { title: 'car' } },
+    },
+    {
+      op: 'create',
+      label: 'create the subtype through the base',
+      principal,
+      request: {
+        method: 'POST',
+        path: v(),
+        body: { title: 'lorry', createType: TRUCK },
+      },
+    },
+    {
+      op: 'create',
+      label: 'create the subtype through the base, naming another tenant',
+      principal,
+      request: {
+        method: 'POST',
+        path: v(),
+        body: {
+          title: 'lorry',
+          createType: TRUCK,
+          tenantId: TENANT_B,
+        },
+      },
+    },
+    {
+      op: 'update',
+      label: "update a subtype's row through the base",
+      principal,
+      request: {
+        method: 'PUT',
+        path: `${v()}/${SEED.vehicle.truck}`,
+        body: { title: 'moved' },
+      },
+    },
+    {
+      op: 'update',
+      label: "update a subtype's row through the base, naming another tenant",
+      principal,
+      request: {
+        method: 'PUT',
+        path: `${v()}/${SEED.vehicle.truck}`,
+        body: { title: 'moved', tenantId: TENANT_B },
+      },
+    },
+    {
+      op: 'update',
+      label: "update the base's row through the base",
+      principal,
+      request: {
+        method: 'PUT',
+        path: `${v()}/${SEED.vehicle.own}`,
+        body: { title: 'moved' },
+      },
+    },
+    {
+      op: 'delete',
+      label: "delete a subtype's row through the base",
+      principal,
+      request: { method: 'DELETE', path: `${v()}/${SEED.vehicle.truck}` },
+    },
+    {
+      op: 'delete',
+      label: "delete the base's row through the base",
+      principal,
+      request: { method: 'DELETE', path: `${v()}/${SEED.vehicle.own}` },
+    },
+  ];
+  it.each(PRINCIPAL_NAMES)('%s', (principal) => expectParity(cases(principal)));
+
+  // Both paths could agree on a wrong answer, so the subtype's own policy is
+  // pinned: the base is public, the subtype is not, and a permission for the
+  // base is not a permission for the subtype.
+  it('decides a write under the subtype, not the base', async () => {
+    const answers = async (principal: string, request: ParityRequest) => {
+      const p = principals()[principal];
+      return {
+        rest: await fx.run('rest', p, request),
+        kit: await fx.run('kit', p, request),
+      };
+    };
+    const createTruck: ParityRequest = {
+      method: 'POST',
+      path: v(),
+      body: { title: 'lorry', createType: TRUCK },
+    };
+    const deleteTruck: ParityRequest = {
+      method: 'DELETE',
+      path: `${v()}/${SEED.vehicle.truck}`,
+    };
+    const createCar: ParityRequest = {
+      method: 'POST',
+      path: v(),
+      body: { title: 'car' },
+    };
+    for (const transport of ['rest', 'kit'] as const) {
+      // The base is public: a signed-in caller holding nothing may create it.
+      const car = await answers('signedInNoPermissions', createCar);
+      expect(car[transport].status, `${transport}: public base`).toBe(201);
+      // The subtype is not: the same caller is refused its own permission.
+      const truck = await answers('signedInNoPermissions', createTruck);
+      expect(truck[transport].status, `${transport}: private subtype`).toBe(
+        403,
+      );
+      expect(truck[transport].code).toBe('PERMISSION_DENIED');
+      const anonymous = await answers('anonymous', createTruck);
+      expect(anonymous[transport].status, `${transport}: anonymous`).toBe(401);
+      for (const request of [createTruck, deleteTruck]) {
+        const baseOnly = await answers('baseOnlyWriter', request);
+        expect(baseOnly[transport].status, `${transport}: base-only`).toBe(403);
+        expect(baseOnly[transport].code).toBe('PERMISSION_DENIED');
+        const writer = await answers('writer', request);
+        expect([200, 201, 204], `${transport}: writer`).toContain(
+          writer[transport].status,
+        );
+      }
+    }
+  });
 });
 
 describe('route parity: a cross-tenant principal', () => {

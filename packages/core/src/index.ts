@@ -708,6 +708,7 @@ export {
   applyUpdateInput,
   assertCreateInput,
   assertUpdateInput,
+  modelOfInstance,
   prepareWriteInput,
   updateInputRulesFor,
 } from './request-input';
