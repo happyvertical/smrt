@@ -57,6 +57,49 @@ function clientOf(db: DatabaseInterface): object | undefined {
   return client && typeof client === 'object' ? client : undefined;
 }
 
+const wrappedTransactions = new WeakSet<Function>();
+
+function inheritDeclarationOnChildHandle(
+  child: DatabaseInterface,
+  record: RuntimeManagedDatabaseDeclaration,
+): void {
+  if (!child || typeof child !== 'object') return;
+  declaredHandles.set(child, record);
+  wrapTransactionMethod(child);
+}
+
+function wrapTransactionMethod(handle: DatabaseInterface): void {
+  if (
+    typeof handle.transaction !== 'function' ||
+    wrappedTransactions.has(handle.transaction)
+  ) {
+    return;
+  }
+  const originalTransaction = handle.transaction.bind(handle) as <T>(
+    callback: (tx: DatabaseInterface) => Promise<T>,
+    ...rest: unknown[]
+  ) => Promise<T>;
+  const wrapped: NonNullable<DatabaseInterface['transaction']> = (<T>(
+    callback: (tx: DatabaseInterface) => Promise<T>,
+    ...rest: unknown[]
+  ): Promise<T> => {
+    const active = runtimeManagedDatabaseDeclaration(handle);
+    return originalTransaction(
+      async (tx: DatabaseInterface) => {
+        if (active) inheritDeclarationOnChildHandle(tx, active);
+        return callback(tx);
+      },
+      ...rest,
+    );
+  }) as NonNullable<DatabaseInterface['transaction']>;
+  wrappedTransactions.add(wrapped);
+  try {
+    handle.transaction = wrapped;
+  } catch {
+    // Frozen or getter-only handles keep driver-client fallback.
+  }
+}
+
 /**
  * Declare that the code which just opened `db` builds and versions its schema
  * itself, so core's migrate never runs against it and the startup check
@@ -94,6 +137,7 @@ export function declareRuntimeManagedDatabase(
   declaredHandles.set(db, record);
   const client = clientOf(db);
   if (client) declaredClients.set(client, record);
+  wrapTransactionMethod(db);
 }
 
 /** The declaration covering `db` (the handle itself or its client), if any. */

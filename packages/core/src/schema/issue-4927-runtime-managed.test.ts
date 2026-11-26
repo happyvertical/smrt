@@ -186,4 +186,80 @@ describe('runtime-managed databases and the startup check (#4927)', () => {
       'function',
     );
   });
+
+  it('propagates declarations across pooled child transaction handles and nested savepoints without extra info logs', async () => {
+    const logs: string[] = [];
+    const spies = (['info', 'warn', 'log', 'debug', 'error'] as const).map(
+      (m) =>
+        vi.spyOn(console, m).mockImplementation((...a: unknown[]) => {
+          logs.push(a.map(String).join(' '));
+        }),
+    );
+    try {
+      const pool = { kind: 'pg-pool' };
+      const createSavepointTx = (parentClient: object): DatabaseInterface => {
+        const spClient = { kind: 'pg-savepoint', parentClient };
+        return {
+          url: 'postgres://localhost:5432/app',
+          client: spClient,
+          query: async () => ({ rows: [] }),
+          tableExists: async () => true,
+        } as unknown as DatabaseInterface;
+      };
+      const pooledDb = {
+        url: 'postgres://localhost:5432/app',
+        client: pool,
+        query: async () => ({ rows: [] }),
+        tableExists: async () => true,
+        async transaction<T>(
+          cb: (tx: DatabaseInterface) => Promise<T>,
+        ): Promise<T> {
+          // Simulate pg.Pool checking out a distinct PoolClient object per transaction.
+          const checkedOutPoolClient = { kind: 'pg-pool-client' };
+          const txHandle = {
+            url: 'postgres://localhost:5432/app',
+            client: checkedOutPoolClient,
+            query: async () => ({ rows: [] }),
+            tableExists: async () => true,
+            async transaction<U>(
+              nestedCb: (spTx: DatabaseInterface) => Promise<U>,
+            ): Promise<U> {
+              return nestedCb(createSavepointTx(checkedOutPoolClient));
+            },
+          } as unknown as DatabaseInterface;
+          return cb(txHandle);
+        },
+      } as unknown as DatabaseInterface;
+
+      declareRuntimeManagedDatabase(pooledDb, DECLARATION);
+      expect(logs.filter((l) => /runtime-managed/i.test(l))).toHaveLength(1);
+
+      let observedOuter: unknown;
+      let observedNested: unknown;
+      let checkedOutClientRef: object | undefined;
+      if (!pooledDb.transaction) {
+        throw new Error('pooledDb mock must define transaction');
+      }
+      await pooledDb.transaction(async (tx) => {
+        checkedOutClientRef = (tx as unknown as { client: object }).client;
+        expect(checkedOutClientRef).not.toBe(pool);
+        observedOuter = runtimeManagedDatabaseDeclaration(tx);
+        await assertDatabaseMigratedForBuild(tx);
+        if (!tx.transaction) {
+          throw new Error('tx mock must define savepoint transaction');
+        }
+        await tx.transaction(async (savepointTx) => {
+          observedNested = runtimeManagedDatabaseDeclaration(savepointTx);
+          await assertDatabaseMigratedForBuild(savepointTx);
+        });
+      });
+
+      expect(observedOuter).toEqual(DECLARATION);
+      expect(observedNested).toEqual(DECLARATION);
+      // Child transaction propagation must not re-log startup declaration lines.
+      expect(logs.filter((l) => /runtime-managed/i.test(l))).toHaveLength(1);
+    } finally {
+      for (const spy of spies) spy.mockRestore();
+    }
+  });
 });
