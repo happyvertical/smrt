@@ -299,6 +299,14 @@ describe('@happyvertical/smrt-core/http helpers (#5674)', () => {
 
     try {
       const upstream = createServer((req, res) => {
+        if (req.url === '/head-plain' && req.method === 'HEAD') {
+          res.writeHead(200, {
+            'content-type': 'application/json',
+            'content-length': '4096',
+          });
+          res.end();
+          return;
+        }
         if (req.url === '/stacked') {
           const raw = Buffer.from(JSON.stringify({ stacked: 'ok' }));
           const stacked = brotliCompressSync(gzipSync(raw));
@@ -333,6 +341,11 @@ describe('@happyvertical/smrt-core/http helpers (#5674)', () => {
             }
             if (url.pathname === '/proxy-stacked') {
               return fetch(`http://127.0.0.1:${upstreamPort}/stacked`);
+            }
+            if (url.pathname === '/proxy-head' && request.method === 'HEAD') {
+              return fetch(`http://127.0.0.1:${upstreamPort}/head-plain`, {
+                method: 'HEAD',
+              });
             }
             if (url.pathname === '/head-meta' && request.method === 'HEAD') {
               return new Response(null, {
@@ -395,6 +408,12 @@ describe('@happyvertical/smrt-core/http helpers (#5674)', () => {
       });
       expect(headRes.status).toBe(200);
       expect(headRes.headers.get('content-length')).toBe('42');
+
+      const proxyHeadRes = await fetch(`http://127.0.0.1:${port}/proxy-head`, {
+        method: 'HEAD',
+      });
+      expect(proxyHeadRes.status).toBe(200);
+      expect(proxyHeadRes.headers.get('content-length')).toBe('4096');
 
       const precompRes = await fetch(`http://127.0.0.1:${port}/precompressed`);
       expect(precompRes.status).toBe(200);

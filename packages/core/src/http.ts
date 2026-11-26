@@ -537,6 +537,7 @@ export async function writeWebResponseToNode(
     ?.split(',')
     .some((token) => token.trim().toLowerCase() === 'close');
 
+  let strippedDecodedEncoding = false;
   webResponse.headers.forEach((value, key) => {
     const lower = key.toLowerCase();
     if (lower === 'set-cookie' && setCookies.length > 0) {
@@ -554,6 +555,7 @@ export async function writeWebResponseToNode(
         codings.length > 0 &&
         codings.every((c) => UNDICI_DECODED_ENCODINGS.has(c))
       ) {
+        strippedDecodedEncoding = true;
         return;
       }
     }
@@ -567,13 +569,10 @@ export async function writeWebResponseToNode(
     res.setHeader('connection', 'close');
   }
   if (body !== null) {
-    if (
-      isHead &&
-      body.byteLength === 0 &&
-      declaredResponseLength !== null &&
-      !isFetchDecodedResponse
-    ) {
-      res.setHeader('content-length', declaredResponseLength);
+    if (isHead && body.byteLength === 0) {
+      if (declaredResponseLength !== null && !strippedDecodedEncoding) {
+        res.setHeader('content-length', declaredResponseLength);
+      }
     } else {
       res.setHeader('content-length', String(body.byteLength));
     }
