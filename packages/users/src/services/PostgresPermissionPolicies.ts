@@ -320,6 +320,66 @@ function buildDeletePolicySql(
   ];
 }
 
+/**
+ * Guest audit sink (#5196): the one INSERT policy a guest's own context gets
+ * on the audit table. A guest has no user row, so its audit rows carry
+ * `actor_kind = 'guest'` and a null profile; the policy admits only those rows,
+ * only for the request's own tenant, and has NO `smrt_rls_bypass()` arm, so a
+ * guest never needs (or gets) `smrt.system_context`.
+ */
+export interface GuestAuditPolicyOptions {
+  /** The audit table (default `audit_logs`, the profiles `AuditLog`). */
+  tableName?: string;
+  /** Schema of the audit table (default `public`). */
+  schemaName?: string;
+  /** The tenant column (default `tenant_id`). */
+  tenantField?: string;
+  /** The actor-kind column (default `actor_kind`). */
+  actorKindField?: string;
+  /**
+   * Also `ENABLE`/`FORCE` row-level security on the table (default false).
+   * The audit table is optional-mode tenant data, so generation does not
+   * enable RLS on it; the host opts in when it owns that decision.
+   */
+  enableRls?: boolean;
+}
+
+/**
+ * SQL for the guest audit INSERT policy. Pure; needs the `smrt_current_tenant_id`
+ * helper that {@link generatePostgresPermissionSql} creates.
+ */
+export function generateGuestAuditInsertPolicySql(
+  options: GuestAuditPolicyOptions = {},
+): string[] {
+  const schemaName = options.schemaName ?? 'public';
+  const tableName = options.tableName ?? 'audit_logs';
+  const qualifiedTable = `${quoteIdent(schemaName)}.${quoteIdent(tableName)}`;
+  const policyName = buildPolicyName(
+    `${tableName}:guest`,
+    'INSERT',
+    schemaName,
+  );
+  const tenant = quoteIdent(options.tenantField ?? 'tenant_id');
+  const kind = quoteIdent(options.actorKindField ?? 'actor_kind');
+  const condition = `${kind} = 'guest' AND ${tenant}::text = smrt_current_tenant_id()`;
+  const statements: string[] = [];
+  if (options.enableRls) {
+    statements.push(`ALTER TABLE ${qualifiedTable} ENABLE ROW LEVEL SECURITY`);
+    statements.push(`ALTER TABLE ${qualifiedTable} FORCE ROW LEVEL SECURITY`);
+  }
+  statements.push(
+    `DROP POLICY IF EXISTS ${quoteIdent(policyName)} ON ${qualifiedTable}`,
+    `CREATE POLICY ${quoteIdent(policyName)} ON ${qualifiedTable} FOR INSERT WITH CHECK (${condition})`,
+  );
+  return statements;
+}
+
+/** Opt-in additions to the generated policy set. */
+export interface PostgresPolicyExtras {
+  /** Add the guest audit INSERT policy (see {@link GuestAuditPolicyOptions}). */
+  guestAudit?: GuestAuditPolicyOptions | true;
+}
+
 function buildHelperStatements(schemaName?: string): string[] {
   const prefix = schemaName ? `${quoteIdent(schemaName)}.` : '';
   return [
@@ -397,6 +457,7 @@ function addBindingToTarget(
 export function generatePostgresPermissionSql(
   options: SmrtClassOptions = {},
   scope?: PostgresPolicyScope,
+  extras: PostgresPolicyExtras = {},
 ): GeneratePostgresPermissionSqlResult {
   if (scope) assertScopeSchemaName(scope.schemaName);
 
@@ -621,6 +682,15 @@ export function generatePostgresPermissionSql(
     }
   }
 
+  if (extras.guestAudit) {
+    const auditOptions =
+      extras.guestAudit === true ? {} : { ...extras.guestAudit };
+    if (scope && !auditOptions.schemaName) {
+      auditOptions.schemaName = scope.schemaName;
+    }
+    statements.push(...generateGuestAuditInsertPolicySql(auditOptions));
+  }
+
   return {
     bindings: explicitBindings,
     skipped,
@@ -632,6 +702,7 @@ export function generatePostgresPermissionSql(
 
 export async function applyPostgresPermissionPolicies(
   options: SmrtClassOptions = {},
+  extras: PostgresPolicyExtras = {},
 ): Promise<GeneratePostgresPermissionSqlResult> {
   const permissions = await PermissionCollection.create(options);
   const databaseOptions = options.db ?? options.persistence;
@@ -643,7 +714,7 @@ export async function applyPostgresPermissionPolicies(
     );
   }
 
-  const result = generatePostgresPermissionSql(options);
+  const result = generatePostgresPermissionSql(options, undefined, extras);
   for (const statement of result.statements) {
     try {
       await permissions.db.query(statement);
