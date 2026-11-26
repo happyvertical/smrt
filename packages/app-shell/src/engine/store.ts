@@ -52,6 +52,12 @@ export interface VersionStore {
     expected: number | null,
     markDraft?: boolean,
   ): Promise<void>;
+  /**
+   * Optional, with `commitIn` (#5630): `markPurged` for every version in
+   * `versions`, inside the caller's claim transaction `tx`, so a host that
+   * lost its claim marks nothing. Only `tx` is used.
+   */
+  markPurgedIn?(tx: unknown, versions: number[]): Promise<void>;
   /** Optional, with `commitIn`: can `tx` see this store's own app row? (False: the claim is on another database.) */
   reachable?(tx: unknown): Promise<boolean>;
   /** Optional, with `commitIn`: the draft the next publish marks `published`, for the journal. */

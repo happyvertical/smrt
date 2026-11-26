@@ -399,6 +399,14 @@ export class ShellVersionStore implements VersionStore {
     return this.scoped(async () => markRowPurged(await this.row(version)));
   }
 
+  markPurgedIn(tx: unknown, versions: number[]): Promise<void> {
+    return this.scoped(async () => {
+      await bindClaimTx(this.db, this.tenantId, tx);
+      for (const v of versions)
+        await markRowPurged(await this.row(v, tx as DatabaseInterface));
+    });
+  }
+
   maxVersion(): Promise<number> {
     return this.scoped(async () => {
       const rows = await (await this.versions()).list({ limit: 100000 });
@@ -541,6 +549,14 @@ export class DraftVersionStore implements VersionStore {
 
   markPurged(version: number): Promise<void> {
     return this.scoped(async () => markRowPurged(await this.row(version)));
+  }
+
+  markPurgedIn(tx: unknown, versions: number[]): Promise<void> {
+    return this.scoped(async () => {
+      await bindClaimTx(this.db, this.tenantId, tx);
+      for (const v of versions)
+        await markRowPurged(await this.row(v, tx as DatabaseInterface));
+    });
   }
 
   async maxVersion(): Promise<number> {
