@@ -358,8 +358,8 @@ engine.md "SQLite to PostgreSQL in place") has moved it. v1 decisions:
 `POST /api/shell/app/receive` (`receiveOwnUserApp`, `src/lib/server/receive-user-app.ts`)
 installs a desktop bundle (`exportUserApp`, `smrt app export`) as the signed-in
 owner's app in the shared PostgreSQL, in the schema the host names for that
-tenant's app. Owner session and same origin only (an operator or a link token
-is not a caller here yet). v1:
+tenant's app. Callers: the owner's session (same origin), or the CLI with an
+owner-minted link token (below). An operator is not a caller here. v1:
 
 - **Tenant** is the verified owner's, never a field of the request or bundle.
 - **Target** is an app that never held content: no history, or only the engine's
@@ -397,7 +397,44 @@ is not a caller here yet). v1:
 - v1 defaults, revisit: the SQLite file on the desktop stays; the hosted app
   cannot be moved back once it has taken writes; waiting changes and drafts refuse a move.
 - The CLI side (`runSharedCloudMigration`, `SharedCloudTransport.receiveUserApp`)
-  is wired; an HTTP transport that authenticates a cloud link to this route is not.
+  is wired to an HTTP transport (`createReceiveTransport`, `smrt app receive`):
+  the link token below.
+
+#### The receive link token (#5638)
+
+A second way into `POST /api/shell/app/receive`, for the CLI, which has no
+browser session. `src/lib/server/receive-link.ts`, `ReceiveLink` (`receive_links`,
+a tenant-scoped shell table, RLS like the others).
+
+- **Minted** only by the signed-in owner (`POST /api/shell/app/receive-link`,
+  session cookie and same origin; a link token cannot mint one). Hosted profile
+  only. Shown once; only the SHA-256 of its 256-bit secret is stored. One row per
+  tenant (its id derived from the tenant): a mint rewrites it, so the earlier
+  token is revoked and overlapping mints leave exactly one live token (the loser's
+  is dead). The spend also matches the token's hash, so a token revoked after it
+  verified cannot be spent.
+- **Scope**: one tenant (the minter's: it is in the token as the lookup
+  selector and in the row) and one action (`app.receive`, checked on the row).
+  Only the receive route reads `Authorization: Bearer`; every other route reads
+  the owner session and ignores it. With the header present the cookie is
+  ignored; no query string is accepted (400), so it never rides in a URL.
+- **Short-lived**: 10 minutes by default, 15 at most (`ttlSeconds` may only
+  shorten), fixed at minting.
+- **Single use**: the first presentation that passes every check is spent by one
+  conditional `UPDATE ... WHERE used_at = '' AND expires_at > now` before the bundle runs (expiry is decided here too, not only at verify), so a
+  receive that then fails still burned it (mint again; the receive converges).
+  A body that is missing or not a bundle is refused before the spend.
+- **Constant time**: the stored hashes of the tenant's unspent tokens (at most a
+  few) are all compared with `timingSafeEqual`. Every refusal (malformed,
+  unknown, tampered, expired, spent, wrong tenant, owner no longer owner, not
+  cloud) is the same 401 `the link token is not valid`.
+- **Acts as** the owner who minted it, re-verified (`requireOwner`) on use; a
+  demoted owner's token is dead. The tenant is the verified owner's, as always.
+- **Never logged**: errors carry the message only; the CLI scrubs the token from
+  every failure and refuses redirects.
+- Not built: rate limiting of bad presentations (256-bit secrets, one tenant
+  lookup); an operator-minted token (the operator command stays
+  `migrate-to-postgres`).
 
 ## Remaining (not in this slice)
 
