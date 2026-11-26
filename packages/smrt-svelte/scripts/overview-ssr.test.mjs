@@ -74,7 +74,13 @@ test('OverviewGrid server rendering draws the activity widget without AdminShell
     const { loadOverview } = await server.ssrLoadModule(
       resolve('src/components/overview/load.ts'),
     );
+    const serverExports = await server.ssrLoadModule(
+      resolve('src/components/overview/server.ts'),
+    );
     const { render } = await server.ssrLoadModule('svelte/server');
+
+    assert.equal(typeof serverExports.safeActivityHref, 'function');
+    assert.equal(typeof serverExports.formatActivityTimestamp, 'function');
 
     const registry = createWidgetRegistry();
     registerCoreWidgets(registry, {
@@ -101,7 +107,11 @@ test('OverviewGrid server rendering draws the activity widget without AdminShell
       defaults: [{ id: 'act', type: 'activity', span: 4, options: {} }],
     });
     const resolved = resolveOverview(definition, null, registry);
-    const loaded = await loadOverview(resolved.document, definition, registry, {});
+    const serverNow = Date.parse('2026-11-26T19:00:30.000Z');
+    const loaded = await loadOverview(resolved.document, definition, registry, {
+      now: serverNow,
+    });
+    assert.equal(loaded.loadedAt, serverNow);
     const result = await render(Harness, {
       props: {
         options: { definition, registry, loaded },
@@ -110,6 +120,8 @@ test('OverviewGrid server rendering draws the activity widget without AdminShell
     assert.match(result.body, /Webhook retry escalated/);
     assert.match(result.body, /SUP-42/);
     assert.match(result.body, /Core API/);
+    assert.match(result.body, /just now/);
+    assert.match(result.body, /7:00 PM/);
     assert.doesNotMatch(result.body, /completed/i);
     assert.doesNotMatch(result.body, /javascript:/);
   } finally {

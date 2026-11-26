@@ -5,6 +5,12 @@
  * schemas, widget registry, and the server load contract. Safe to import from
  * a `+page.server.ts` or a save endpoint.
  */
+export { safeActivityHref } from '../activity/safe-href.js';
+export {
+  type FormatActivityTimestampOptions,
+  type FormattedActivityTime,
+  formatActivityTimestamp,
+} from '../activity/time.js';
 export type {
   ActivityContextBadge,
   ActivityListControls,

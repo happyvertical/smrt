@@ -39,6 +39,10 @@ export interface OverviewWidgetEntry {
   status: WidgetStatus;
   data?: unknown;
   error?: LoadedWidgetErrorCode;
+  /** Shared reference epoch (ms) for deterministic relative timestamp rendering. */
+  loadedAt?: number;
+  /** Optional IANA time zone carried from `LoadedOverview` or client reloads. */
+  timeZone?: string;
 }
 
 export type OverviewOpResult =
@@ -94,6 +98,8 @@ export class OverviewController {
   readonly #registry: WidgetRegistry;
   #local = $state.raw<unknown>(null);
   #entries = $state.raw<Record<string, KeyedEntry>>({});
+  #loadedAt: number | undefined;
+  #timeZone: string | undefined;
   readonly #pending = new Map<string, AbortController>();
   /**
    * Overrides handed to `onchange` that a host-owned getter has not fed back
@@ -126,6 +132,16 @@ export class OverviewController {
   }
 
   #seed(loaded: LoadedOverview): void {
+    const loadedAt =
+      typeof loaded.loadedAt === 'number' && Number.isFinite(loaded.loadedAt)
+        ? loaded.loadedAt
+        : undefined;
+    const timeZone =
+      typeof loaded.timeZone === 'string' && loaded.timeZone.trim()
+        ? loaded.timeZone.trim()
+        : undefined;
+    this.#loadedAt = loadedAt;
+    this.#timeZone = timeZone;
     const entries: Record<string, KeyedEntry> = {};
     for (const widget of loaded.widgets) {
       entries[widget.id] = {
@@ -133,6 +149,8 @@ export class OverviewController {
         status: widget.status,
         data: widget.data,
         error: widget.error?.code,
+        ...(loadedAt !== undefined ? { loadedAt } : {}),
+        ...(timeZone ? { timeZone } : {}),
       };
     }
     this.#entries = entries;
@@ -255,7 +273,11 @@ export class OverviewController {
   entry(widget: OverviewWidget): OverviewWidgetEntry {
     const entry = this.#entries[widget.id];
     if (entry && entry.key === optionsKey(widget)) return entry;
-    return { status: this.#options.loadWidget ? 'loading' : 'ready' };
+    return {
+      status: this.#options.loadWidget ? 'loading' : 'ready',
+      ...(this.#loadedAt !== undefined ? { loadedAt: this.#loadedAt } : {}),
+      ...(this.#timeZone ? { timeZone: this.#timeZone } : {}),
+    };
   }
 
   #models(): readonly string[] | undefined {
@@ -508,7 +530,13 @@ export class OverviewController {
         controller.signal.aborted ? undefined : load(widget, controller.signal),
       )
       .then(
-        (data) => settle({ status: 'ready', data }),
+        (data) =>
+          settle({
+            status: 'ready',
+            data,
+            loadedAt: Date.now(),
+            ...(this.#timeZone ? { timeZone: this.#timeZone } : {}),
+          }),
         () => settle({ status: 'error', error: 'load_failed' }),
       );
   }

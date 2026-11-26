@@ -27,12 +27,25 @@ export interface Props {
   onDismiss?: (id: string) => void | Promise<void>;
   /** Callback invoked when the user restores a dismissed `entry`. */
   onRestore?: (id: string) => void | Promise<void>;
-  /** Optional reference epoch (ms) for deterministic relative timestamp rendering in tests. */
+  /** Shared reference epoch (ms) for deterministic relative timestamp rendering across SSR and hydration. */
   now?: number;
+  /** IANA time zone for timestamp tooltips and absolute fallbacks (defaults to `'UTC'`). */
+  timeZone?: string;
+  /** Optional BCP-47 locale override for timestamp formatting. */
+  locale?: string;
 }
 
-let { activity, entry, onDismiss, onRestore, now }: Props = $props();
-const { locale, t } = useI18n();
+let {
+  activity,
+  entry,
+  onDismiss,
+  onRestore,
+  now,
+  timeZone,
+  locale: localeProp,
+}: Props = $props();
+const { locale: i18nLocale, t } = useI18n();
+const effectiveLocale = $derived(localeProp?.trim() || i18nLocale);
 
 const isDismissed = $derived(Boolean(entry?.dismissed));
 const titleText = $derived(entry ? entry.title : (activity?.label ?? ''));
@@ -60,7 +73,8 @@ const rawTimestamp = $derived(
 );
 const timeInfo = $derived(
   formatActivityTimestamp(rawTimestamp, {
-    locale,
+    locale: effectiveLocale,
+    timeZone,
     justNowLabel: t(M['ui.activity_item.just_now']),
     now,
   }),

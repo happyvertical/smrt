@@ -56,6 +56,37 @@ describe('formatActivityTimestamp & safeActivityHref', () => {
     expect(formatActivityTimestamp('')).toBeNull();
   });
 
+  it('never reads ambient Date.now() or host timezone when now or timeZone are omitted', () => {
+    const spy = vi
+      .spyOn(Date, 'now')
+      .mockReturnValueOnce(Date.parse('2026-11-26T19:00:10.000Z'))
+      .mockReturnValueOnce(Date.parse('2026-11-26T22:00:00.000Z'));
+
+    try {
+      const first = formatActivityTimestamp('2026-11-26T19:00:00.000Z', {
+        locale: 'en-US',
+      });
+      const second = formatActivityTimestamp('2026-11-26T19:00:00.000Z', {
+        locale: 'en-US',
+        timeZone: 'Invalid/Zone',
+      });
+      expect(spy).not.toHaveBeenCalled();
+      expect(first).toEqual(second);
+      expect(first?.title).toContain('7:00 PM');
+      expect(first?.label).toContain('7:00 PM');
+
+      const tokyo = formatActivityTimestamp('2026-11-26T19:00:00.000Z', {
+        locale: 'en-US',
+        timeZone: 'Asia/Tokyo',
+        now: NOW,
+      });
+      expect(tokyo?.label).toMatch(/1 hr\. ago/);
+      expect(tokyo?.title).toContain('Nov 27, 2026');
+    } finally {
+      spy.mockRestore();
+    }
+  });
+
   it('accepts safe local and http(s) links while rejecting unsafe schemes and control characters', () => {
     expect(safeActivityHref('/app/projects/123')).toBe('/app/projects/123');
     expect(safeActivityHref(' https://example.com/item ')).toBe(
@@ -338,5 +369,29 @@ describe('ActivityList', () => {
       screen.getByRole('button', { name: 'Show dismissed (3)' }),
     ).toBeInTheDocument();
     await expectNoA11yViolations(view.container);
+  });
+
+  it('deduplicates entries with colliding ids instead of crashing keyed rendering', () => {
+    render(ActivityList, {
+      props: {
+        now: NOW,
+        entries: [
+          {
+            id: 'dup-id',
+            title: 'First copy wins',
+            occurredAt: '2026-11-26T19:50:00.000Z',
+          },
+          {
+            id: 'dup-id',
+            title: 'Duplicate copy dropped',
+            occurredAt: '2026-11-26T19:55:00.000Z',
+          },
+        ],
+      },
+    });
+    expect(screen.getByText('First copy wins')).toBeInTheDocument();
+    expect(
+      screen.queryByText('Duplicate copy dropped'),
+    ).not.toBeInTheDocument();
   });
 });

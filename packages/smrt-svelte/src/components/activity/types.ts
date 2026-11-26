@@ -58,12 +58,16 @@ export interface ActivityListControls {
   showDismissed?: boolean;
   /** Callback invoked to toggle visibility of dismissed entries. */
   onToggleShowDismissed?: () => void;
+  /** Reference clock epoch in milliseconds for deterministic relative timestamp rendering across SSR and hydration. */
+  now?: number;
+  /** IANA time zone for timestamp tooltips and absolute fallbacks (defaults to `'UTC'` so SSR and browser agree). */
+  timeZone?: string;
+  /** Optional BCP-47 locale tag override for timestamp formatting. */
+  locale?: string;
 }
 
 /** Props accepted by `ActivityList`. */
 export interface ActivityListProps extends ActivityListControls {
   /** Already-authorized activity rows to display. */
   entries: ActivityListEntry[];
-  /** Optional reference epoch (ms) for deterministic relative timestamp rendering in tests. */
-  now?: number;
 }

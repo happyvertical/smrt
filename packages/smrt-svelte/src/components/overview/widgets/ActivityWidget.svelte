@@ -12,7 +12,13 @@ import type {
 import type { WidgetComponentProps } from '../types.js';
 import { type ActivityWidgetData, isRecord } from './data.js';
 
-let { data, options }: WidgetComponentProps<ActivityWidgetData> = $props();
+let {
+  data,
+  options,
+  locale: gridLocale,
+  now: gridNow,
+  timeZone: gridTimeZone,
+}: WidgetComponentProps<ActivityWidgetData> = $props();
 
 const MAX_ENTRIES = 200;
 const VALID_TONES = new Set<ActivityStatusTone>([
@@ -39,10 +45,38 @@ const limit = $derived(
 
 const entries = $derived.by((): ActivityListEntry[] => {
   if (!isRecord(data) || !Array.isArray(data.entries)) return [];
+  const reservedIds = new Set<string>();
+  for (const item of data.entries) {
+    if (
+      isRecord(item) &&
+      typeof item.title === 'string' &&
+      typeof item.id === 'string' &&
+      item.id
+    ) {
+      reservedIds.add(item.id);
+    }
+  }
+  const seenIds = new Set<string>();
+  let fallbackSeq = 0;
   const out: ActivityListEntry[] = [];
   for (const item of data.entries) {
     if (out.length >= limit) break;
     if (!isRecord(item) || typeof item.title !== 'string') continue;
+    let id: string;
+    if (typeof item.id === 'string' && item.id) {
+      if (seenIds.has(item.id)) continue;
+      id = item.id;
+    } else {
+      while (
+        reservedIds.has(String(fallbackSeq)) ||
+        seenIds.has(String(fallbackSeq))
+      ) {
+        fallbackSeq += 1;
+      }
+      id = String(fallbackSeq);
+      fallbackSeq += 1;
+    }
+    seenIds.add(id);
     const context =
       isRecord(item.context) && typeof item.context.label === 'string'
         ? {
@@ -59,7 +93,7 @@ const entries = $derived.by((): ActivityListEntry[] => {
           }
         : null;
     out.push({
-      id: typeof item.id === 'string' && item.id ? item.id : String(out.length),
+      id,
       title: item.title,
       ...(typeof item.detail === 'string' ? { detail: item.detail } : {}),
       occurredAt: typeof item.occurredAt === 'string' ? item.occurredAt : '',
@@ -137,6 +171,27 @@ const onToggleShowDismissed = $derived(
     ? (data.onToggleShowDismissed as ActivityWidgetData['onToggleShowDismissed'])
     : undefined,
 );
+const now = $derived(
+  isRecord(data) && typeof data.now === 'number' && Number.isFinite(data.now)
+    ? data.now
+    : typeof gridNow === 'number' && Number.isFinite(gridNow)
+      ? gridNow
+      : undefined,
+);
+const timeZone = $derived(
+  isRecord(data) && typeof data.timeZone === 'string' && data.timeZone.trim()
+    ? data.timeZone.trim()
+    : typeof gridTimeZone === 'string' && gridTimeZone.trim()
+      ? gridTimeZone.trim()
+      : undefined,
+);
+const locale = $derived(
+  isRecord(data) && typeof data.locale === 'string' && data.locale.trim()
+    ? data.locale.trim()
+    : typeof gridLocale === 'string' && gridLocale.trim()
+      ? gridLocale.trim()
+      : undefined,
+);
 </script>
 
 <div class="smrt-activity-widget__root" data-smrt-component="ActivityWidget">
@@ -153,6 +208,9 @@ const onToggleShowDismissed = $derived(
     {dismissedCount}
     {showDismissed}
     {onToggleShowDismissed}
+    {now}
+    {timeZone}
+    {locale}
   />
 </div>
 

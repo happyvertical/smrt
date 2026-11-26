@@ -8,8 +8,6 @@ import type { ActivityListControls, ActivityListEntry } from './types.js';
 export interface Props extends ActivityListControls {
   /** Already-authorized activity rows to display. */
   entries: ActivityListEntry[];
-  /** Optional reference epoch (ms) for deterministic relative timestamp rendering in tests. */
-  now?: number;
 }
 
 let {
@@ -26,12 +24,25 @@ let {
   showDismissed,
   onToggleShowDismissed,
   now,
+  timeZone,
+  locale,
 }: Props = $props();
 
 const { t } = useI18n();
 
 let selectedSource = $state<string | null>(null);
 let localShowDismissed = $state(false);
+
+const uniqueEntries = $derived.by((): ActivityListEntry[] => {
+  const seen = new Set<string>();
+  const out: ActivityListEntry[] = [];
+  for (const entry of entries) {
+    if (seen.has(entry.id)) continue;
+    seen.add(entry.id);
+    out.push(entry);
+  }
+  return out;
+});
 
 interface SourceOption {
   key: string;
@@ -48,7 +59,7 @@ function sourceLabelOf(entry: ActivityListEntry): string {
 
 const sources = $derived.by((): SourceOption[] => {
   const seen = new Map<string, string>();
-  for (const entry of entries) {
+  for (const entry of uniqueEntries) {
     const key = sourceKeyOf(entry);
     if (!key || seen.has(key)) continue;
     seen.set(key, sourceLabelOf(entry));
@@ -73,7 +84,7 @@ const activeSource = $derived(
 const effectiveShowDismissed = $derived(showDismissed ?? localShowDismissed);
 
 const inListDismissedCount = $derived(
-  entries.filter((entry) => entry.dismissed).length,
+  uniqueEntries.filter((entry) => entry.dismissed).length,
 );
 
 const effectiveDismissedCount = $derived(
@@ -86,7 +97,7 @@ const canToggleDismissed = $derived(
 );
 
 const visibleEntries = $derived(
-  entries.filter(
+  uniqueEntries.filter(
     (entry) =>
       (effectiveShowDismissed || !entry.dismissed) &&
       (activeSource === null || sourceKeyOf(entry) === activeSource),
@@ -201,7 +212,7 @@ function handleToggleDismissed(): void {
   {#if visibleEntries.length > 0}
     <div class="smrt-activity-feed__list" data-smrt-part="list">
       {#each visibleEntries as entry (entry.id)}
-        <ActivityItem {entry} {onDismiss} {onRestore} {now} />
+        <ActivityItem {entry} {onDismiss} {onRestore} {now} {timeZone} {locale} />
       {/each}
     </div>
   {:else if isCaughtUp}
