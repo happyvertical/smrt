@@ -409,3 +409,108 @@ test('turbo xargs lines and hidden-directory uploads cannot silently break (#565
     assert.match(step, /include-hidden-files: true/, step.split('\n')[0]);
   }
 });
+
+test('the M5 gate runs as parallel parts and one aggregator that a skipped part cannot skip (#5694)', async () => {
+  const suite = readFileSync(
+    new URL('../.github/workflows/test-suite.yml', import.meta.url),
+    'utf8',
+  );
+  const suiteJob = (name) => {
+    const block = suite.match(
+      new RegExp(`^  ${name}:\\n[\\s\\S]*?(?=^  [a-z][a-z0-9-]*:\\n|(?![\\s\\S]))`, 'm'),
+    )?.[0];
+    assert.ok(block, `test-suite job ${name} must exist`);
+    return block;
+  };
+  const flatIf = (block) =>
+    (block.match(/^    if: >-\n([\s\S]*?)(?=^    \S)/m)?.[1] ?? '')
+      .replace(/\s+/g, ' ')
+      .trim();
+  const { PARTS, NEEDS_GROUPS } = await import(
+    '../packages/template-sveltekit/e2e/support/gateSpec.mjs'
+  );
+
+  const template = suiteJob('m5-template');
+  const postgres = suiteJob('m5-postgres');
+  const browser = suiteJob('m5-browser');
+  const aggregate = suiteJob('m5-reference-gate');
+
+  // The aggregator keeps its old id and name, and needs every part job.
+  assert.match(aggregate, /^    name: M5 Reference Fixture Gate$/m);
+  assert.match(aggregate, /^    needs: \[m5-template, m5-postgres, m5-browser\]$/m);
+
+  // It can never evaluate false in either mode (Required CI reads only
+  // `needs.test.result`): `!cancelled()` and nothing else, with no `always()`
+  // and no `continue-on-error` anywhere in the workflow.
+  assert.match(aggregate, /^    if: \$\{\{ !cancelled\(\) \}\}$/m);
+  assert.doesNotMatch(aggregate.split('\n    steps:')[0], /always\(\)|success\(\)/);
+  assert.doesNotMatch(suite, /continue-on-error/);
+  for (const part of [template, postgres, browser]) {
+    // `build` is skipped in affected mode, so a bare `needs` would skip them.
+    assert.equal(
+      flatIf(part),
+      "!cancelled() && (inputs.mode == 'affected' || needs.build.result == 'success')",
+    );
+    assert.match(part, /^    needs: build$/m);
+  }
+
+  // Each part's result is passed to the verdict explicitly, never inferred.
+  assert.match(aggregate, /M5_TEMPLATE: \$\{\{ needs\.m5-template\.result \}\}/);
+  assert.match(aggregate, /M5_POSTGRES: \$\{\{ needs\.m5-postgres\.result \}\}/);
+  assert.match(aggregate, /M5_BROWSER: \$\{\{ needs\.m5-browser\.result \}\}/);
+  assert.match(aggregate, /gate\.mjs verdict/);
+  assert.match(aggregate, /--template "\$M5_TEMPLATE"/);
+  assert.match(aggregate, /--postgres "\$M5_POSTGRES"/);
+  assert.match(aggregate, /--browser "\$M5_BROWSER"/);
+  assert.deepEqual([...NEEDS_GROUPS].sort(), ['browser', 'postgres', 'template']);
+
+  // One folder per artifact (no merge-multiple), hidden-file free, and a part
+  // that wrote no result fails its own upload.
+  assert.match(aggregate, /pattern: m5-part-\*/);
+  assert.doesNotMatch(aggregate, /merge-multiple:/);
+  for (const part of [template, postgres, browser]) {
+    assert.match(part, /if-no-files-found: error/);
+    assert.doesNotMatch(part, /include-hidden-files/);
+    assert.match(part, /path: packages\/template-sveltekit\/m5-part-/);
+  }
+  assert.match(template, /name: m5-part-template-\$\{\{ strategy\.job-index \}\}/);
+  assert.match(postgres, /name: m5-part-postgres$/m);
+  assert.match(browser, /name: m5-part-browser$/m);
+
+  // The expected part count is the matrix size plus the two single jobs, and
+  // equals what the gate defines.
+  const matrix = template.match(/^        part: \[(.+)\]$/m)?.[1].split(',').map((x) => x.trim().replace(/'/g, ''));
+  const expected = Number(aggregate.match(/M5_EXPECTED_PARTS: '(\d+)'/)?.[1]);
+  assert.equal(expected, matrix.length + 2);
+  assert.equal(expected, PARTS.length);
+  assert.deepEqual(
+    PARTS.filter((p) => p.needs === 'template').map((p) => p.id),
+    matrix,
+  );
+  assert.match(aggregate, /--expected-parts "\$M5_EXPECTED_PARTS"/);
+
+  // The aggregator needs a checkout and node, nothing installed; the parts
+  // that need no PostgreSQL or browser do not pay for either.
+  assert.doesNotMatch(aggregate, /setup-environment|pnpm /);
+  assert.doesNotMatch(aggregate, /services:/);
+  assert.match(postgres, /^    services:\n      postgres:/m);
+  assert.doesNotMatch(template, /services:|setup-playwright: 'true'/);
+  assert.doesNotMatch(browser, /services:/);
+  assert.match(browser, /setup-playwright: 'true'/);
+  assert.match(postgres, /test:m5:part:postgres/);
+  assert.match(postgres, /CI_POSTGRES_BASE_URL: /);
+  assert.doesNotMatch(template, /CI_POSTGRES_BASE_URL/);
+
+  // Exactly one job emits `postgres-service`: the one with the service.
+  assert.equal((suite.match(/^    services:$/gm) ?? []).length >= 1, true);
+  const jobsWithM5Services = ['m5-template', 'm5-postgres', 'm5-browser', 'm5-reference-gate']
+    .filter((name) => /^    services:$/m.test(suiteJob(name)));
+  assert.deepEqual(jobsWithM5Services, ['m5-postgres']);
+
+  // fork-pr-validation reaches these jobs through `mode: full`.
+  const fork = readFileSync(
+    new URL('../.github/workflows/fork-pr-validation.yml', import.meta.url),
+    'utf8',
+  );
+  assert.match(fork, /uses: \.\/\.github\/workflows\/test-suite\.yml\n\s+with:\n\s+mode: full/);
+});
