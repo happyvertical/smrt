@@ -5416,17 +5416,28 @@ export class SmrtObject extends SmrtClass {
     );
   }
 
-  /** This model's ownership columns that exist on its stored table. */
+  /**
+   * This model's ownership columns that exist on its stored table, resolved
+   * through the same search_path lookup the INSERT uses. An unresolvable table
+   * refuses the save rather than dropping the owner check.
+   */
   private async storedOwnershipColumns(): Promise<string[]> {
     const result = await this.db.query(
-      'SELECT column_name FROM information_schema.columns WHERE table_schema = current_schema() AND table_name = $1',
-      this.tableName,
+      `SELECT attname AS column_name FROM pg_attribute WHERE attrelid = to_regclass($1) AND attnum > 0 AND NOT attisdropped`,
+      `"${this.tableName.replaceAll('"', '""')}"`,
     );
     const present = new Set<string>(
       (result?.rows ?? []).map((row: Record<string, unknown>) =>
         String(row.column_name),
       ),
     );
+    if (present.size === 0) {
+      throw new RuntimeError(
+        `Cannot verify the owner of "${this.tableName}": its stored columns could not be read`,
+        'RUNTIME_INVALID_STATE',
+        { tableName: this.tableName },
+      );
+    }
     return [
       ...SmrtObject.ownershipColumnsFor(this.getResolvedQualifiedName()),
     ].filter((column) => present.has(column));
