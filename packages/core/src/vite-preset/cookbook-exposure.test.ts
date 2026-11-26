@@ -231,9 +231,11 @@ describe('cookbook-driven hosting of consumed package models (#3749)', () => {
       // The Orders list and view RecipeScreens drive: GET /api/orders and /api/orders/:id.
       expect(existsSync(join(api, 'orders/+server.ts'))).toBe(true);
       expect(existsSync(join(api, 'orders/[id]/+server.ts'))).toBe(true);
-      // Tenant isolation comes with the generated route for a tenant-scoped model.
+      // Tenant isolation comes with the generated route for a tenant-scoped
+      // model: the route enters the request's tenancy through core (#5375), not
+      // through an emitted `smrt-tenancy` import.
       expect(readFileSync(join(api, 'invoices/+server.ts'), 'utf8')).toContain(
-        'smrt-tenancy',
+        'enterTenancy(locals, "list")',
       );
       // api:false stays closed even though a recipe lists it.
       expect(existsSync(join(api, 'ledgers'))).toBe(false);

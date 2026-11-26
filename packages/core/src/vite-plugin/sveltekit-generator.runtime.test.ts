@@ -18,6 +18,10 @@ import { SmrtCollection } from '../collection.js';
 import { assertCreateTargetSurface } from '../create-target.js';
 import { field } from '../decorators/index.js';
 import {
+  modelRoutePolicy,
+  RequestPrincipalRefusal,
+} from '../generators/request-principal.js';
+import {
   apiPrincipalFromLocals,
   authorize,
   stripTenantFilters,
@@ -28,7 +32,7 @@ import { SmrtObject } from '../object.js';
 import { publicSerializerOf, toPublicJSONValue } from '../public-json.js';
 import { assertQueryAccess, parseRestListWhere } from '../query-access.js';
 import { ObjectRegistry, smrt } from '../registry.js';
-import { assertCreateInput } from '../request-input.js';
+import { assertCreateInput, foreignRowModel } from '../request-input.js';
 import { setRuntimeExposureGate } from '../runtime-exposure.js';
 import type { SmartObjectManifest } from '../scanner/types.js';
 import { isServiceOptionInput } from '../service-options.js';
@@ -308,6 +312,11 @@ function writeWorkspaceCoreShim(projectRoot: string): void {
       'export const authorize = (input) => globalThis.__smrtGeneratedRequestHelpers.authorize(input);',
       'export const apiPrincipalFromLocals = (locals, tenant) => globalThis.__smrtGeneratedRequestHelpers.apiPrincipalFromLocals(locals, tenant);',
       'export const stripTenantFilters = (principal, columns, where) => globalThis.__smrtGeneratedRequestHelpers.stripTenantFilters(principal, columns, where);',
+      // The real policy of the model a write lands in, and the typed refusal.
+      'export const modelRoutePolicy = (model) => globalThis.__smrtGeneratedRequestHelpers.modelRoutePolicy(model);',
+      // This fixture loads plain-object rows, which no model owns; the real helper refuses a row it cannot resolve (fails closed), so only they are treated as the route's own.
+      'export const foreignRowModel = (row, model) => Object.getPrototypeOf(row) === Object.prototype ? undefined : globalThis.__smrtGeneratedRequestHelpers.foreignRowModel(row, model);',
+      'export const RequestPrincipalRefusal = globalThis.__smrtGeneratedRequestHelpers.RequestPrincipalRefusal;',
       'export const publicSerializerOf = (value) => globalThis.__smrtGeneratedRequestHelpers.publicSerializerOf(value);',
       'export const toPublicJSONValue = (value, options) => globalThis.__smrtGeneratedRequestHelpers.toPublicJSONValue(value, options);',
       // The fixture registry declares no field policy, so a list query passes
@@ -389,6 +398,9 @@ describe('generated SvelteKit helper runtime', () => {
       apiPrincipalFromLocals,
       authorize,
       stripTenantFilters,
+      modelRoutePolicy,
+      foreignRowModel,
+      RequestPrincipalRefusal,
       assertCreateInput,
       assertCreateTargetSurface,
       assignUpdateInput,
@@ -1607,7 +1619,7 @@ describe('generated SvelteKit helper runtime', () => {
       // a mocked factory. It must construct and initialize against this DB.
       writeFileSync(
         join(projectRoot, 'node_modules/@happyvertical/smrt-core/index.js'),
-        `export const { apiPrincipalFromLocals, authorize, stripTenantFilters, ObjectRegistry, isRuntimeModelEnabled, hasRuntimeExposureGate, createGeneratedCollectionAccess, normalizeCustomActionFailure, normalizeTypedHttpError, reportUnexpectedHttpError, canonicalReadRepresentation, computeTableVersionEtag, getTableVersion, ifNoneMatchHasConcreteMatch, ifNoneMatchSatisfied, parseRestListWhere, applyWhereScope, resolveAnonymousTenantReadScope, scopeTenantReadOptions, publicSerializerOf, toPublicJSONValue, assertQueryAccess, assertCreateTargetSurface, assertCreateInput, isTenantScopedModel, enterRequestTenantContext, getRequestTenantContext, resolveTenantEtagDiscriminator, enterRequestTenancy, tenancyReadScope, scopeActionOptions, boundTenancyCacheScoped, boundTenancyEtagDiscriminator, runInRequestTenancy } = globalThis.__smrt4320Core;`,
+        `export const { apiPrincipalFromLocals, authorize, stripTenantFilters, modelRoutePolicy, foreignRowModel, RequestPrincipalRefusal, ObjectRegistry, isRuntimeModelEnabled, hasRuntimeExposureGate, createGeneratedCollectionAccess, normalizeCustomActionFailure, normalizeTypedHttpError, reportUnexpectedHttpError, canonicalReadRepresentation, computeTableVersionEtag, getTableVersion, ifNoneMatchHasConcreteMatch, ifNoneMatchSatisfied, parseRestListWhere, applyWhereScope, resolveAnonymousTenantReadScope, scopeTenantReadOptions, publicSerializerOf, toPublicJSONValue, assertQueryAccess, assertCreateTargetSurface, assertCreateInput, isTenantScopedModel, enterRequestTenantContext, getRequestTenantContext, resolveTenantEtagDiscriminator, enterRequestTenancy, tenancyReadScope, scopeActionOptions, boundTenancyCacheScoped, boundTenancyEtagDiscriminator, runInRequestTenancy } = globalThis.__smrt4320Core;`,
       );
       const objectFilePath = join(projectRoot, 'src/lib/objects/Widget.ts');
       writeFileSync(

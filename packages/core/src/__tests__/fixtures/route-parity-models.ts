@@ -102,4 +102,41 @@ export class ParityOpen extends SmrtObject {
 export class ParityOpenCollection extends SmrtCollection<ParityOpen> {
   static readonly _itemClass = ParityOpen;
 }
+
+/**
+ * An STI family. The base is open to everyone; its subtype is private, so a
+ * write that lands in the subtype (selected on create, or the row's own model
+ * on update and delete) needs the subtype's own permission, whichever route
+ * it is reached through.
+ */
+@smrt({
+  tableStrategy: 'sti',
+  tenantScoped: { mode: 'optional', autoPopulate: false },
+  api: { public: true, include: ['list', 'get', 'create', 'update', 'delete'] },
+})
+export class ParityVehicle extends SmrtObject {
+  @field({ type: 'text' })
+  title = '';
+
+  tenantId: string | null = null;
+}
+
+export class ParityVehicleCollection extends SmrtCollection<ParityVehicle> {
+  static readonly _itemClass = ParityVehicle;
+}
+
+@smrt({
+  // Its own permission collection: \`paritytrucks.<action>\`, not the base's.
+  collection: 'paritytrucks',
+  tenantScoped: { mode: 'optional', autoPopulate: false },
+  api: { include: ['list', 'get', 'create', 'update', 'delete'] },
+})
+export class ParityTruck extends ParityVehicle {
+  @field({ type: 'text' })
+  payload = '';
+}
+
+export class ParityTruckCollection extends SmrtCollection<ParityTruck> {
+  static readonly _itemClass = ParityTruck;
+}
 `;

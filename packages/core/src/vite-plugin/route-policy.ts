@@ -203,7 +203,7 @@ function enterTenancy(
     });
   } catch (cause) {
     const failure = tenancyRefusalOf(cause);
-    if (failure) throw error(failure.status, failure.message);
+    if (failure) throw error(failure.status, { message: failure.message, code: failure.code });
     throw cause;
   }
 }

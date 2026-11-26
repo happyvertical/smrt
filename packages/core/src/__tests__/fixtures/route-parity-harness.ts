@@ -56,6 +56,11 @@ export const SEED = {
   },
   readable: { row: 'e0000000-0000-4000-8000-000000000001' },
   open: { row: 'f0000000-0000-4000-8000-000000000001' },
+  /** A row of the STI base and a row of its private subtype, in tenant A. */
+  vehicle: {
+    own: 'a1000000-0000-4000-8000-000000000a01',
+    truck: 'a1000000-0000-4000-8000-000000000a02',
+  },
 } as const;
 
 const SHARED_CORE_SLOT = '__parityCore';
@@ -112,6 +117,14 @@ async function installRuntimePackages(root: string): Promise<void> {
     ].join('\n'),
   });
   write('@sveltejs/kit', { 'index.js': KIT_SHIM });
+  // The feed routes of a project with tenant-scoped models import the tenancy
+  // package to enter the caller's tenant. Core cannot import it, and the feed
+  // cases decide sign-in and CORS before any tenant is read, so the stub never
+  // enters one.
+  write('@happyvertical/smrt-tenancy', {
+    'index.js':
+      'export const hasTenantContext = () => false;\nexport const enterTenantContext = () => undefined;\n',
+  });
 }
 
 function projectRoot(): string {
@@ -465,7 +478,14 @@ async function seededDatabase(): Promise<DatabaseInterface> {
   const db = await getTestDatabase({
     type: 'sqlite',
     url: ':memory:',
-    classes: ['ParityNote', 'ParityBypass', 'ParityReadable', 'ParityOpen'],
+    classes: [
+      'ParityNote',
+      'ParityBypass',
+      'ParityReadable',
+      'ParityOpen',
+      'ParityVehicle',
+      'ParityTruck',
+    ],
   });
   const models = (await import(
     pathToFileURL(join(projectRoot(), 'src', 'objects.ts')).href
@@ -511,5 +531,18 @@ async function seededDatabase(): Promise<DatabaseInterface> {
   await readable.create({ id: SEED.readable.row, title: 'readable' });
   const open = await models.ParityOpenCollection.create({ db });
   await open.create({ id: SEED.open.row, title: 'open' });
+  const vehicles = await models.ParityVehicleCollection.create({ db });
+  await vehicles.create({
+    id: SEED.vehicle.own,
+    title: 'car',
+    tenantId: TENANT_A,
+  });
+  const trucks = await models.ParityTruckCollection.create({ db });
+  await trucks.create({
+    id: SEED.vehicle.truck,
+    title: 'truck',
+    payload: 'gravel',
+    tenantId: TENANT_A,
+  });
   return db;
 }

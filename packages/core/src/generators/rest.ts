@@ -86,12 +86,10 @@ import {
   SyncApplyRejection,
   type SyncApplyTarget,
 } from '../sync/apply';
-import { tenantOwnershipFields } from '../tenant-read-scope';
 import {
   DISPLAY_LABEL_FIELD,
   resolveDisplayLabelProjection,
 } from '../ui-metadata';
-import { getApiPublicAccess } from '../vite-plugin/route-policy';
 import { computeWebManifestHash } from '../vite-plugin/web-collections';
 import { applyWhereScope } from '../where-keys';
 import { handleChangesRoute } from './changes-route';
@@ -133,8 +131,8 @@ import {
   type APIRequestPrincipal,
   customActionPermission,
   fixedRequestPrincipal,
+  modelRoutePolicy,
   normalizeRequestPrincipal,
-  operationPermissionOf,
   permissionDenied,
   type RequestPrincipal,
   RequestPrincipalRefusal,
@@ -1036,16 +1034,7 @@ export class APIGenerator {
    * live registry, as the generated routes read them from the manifest.
    */
   private routePolicyOf(model: string) {
-    return {
-      publicAccess: getApiPublicAccess(ObjectRegistry.getConfig(model)?.api),
-      // `<collection>.<action>` minus its action: the collection the
-      // generated routes and the permission catalog use.
-      permissionCollection: operationPermissionOf(model, '_').slice(0, -2),
-      allowSuperAdminBypass:
-        ObjectRegistry.getTenantScopedConfig(model)?.allowSuperAdminBypass ===
-        true,
-      tenantColumns: new Set(tenantOwnershipFields(model).values()),
-    };
+    return modelRoutePolicy(model);
   }
 
   /** The principal as the shared decision reads it. */
@@ -1642,7 +1631,7 @@ export class APIGenerator {
    * The 401 a host-resolved principal gets for a route it may not reach
    * unsigned: every route not opened by `@smrt({ api: { public } })`
    * (`'read'` opens reads only), decided as the generated SvelteKit routes'
-   * `requireRouteAuth` decides it. `undefined` when admitted, or when the
+   * `requireRouteAccess` decides it (both ask `authorize`, `route-authz.ts`). `undefined` when admitted, or when the
    * host does not resolve principals.
    */
   private signInRefusal(
