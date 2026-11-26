@@ -37,6 +37,7 @@ import { join } from 'node:path';
 import { assertDatabaseConfig, type DatabaseConfig } from './db/index.ts';
 import { EngineError, HostedWritesError } from './errors.ts';
 import {
+  countUserRows,
   dropAppSchemaChecked,
   exportUserApp,
   hasUserAppDatabase,
@@ -325,33 +326,48 @@ export async function downgradeUserAppToSqlite(
       'the migration record names another schema; nothing was changed',
       'refused',
     );
-  // The kept file must still be the migrated snapshot, or it is not the app.
-  const source = await exportUserApp({ dataDir, versions: options.versions });
-  if (source.digest !== fact.digest)
-    throw new EngineError(
-      'the desktop app.db no longer matches what was migrated; nothing was changed',
-      'refused',
-    );
   const result: DowngradeToSqliteResult = {
     status: 'downgraded',
     tables: fact.tables,
     rows: fact.rows,
     digest: fact.digest,
   };
-  // No fact, but the marker: a crash after the drop. The schema is gone.
+  // The kept file must still be the migrated snapshot, or it is not the app.
+  // `versions` is the history as the caller holds it NOW, so a version added on
+  // PostgreSQL moves this digest too; that is a hosted write and is named as one.
+  const keptMatches = async () =>
+    (await exportUserApp({ dataDir, versions: options.versions })).digest ===
+    fact.digest;
+  const keptChanged = () =>
+    new EngineError(
+      'the desktop app.db no longer matches what was migrated; nothing was changed',
+      'refused',
+    );
+  // No fact, but the marker: a crash after the drop. Finish only when the schema
+  // really holds nothing: a recreated or refilled schema is never discarded
+  // here (no host can be writing it, the app does not open without the fact).
   if (recorded === null) {
+    const held = await countUserRows({ dataDir, database });
+    if (held > 0)
+      throw new EngineError(
+        `the migration record is gone but the schema still holds ${held} rows; an operator must check the schema before the marker is removed; nothing was changed`,
+        'refused',
+      );
+    if (!(await keptMatches())) throw keptChanged();
     rmSync(join(dataDir, POSTGRES_MIGRATION_MARKER), { force: true });
     return result;
   }
   await dropAppSchemaChecked({
     database,
     check: async () => {
+      // The hosted side first, so a hosted write is refused by its own name.
       const now = await exportUserApp({
         dataDir,
         database,
         versions: options.versions,
       });
       if (now.digest !== fact.digest) throw new HostedWritesError();
+      if (!(await keptMatches())) throw keptChanged();
     },
   });
   rmSync(join(dataDir, POSTGRES_MIGRATION_MARKER), { force: true });

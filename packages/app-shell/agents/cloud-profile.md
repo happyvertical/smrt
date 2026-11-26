@@ -353,13 +353,14 @@ engine.md "SQLite to PostgreSQL in place") has moved it. v1 decisions:
   changed, added or removed row, a publish, an undo or a new version all refuse.
   It is content-based on purpose: a write that was fully reverted leaves nothing
   to lose. The check and the `DROP SCHEMA` (which removes the completion row)
-  run under the app's claim, so no host can write between them and a host
+  run under the app's claim (the hosted digest is checked first, so a hosted publish is named as a hosted write), so no host can write between them and a host
   holding the app refuses it; then the marker is removed. It also refuses an
   open draft, waiting changes or an unsettled approval (as the move does), a
   missing or changed `app.db`, and an app that was never migrated. A crash after
   the drop is finished by a rerun. Afterwards the hosted shell refuses to open
   the app (it lives in a SQLite file) until it is migrated again, which
-  converges. The file stays in the tenant's live directory; handing it to the
+  converges. A marker with no completion record is finished only when the schema
+  holds no rows (a recreated or refilled schema is refused, marker kept). The file stays in the tenant's live directory; handing it to the
   owner's desktop is the operator's. Tests: `operator.test.ts` "going back to the
   desktop" (allowed with no writes, refused after a write, refused for a
   non-owner), `sqlite-to-postgres.test.ts`.

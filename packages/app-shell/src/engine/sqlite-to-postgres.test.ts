@@ -443,6 +443,67 @@ describe('downgradeUserAppToSqlite', () => {
     }
   });
 
+  it('a version added on the hosted side is refused as a hosted write, not as a changed file', async () => {
+    const { store, dataDir } = await desktopApp();
+    const database = await schemaConfig();
+    await migrateUserAppToPostgres({
+      dataDir,
+      database,
+      versions: await store.list(),
+    });
+    const versions = await store.list();
+    const last = versions[versions.length - 1];
+    const published = [
+      ...versions,
+      { ...last, version: last.version + 1, parent: last.version },
+    ];
+    await expect(
+      downgradeUserAppToSqlite({ dataDir, database, versions: published }),
+    ).rejects.toMatchObject({
+      name: 'HostedWritesError',
+      details: { reason: 'hosted-writes' },
+    });
+    expect(await isMigratedToPostgres(dataDir, database)).toBe(true);
+  });
+
+  it('a marker with no completion record is finished only when the schema holds no rows', async () => {
+    const { store, dataDir } = await desktopApp();
+    const database = await schemaConfig();
+    await migrateUserAppToPostgres({
+      dataDir,
+      database,
+      versions: await store.list(),
+    });
+    // Out-of-band: the schema is recreated with a row and no completion record.
+    await pg.exec(`DROP SCHEMA "${database.schema}" CASCADE`);
+    await pg.exec(`CREATE SCHEMA "${database.schema}"`);
+    await pg.exec(
+      `CREATE TABLE "${database.schema}".u_chores (id text PRIMARY KEY, title text)`,
+    );
+    await pg.exec(
+      `INSERT INTO "${database.schema}".u_chores VALUES ('1', 'x')`,
+    );
+    await expect(
+      downgradeUserAppToSqlite({
+        dataDir,
+        database,
+        versions: await store.list(),
+      }),
+    ).rejects.toThrow(/still holds 1 rows/);
+    expect(readPostgresMigrationMarker(dataDir)).not.toBeNull();
+    await pg.exec(`DROP TABLE "${database.schema}".u_chores`);
+    expect(
+      (
+        await downgradeUserAppToSqlite({
+          dataDir,
+          database,
+          versions: await store.list(),
+        })
+      ).status,
+    ).toBe('downgraded');
+    expect(readPostgresMigrationMarker(dataDir)).toBeNull();
+  });
+
   it('refuses an app that was never migrated, a SQLite source and a missing file', async () => {
     const { store, dataDir } = await desktopApp();
     await expect(
