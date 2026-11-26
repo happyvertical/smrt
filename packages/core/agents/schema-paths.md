@@ -1749,6 +1749,17 @@ the component is uniformly UUID and the planner emits nothing.
   not run. Only the explicitly deleted object runs its lifecycle. RESTRICT
   checks precede mutations; the parent DELETE and cascades share one transaction
   where supported, so deeper refusals roll back.
+- A CASCADE child DELETE keeps the parent predicate (`id IN (...) AND <fk> IN
+  (<parents the rows were selected under>)`, at most two lists of 450, so a
+  statement stays under 900 binds) and takes no row lock: a child moved to
+  another parent is never deleted by the old parent's cascade. Descendants go
+  before their child, so on PostgreSQL each reference runs under a savepoint
+  and, when a selected child is found under another parent afterwards (a plain
+  SELECT, so no UPDATE privilege or policy is needed), rolls back and re-runs
+  from a fresh select, at most three times; the last run keeps the moved row
+  and never throws. Engines without a savepoint serialize writers: a move there
+  needs a trigger, and the moved row survives but its descendants do not.
+  Tests: `cascade-child-moved*.test.ts`.
 - Derived `_smrt_embeddings` / `_smrt_contexts` cleanup matches IDs AND
   `ownerClassCandidates()` (qualified and simple STI member names), never IDs
   alone: unrelated text-ID classes can collide. Cleanup failures are logged,

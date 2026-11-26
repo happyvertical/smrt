@@ -24,6 +24,7 @@ import {
   runApplicationOperation,
   START_OUTPUT_TAIL_BYTES,
 } from './operations.js';
+import { runReceiveOperation } from './receive-transport.js';
 import { runRestoreLatestOperation } from './restore-latest.js';
 import {
   type AppCommandDependencies,
@@ -63,6 +64,8 @@ export const APP_COMMANDS: Readonly<Record<string, string>> = Object.freeze({
     'Local: declare a restored move, an independent copy, or a recovered seed',
   'restore-latest [--discard-local] [--replace-installation] [--origin-retired] [--recover]':
     "Local: replace the data root with the vault account's latest snapshot",
+  'receive --origin <url> --bundle <file>':
+    'Send the desktop user app to the hosted app with an owner-minted link token (SMRT_RECEIVE_TOKEN)',
   'worker [task|schedule]': 'Deployed: run the task or schedule worker',
   'dev [...vite args]': "Run the application's Vite dev server",
   'build [...vite args]':
@@ -149,6 +152,7 @@ const ENV_FILE_OPERATIONS = new Set<string>([
   'installation',
   'backups',
   'restore-latest',
+  'receive',
   'dev',
   'build',
   'vite',
@@ -242,6 +246,8 @@ export async function runAppCommand(
     if (operation === 'installation') {
       return await runInstallationOperation(context, args);
     }
+    if (operation === 'receive')
+      return await runReceiveOperation(context, args);
     if (operation === 'restore-latest') {
       return await runRestoreLatestOperation(context, args);
     }
