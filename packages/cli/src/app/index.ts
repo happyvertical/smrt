@@ -221,6 +221,14 @@ export {
   writeProcessRecord,
 } from './process-record.js';
 export {
+  createReceiveTransport,
+  isReceiveToken,
+  RECEIVE_PATH,
+  RECEIVE_TOKEN_ENV,
+  type ReceiveTransportOptions,
+  runReceiveOperation,
+} from './receive-transport.js';
+export {
   RESTORE_LATEST_USAGE,
   RestoreLatestError,
   type RestoreLatestOptions,
