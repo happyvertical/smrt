@@ -8,6 +8,7 @@ import { join } from 'node:path';
 import { importPGlite } from '@happyvertical/sql/pglite';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import type { DatabaseConfig, PGliteClient } from '../../engine/db/index.ts';
+import { POSTGRES_MIGRATION_MARKER } from '../../engine/index.ts';
 import { hostOwner } from '../../test/engine-principal.ts';
 import { App } from '../objects/App.ts';
 import { ownerTenantFor } from './accounts.ts';
@@ -26,6 +27,8 @@ import {
   tenantAppDirs,
 } from './host.ts';
 import {
+  DOWNGRADE_COMMAND,
+  downgradeAppToSqliteAsOperator,
   MIGRATE_COMMAND,
   migrateAppToPostgresAsOperator,
   parseMigrateArgs,
@@ -257,5 +260,141 @@ describe('what the operator cannot do', () => {
     );
     expect(code).toBe(1);
     expect(err.join('\n')).toMatch(/waiting|working copy/);
+  });
+});
+
+describe('going back to the desktop (downgrade)', () => {
+  /** Seed, migrate through the operator command, then close every host. */
+  async function migrated(email: string) {
+    const seeded = await seedApp(email, 'mine');
+    await useShell(true);
+    await migrateAppToPostgresAsOperator({
+      tenantId: seeded.who.tenantId,
+      userId: seeded.who.id,
+    });
+    return seeded;
+  }
+  const input = (who: Principal) => ({
+    tenantId: who.tenantId,
+    userId: who.id,
+  });
+
+  it('is allowed while the hosted app has taken no writes, even after it served reads', async () => {
+    const { who, appId, file } = await migrated('down-ok@example.test');
+    const rows = await runAs(who, async () =>
+      (await getHost()).list(hostOwner(await getHost()), 'Note'),
+    );
+    expect(rows.map((r) => r.title)).toEqual(['mine']);
+    await closeHost();
+    const marker = join(
+      tenantAppDirs(h.dir, who.tenantId, appId).live,
+      POSTGRES_MIGRATION_MARKER,
+    );
+    expect(existsSync(marker)).toBe(true);
+
+    const lines: string[] = [];
+    const code = await runOperatorCommand(
+      [DOWNGRADE_COMMAND, '--tenant', who.tenantId, '--user', who.id, '--json'],
+      { out: (l) => lines.push(l), err: (l) => lines.push(l) },
+    );
+    expect(code, lines.join('\n')).toBe(0);
+    expect(JSON.parse(lines[0])).toMatchObject({
+      ok: true,
+      status: 'downgraded',
+    });
+    // The desktop file is the app again; the hosted copy is gone.
+    expect(existsSync(file)).toBe(true);
+    expect(existsSync(marker)).toBe(false);
+    expect(await schemas()).not.toContain(appSchemaName(who.tenantId, appId));
+    await expect(runAs(who, () => getHost())).rejects.toThrow(/SQLite file/);
+
+    // Migrating again converges: the file still holds the app.
+    expect((await migrateAppToPostgresAsOperator(input(who))).status).toBe(
+      'migrated',
+    );
+    const again = await runAs(who, async () =>
+      (await getHost()).list(hostOwner(await getHost()), 'Note'),
+    );
+    expect(again.map((r) => r.title)).toEqual(['mine']);
+  });
+
+  it('is refused by name after the hosted app took a write, and changes nothing', async () => {
+    const { who, appId, file } = await migrated('down-write@example.test');
+    await runAs(who, async () =>
+      (await getHost()).create(hostOwner(await getHost()), 'Note', {
+        title: 'hosted write',
+      }),
+    );
+    await closeHost();
+    const marker = join(
+      tenantAppDirs(h.dir, who.tenantId, appId).live,
+      POSTGRES_MIGRATION_MARKER,
+    );
+    await expect(
+      downgradeAppToSqliteAsOperator(input(who)),
+    ).rejects.toMatchObject({ name: 'HostedWritesError', code: 'refused' });
+    const err: string[] = [];
+    expect(
+      await runOperatorCommand(
+        [DOWNGRADE_COMMAND, '--tenant', who.tenantId, '--user', who.id],
+        { out: () => {}, err: (l) => err.push(l) },
+      ),
+    ).toBe(1);
+    expect(err.join('\n')).toMatch(/taken writes on PostgreSQL/);
+    expect(existsSync(file)).toBe(true);
+    expect(existsSync(marker)).toBe(true);
+    expect(await schemas()).toContain(appSchemaName(who.tenantId, appId));
+    const rows = await runAs(who, async () =>
+      (await getHost()).list(hostOwner(await getHost()), 'Note'),
+    );
+    expect(rows.map((r) => r.title).sort()).toEqual(['hosted write', 'mine']);
+  });
+
+  it('is refused for a user who is not the tenant owner, and changes nothing', async () => {
+    const { who, appId } = await migrated('down-own@example.test');
+    await closeHost();
+    const stranger = await h.newUser('down-stranger@example.test');
+    for (const bad of [
+      { tenantId: who.tenantId, userId: stranger.id },
+      { tenantId: who.tenantId, userId: h.b.id },
+      { tenantId: h.b.tenantId, userId: who.id },
+    ])
+      await expect(downgradeAppToSqliteAsOperator(bad)).rejects.toThrow(
+        'that user is not the owner of that tenant',
+      );
+    expect(await schemas()).toContain(appSchemaName(who.tenantId, appId));
+  });
+
+  it('refuses an app that was never migrated, and the desktop profile', async () => {
+    const { who } = await seedApp('down-never@example.test', 'n');
+    await useShell(true);
+    await expect(downgradeAppToSqliteAsOperator(input(who))).rejects.toThrow(
+      /was not migrated/,
+    );
+    await useShell(true, 'local');
+    await expect(downgradeAppToSqliteAsOperator(input(who))).rejects.toThrow(
+      /hosted-profile operation/,
+    );
+    await useShell(true);
+  });
+
+  it('a rerun after a crash between the drop and the marker removal finishes', async () => {
+    const { who, appId } = await migrated('down-crash@example.test');
+    await closeHost();
+    // The state a crash leaves: schema dropped, marker still there.
+    await pg.exec(
+      `DROP SCHEMA "${appSchemaName(who.tenantId, appId)}" CASCADE`,
+    );
+    expect((await downgradeAppToSqliteAsOperator(input(who))).status).toBe(
+      'downgraded',
+    );
+    expect(
+      existsSync(
+        join(
+          tenantAppDirs(h.dir, who.tenantId, appId).live,
+          POSTGRES_MIGRATION_MARKER,
+        ),
+      ),
+    ).toBe(false);
   });
 });
