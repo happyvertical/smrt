@@ -11,11 +11,13 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { getDatabase } from '@happyvertical/sql';
 import { importPGlite } from '@happyvertical/sql/pglite';
-import { afterAll, beforeAll, describe, expect, it } from 'vitest';
+import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
 import { hostOwner } from '../test/engine-principal.ts';
-import type { DatabaseConfig, PGliteClient } from './db/index.ts';
+import { createClaim } from './db/claim.ts';
+import type { AppClaim, DatabaseConfig, PGliteClient } from './db/index.ts';
 import {
   AppHost,
+  ClaimLostError,
   checkUserAppBundle,
   discardUnfilledImport,
   exportUserApp,
@@ -26,6 +28,25 @@ import {
   verifyUserApp,
 } from './index.ts';
 import { asEngine } from './pg-test-support.ts';
+
+// The import's own claim: the PGlite lane has none (nothing to claim there),
+// so a test hands the import a stand-in over the same connection through this
+// override (only the import's and the discard's own claim calls, which pass no
+// host options), and the rest of the engine's calls are untouched (#5630).
+const claimHook = vi.hoisted(() => ({
+  make: null as null | (() => unknown),
+}));
+vi.mock('./db/index.ts', async (orig) => {
+  const actual = await orig<typeof import('./db/index.ts')>();
+  return {
+    ...actual,
+    claimAppDatabase: (config: any, options?: any) =>
+      claimHook.make &&
+      (options === undefined || options.idleInTransactionMs === 0)
+        ? Promise.resolve(claimHook.make())
+        : actual.claimAppDatabase(config, options),
+  };
+});
 
 const serverUrl = process.env.SMRT_TEST_POSTGRES_URL;
 const backends = ['pglite', ...(serverUrl ? ['postgres'] : [])] as const;
@@ -617,4 +638,121 @@ describe.each(
     );
     await h.close();
   });
+
+  describe.skipIf(backend !== 'pglite')(
+    "the import's rows go in on its claim (#5630)",
+    () => {
+      const standIn = () => {
+        let dead = false;
+        let used = 0;
+        const inner = createClaim(
+          admin as any,
+          '',
+          { heartbeatMs: 0 },
+          async () => {},
+          async () => !dead,
+        );
+        const claim = new Proxy(inner, {
+          get(target, prop) {
+            if (prop === 'transaction')
+              return (cb: any) => {
+                used++;
+                return target.transaction(cb);
+              };
+            return Reflect.get(target, prop);
+          },
+        }) as AppClaim;
+        return {
+          claim,
+          kill: () => {
+            dead = true;
+          },
+          used: () => used,
+        };
+      };
+      const bundleOf = async () => {
+        const { store, dataDir } = await desktopApp();
+        return viaJson(
+          await exportUserApp({ dataDir, versions: await store.list() }),
+        ) as PortableUserApp;
+      };
+
+      it('populates inside a claim transaction', async () => {
+        const bundle = await bundleOf();
+        const schema = await newSchema('claimed');
+        const c = standIn();
+        claimHook.make = () => c.claim;
+        try {
+          const done = await importUserApp({
+            dataDir: dir(),
+            database: config(schema),
+            bundle,
+          });
+          expect(done.status).toBe('imported');
+        } finally {
+          claimHook.make = null;
+        }
+        expect(c.used()).toBeGreaterThan(0);
+        expect(
+          Number(
+            (await rows(`SELECT COUNT(*) AS n FROM "${schema}".u_chores`))[0].n,
+          ),
+        ).toBe(2);
+      });
+
+      it('writes no row once the claim is lost', async () => {
+        const bundle = await bundleOf();
+        const schema = await newSchema('lostclaim');
+        const c = standIn();
+        c.kill();
+        claimHook.make = () => c.claim;
+        try {
+          const err = await importUserApp({
+            dataDir: dir(),
+            database: config(schema),
+            bundle,
+          }).catch((e) => e);
+          expect(err).toBeInstanceOf(ClaimLostError);
+        } finally {
+          claimHook.make = null;
+        }
+        expect(
+          Number(
+            (await rows(`SELECT COUNT(*) AS n FROM "${schema}".u_chores`))[0].n,
+          ),
+        ).toBe(0);
+      });
+
+      it('drops an unfilled import only on a proven claim', async () => {
+        const schema = await newSchema('unfilled');
+        const database = config(schema);
+        const half = dir();
+        await (
+          await AppHost.open(half, {
+            allowUnfencedStore: true,
+            store: new MemoryVersionStore(),
+            database,
+          })
+        ).close();
+        const c = standIn();
+        c.kill();
+        claimHook.make = () => c.claim;
+        let err: unknown;
+        try {
+          err = await discardUnfilledImport({
+            dataDir: half,
+            database,
+            key: 'k',
+          }).catch((e) => e);
+        } finally {
+          claimHook.make = null;
+        }
+        expect(err).toBeInstanceOf(ClaimLostError);
+        expect(
+          (await rows(`SELECT 1 FROM pg_namespace WHERE nspname = ?`, [schema]))
+            .length,
+        ).toBe(1);
+      });
+    },
+  );
 });

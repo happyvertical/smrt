@@ -22,6 +22,7 @@ import {
   it,
   vi,
 } from 'vitest';
+import { classifyDatabaseError } from '../../db-errors.js';
 import { ObjectRegistry } from '../../registry.js';
 import {
   readLastMigrateRecord,
@@ -44,11 +45,31 @@ vi.mock('@happyvertical/logger', async (importOriginal) => {
   };
 });
 
+/**
+ * SQLSTATE 55006 (`object_in_use`): another session is still connected. The
+ * SDK wraps the driver error, so the code sits on the cause chain.
+ */
+const isObjectInUse = (error: unknown) =>
+  classifyDatabaseError(error).driverCodes.includes('55006');
+
 const pgUrl = process.env.DATABASE_URL ?? process.env.SMRT_TEST_POSTGRES_URL;
 const warned = () =>
   warn.mock.calls
     .flat()
     .filter((message) => String(message).includes('no migrate record'));
+
+describe('object_in_use detection', () => {
+  it('finds 55006 on the cause of a wrapped driver error', () => {
+    const wrapped = Object.assign(new Error('Failed to execute raw query'), {
+      code: 'DATABASE_ERROR',
+      cause: Object.assign(new Error('database is being accessed'), {
+        code: '55006',
+      }),
+    });
+    expect(isObjectInUse(wrapped)).toBe(true);
+    expect(isObjectInUse(new Error('other'))).toBe(false);
+  });
+});
 
 describe.skipIf(!pgUrl)(
   'migrate dates a database without a record by its system tables (real PostgreSQL)',
@@ -128,9 +149,27 @@ describe.skipIf(!pgUrl)(
       await db?.close?.();
     });
     afterAll(async () => {
-      for (const name of databases)
-        await admin?.query(`DROP DATABASE IF EXISTS ${name} WITH (FORCE)`);
-      await admin?.close?.();
+      // Every connection the test opened is closed by now (`afterEach`). Drop
+      // without FORCE: FORCE terminates every backend in the database, and the
+      // unprivileged CI role may not signal one owned by the bootstrap
+      // superuser (an autovacuum worker in the fresh database), which failed
+      // with 42501 (#5625). A plain drop cancels autovacuum workers itself;
+      // 55006 only means a just-closed pooled backend has not exited yet.
+      try {
+        for (const name of databases) {
+          for (let attempt = 0; ; attempt++) {
+            try {
+              await admin.query(`DROP DATABASE IF EXISTS ${name}`);
+              break;
+            } catch (error) {
+              if (attempt >= 20 || !isObjectInUse(error)) throw error;
+              await new Promise((resolve) => setTimeout(resolve, 250));
+            }
+          }
+        }
+      } finally {
+        await admin?.close?.();
+      }
     });
 
     it('upgrades a database whose system tables are older than the floor', async () => {

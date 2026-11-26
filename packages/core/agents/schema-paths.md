@@ -1762,8 +1762,13 @@ the component is uniformly UUID and the planner emits nothing.
   Tests: `cascade-child-moved*.test.ts`.
 - Derived `_smrt_embeddings` / `_smrt_contexts` cleanup matches IDs AND
   `ownerClassCandidates()` (qualified and simple STI member names), never IDs
-  alone: unrelated text-ID classes can collide. Cleanup failures are logged,
-  not raised, because these tables may not exist in older databases.
+  alone: unrelated text-ID classes can collide.
+- `tolerateMissingTable()` treats a referencing or system table this database
+  never created as empty (logged, not raised) and nothing else: a missing
+  column in an existing table, or any other failure, fails the delete. On
+  PostgreSQL each tolerated statement runs under a savepoint (a nested
+  transaction through `withEmbeddedWriteTransaction()`), so a missing table
+  never aborts the delete's transaction (`cascade-missing-table.test.ts`).
 - Never cascade append-only `_smrt_changes`, `_smrt_ai_usage`, `_smrt_signals`,
   or dispatch logs; deleting change tombstones would break sync.
 
