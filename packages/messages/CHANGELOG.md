@@ -1,5 +1,19 @@
 # @happyvertical/smrt-messages
 
+## 0.71.0
+
+### Patch Changes
+
+- Updated dependencies
+  - @happyvertical/smrt-core@0.71.0
+  - @happyvertical/smrt-jobs@0.71.0
+  - @happyvertical/smrt-profiles@0.71.0
+  - @happyvertical/smrt-secrets@0.71.0
+  - @happyvertical/smrt-tenancy@0.71.0
+  - @happyvertical/smrt-users@0.71.0
+  - @happyvertical/smrt-ui@0.71.0
+  - @happyvertical/smrt-types@0.71.0
+
 ## 0.70.3
 
 ### Patch Changes
