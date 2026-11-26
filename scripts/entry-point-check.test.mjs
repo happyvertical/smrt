@@ -4,6 +4,7 @@ import {
   mkdirSync,
   mkdtempSync,
   readFileSync,
+  realpathSync,
   rmSync,
   writeFileSync,
 } from 'node:fs';
@@ -51,7 +52,9 @@ test('no tracked module decides it is the entry point from a hand-built file URL
 });
 
 test('the pathToFileURL entry check recognises a script whose path needs URL encoding', () => {
-  const root = mkdtempSync(join(tmpdir(), 'smrt-entry-check-'));
+  const root = mkdtempSync(
+    join(realpathSync(tmpdir()), 'smrt-entry-check-'),
+  );
   try {
     const directory = join(root, 'dir with space #1');
     mkdirSync(directory, { recursive: true });

@@ -401,6 +401,35 @@ assigning by name had put 39.7 minutes of tests in one shard and 10.6 in the
 next. Its duration tables only steer balance: a stale or missing entry makes
 shards uneven and never drops a package.
 
+A package in `SPLIT_TEST_UNITS` (today `smrt-app-shell`) is scheduled as
+separate unit tasks instead of one `test` task (#5647). Its `test` script
+chained four Vitest configs for 1049 to 1462 s, longer than any shard's
+balanced share, so it fixed the critical path of `affected-package-tests` and
+`test-packages`. The units are hard-coded scripts, because Turbo hands `--`
+args only to the last command of an `&&` chain and to every package in one
+run: `test:unit:1of2` and `test:unit:2of2` (the default config, `vitest run
+--shard=1/2` and `2/2`) and `test:configs` (the pglite, dom and packed
+configs). Each is registered in `turbo.json` exactly like `test`. The selectors
+print `<package>#<task>` ids (for example `@happyvertical/smrt-app-shell#test:configs`)
+and both workflow steps run `xargs -r pnpm turbo run --concurrency=2`, so a
+split package never runs its plain `test` beside its units. `pnpm test` in the
+package stays the local aggregate. Splitting the default config with `--shard`
+was safe because a shuffled-file run (`--sequence.shuffle.files`) of that
+config passed; if files turn order-dependent, split by config only.
+`scripts/app-shell-test-units.test.mjs` fails when a config in the `test`
+script is run by no unit, when the `--shard` units do not cover `1..n`, or when
+a unit is missing from `turbo.json` or the weight table. A unit with no test
+files fails (`passWithNoTests` stays off).
+
+`balanceShards` keeps units of one package on different shards while a shard
+without a sibling exists. With fewer shards than units (a narrow affected
+closure), siblings share a shard and `turbo run --concurrency=2` runs them at
+once in the package directory. That is safe: running `test:unit:2of2` and
+`test:configs` concurrently through Turbo passed locally with unchanged counts
+(83 files and 760 tests, then 64 files and 617 tests), because each
+unit uses its own temp directories and in-process databases, and
+`svelte-kit sync` only rewrites the same generated files.
+
 `Merge Group Fail Fast` runs for merge groups only. `Required CI` reports when
 every job has finished, so a group that failed in its first minute used to hold
 the one-entry queue for the rest of the run. The job polls its own run and
@@ -410,9 +439,55 @@ needs and never fails the run itself. Jobs still running at that moment do not
 report, so a group with several defects shows one per attempt; the PR run is
 never cancelled this way.
 
-`affected-package-tests` depends on `affected-test-scope` alone and runs with
-`affected-core-tests`; the matrices shard disjoint package sets, while a
-failing core shard already fails `Required CI`.
+`affected-package-tests` and `affected-test-scope` declare no `needs`: each
+package shard recomputes its own Turbo dry run and reads nothing from the scope
+job, so waiting on it (and on `affected-scope` behind it) only delayed the
+shards by about 80 seconds (#5646). Only `affected-core-tests` keeps
+`needs: affected-test-scope`, because it reads its `core` output. A failed
+scope job or shard still fails the reusable workflow, and therefore `Required
+CI`; `scripts/ci-control-plane-workflow.test.mjs` pins the graph and that
+aggregate.
+
+Coverage Gate is two jobs (#5648). `Coverage Gate` measures every touched
+tiered package except core (`check-coverage.mjs --exclude core`) and starts as
+soon as `build` finishes. `Coverage Gate (core)` does not re-run the core suite
+(that repeat was 1063 s and 1205 s in two sampled merge groups, nearly the
+whole critical path). The core shards run `vitest run --shard=i/3 --coverage
+--reporter=default --reporter=blob --outputFile.blob=.vitest-reports/blob-i-3.json`
+and upload the blob (`core-coverage-blob-full-N` from `test-core`,
+`core-coverage-blob-affected-N` from `affected-core-tests`, the latter only in a
+merge group, because pull requests never reach the gate). The gate job downloads
+every blob into its own folder, and `scripts/core-coverage-merge.mjs` fails
+unless there are exactly `CORE_SHARDS` blobs `blob-1-n` .. `blob-n-n`, each
+once (missing, duplicate and mixed-count blobs fail). It then runs `vitest
+--merge-reports --coverage --coverage.reporter=json-summary` in `packages/core`
+after the same build and `generate:test` as the shards, on the same checkout
+root so the absolute `include` paths match, and requires the merged run's test
+files to equal an independent `vitest list --filesOnly` exactly, each once (a
+blob missing a file fails). `check-coverage.mjs --only core --summary
+core=packages/core/coverage/coverage-summary.json` then applies the floors,
+interim floors, exemptions and the touched-source debt rule through the same
+code path as every other package. `test-core` and `affected-core-tests` are
+mutually exclusive, so one is always skipped; the gate's `if` is therefore
+`!cancelled() && (inputs.mode == 'full' || github.event_name == 'merge_group')
+&& needs.build.result == 'success'` (never the implicit `success()`, which a
+skipped needed job would turn into a skipped gate, i.e. a pass), and it checks
+the shard results itself: exactly one of them must be `success`. When core is
+not touched the job ends after the scope probe, before install. Both gate jobs
+are in the reusable workflow, so either failing fails `Required CI`;
+`scripts/ci-control-plane-workflow.test.mjs` pins the graph, the `if`, the
+shard count and the commands. `fork-pr-validation.yml` calls the same workflow
+with `mode: full`, so it gets both jobs and the blobs unchanged. The `merge_group`
+paths cannot run on a pull request; the first queue transit is their first
+real execution. In a merge group the gate judges "core touched" against
+merge-base with main, which can include an earlier queue entry's core change
+that Turbo's `...[merge_group.base_sha]` selection does not; so
+`affected-test-scope` also reports `core=true` when the gate's own probe
+(`check-coverage.mjs --only core --list-checked`, same `BASE_REF`) says core is
+gated, keeping the shard producers a superset of the gate. Artifact names do
+not carry `run_attempt`: the gate's `core-coverage-blob-*` pattern would then
+match attempt 1's blobs too and fail as duplicates, so a re-run of only the
+failed shards is rejected and the whole workflow must be re-run.
 
 The affected workbench browser lane also starts after its scope decision,
 without waiting for package tests: it builds its own consumer fixture and
@@ -552,10 +627,20 @@ read-only token. There is no enabling variable.
   database and run one at a time, so ingestion's 22 minutes only shorten
   across jobs: the selector appends `-- --shard=<i>/<n>` and Turbo hands it to
   the package's Vitest run. Its 303-case proposal suite is four files per
-  backend for the same reason. Every job retains
+  backend for the same reason. The selector prints `<package>#<task>` units
+  for `turbo run`: `core` is two (#5649), `test:postgres:real` (its 100
+  real-PostgreSQL files, one process, one database) and `test:postgres:pglite`
+  (42 files, in-process PGlite, no shared database), balanced separately
+  from `POSTGRES_TEST_SECONDS` in `scripts/test-shard-balance.mjs` and kept
+  off one shard when more than one exists; `core`'s `test:postgres` stays the
+  local aggregate (real PostgreSQL, then PGlite) and is never scheduled in CI.
+  An affected list from a merge group matches units on their owning package,
+  so an affected `core` runs both halves. `app-shell` is weighed 1172 s (it was
+  missing, so weighed 12 s). Every job retains
   `--concurrency=2 --continue --summarize`,
   run every selected package even after one fails, and
-  `scripts/postgres-lane-summary.mjs` writes a per-package table to the job
+  `scripts/postgres-lane-summary.mjs` writes a per-unit table (every Turbo run
+  file in the step, the `test:postgres` and core's two half tasks) to the job
   summary.
 - **`postgres-required`** (hosted) is the lane's single aggregate status and
   the context the ruleset requires. It always reports: it passes when `scope` skipped the suites for a
