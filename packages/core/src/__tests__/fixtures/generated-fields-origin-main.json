@@ -21,11 +21,11 @@
         "source/single/index.ts": "df2d5fba1b97faaad6b595b5159e615d06fc61fa401f879d693d881794a61aaa",
         "source/sveltekit/src/lib/server/smrt-register.ts": "f2bc573c66de6f80aa2a31960d85e307c0470ae430ffd71a428c3fabfd8d8ada",
         "source/sveltekit/src/lib/server/smrt.ts": "0ccb2afbd8cc5f2d935fa82bbb52653417890b2e4e225b9fae5c773282f23dbf",
-        "source/sveltekit/src/routes/api/_changes/+server.ts": "0d90d327ad6437bc07aee0466797ac19851716d3e93d1781c34c7a457725819e",
-        "source/sveltekit/src/routes/api/_events/+server.ts": "7d2cc146aa19cdf11640693976bc506fb86e26483970a82e26232dd3c7cb5040",
-        "source/sveltekit/src/routes/api/compat_plain/[id]/+server.ts": "a1830242ecf9e6424e407043f0d7acdf4373637c85cb4404638482378e7c2526",
-        "source/sveltekit/src/routes/api/compat_plain/+server.ts": "1b8aeed44d7ec2a733fb081abf6585cc8ac7c03f19bde5998962714ea8f99e20",
-        "source/sveltekit/src/routes/api/sync/apply/+server.ts": "6ff5e4a0b122c0e8bcaccacdb0a1c666a65664f9b2dffc50860300952071862c"
+        "source/sveltekit/src/routes/api/_changes/+server.ts": "ded69b7331a9a8f95890fbed8dda0c40502aca2e992df57cb9dc30b23f2ade7d",
+        "source/sveltekit/src/routes/api/_events/+server.ts": "9d054f0c820b6257b6e1268d5e6ca8c8a460b1aeb15f2f55dc62c9b385335f81",
+        "source/sveltekit/src/routes/api/compat_plain/[id]/+server.ts": "5381a11ba2ebb0cbc997800c645858378b4d00bd55ef12a92f8e10161cdba366",
+        "source/sveltekit/src/routes/api/compat_plain/+server.ts": "d4e4be9f4f61cdf83127096e87798111f07cd3d2d07482483947bbc08a044659",
+        "source/sveltekit/src/routes/api/sync/apply/+server.ts": "dd042b316bdeb9bfa2a1791fee6c71a854663575ebdff8bdeb3c8bc3ec96f1fd"
       }
     },
     "sti": {
@@ -52,11 +52,11 @@
         "source/single/index.ts": "9e6534f37ed2291e38f4fa631bdc971779eb6331f13845038feafc56dd1a80c1",
         "source/sveltekit/src/lib/server/smrt-register.ts": "f25b7af11be15449c72773d5047a2eb581977682b950ccae39d2e71d536a0897",
         "source/sveltekit/src/lib/server/smrt.ts": "0ccb2afbd8cc5f2d935fa82bbb52653417890b2e4e225b9fae5c773282f23dbf",
-        "source/sveltekit/src/routes/api/_changes/+server.ts": "51b9498c2881de41b4fc1d18155386746071681028f215478e2365cd03835e6f",
-        "source/sveltekit/src/routes/api/_events/+server.ts": "f0473b6d66e0e35cb1a36c3997a2aa06215f20a18ffef3a08b86637191a14927",
-        "source/sveltekit/src/routes/api/compatroots/[id]/+server.ts": "c0d377025ef7626a902b1d02dbc787865717d9dd36ed1c3593908d8c92220ecf",
-        "source/sveltekit/src/routes/api/compatroots/+server.ts": "a6ba301093bdc2e814cb01c9818b89fb3e2dfc9ac5ef1d878543876478a5ccb6",
-        "source/sveltekit/src/routes/api/sync/apply/+server.ts": "400dd2231d933769e5ac788fbfbade3b25ba4093c2044e627fab3c86c8d95e98"
+        "source/sveltekit/src/routes/api/_changes/+server.ts": "567f0b45287573007c89f3c8996d1c91382ebbf4d005eb17b628b825940603ca",
+        "source/sveltekit/src/routes/api/_events/+server.ts": "6d009913bdddc35562083d5c18032d16852a5532b8eb14ebb4d7fef5bb5f8512",
+        "source/sveltekit/src/routes/api/compatroots/[id]/+server.ts": "8d56e7223d1e796e1f8e9db6a49c102fb03834dbbd08f51685aad2fb1c058f15",
+        "source/sveltekit/src/routes/api/compatroots/+server.ts": "2199ffd4e7c5950b57dc055a8c77b003ad558074ac66021aaa41777bae5696e0",
+        "source/sveltekit/src/routes/api/sync/apply/+server.ts": "c99689e84d9ddf670ffae2cd967385291bfe773688f68ee2bc7ae8ddf51d8b05"
       }
     }
   }

@@ -126,3 +126,15 @@ DDL, migration and OpenAPI digests have not moved since the recapture above.
   the emitted sync route and both emitted MCP servers pass the caller's read
   permissions (`locals`, `PUBLIC_JSON_OPTIONS`) to `prepareWriteInput()`, which
   refuses such a field whatever its value instead of comparing it.
+- Shared route decision (#5195; the list and item routes of each model,
+  `sync/apply/+server.ts`, `_changes/+server.ts`, `_events/+server.ts`): the
+  emitted guard copies are gone. Handlers call `requireRouteAccess` and
+  `requireRouteBody`, which ask `authorize` from core for sign-in, the
+  `<collection>.<action>` permission and the tenant a write body names; reads
+  drop tenant filters with `stripTenantFilters`. A create that selects an STI
+  subtype and an update or delete of a subtype's row decide under the subtype's
+  policy (`modelDecision`, `FAMILY_POLICY`). The feed routes ask `authorize` on
+  the `_feed` collection, and `_events` takes its CORS from the shared policy
+  (`applyRouteCors`) instead of its own helpers. Manifest, schema, DDL,
+  migration and OpenAPI digests are unchanged; only the emitted route digests
+  moved.
