@@ -306,6 +306,7 @@ const INVENTORY: Record<string, string[]> = {
     'RolePermissionCollection',
     'SessionCollection',
     'TenantCollection',
+    'TenantGuestGrantCollection',
     'TenantIntegrationCollection',
     'TenantPermissionOverrideCollection',
     'UserCollection',

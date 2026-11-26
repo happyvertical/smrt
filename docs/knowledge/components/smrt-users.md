@@ -5,10 +5,10 @@ description: "Multi-tenant user management for the SMRT framework - users, tenan
 status: "stable"
 generated:
   by: "smrt/scripts/generate-knowledge-okf.ts"
-  at: "2026-11-23T17:57:32Z"
+  at: "2026-11-26T22:10:49Z"
 audience: "internal"
 evidence_level: "source-inspected"
-source_revision: "sha256:a66a4907c7ceadf06c8039bb2a04a786e77ccc3ecf50aa596de3b2c4b46fcbf8"
+source_revision: "sha256:43dbc0fa5d35e30debce763bb854cf42cf200e24acfbe369496533655acba7bb"
 sources:
   - id: "manifest"
     resource: "https://github.com/happyvertical/smrt/blob/main/packages/users/package.json"
@@ -132,6 +132,8 @@ sources:
 - `SessionCollection` (collection `sessions`, extends `SmrtCollection`)
 - `Tenant` (collection `tenants`, extends `SmrtObject`, STI table)
 - `TenantCollection` (collection `tenants`, extends `SmrtCollection`)
+- `TenantGuestGrant` (collection `tenantguestgrants`, extends `SmrtObject`)
+- `TenantGuestGrantCollection` (collection `tenantguestgrants`, extends `SmrtCollection`)
 - `TenantIntegration` (collection `tenantintegrations`, extends `SmrtObject`)
 - `TenantIntegrationCollection` (collection `tenantintegrations`, extends `SmrtCollection`)
 - `TenantPermissionOverride` (collection `tenantpermissionoverrides`, extends `SmrtObject`)
@@ -189,6 +191,8 @@ sources:
 - `rolepermission_list`: list on `@happyvertical/smrt-users:RolePermission`
 - `tenant_get`: get on `@happyvertical/smrt-users:Tenant`
 - `tenant_list`: list on `@happyvertical/smrt-users:Tenant`
+- `tenantguestgrant_get`: get on `@happyvertical/smrt-users:TenantGuestGrant`
+- `tenantguestgrant_list`: list on `@happyvertical/smrt-users:TenantGuestGrant`
 - `tenantintegration_get`: get on `@happyvertical/smrt-users:TenantIntegration`
 - `tenantintegration_list`: list on `@happyvertical/smrt-users:TenantIntegration`
 - `tenantpermissionoverride_get`: get on `@happyvertical/smrt-users:TenantPermissionOverride`

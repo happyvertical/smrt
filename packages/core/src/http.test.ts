@@ -218,6 +218,28 @@ describe('@happyvertical/smrt-core/http helpers (#5674)', () => {
     expect(limiter.check('bob', 16_000)).toBeNull();
   });
 
+  it('denies unknown keys instead of evicting when denyWhenFull is set', () => {
+    const limiter = new BoundedSlidingWindowRateLimiter({
+      maxEvents: 5,
+      windowMs: 10_000,
+      maxEntries: 2,
+      denyWhenFull: true,
+    });
+    limiter.record('a', 1_000);
+    limiter.record('b', 1_000);
+    expect(limiter.check('c', 2_000)).toBe(10);
+    limiter.record('c', 2_000);
+    expect(limiter.size).toBe(2);
+    // Known keys keep working and nothing was evicted
+    expect(limiter.check('a', 2_000)).toBeNull();
+    limiter.record('a', 2_000);
+    expect(limiter.size).toBe(2);
+    // Expired entries free slots, so a new key is admitted again
+    expect(limiter.check('c', 12_000)).toBeNull();
+    limiter.record('c', 12_000);
+    expect(limiter.size).toBe(1);
+  });
+
   it('bridges Node http.Server requests with streaming 413 protection and multi Set-Cookie headers', async () => {
     const handler = createNodeHttpHandler(
       async (request, remoteAddress) => {

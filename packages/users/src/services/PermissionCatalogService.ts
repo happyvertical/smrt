@@ -682,6 +682,7 @@ const USERS_AUTHORITY_CATALOG_MODELS: ReadonlySet<string> = new Set(
     'RolePermission',
     'Session',
     'Tenant',
+    'TenantGuestGrant',
     'TenantIntegration',
     'TenantPermissionOverride',
     'User',
