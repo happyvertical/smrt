@@ -720,12 +720,10 @@ export class Message extends SmrtObject {
       return false;
     }
     if (writeThrough.length) {
-      const pending = (this as unknown as Record<string, unknown>)
-        ._writeThroughDraft;
-      if (!pending || typeof pending !== 'object') return false;
+      const pending = new Set(this.getPendingWriteThroughFields());
       for (const name of writeThrough) {
         if (allowed.has(name)) continue;
-        if (Object.hasOwn(pending, name)) return false;
+        if (pending.has(name)) return false;
       }
     }
     for (const name of names) {

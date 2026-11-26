@@ -285,6 +285,7 @@ describe('framework lifecycle method exclusion (#2638)', () => {
       'save',
       'initialize',
       'hydrateWriteThrough',
+      'getPendingWriteThroughFields',
       'getSlug',
       'destroy',
       'toJSON',
