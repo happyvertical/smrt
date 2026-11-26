@@ -10,6 +10,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import test from 'node:test';
 import {
+  localIntegrity,
   publishRelease,
   reportUnverifiedPackages,
 } from './publish-validated-artifacts.mjs';
@@ -114,13 +115,13 @@ test('republishes instead of skipping when an existing version has different con
   );
 });
 
-test('default content verification throws on a registry/local shasum mismatch instead of silently skipping', () => {
+test('default content verification throws on a registry/local integrity mismatch instead of silently skipping', () => {
   const tmpDir = mkdtempSync(join(tmpdir(), 'publish-validated-artifacts-'));
   const artifactPath = join(tmpDir, 'a.tgz');
   writeFileSync(artifactPath, 'local tarball bytes');
-  const localShasum = createHash('sha1')
+  const localIntegrity = `sha512-${createHash('sha512')
     .update(readFileSync(artifactPath))
-    .digest('hex');
+    .digest('base64')}`;
 
   try {
     assert.throws(
@@ -139,14 +140,14 @@ test('default content verification throws on a registry/local shasum mismatch in
           {
             log: () => {},
             runNpm: (args) => {
-              if (args[2] === 'dist.shasum') return 'not-the-same-shasum';
+              if (args[2] === 'dist.integrity') return 'sha512-not-the-same';
               if (args[0] === 'view') return '0.40.0';
               throw new Error('unexpected npm publish attempt');
             },
           },
         ),
       new RegExp(
-        `does not match this run's verified local artifact sha1 ${localShasum}`,
+        `does not match this run's verified local artifact integrity ${localIntegrity.replace(/[+/]/g, '\\$&')}`,
       ),
     );
   } finally {
@@ -366,67 +367,168 @@ test('tolerates a transient registry error during post-publish verification inst
   );
 });
 
-test('tolerates a transient registry error during the pre-publish existence check and still publishes', () => {
-  const logs = [];
+test('fails closed, publishing nothing, when the pre-publish existence check hits a registry error', () => {
   const calls = [];
-  let versionViewCount = 0;
-
-  const result = publishRelease(
-    {
-      releaseVersion: '0.40.0',
-      packages: [
-        {
-          name: '@happyvertical/smrt-a',
-          version: '0.40.0',
-          path: '/artifacts/a.tgz',
+  assert.throws(
+    () =>
+      publishRelease(release(), {
+        log: () => {},
+        runNpm: (args) => {
+          calls.push(args);
+          if (args[0] === 'view') {
+            throw new Error(
+              'npm error 500 Internal Server Error - GET https://npm.happyvertical.com/@happyvertical%2fsmrt-a',
+            );
+          }
+          throw new Error('unexpected npm publish attempt');
         },
-      ],
-    },
+        verificationAttempts: 1,
+        wait: () => {},
+      }),
+    /Refusing to guess whether @happyvertical\/smrt-a@0\.40\.0 is published.*500/,
+  );
+  assert.equal(calls.filter((args) => args[0] === 'publish').length, 0);
+});
+
+test('an empty registry read counts as not published, not as published', () => {
+  const calls = [];
+  let published = false;
+  publishRelease(
+    { releaseVersion: '0.40.0', packages: [release().packages[0]] },
     {
-      log: (message) => logs.push(message),
+      log: () => {},
       runNpm: (args) => {
         calls.push(args);
-        if (args[0] === 'publish') return '';
-        if (args[0] === 'view' && args[2] === 'version') {
-          versionViewCount += 1;
-          // Only the pre-publish existence check (the first version view)
-          // errors transiently; the post-publish verification loop (every
-          // subsequent version view) confirms cleanly so this test isn't
-          // exercising that already-covered retry/backoff path.
-          if (versionViewCount === 1) {
-            throw new Error('npm ERR! network EAI_AGAIN registry.npmjs.org');
-          }
-          return '0.40.0';
+        if (args[0] === 'publish') {
+          published = true;
+          return '';
         }
-        return '0.40.0';
+        return published ? '0.40.0' : '';
       },
       verificationAttempts: 1,
       wait: () => {},
     },
   );
+  assert.equal(calls.filter((args) => args[0] === 'publish').length, 1);
+});
 
-  assert.deepEqual(
-    calls.find((args) => args[0] === 'publish'),
-    [
-      'publish',
-      '/artifacts/a.tgz',
-      '--registry',
-      'https://registry.npmjs.org/',
-      '--@happyvertical:registry=https://registry.npmjs.org/',
-      '--access',
-      'public',
-    ],
-    'a transient pre-publish read error must not block the publish attempt',
-  );
-  assert.ok(
-    logs.some((message) =>
-      /Pre-publish existence check .* errored .* treating as not yet published/.test(
-        message,
-      ),
-    ),
-    'expected the transient pre-publish read error to be logged, not thrown',
-  );
-  assert.deepEqual(result.published, ['@happyvertical/smrt-a']);
+function integrityRegistry({ packumentIntegrity, conflict }) {
+  const dir = mkdtempSync(join(tmpdir(), 'publish-validated-artifacts-'));
+  const path = join(dir, 'a.tgz');
+  writeFileSync(path, 'authorized tarball bytes');
+  const calls = [];
+  const runNpm = (args) => {
+    calls.push(args);
+    if (args[0] === 'publish') throw new Error(conflict);
+    // Dedup (`version`) sees nothing; the packument integrity read answers
+    // as configured. A blob existing without metadata is modelled by the
+    // packument answering 404 (null) here.
+    if (args[2] === 'dist.integrity') {
+      return typeof packumentIntegrity === 'function'
+        ? packumentIntegrity(path)
+        : packumentIntegrity;
+    }
+    return args[2] === 'version' ? null : '';
+  };
+  return {
+    calls,
+    cleanup: () => rmSync(dir, { recursive: true, force: true }),
+    path,
+    runNpm,
+  };
+}
+
+const registryConflict =
+  'npm error 409 Conflict - PUT https://npm.happyvertical.com/@happyvertical%2fsmrt-a - this package is already present';
+
+function singleRelease(path) {
+  return {
+    releaseVersion: '0.40.0',
+    packages: [{ name: '@happyvertical/smrt-a', version: '0.40.0', path }],
+  };
+}
+
+test('accepts the registry "already present" 409 only when the packument integrity equals the authorized tarball', () => {
+  const ctx = integrityRegistry({
+    packumentIntegrity: (path) => localIntegrity(path),
+    conflict: registryConflict,
+  });
+  try {
+    const result = publishRelease(singleRelease(ctx.path), {
+      log: () => {},
+      runNpm: ctx.runNpm,
+      verificationAttempts: 1,
+      wait: () => {},
+    });
+    assert.deepEqual(result.published, ['@happyvertical/smrt-a']);
+  } finally {
+    ctx.cleanup();
+  }
+});
+
+test('a 409 "already present" with a tarball but no packument entry stays fatal (blob presence is not publication)', () => {
+  const ctx = integrityRegistry({
+    packumentIntegrity: null,
+    conflict: registryConflict,
+  });
+  try {
+    assert.throws(
+      () =>
+        publishRelease(singleRelease(ctx.path), {
+          log: () => {},
+          runNpm: ctx.runNpm,
+          verificationAttempts: 1,
+          wait: () => {},
+        }),
+      /this package is already present/,
+    );
+  } finally {
+    ctx.cleanup();
+  }
+});
+
+test('a 409 "already present" whose packument integrity differs is a confirmed content mismatch', () => {
+  const ctx = integrityRegistry({
+    packumentIntegrity: 'sha512-truncated-or-different',
+    conflict: registryConflict,
+  });
+  try {
+    assert.throws(
+      () =>
+        publishRelease(singleRelease(ctx.path), {
+          log: () => {},
+          runNpm: ctx.runNpm,
+          verificationAttempts: 1,
+          wait: () => {},
+        }),
+      /does not match this run's verified local artifact integrity/,
+    );
+  } finally {
+    ctx.cleanup();
+  }
+});
+
+test('a 409 "already present" fails closed when the packument read itself errors', () => {
+  const ctx = integrityRegistry({
+    packumentIntegrity: () => {
+      throw new Error('npm error 500 Internal Server Error');
+    },
+    conflict: registryConflict,
+  });
+  try {
+    assert.throws(
+      () =>
+        publishRelease(singleRelease(ctx.path), {
+          log: () => {},
+          runNpm: ctx.runNpm,
+          verificationAttempts: 1,
+          wait: () => {},
+        }),
+      /this package is already present/,
+    );
+  } finally {
+    ctx.cleanup();
+  }
 });
 
 test('treats an npm publish-conflict on an already-published version as success once content is verified to match', () => {
@@ -449,9 +551,7 @@ test('treats an npm publish-conflict on an already-published version as success 
       // "not yet published" per the test above), so the publish loop
       // attempts to publish; npm's own conflict is authoritative.
       runNpm: (args) => {
-        if (args[0] === 'view') {
-          throw new Error('npm ERR! network EAI_AGAIN registry.npmjs.org');
-        }
+        if (args[0] === 'view') return null;
         if (args[0] === 'publish') {
           throw new Error(
             'npm error 403 403 Forbidden - PUT https://registry.npmjs.org/@happyvertical%2fsmrt-a - You cannot publish over the previously published versions: 0.40.0.',
@@ -491,9 +591,7 @@ test('still fails an npm publish-conflict on an already-published version whose 
         {
           log: () => {},
           runNpm: (args) => {
-            if (args[0] === 'view') {
-              throw new Error('npm ERR! network EAI_AGAIN registry.npmjs.org');
-            }
+            if (args[0] === 'view') return null;
             if (args[0] === 'publish') {
               throw new Error(
                 'npm error 403 403 Forbidden - You cannot publish over the previously published versions: 0.40.0.',
@@ -527,9 +625,7 @@ test('surfaces a confirmed content-identity mismatch discovered while resolving 
         {
           log: () => {},
           runNpm: (args) => {
-            if (args[0] === 'view') {
-              throw new Error('npm ERR! network EAI_AGAIN registry.npmjs.org');
-            }
+            if (args[0] === 'view') return null;
             if (args[0] === 'publish') {
               throw new Error(
                 'npm error 403 403 Forbidden - You cannot publish over the previously published versions: 0.40.0.',
@@ -539,12 +635,12 @@ test('surfaces a confirmed content-identity mismatch discovered while resolving 
           },
           verifyExistingContentMatches: () => {
             throw new Error(
-              "Refusing to treat @happyvertical/smrt-a@0.40.0 as already published: registry tarball sha1 aaa does not match this run's verified local artifact sha1 bbb. That version already exists with different content — bump a new version instead of reusing this one.",
+              "Refusing to treat @happyvertical/smrt-a@0.40.0 as already published: registry integrity aaa does not match this run's verified local artifact integrity bbb. That version already exists with different content — bump a new version instead of reusing this one.",
             );
           },
         },
       ),
-    /does not match this run's verified local artifact sha1/,
+    /does not match this run's verified local artifact integrity/,
   );
 });
 
@@ -567,9 +663,7 @@ test('fails closed on the original publish conflict when content identity cannot
         {
           log: (message) => logs.push(message),
           runNpm: (args) => {
-            if (args[0] === 'view') {
-              throw new Error('npm ERR! network EAI_AGAIN registry.npmjs.org');
-            }
+            if (args[0] === 'view') return null;
             if (args[0] === 'publish') {
               throw new Error(
                 'npm error 403 403 Forbidden - You cannot publish over the previously published versions: 0.40.0.',
