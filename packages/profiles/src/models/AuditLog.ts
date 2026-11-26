@@ -19,8 +19,11 @@ import type { Profile } from './Profile';
 
 export type AuditSource = 'web' | 'cli' | 'ci' | 'webhook' | 'mcp';
 
+export type AuditActorKind = 'user' | 'guest';
+
 export interface AuditLogOptions extends SmrtObjectOptions {
-  profileId?: string;
+  profileId?: string | null;
+  actorKind?: AuditActorKind;
   action?: string;
   resourceType?: string;
   resourceId?: string;
@@ -45,10 +48,15 @@ export class AuditLog extends SmrtObject {
   tenantId: string | null = null;
 
   /**
-   * The profile who performed the action
+   * The profile who performed the action. Null only for a guest actor
+   * (`actorKind === 'guest'`): guests have no user row.
    */
-  @foreignKey('Profile', { required: true, requiredFor: 'identity' })
-  profileId?: string;
+  @foreignKey('Profile', { nullable: true })
+  profileId?: string | null;
+
+  /** `'user'` (default) or `'guest'` for the reserved unauthenticated marker. */
+  @field({ default: 'user' })
+  actorKind: AuditActorKind = 'user';
 
   /**
    * Action performed (e.g., 'issue.update', 'feedback.incorporate')
@@ -95,7 +103,8 @@ export class AuditLog extends SmrtObject {
 
   constructor(options: AuditLogOptions = {}) {
     super(options);
-    if (options.profileId) this.profileId = options.profileId;
+    if (options.profileId !== undefined) this.profileId = options.profileId;
+    if (options.actorKind) this.actorKind = options.actorKind;
     if (options.action) this.action = options.action;
     if (options.reason !== undefined) this.reason = options.reason;
     if (options.changes !== undefined) this.changes = options.changes;

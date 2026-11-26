@@ -6,10 +6,12 @@
  */
 
 import { randomUUID } from 'node:crypto';
+import { GUEST_AUDIT_ACTOR } from '@happyvertical/smrt-core';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import {
   AuditLog,
   AuditLogCollection,
+  createAuditWriter,
   ProfileCollection,
   ProfileTypeCollection,
 } from '../index.js';
@@ -75,6 +77,42 @@ describe('AuditLog model', () => {
     expect(log.action).toBe('issue.update');
     expect(log.source).toBe('cli');
     expect(log.metadata).toEqual({ runId: 'abc' });
+  });
+
+  it('stores a guest entry with a null profile and actor_kind guest', async () => {
+    const { db } = await setup(dbUrl);
+    const write = createAuditWriter();
+    await write(
+      {
+        actorId: GUEST_AUDIT_ACTOR,
+        callerKind: 'guest',
+        action: 'created',
+        resourceType: 'Thing',
+        resourceId: 'thing-1',
+        tenantId: null,
+        changes: {},
+      },
+      db as never,
+    );
+    const logs = await AuditLogCollection.create({ db });
+    fixtures.track(logs.db);
+    const [row] = await logs.list({ where: { resourceId: 'thing-1' } });
+    expect(row.profileId ?? null).toBeNull();
+    expect(row.actorKind).toBe('guest');
+    const raw = await logs.db.list('audit_logs', { resource_id: 'thing-1' });
+    expect(raw[0].actor_kind).toBe('guest');
+  });
+
+  it('defaults actorKind to user for profile-backed entries', async () => {
+    const { db, actor } = await setup(dbUrl);
+    const log = await AuditLog.record({
+      db,
+      profile: actor,
+      action: 'a',
+      resourceType: 'T',
+      resourceId: 'r',
+    });
+    expect(log.actorKind).toBe('user');
   });
 
   it('resolves the acting profile', async () => {
