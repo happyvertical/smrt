@@ -415,8 +415,9 @@ describe('SvelteKit Route Generator', () => {
         cors: { allowedOrigins: ['https://app.example.com'] },
       });
       const inherited = written('_events/+server.ts');
-      expect(inherited).toContain('["https://app.example.com"]');
-      expect(inherited).not.toContain('Access-Control-Allow-Credentials');
+      expect(inherited).toContain(
+        'const ROUTE_CORS = {"allowedOrigins":["https://app.example.com"],"allowCredentials":false}',
+      );
 
       vi.mocked(writeFileSync).mockClear();
       await generateSvelteKitRoutes(projectRoot, reportManifest, {
@@ -428,9 +429,21 @@ describe('SvelteKit Route Generator', () => {
         },
       });
       const own = written('_events/+server.ts');
-      expect(own).toContain('["https://events.example.com"]');
+      expect(own).toContain(
+        'const ROUTE_CORS = {"allowedOrigins":["https://events.example.com"],"allowCredentials":true}',
+      );
       expect(own).not.toContain('https://app.example.com');
-      expect(own).toContain('Access-Control-Allow-Credentials');
+    });
+
+    it('lets eventsRoute.allowedOrigins: [] keep _events same-origin whatever cors allows', async () => {
+      await generateSvelteKitRoutes(projectRoot, reportManifest, {
+        ...baseOptions,
+        cors: { allowedOrigins: ['https://app.example.com'] },
+        eventsRoute: { allowedOrigins: [] },
+      });
+      expect(written('_events/+server.ts')).not.toContain('ROUTE_CORS');
+      // The other routes keep the shared allow-list.
+      expect(written('_changes/+server.ts')).toContain('ROUTE_CORS');
     });
   });
 

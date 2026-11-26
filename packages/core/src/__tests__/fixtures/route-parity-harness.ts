@@ -117,6 +117,14 @@ async function installRuntimePackages(root: string): Promise<void> {
     ].join('\n'),
   });
   write('@sveltejs/kit', { 'index.js': KIT_SHIM });
+  // The feed routes of a project with tenant-scoped models import the tenancy
+  // package to enter the caller's tenant. Core cannot import it, and the feed
+  // cases decide sign-in and CORS before any tenant is read, so the stub never
+  // enters one.
+  write('@happyvertical/smrt-tenancy', {
+    'index.js':
+      'export const hasTenantContext = () => false;\nexport const enterTenantContext = () => undefined;\n',
+  });
 }
 
 function projectRoot(): string {

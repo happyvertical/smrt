@@ -103,7 +103,16 @@ describe('generateEventsRoute (#1763)', () => {
     expect(content.startsWith(AUTO_GENERATED_ROUTE_HEADER)).toBe(true);
     // Fail-closed auth: guard is present and there is no public bypass.
     expect(content).toContain('requireRouteAuth(locals)');
-    expect(content).toContain("throw error(401, 'Authentication required')");
+    // The shared sign-in decision REST makes for the feed (#5195): 401
+    // AUTHENTICATION_REQUIRED, never public, no feed-specific copy of the rule.
+    expect(content).toContain('authorize({');
+    expect(content).toContain('apiPrincipalFromLocals(locals)');
+    expect(content).toContain("permissionCollection: '_feed'");
+    expect(content).toContain('publicAccess: false');
+    expect(content).toContain(
+      'throw error(decision.status, { message: decision.message, code: decision.code })',
+    );
+    expect(content).not.toContain('hasAuthenticatedPrincipal');
     expect(content).not.toContain('PUBLIC_ACCESS');
     // Anchored on the alphabetically first non-collection class.
     expect(content).toContain("getCollection('Apple')");
@@ -129,7 +138,7 @@ describe('generateEventsRoute (#1763)', () => {
 
     // The stream lifecycle lives in core — the route imports and delegates.
     expect(content).toContain(
-      "import {\n  buildChangeEventStream,\n  eventStreamCapacityExceededResponse,\n  resolveDispatchTenantScope,\n  tryReserveChangeEventSubscriberSlot,\n} from '@happyvertical/smrt-core'",
+      "import {\n  apiPrincipalFromLocals,\n  authorize,\n  buildChangeEventStream,\n  eventStreamCapacityExceededResponse,\n  resolveDispatchTenantScope,\n  tryReserveChangeEventSubscriberSlot,\n} from '@happyvertical/smrt-core'",
     );
     expect(content).toContain('const MANIFEST_HASH = undefined;');
     expect(content).toContain(
@@ -305,13 +314,13 @@ describe('generateEventsRoute (#1763)', () => {
       generateEventsRoute(projectRoot, docManifest(), baseOptions);
       const content = writtenRouteContent();
       expect(content).not.toContain('Access-Control-Allow-Origin');
-      expect(content).not.toContain('CORS_ALLOWED_ORIGINS');
+      expect(content).not.toContain('ROUTE_CORS');
       expect(content).not.toContain('export const OPTIONS');
       // The default output still carries the same-origin note.
       expect(content).toContain('Same-origin only unless an origin allowlist');
     });
 
-    it('emits an origin-allowlist gate + credentialed preflight when configured', () => {
+    it('wraps the route in the shared CORS policy when an allowlist is configured', () => {
       generateEventsRoute(projectRoot, docManifest(), {
         ...baseOptions,
         eventsRoute: {
@@ -320,33 +329,64 @@ describe('generateEventsRoute (#1763)', () => {
         },
       });
       const content = writtenRouteContent();
-      // Allowlist baked in as a Set; Origin echoed only when a member (never `*`).
+      // Through `generators/cors.ts`, as every other generated route (#5195):
+      // the origin is echoed only when allow-listed, never `*`.
       expect(content).toContain(
-        'const CORS_ALLOWED_ORIGINS = new Set(["https://widget.example","https://app.example"])',
+        'const ROUTE_CORS = {"allowedOrigins":["https://widget.example","https://app.example"],"allowCredentials":true}',
       );
-      expect(content).not.toContain("'Access-Control-Allow-Origin': '*'");
-      expect(content).toContain("'Access-Control-Allow-Origin': origin");
+      expect(content).toContain('applyCorsHeaders(');
+      expect(content).toContain('corsPreflightResponse(request, ROUTE_CORS)');
       expect(content).toContain(
-        "headers['Access-Control-Allow-Credentials'] = 'true'",
+        'export const GET: RequestHandler = withRouteCors(GETHandler)',
       );
-      // The SSE response and the capacity 503 both carry the CORS headers.
-      expect(content).toContain('...eventsCorsHeaders(request),');
-      expect(content).toContain(
-        'applyEventsCors(eventStreamCapacityExceededResponse(), request)',
-      );
-      // A credentialed preflight is answered for allow-listed origins only.
       expect(content).toContain('export const OPTIONS: RequestHandler');
+      // No copy of the policy in the route itself.
+      expect(content).not.toContain('CORS_ALLOWED_ORIGINS');
+      expect(content).not.toContain('eventsCorsHeaders');
+      expect(content).not.toContain("'Access-Control-Allow-Origin': '*'");
     });
 
-    it('omits the credentials header when allowCredentials is not opted in', () => {
+    it('does not add credentials unless allowCredentials is opted in', () => {
       generateEventsRoute(projectRoot, docManifest(), {
         ...baseOptions,
         eventsRoute: { allowedOrigins: ['https://widget.example'] },
       });
       const content = writtenRouteContent();
-      expect(content).toContain('const CORS_ALLOWED_ORIGINS = new Set(');
-      expect(content).toContain("'Access-Control-Allow-Origin': origin");
-      expect(content).not.toContain('Access-Control-Allow-Credentials');
+      expect(content).toContain(
+        'const ROUTE_CORS = {"allowedOrigins":["https://widget.example"],"allowCredentials":false}',
+      );
+    });
+
+    it('inherits sveltekit.cors when the route sets no allowlist of its own', () => {
+      generateEventsRoute(projectRoot, docManifest(), {
+        ...baseOptions,
+        cors: { allowedOrigins: ['https://app.example'] },
+      });
+      expect(writtenRouteContent()).toContain(
+        'const ROUTE_CORS = {"allowedOrigins":["https://app.example"],"allowCredentials":false}',
+      );
+    });
+
+    it('lets its own allowlist win over sveltekit.cors', () => {
+      generateEventsRoute(projectRoot, docManifest(), {
+        ...baseOptions,
+        cors: { allowedOrigins: ['https://app.example'] },
+        eventsRoute: { allowedOrigins: ['https://widget.example'] },
+      });
+      const content = writtenRouteContent();
+      expect(content).toContain('https://widget.example');
+      expect(content).not.toContain('https://app.example');
+    });
+
+    it('allowedOrigins: [] keeps the stream same-origin whatever sveltekit.cors allows', () => {
+      generateEventsRoute(projectRoot, docManifest(), {
+        ...baseOptions,
+        cors: { allowedOrigins: ['https://app.example'] },
+        eventsRoute: { allowedOrigins: [] },
+      });
+      const content = writtenRouteContent();
+      expect(content).not.toContain('ROUTE_CORS');
+      expect(content).not.toContain('export const OPTIONS');
     });
 
     it('treats a whitespace-only / empty allowlist as unconfigured (fail-closed)', () => {
@@ -355,7 +395,7 @@ describe('generateEventsRoute (#1763)', () => {
         eventsRoute: { allowedOrigins: ['   ', ''], allowCredentials: true },
       });
       const content = writtenRouteContent();
-      expect(content).not.toContain('CORS_ALLOWED_ORIGINS');
+      expect(content).not.toContain('ROUTE_CORS');
       expect(content).not.toContain('export const OPTIONS');
     });
   });

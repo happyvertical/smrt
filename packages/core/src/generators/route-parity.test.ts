@@ -827,6 +827,64 @@ describe('route parity: a protected-field refusal names the field on both paths'
   });
 });
 
+describe('route parity: the feed routes (#5195)', () => {
+  const origin = (value: string): Record<string, string> => ({ origin: value });
+  // The feeds are never public, so an unsigned read is refused before anything
+  // is read; `_events` is a live stream, so nothing it would stream is
+  // compared. Signed-in callers are compared on the preflight alone.
+  const cases = (principal: string): Case[] =>
+    (
+      [
+        ['an allowed origin', origin(ALLOWED_ORIGIN)],
+        ['a disallowed origin', origin(OTHER_ORIGIN)],
+        ['no origin', {}],
+      ] as const
+    ).flatMap(([name, headers]) => [
+      ...(principal === 'anonymous'
+        ? (['_events', '_changes'] as const).map((path) => ({
+            op: 'feed-read',
+            label: `${path} read from ${name}`,
+            principal,
+            request: { method: 'GET', path, headers: { ...headers } },
+          }))
+        : []),
+      ...(['_events', '_changes'] as const).map((path) => ({
+        op: 'preflight',
+        label: `${path} preflight from ${name}`,
+        principal,
+        request: {
+          method: 'OPTIONS',
+          path,
+          headers: {
+            ...headers,
+            'access-control-request-method': 'GET',
+            'access-control-request-headers': 'last-event-id',
+          },
+        },
+      })),
+    ]) as Case[];
+  it.each(['anonymous', 'signedInNoPermissions', 'writer'])('%s', (principal) =>
+    expectParity(cases(principal)));
+
+  it('answers an unsigned caller 401 AUTHENTICATION_REQUIRED, with CORS headers', async () => {
+    for (const path of ['_events', '_changes']) {
+      for (const transport of ['rest', 'kit'] as const) {
+        const answer = await fx.run(transport, principals().anonymous, {
+          method: 'GET',
+          path,
+          headers: origin(ALLOWED_ORIGIN),
+        });
+        expect(answer.status, `${transport} ${path}`).toBe(401);
+        expect(answer.code, `${transport} ${path}`).toBe(
+          'AUTHENTICATION_REQUIRED',
+        );
+        expect(answer.cors['access-control-allow-origin']).toBe(ALLOWED_ORIGIN);
+        expect(answer.cors.vary).toBe('Origin');
+      }
+    }
+  });
+});
+
 describe('route parity: sync/apply', () => {
   const batch = (): ParityRequest => ({
     method: 'POST',
