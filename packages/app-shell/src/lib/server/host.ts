@@ -191,6 +191,8 @@ interface Holder {
   reserved: boolean;
   /** Lifecycle: set while the app is being closed; a wake waits for it. */
   evicting: Promise<void> | null;
+  /** Cloud: when the live host finished opening (ms, lifecycle clock); null while closed. Metering only. */
+  openedAt: number | null;
 }
 
 let context: ShellContext | null = null;
@@ -392,6 +394,7 @@ function holderOf(key: string, tenantId: string | null): Holder {
       leasedRef: null,
       reserved: false,
       evicting: null,
+      openedAt: null,
     };
     holders.set(key, holder);
   }
@@ -936,6 +939,7 @@ function methodCodeOf(holder: Holder): MethodCodeGate | undefined {
 
 /** Open one holder's live host: the app, its draft, the freeze. */
 async function openLive(holder: Holder): Promise<AppHost> {
+  const openStarted = lifecycle.now();
   const db = await getShellDb();
   holder.pin ??= await soleTenantId(db);
   const store = new ShellVersionStore(db, holder.pin);
@@ -1000,8 +1004,34 @@ async function openLive(holder: Holder): Promise<AppHost> {
   holder.database = database;
   holder.storeRef = store;
   holder.hostRef = host;
+  holder.openedAt = lifecycle.now();
+  meterWake(holder, holder.openedAt - openStarted);
   if (host.lostClaim) void dropLostHost(holder, host);
   return host;
+}
+
+/**
+ * Wake/idle-close usage samples (#5199): cloud only, on the HOST's tenant,
+ * after the fact and never awaited. The desktop has no tenant here, so it
+ * never loads the writer. A failure is swallowed: it must not touch the app.
+ */
+function meterWake(holder: Holder, wakeMs: number): void {
+  const tenantId = holder.tenantId;
+  if (!tenantId) return;
+  void import('./storage-metering.ts')
+    .then((m) => m.storageMeter().onWake(tenantId, Math.max(0, wakeMs)))
+    .catch(() => {});
+}
+
+function meterClose(holder: Holder, why: 'idle' | 'capacity'): void {
+  const tenantId = holder.tenantId;
+  const openedAt = holder.openedAt;
+  holder.openedAt = null;
+  if (!tenantId || openedAt === null) return;
+  const awakeMs = lifecycle.now() - openedAt;
+  void import('./storage-metering.ts')
+    .then((m) => m.storageMeter().onClose(tenantId, awakeMs, why))
+    .catch(() => {});
 }
 
 /** The LIVE host of the request's app, opened on first use. It is never the draft. */
@@ -1285,6 +1315,7 @@ function evict(holder: Holder, why: 'idle' | 'capacity'): Promise<void> {
     await live?.close().catch(() => {});
     if (holders.get(holder.key) === holder) holders.delete(holder.key);
     lifecycle.evictions[why]++;
+    meterClose(holder, why);
   })();
   holder.evicting = done;
   void done.finally(() => lifecycle.changed());
