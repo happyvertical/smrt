@@ -669,7 +669,7 @@ describe('db:status', () => {
           kind: 'add_column',
           reason:
             'Current manifests no longer require this generated schema change, so the failed row is retained history rather than active drift.',
-          errorMessage: 'must be owner of table contents',
+          errorMessage: 'Stored migration failure details withheld',
         },
       ],
     });
@@ -798,14 +798,14 @@ describe('db:status', () => {
           classification: 'unresolved',
           recommendation:
             'Run `smrt db:migrate` to reconcile the live schema, then confirm this failed generated schema repair no longer appears as unresolved.',
-          errorMessage: 'column missing',
+          errorMessage: 'Stored migration failure details withheld',
         },
         {
           name: typeUpgradeName,
           classification: 'unresolved',
           recommendation:
             'Run `smrt db:migrate` to reconcile the live schema, then confirm this failed generated schema repair no longer appears as unresolved.',
-          errorMessage: 'cannot cast',
+          errorMessage: 'Stored migration failure details withheld',
         },
       ],
       superseded: [
@@ -814,7 +814,7 @@ describe('db:status', () => {
           classification: 'superseded',
           recommendation:
             'No current live-schema drift maps to this failed generated schema repair. Keep the row for audit history, but it no longer blocks the current schema.',
-          errorMessage: 'index already exists',
+          errorMessage: 'Stored migration failure details withheld',
         },
       ],
       other: [],

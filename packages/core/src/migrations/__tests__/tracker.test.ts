@@ -708,10 +708,15 @@ describe('MigrationTracker', () => {
 
       expect(result.success).toBe(false);
       expect(result.error).toBeInstanceOf(Error);
-      expect(String(result.error)).toContain('Failed to execute raw query');
-      expect(errorSpy.mock.calls.flat().join('\n')).toContain(
-        'Failed to persist failed status for migration 0001_bad_sql: failed-status write failed',
+      expect(String(result.error)).toContain(
+        'Migration 0001_bad_sql: statement 1 (other) failed in the regular phase',
       );
+      expect(String(result.error)).not.toContain('THIS IS NOT VALID SQL');
+      const logged = errorSpy.mock.calls.flat().join('\n');
+      expect(logged).toContain(
+        'Failed to persist failed status for migration 0001_bad_sql (SQLSTATE unavailable; database message withheld)',
+      );
+      expect(logged).not.toContain('failed-status write failed');
     });
   });
 
