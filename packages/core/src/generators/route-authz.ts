@@ -68,7 +68,7 @@ export interface AuthorizeInput {
   permissionAction?: string;
   /**
    * Columns that record a row's tenant (snake_case), for the write-body check.
-   * Defaults to `tenant_id`; pass the model's ownership columns too.
+   * `tenant_id` is always checked, in addition to these.
    */
   tenantColumns?: ReadonlySet<string>;
   /** The write body, checked for a tenant other than the principal's. */
@@ -155,7 +155,10 @@ export function authorize(input: AuthorizeInput): AuthorizeDecision {
     typeof input.body === 'object' &&
     !Array.isArray(input.body)
   ) {
-    const columns = input.tenantColumns ?? new Set([DEFAULT_TENANT_COLUMN]);
+    const columns = new Set([
+      ...(input.tenantColumns ?? []),
+      DEFAULT_TENANT_COLUMN,
+    ]);
     for (const [key, value] of Object.entries(input.body)) {
       if (columns.has(whereColumnName(key)) && value !== principal.tenantId) {
         return deny(
@@ -218,9 +221,15 @@ export function apiPrincipalFromLocals(
     context && typeof context === 'object'
       ? (context as Record<string, unknown>).permissions
       : undefined;
-  const permissions = new Set<string>(fromLocals.permissions ?? []);
-  if (Array.isArray(contextPermissions) || contextPermissions instanceof Set) {
-    for (const slug of contextPermissions as Iterable<unknown>) {
+  const permissions = new Set<string>();
+  for (const source of [
+    l.permissions,
+    l.permissionSet,
+    l.smrtPermissions,
+    contextPermissions,
+  ]) {
+    if (!Array.isArray(source) && !(source instanceof Set)) continue;
+    for (const slug of source as Iterable<unknown>) {
       if (typeof slug === 'string') permissions.add(slug);
     }
   }

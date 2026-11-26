@@ -155,7 +155,12 @@ describe('authorize tenant', () => {
     expect(w({ orgId: 'o2' }, { tenantColumns })).toMatchObject({
       code: 'TENANT_MISMATCH',
     });
-    expect(w({ tenantId: 'x' }, { tenantColumns }).allow).toBe(true);
+    expect(w({ tenantId: 'x' }, { tenantColumns })).toMatchObject({
+      code: 'TENANT_MISMATCH',
+    });
+    expect(w({ tenantId: 'x' }, { tenantColumns: new Set() })).toMatchObject({
+      code: 'TENANT_MISMATCH',
+    });
   });
   it('ignores a non-object body', () => {
     expect(w(undefined).allow).toBe(true);
@@ -229,6 +234,21 @@ describe('apiPrincipalFromLocals', () => {
       tenantContext: { permissions: new Set(['b.update']) },
     });
     expect([...(p.permissions ?? [])].sort()).toEqual(['a.create', 'b.update']);
+  });
+  it('reads a grant from any source, even when permissions is empty', () => {
+    const grants = (locals: Record<string, unknown>) => [
+      ...(apiPrincipalFromLocals(locals).permissions ?? []),
+    ];
+    expect(grants({ permissions: [], permissionSet: ['x.create'] })).toEqual([
+      'x.create',
+    ]);
+    expect(grants({ smrtPermissions: new Set(['y.update']) })).toEqual([
+      'y.update',
+    ]);
+    expect(grants({ permissions: ['a.b', 5, null, 'c.d'] })).toEqual([
+      'a.b',
+      'c.d',
+    ]);
   });
   it('takes the bypass only from tenantContext.superAdminBypass === true', () => {
     expect(
