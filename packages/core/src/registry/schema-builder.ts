@@ -23,6 +23,7 @@ import {
   schemaForeignKeys,
 } from '../schema/foreign-key-ddl.js';
 import {
+  parseForeignKeyReference,
   resolveForeignKeyDeleteAction,
   resolveForeignKeyUpdateAction,
 } from '../schema/foreign-key-policy.js';
@@ -485,7 +486,8 @@ function applyContributorForeignKeys(
       column.foreignKey = undefined;
       continue;
     }
-    const [legacyTargetName, declaredTargetColumn] = field.related.split('.');
+    const { target: legacyTargetName, column: declaredTargetColumn } =
+      parseForeignKeyReference(field.related);
     // `SmrtHierarchical.parentId` that this class's registration does not
     // declare itself (decorated classes, an unmerged manifest) was bound to
     // the class's own table by the field-inheritance rule (#4940); there is no

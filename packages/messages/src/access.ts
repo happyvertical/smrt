@@ -478,6 +478,76 @@ export async function accountReadable(
   ).allowed;
 }
 
+const FALSE_FLAGS = new Set(['', '0', 'false']);
+
+/**
+ * One reading of a stored or caller-supplied boolean flag (`true`, `1`, `'1'`,
+ * `'true'`, whatever a column or a generated route hands over). Anything that
+ * is not plainly false counts as set, so an unusual form fails closed.
+ */
+export function mailFlag(value: unknown): boolean {
+  if (value === undefined || value === null || value === false) return false;
+  if (value === 0) return false;
+  if (typeof value === 'string') {
+    return !FALSE_FLAGS.has(value.trim().toLowerCase());
+  }
+  return true;
+}
+
+/**
+ * Draft content: an email flagged `isDraft` that has not been sent. Every send
+ * status but `sent` counts (`draft`, `pending`, `scheduled`, `sending`,
+ * `failed`), so relabelling the status never takes a draft out of the gate.
+ * Received mail is not flagged, whatever status it carries.
+ */
+export function isUnsentDraft(sendStatus: unknown, isDraft: unknown): boolean {
+  return mailFlag(isDraft) && sendStatus !== 'sent';
+}
+
+/**
+ * Gate for writes that create, change or delete a draft: the principal needs
+ * the `draft` scope on every listed account. Trusted system work
+ * ({@link runWithMailSystemAccess}) and unowned accounts pass; an account that
+ * cannot be found fails closed, like {@link accountReadable}.
+ */
+export function assertMailDraftWrite(
+  accountIds: ReadonlyArray<string | null | undefined>,
+  options: SmrtClassOptions | undefined,
+): Promise<void> {
+  return assertMailScopeOn(accountIds, 'draft', options);
+}
+
+/** {@link assertMailDraftWrite} for any scope. */
+export async function assertMailScopeOn(
+  accountIds: ReadonlyArray<string | null | undefined>,
+  scope: MailScope,
+  options: SmrtClassOptions | undefined,
+): Promise<void> {
+  if (inMailSystemAccess()) return;
+  learnMailAccessOptions(options);
+  const ids = [...new Set(accountIds.filter((id): id is string => !!id))];
+  if (!ids.length) return;
+  const config = getEffectiveMailAccessConfig();
+  if (!config) return;
+  const { AccountCollection } = await import(
+    './collections/AccountCollection.js'
+  );
+  for (const id of ids) {
+    const account = await runWithMailSystemAccess(async () =>
+      (await AccountCollection.create(config.options)).get({ id }),
+    );
+    if (!account) throw new MailAccessError(scope, 'denied');
+    await assertMailAccess(
+      {
+        id: account.id,
+        tenantId: account.tenantId,
+        ownerUserId: account.ownerUserId,
+      },
+      scope,
+    );
+  }
+}
+
 /**
  * Gate for direct hydration (`new Email({ id }).initialize()`,
  * `loadRelated('messageId')`), which bypasses collection read hooks: throws

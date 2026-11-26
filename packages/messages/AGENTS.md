@@ -68,6 +68,10 @@ owners and call `configureMailAccess({ options, resolvePrincipal })` at startup
   on purpose (`available` means outbound transport; JMAP is receive and sync
   only), and `connectMailbox` still connects it. Policy lookups use the
   configured db handle, not a caller's transaction.
+- Draft writes (and their attachments) need the `draft` scope on an owned
+  account, checked in `Message.save()`/`delete()` and
+  `Attachment.save()`/`delete()`; rules and bypasses:
+  [agents/send-approval.md](agents/send-approval.md#draft-writes).
 - `Message.send()` needs the `send` scope on an owned account. Agent sends
   (principal `kind` other than `person`/`human`) on a mail account are held
   for a person's approval unless the owner opted in to `auto_send`;
@@ -106,6 +110,13 @@ owners and call `configureMailAccess({ options, resolvePrincipal })` at startup
 `MailSearchService` searches only `read`-scoped accounts from `listAccounts()`;
 `CorrespondentService` derives owner-private contacts (optional `Profile` link).
 Both fail closed. Details: [agents/mail-search.md](agents/mail-search.md).
+
+## Attachment storage root (#5645)
+
+`Attachment.filePath` is `<accountId>/...` relative to the root set once at startup with
+`configureAttachmentStorage({ root })` (beside `configureMailAccess`). Without
+it stored files are never read (fail closed). Rules, send behaviour and the
+upgrade step: [agents/attachment-storage.md](agents/attachment-storage.md).
 
 ## Mailbox connect (provider-neutral)
 
@@ -217,9 +228,8 @@ import '@happyvertical/smrt-messages/providers/all';     // all of the above
   `createSender` hooks. Never import a provider SDK from any module reachable
   from `src/index.ts` — the consumer bundle gate (`packages/bundle-gate`)
   fails CI when one becomes reachable.
-- `Attachment.readContent()` loads `@happyvertical/files` through core's
-  `importOptionalDependency` boundary and keeps its null-on-failure contract
-  in builds where the SDK is absent.
+- `Attachment.readContent()` reads with `node:fs` through `host.ts` (stubbed
+  in `host.browser.ts`), not `@happyvertical/files`; see Attachment storage.
 
 ## Gotchas
 

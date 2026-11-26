@@ -53,6 +53,22 @@ await support.recordInteraction(supportCase, {
 });
 ```
 
+### External requester ownership
+
+`SupportCase.requesterKey` is an opaque, nullable, indexed key the app composes
+(for example `<productKey>:<userId>`); smrt never interprets it. Open cases with
+`openCase({ requesterKey })`, list with
+`listByRequester(key, { tenantId, since?, limit?, offset? })` (stable
+`created_at DESC, id DESC`), and move ownership with
+`reassignRequester({ tenantId, fromKey, toKey, caseIds? })`, a single
+idempotent UPDATE that returns the moved case ids. These methods never open a
+transaction: to run inside a caller's transaction (e.g. holding advisory
+locks) create the service on the tx-bound database
+(`SupportCaseService.create({ db: tx })`), since a nested `transaction()` takes
+a new pooled connection, not a savepoint. `reassignRequester` is a bulk column
+update and writes no per-case audit events. Existing deployments add the
+nullable column and index through the normal schema migration; no backfill.
+
 Application schemas must be migrated before runtime; Support verifies its
 tables and does not create them on demand.
 

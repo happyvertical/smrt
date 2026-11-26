@@ -97,6 +97,17 @@ tests that inspect generated metadata read `getTestManifestPath()`. The
 snapshot directory is removed when the run exits, and directories left by
 ended runs are pruned at the next startup.
 
+Worker manifest registration has a 30-second minimum setup-hook budget to allow
+module loading on shared runners. Only that asynchronous hook receives this
+budget; global hook and test timeouts stay as configured. Larger consumer
+`hookTimeout` values (including CLI overrides) and `hookTimeout: 0` (unlimited)
+are preserved through the plugin's global setup.
+
+The shared global setup also isolates home/state for Playwright and standalone
+callers, including calls without an argument. Hook-budget forwarding runs only
+when the caller supplies Vitest's public `config`/`provide` context; other
+callers keep the same home creation and returned cleanup behavior.
+
 ### Pool and Isolation
 
 Measured on a 333-file, 3,259-test unit suite, 16 cores (#2897, follow-up to #2893):
