@@ -10,9 +10,12 @@ import { AuditLog } from './models/AuditLog.js';
 /** Profiles owns audit persistence; core only owns the mutation contract. */
 export function createAuditWriter(): AuditWriter {
   return async (entry: AuditEntry, db: DatabaseInterface) => {
+    // Guests have no user row: null profile, reserved marker kind only.
+    const guest = entry.callerKind === 'guest';
     const log = new (ObjectRegistry.resolveEffectiveConstructor(AuditLog))({
       db,
-      profileId: entry.actorId,
+      profileId: guest ? null : entry.actorId,
+      actorKind: guest ? 'guest' : 'user',
       onBehalfOfId: entry.onBehalfOfId,
       tenantId: entry.tenantId,
       action: entry.action,

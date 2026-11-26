@@ -4,20 +4,47 @@ import type { SmrtObjectConstructor } from './registry/types.js';
 import { ObjectRegistry } from './registry.js';
 import { toSnakeCase } from './utils/naming.js';
 
-/** Caller identity comes from trusted server context, never a request body. */
-export interface AuditContext {
-  actorId: string;
+/**
+ * Reserved actor id the guest marker is recorded under. It is not a user row
+ * and carries no per-tenant identity. It is accepted only through the typed
+ * `{ callerKind: 'guest' }` variant; a caller-supplied string equal to it is
+ * rejected by `requireAuditOptions`.
+ */
+export const GUEST_AUDIT_ACTOR = 'smrt:guest';
+
+export type AuditCallerKind = 'user' | 'guest';
+
+interface AuditContextBase {
   reason?: string;
   source?: 'web' | 'cli' | 'ci' | 'webhook' | 'mcp';
   onBehalfOfId?: string | null;
 }
+
+/** An authenticated user; identity comes from trusted server context. */
+export interface UserAuditContext extends AuditContextBase {
+  actorId: string;
+  callerKind?: 'user';
+}
+
+/** The unauthenticated guest principal: no user row, no actor string. */
+export interface GuestAuditContext extends AuditContextBase {
+  callerKind: 'guest';
+  actorId?: undefined;
+}
+
+/** Caller identity comes from trusted server context, never a request body. */
+export type AuditContext = UserAuditContext | GuestAuditContext;
 
 export interface AuditChange {
   before: unknown;
   after: unknown;
 }
 
-export interface AuditEntry extends AuditContext {
+export interface AuditEntry extends AuditContextBase {
+  /** Resolved actor; `GUEST_AUDIT_ACTOR` when `callerKind` is `'guest'`. */
+  actorId: string;
+  /** Absent means `user`. */
+  callerKind?: AuditCallerKind;
   action: string;
   resourceType: string;
   resourceId: string;
@@ -31,9 +58,16 @@ export type AuditWriter = (
   db: DatabaseInterface,
 ) => Promise<void>;
 
-export interface CollectionAuditOptions extends AuditContext {
+export type CollectionAuditOptions = AuditContext & {
   writer: AuditWriter;
-}
+};
+
+/** A validated audit configuration with the actor resolved. */
+export type ResolvedAuditOptions = AuditContextBase & {
+  writer: AuditWriter;
+  actorId: string;
+  callerKind: AuditCallerKind;
+};
 
 const CONTEXT = Symbol.for('smrt.audit.context');
 
@@ -80,19 +114,46 @@ export function auditChanges(
 export function requireAuditOptions(
   options: CollectionAuditOptions | undefined,
   context?: Partial<AuditContext>,
-): CollectionAuditOptions {
+): ResolvedAuditOptions {
   const defaults = options ?? getActiveAuditOptions();
-  const resolved = defaults && { ...defaults, ...context };
-  if (
-    !resolved ||
-    typeof resolved.writer !== 'function' ||
-    !resolved.actorId?.trim()
-  ) {
-    throw new Error(
-      'Audited mutation requires a writer and an authenticated actorId',
-    );
+  const message =
+    'Audited mutation requires a writer and an authenticated actorId';
+  if (!defaults || typeof defaults.writer !== 'function') {
+    throw new Error(message);
   }
-  return resolved;
+  // An explicit context actor or kind replaces the default's whole identity.
+  const identity =
+    context && (context.callerKind !== undefined || 'actorId' in context)
+      ? context
+      : defaults;
+  const { writer: _writer, ...rest } = { ...defaults, ...context };
+  const base = rest as AuditContextBase;
+  if (identity.callerKind === 'guest') {
+    if (identity.actorId !== undefined) throw new Error(message);
+    return {
+      ...base,
+      writer: defaults.writer,
+      actorId: GUEST_AUDIT_ACTOR,
+      callerKind: 'guest',
+    };
+  }
+  const actorId = identity.actorId;
+  if (identity.callerKind !== undefined && identity.callerKind !== 'user') {
+    throw new Error(message);
+  }
+  if (
+    typeof actorId !== 'string' ||
+    !actorId.trim() ||
+    actorId.trim() === GUEST_AUDIT_ACTOR
+  ) {
+    throw new Error(message);
+  }
+  return {
+    ...base,
+    writer: defaults.writer,
+    actorId,
+    callerKind: 'user',
+  };
 }
 
 export async function writeAudit(
@@ -100,7 +161,7 @@ export async function writeAudit(
   action: string,
   before: Record<string, unknown>,
   after: Record<string, unknown>,
-  options: CollectionAuditOptions,
+  options: ResolvedAuditOptions,
 ): Promise<void> {
   const registered = ObjectRegistry.getClassByConstructor(
     instance.constructor as SmrtObjectConstructor,
@@ -126,6 +187,7 @@ export async function writeAudit(
   await options.writer(
     {
       actorId: options.actorId,
+      callerKind: options.callerKind,
       reason: options.reason,
       source: options.source,
       onBehalfOfId: options.onBehalfOfId,
