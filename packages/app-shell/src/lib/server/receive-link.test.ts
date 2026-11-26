@@ -7,6 +7,7 @@ import { POST as receive } from '../../routes/api/shell/app/receive/+server.ts';
 import { POST as mint } from '../../routes/api/shell/app/receive-link/+server.ts';
 import { POST as decide } from '../../routes/api/shell/approvals/[id]/+server.ts';
 import { ReceiveLinkCollection } from '../objects/ReceiveLink.ts';
+import { ownerTenantFor } from './accounts.ts';
 import { type CloudHarness, openCloudShell } from './cloud-test-support.ts';
 import { configureShell, getShellDb } from './host.ts';
 import { type Principal, runAs, setOwnerCheck } from './owner.ts';
@@ -138,6 +139,33 @@ describe('minting', () => {
     const first = await minted(h.a);
     const second = await minted(h.a);
     expect(await verifyReceiveLink(first.token)).toBeNull();
+    expect(await verifyReceiveLink(second.token)).not.toBeNull();
+  });
+
+  it('overlapping mints leave exactly one live token for the tenant', async () => {
+    const user = await h.newUser('mintrace@example.test');
+    const tenantId = await ownerTenantFor(h.db, {
+      id: user.id,
+      name: 'mintrace',
+    });
+    const who = { id: user.id, tenantId };
+    const all = await Promise.all(
+      Array.from({ length: 6 }, () => runAs(who, () => mintReceiveLink())),
+    );
+    const live = [];
+    for (const m of all)
+      if (await verifyReceiveLink(m.token)) live.push(m.token);
+    expect(live).toHaveLength(1);
+    expect(await rows(who)).toHaveLength(1);
+  });
+
+  it('a token revoked after it verified cannot be spent', async () => {
+    const first = await minted(h.a);
+    const verified = await verifyReceiveLink(first.token);
+    const second = await minted(h.a);
+    expect(
+      await spendReceiveLink(verified as NonNullable<typeof verified>),
+    ).toBe(false);
     expect(await verifyReceiveLink(second.token)).not.toBeNull();
   });
 

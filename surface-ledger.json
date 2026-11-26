@@ -3389,6 +3389,16 @@
   },
   {
     "kind": "model",
+    "name": "@happyvertical/smrt-app-shell:ReceiveLink",
+    "issue": 5638,
+    "nearest": [
+      "@happyvertical/smrt-app-shell:AppImport",
+      "@happyvertical/smrt-app-shell:Approval"
+    ],
+    "reason": "The tenant's one owner-minted link token for the CLI's receive (#5638): the hash of its secret, scope, expiry and spent time, one row per tenant so a mint revokes the last. Approval records an owner decision on a pending action and is consumed by the shell's own executor, not presented by an outside client as a credential; AppImport tracks a workbook import and has no credential, expiry or single-use state."
+  },
+  {
+    "kind": "model",
     "name": "@happyvertical/smrt-approvals:ApprovalEvent",
     "grandfathered": true
   },

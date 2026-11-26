@@ -406,8 +406,11 @@ a tenant-scoped shell table, RLS like the others).
 
 - **Minted** only by the signed-in owner (`POST /api/shell/app/receive-link`,
   session cookie and same origin; a link token cannot mint one). Hosted profile
-  only. Shown once; only the SHA-256 of its 256-bit secret is stored. A new
-  token revokes the tenant's earlier unspent one.
+  only. Shown once; only the SHA-256 of its 256-bit secret is stored. One row per
+  tenant (its id derived from the tenant): a mint rewrites it, so the earlier
+  token is revoked and overlapping mints leave exactly one live token (the loser's
+  is dead). The spend also matches the token's hash, so a token revoked after it
+  verified cannot be spent.
 - **Scope**: one tenant (the minter's: it is in the token as the lookup
   selector and in the row) and one action (`app.receive`, checked on the row).
   Only the receive route reads `Authorization: Bearer`; every other route reads

@@ -51,6 +51,16 @@ export interface VerifiedReceiveLink {
   id: string;
   tenantId: string;
   ownerId: string;
+  /** Hex hash of the presented secret: the spend only takes the row still holding it. */
+  tokenHash: string;
+}
+
+/** The tenant's one row id: a UUID derived from the tenant, so a second insert is a key clash. */
+function slotId(tenantId: string): string {
+  const h = createHash('sha256')
+    .update(`smrt-receive-link:${tenantId}`)
+    .digest('hex');
+  return `${h.slice(0, 8)}-${h.slice(8, 12)}-5${h.slice(13, 16)}-8${h.slice(17, 20)}-${h.slice(20, 32)}`;
 }
 
 const hashOf = (secret: string): Buffer =>
@@ -74,24 +84,46 @@ export async function mintReceiveLink(
       'invalid',
     );
   const tenantId = safeId(owner.tenantId, 'the tenant');
-  const links = await ReceiveLinkCollection.create({ db: await getShellDb() });
-  const stamp = new Date(now()).toISOString();
-  // One live token per tenant: an earlier unspent one is revoked.
-  for (const open of await links.list({ where: { usedAt: '' }, limit: 100 }))
-    if ((open as { tenantId?: unknown }).tenantId === tenantId) {
-      open.usedAt = stamp;
-      await open.save();
-    }
+  const db = await getShellDb();
+  const links = await ReceiveLinkCollection.create({ db });
   const secret = randomBytes(32).toString('base64url');
+  const tokenHash = hashOf(secret).toString('hex');
   const expiresAt = new Date(now() + ttlSeconds * 1000).toISOString();
-  const row = await links.create({
-    ownerId: owner.id,
-    scope: RECEIVE_SCOPE,
-    tokenHash: hashOf(secret).toString('hex'),
-    expiresAt,
-    usedAt: '',
-  });
-  await row.save();
+  // One live token per tenant, by construction: the tenant has ONE row (its id
+  // is derived from the tenant), and a mint rewrites it, which revokes the
+  // earlier token. Two overlapping mints meet on that row (the database
+  // serializes the UPDATE; the first insert wins the primary key), so the last
+  // write leaves exactly one live token and the other caller's token is dead.
+  const id = slotId(tenantId);
+  const rewrite = async (): Promise<boolean> =>
+    (
+      await db.query(
+        'UPDATE receive_links SET owner_id = ?, scope = ?, token_hash = ?, expires_at = ?, used_at = ? WHERE id = ? AND tenant_id = ? RETURNING id',
+        owner.id,
+        RECEIVE_SCOPE,
+        tokenHash,
+        expiresAt,
+        '',
+        id,
+        tenantId,
+      )
+    ).rows.length === 1;
+  if (!(await rewrite())) {
+    try {
+      const row = await links.create({
+        id,
+        ownerId: owner.id,
+        scope: RECEIVE_SCOPE,
+        tokenHash,
+        expiresAt,
+        usedAt: '',
+      });
+      await row.save();
+    } catch (error) {
+      // Lost the insert to an overlapping mint: rewrite its row instead.
+      if (!(await rewrite())) throw error;
+    }
+  }
   return {
     token: `${TOKEN_PREFIX}.${tenantId}.${secret}`,
     expiresAt,
@@ -133,7 +165,12 @@ export async function verifyReceiveLink(
         !(Date.parse(found.expiresAt) > now())
       )
         return null;
-      return { id: found.id as string, tenantId, ownerId: found.ownerId };
+      return {
+        id: found.id as string,
+        tenantId,
+        ownerId: found.ownerId,
+        tokenHash: want.toString('hex'),
+      };
     });
   } catch {
     return null;
@@ -153,11 +190,12 @@ export async function spendReceiveLink(
     // the token verified. Both stamps are UTC ISO strings, which order as text.
     const stamp = new Date(now()).toISOString();
     const spent = await db.query(
-      'UPDATE receive_links SET used_at = ? WHERE id = ? AND used_at = ? AND tenant_id = ? AND expires_at > ? RETURNING id',
+      'UPDATE receive_links SET used_at = ? WHERE id = ? AND used_at = ? AND tenant_id = ? AND token_hash = ? AND expires_at > ? RETURNING id',
       stamp,
       link.id,
       '',
       link.tenantId,
+      link.tokenHash,
       stamp,
     );
     return spent.rows.length === 1;
