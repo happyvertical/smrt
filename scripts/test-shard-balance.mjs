@@ -8,9 +8,11 @@
  *
  * The tables hold measured seconds for packages that take 30 s or more;
  * everything else counts as DEFAULT_SECONDS. They only steer balance: a stale
- * or missing entry makes shards uneven, never drops a package. Refresh them
- * from the `Duration` lines each package's Vitest runs print in a merge-group
- * `test-packages` or PostgreSQL job log, summed per package.
+ * or missing entry makes shards uneven, never drops a package. Refresh the
+ * `test` table with `scripts/measure-test-seconds.mjs` over merge-group
+ * `test-packages` job logs; refresh the PostgreSQL table from the `Duration`
+ * lines each package's Vitest runs print in a PostgreSQL job log, summed per
+ * package.
  *
  * Read those logs with `gh api repos/{owner}/{repo}/actions/jobs/{id}/logs`.
  * `gh run view --job {id} --log` cuts a large job log short without saying so:
@@ -18,56 +20,59 @@
  * second and fourth slowest (#5074).
  */
 
-/** `test` task seconds at two Vitest workers, merge-group run 44026049881. */
+/**
+ * `test` task seconds at two Vitest workers: the median of five full-mode
+ * merge-group runs, 45826454208, 45845580152, 45876975431, 45890569809 and
+ * 45891849139 (2026-11-26, after #5667's weights). Each is the wall time of the
+ * unit's turbo task, from Vitest's `Start at` to the task's log block, so it
+ * includes the sibling task on the other `--concurrency=2` lane (#5706;
+ * `scripts/measure-test-seconds.mjs` reproduces it). Packages under 30 s are
+ * not listed. smrt-template-sveltekit is not listed either: it always has a
+ * shard to itself (DEDICATED_PACKAGES), so its weight steers nothing.
+ *
+ * app-shell: see SPLIT_TEST_UNITS. Its three units were 1196 s as one unit
+ * (merge-group run 44699654477), the long pole of `test-packages (2/5)`.
+ */
 export const TEST_SECONDS = {
-  '@happyvertical/smrt-agents': 96,
-  '@happyvertical/smrt-analytics': 57,
-  '@happyvertical/smrt-app-mcp': 31,
-  '@happyvertical/smrt-app-runtime': 546,
-  // app-shell: see SPLIT_TEST_UNITS. 1196 s measured as one unit (118 files,
-  // merge-group run 44699654477), the long pole of `test-packages (2/5)`
-  // (29.7 min against 14-16 in its neighbours). The unit weights split that
-  // time by a local run at two workers (default config 649 s over two
-  // shards, pglite+dom+packed 175 s), scaled by 1200/824 to CI speed.
-  // Refresh them from a merge-group log, as for every other entry.
-  // Re-weighed from merge-group run 45760975605: 939, 996 and 457 s measured
-  // against the 470, 470 and 255 above, which ran shards 3/5 and 4/5 28 and 24 min.
-  '@happyvertical/smrt-app-shell#test:configs': 457,
-  '@happyvertical/smrt-app-shell#test:unit:1of2': 940,
-  '@happyvertical/smrt-app-shell#test:unit:2of2': 995,
-  '@happyvertical/smrt-assets': 49,
-  '@happyvertical/smrt-bundle-gate': 82,
-  '@happyvertical/smrt-chat': 392,
-  '@happyvertical/smrt-cli': 315,
+  '@happyvertical/smrt-agents': 77,
+  '@happyvertical/smrt-analytics': 52,
+  '@happyvertical/smrt-app-runtime': 504,
+  '@happyvertical/smrt-app-shell#test:configs': 540,
+  '@happyvertical/smrt-app-shell#test:unit:1of2': 951,
+  '@happyvertical/smrt-app-shell#test:unit:2of2': 785,
+  '@happyvertical/smrt-assets': 48,
+  '@happyvertical/smrt-bundle-gate': 68,
+  '@happyvertical/smrt-chat': 387,
+  '@happyvertical/smrt-cli': 331,
   '@happyvertical/smrt-comments': 35,
-  '@happyvertical/smrt-commerce': 400,
-  '@happyvertical/smrt-content': 189,
-  '@happyvertical/smrt-desktop': 34,
-  '@happyvertical/smrt-dev-mcp': 51,
-  '@happyvertical/smrt-education': 466,
-  '@happyvertical/smrt-expenses': 90,
-  '@happyvertical/smrt-facts': 42,
-  '@happyvertical/smrt-fields': 52,
-  '@happyvertical/smrt-human-resources': 32,
-  '@happyvertical/smrt-images': 42,
-  '@happyvertical/smrt-inference': 53,
-  '@happyvertical/smrt-ingestion': 692,
-  '@happyvertical/smrt-jobs': 99,
-  '@happyvertical/smrt-manufacturing': 59,
-  '@happyvertical/smrt-messages': 82,
-  '@happyvertical/smrt-planner': 147,
-  '@happyvertical/smrt-profiles': 41,
-  '@happyvertical/smrt-projects': 79,
-  '@happyvertical/smrt-reports': 46,
-  '@happyvertical/smrt-sales': 104,
-  '@happyvertical/smrt-subscriptions': 51,
-  '@happyvertical/smrt-support': 61,
-  '@happyvertical/smrt-svelte': 401,
+  '@happyvertical/smrt-commerce': 426,
+  '@happyvertical/smrt-content': 155,
+  '@happyvertical/smrt-desktop': 33,
+  '@happyvertical/smrt-dev-mcp': 41,
+  '@happyvertical/smrt-education': 321,
+  '@happyvertical/smrt-expenses': 99,
+  '@happyvertical/smrt-facts': 40,
+  '@happyvertical/smrt-fields': 39,
+  '@happyvertical/smrt-images': 33,
+  '@happyvertical/smrt-inference': 46,
+  '@happyvertical/smrt-ingestion': 621,
+  '@happyvertical/smrt-jobs': 86,
+  '@happyvertical/smrt-manufacturing': 50,
+  '@happyvertical/smrt-messages': 560,
+  '@happyvertical/smrt-planner': 91,
+  '@happyvertical/smrt-profiles': 37,
+  '@happyvertical/smrt-projects': 60,
+  '@happyvertical/smrt-reports': 40,
+  '@happyvertical/smrt-sales': 93,
+  '@happyvertical/smrt-subscriptions': 38,
+  '@happyvertical/smrt-support': 67,
+  '@happyvertical/smrt-svelte': 403,
+  '@happyvertical/smrt-tenancy': 43,
   '@happyvertical/smrt-timesheets': 55,
-  '@happyvertical/smrt-ui': 199,
-  '@happyvertical/smrt-users': 336,
-  '@happyvertical/smrt-vitest': 42,
-  '@happyvertical/smrt-workflows': 37,
+  '@happyvertical/smrt-ui': 169,
+  '@happyvertical/smrt-users': 284,
+  '@happyvertical/smrt-vitest': 38,
+  '@happyvertical/smrt-workflows': 35,
 };
 
 /**
