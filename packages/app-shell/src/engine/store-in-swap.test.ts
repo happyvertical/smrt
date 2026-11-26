@@ -43,6 +43,7 @@ import { createClaim } from './db/claim.ts';
 import type { AppClaim, DatabaseConfig, PGliteClient } from './db/index.ts';
 import { claimAppDatabase, withSchemaAdmin } from './db/index.ts';
 import { appLockMatch, dumpSchema, readPublished } from './db/postgres-copy.ts';
+import { DRAFT_MARKER_FILE } from './draft.ts';
 import {
   AppHost,
   ClaimLostError,
@@ -968,6 +969,106 @@ describe.each(backends)('the version store in the swap (%s)', (backend) => {
         expect(err).toBeInstanceOf(ClaimLostError);
         expect(await schemaThere(bSchema)).toBe(true);
         expect(existsSync(b.draft.dataDir)).toBe(true);
+      });
+
+      describe('a draft whose start fails (#5630)', () => {
+        /** The claim dies after the draft's schema exists, before its boot bumps the generation. */
+        class LoseAtSetCurrent extends HookedDraft {
+          onSetCurrent?: () => Promise<void>;
+          async setCurrent(v: number) {
+            await super.setCurrent(v);
+            await this.onSetCurrent?.();
+          }
+        }
+        const failingFork = async (
+          live: Awaited<ReturnType<typeof hooked>>,
+          onSetCurrent: () => Promise<void>,
+        ) => {
+          const drafts = await AppDraftCollection.create({
+            db: shell as never,
+          });
+          const row = await drafts.create({
+            name: 'Draft',
+            status: 'starting',
+            createdBy: 't',
+            createdAt: new Date().toISOString(),
+          });
+          await row.save();
+          const store = new LoseAtSetCurrent(shell as never, row.id as string);
+          store.onSetCurrent = onSetCurrent;
+          const dir = `${live.dir}-draft-${(row.id as string).slice(0, 6)}`;
+          return {
+            dir,
+            fork: () =>
+              live.host
+                .forkDraft(hostOwner(live.host), dir, { store })
+                .catch((e) => e),
+          };
+        };
+        const draftSchemas = async (base: string) =>
+          (
+            await rows(
+              `SELECT nspname FROM pg_namespace WHERE nspname LIKE ? AND nspname ~ '__d[a-z0-9]{16}$'`,
+              [`${base}\\_\\_%`],
+            )
+          ).map((r) => r.nspname as string);
+
+        it('on a lost claim keeps the directory and marker, and a later open removes the schema', async () => {
+          const live = await hooked();
+          const f = await failingFork(live, () => loseClaimNow(live));
+          const err = await f.fork();
+          expect(err).toBeInstanceOf(ClaimLostError);
+          // The schema could not be dropped (the claim is gone): nothing
+          // removed the directory either, so the orphan is still findable.
+          expect(await draftSchemas(live.schema)).toHaveLength(1);
+          expect(existsSync(f.dir)).toBe(true);
+          expect(existsSync(join(f.dir, DRAFT_MARKER_FILE))).toBe(true);
+          // The next host on the app removes it through its own claim.
+          const next = await reopen(live);
+          await discardOrphanDraft(
+            f.dir,
+            config(live.schema),
+            next.host.lendableClaim,
+          );
+          expect(await draftSchemas(live.schema)).toHaveLength(0);
+          expect(existsSync(f.dir)).toBe(false);
+        });
+
+        it('on a proven claim drops the schema and removes the directory', async () => {
+          const live = await hooked();
+          const f = await failingFork(live, async () => {
+            throw new Error('the store refused');
+          });
+          const err = await f.fork();
+          expect(String(err.message)).toMatch(/the store refused/);
+          expect(await draftSchemas(live.schema)).toHaveLength(0);
+          expect(existsSync(f.dir)).toBe(false);
+        });
+      });
+
+      describe('clean up marks versions purged on the claim (#5630)', () => {
+        const purged = async (live: Awaited<ReturnType<typeof hooked>>) =>
+          (await live.store.list())
+            .filter((r) => r.migration?.purged)
+            .map((r) => r.version);
+        const cleanUp: Command = { type: 'cleanUp', keep: 0 };
+
+        it('marks them in one claim transaction', async () => {
+          const live = await hooked();
+          await run(live.host, rename);
+          expect(await purged(live)).toEqual([]);
+          await run(live.host, cleanUp);
+          expect((await purged(live)).length).toBeGreaterThan(0);
+        });
+
+        it('marks nothing once the claim is lost', async () => {
+          const live = await hooked();
+          await run(live.host, rename);
+          await loseClaimNow(live);
+          const err = await run(live.host, cleanUp).catch((e) => e);
+          expect(err).toBeInstanceOf(ClaimLostError);
+          expect(await purged(live)).toEqual([]);
+        });
       });
 
       it('never releases the lent claim: closing the draft leaves live changing', async () => {
