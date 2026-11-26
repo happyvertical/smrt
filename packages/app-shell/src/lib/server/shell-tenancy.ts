@@ -390,7 +390,7 @@ const STAMP_PREFIX = 'smrt-app-shell:rls:';
  * expected policy digest to this number, so changing the text without bumping
  * it fails.
  */
-export const SHELL_RLS_POLICY_VERSION = 1;
+export const SHELL_RLS_POLICY_VERSION = 2;
 
 const STAMP_PATTERN =
   /^smrt-app-shell:rls:(?:v(\d+):)?([0-9a-f]{64}):([0-9a-f]{64})$/;
