@@ -1403,6 +1403,12 @@ export class APIGenerator {
       return await this.handleSyncApply(req);
     }
 
+    // A model is served at `/<collection>` and `/<collection>/<id|action>`. A
+    // longer path names no route here (item-scope and multi-segment actions are
+    // the generated SvelteKit routes'), and must not run as the shorter one: a
+    // `POST /notes/<id>/touch` created a note.
+    if (pathParts.length > 2) return this.createErrorResponse(404, 'Not found');
+
     const objectType = pathParts[0];
     const objectId = pathParts[1];
 
