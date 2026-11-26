@@ -371,3 +371,57 @@ test('a hand-authored link to a page the generator will write resolves before it
     ['okf-dangling-link'],
   );
 });
+
+test('a link to a stale on-disk page of a removed package does not resolve (#5705)', (t) => {
+  const { bundleDir, jobs, core } = setup(t);
+  const models = buildComponentModels(indexOf(jobs, core));
+  writeBundle(models, bundleDir, NOW);
+  writeFileSync(
+    join(bundleDir, 'components/smrt-gone.md'),
+    '---\ntype: Component\n---\n',
+  );
+  mkdirSync(join(bundleDir, 'intents'), { recursive: true });
+  writeFileSync(
+    join(bundleDir, 'intents/old.md'),
+    '---\ntype: Intent\n---\nSee [gone](/components/smrt-gone.md) and [jobs](/components/smrt-jobs.md).\n',
+  );
+  const issues = checkBundle(models, bundleDir);
+  assert.deepEqual(
+    issues.map((issue) => [issue.code, issue.file]),
+    [['okf-dangling-link', 'docs/knowledge/intents/old.md']],
+  );
+  assert.match(issues[0].message, /smrt-gone/);
+});
+
+test('seeding pending pages keeps their generated.at, so an unchanged pin yields no diff (#5705)', (t) => {
+  const { bundleDir, jobs, core } = setup(t);
+  const models = buildComponentModels(indexOf(jobs, core));
+  // The open bot PR carries pages generated at NOW.
+  writeBundle(models, bundleDir, NOW);
+  const pending = planBundle(models, bundleDir, NOW);
+  // A later main push regenerates seeded from the pending pages: same pins,
+  // different clock, byte-identical result.
+  const later = planBundle(models, bundleDir, new Date('2027-03-01T00:00:00Z'));
+  assert.deepEqual([...later], [...pending]);
+  // Only a page whose pin moved gets the new timestamp.
+  const changed = buildComponentModels(
+    indexOf({ ...jobs, agentDocSha256: 'b'.repeat(64) }, core),
+  );
+  const next = planBundle(changed, bundleDir, new Date('2027-03-01T00:00:00Z'));
+  const differing = [...next.keys()].filter(
+    (key) => next.get(key) !== pending.get(key),
+  );
+  assert.deepEqual(differing, ['components/smrt-jobs.md']);
+  assert.match(next.get('components/smrt-jobs.md'), /2027-03-01/);
+});
+
+test('the regeneration workflow seeds from the pending branch before generating (#5705)', async () => {
+  const { readFileSync } = await import('node:fs');
+  const workflow = readFileSync(
+    new URL('../.github/workflows/knowledge-regenerate.yml', import.meta.url),
+    'utf8',
+  );
+  const seed = workflow.indexOf('checkout FETCH_HEAD -- docs/knowledge');
+  const generate = workflow.indexOf('pnpm knowledge:okf');
+  assert.ok(seed > 0 && generate > seed, 'seed must precede generation');
+});

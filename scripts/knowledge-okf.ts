@@ -802,11 +802,15 @@ export function checkBundle(
       }
     }
     for (const target of new Set(extractAbsoluteLinks(text))) {
-      // A link to a page the generator will write resolves even before the
-      // post-merge regeneration has committed that page (#5705).
+      // Generator-owned targets (`/components/**`, `/index.md`) resolve only
+      // when the generator will write them (#5705): that accepts a link to a
+      // page not yet committed, and rejects one to a page a removed or renamed
+      // package left on disk until the post-merge regeneration prunes it.
+      const key = target.replace(/^\//, '');
+      const generatorOwned =
+        key === 'index.md' || key.startsWith('components/');
       if (
-        !existsSync(join(bundleDir, target)) &&
-        !plan.has(target.replace(/^\//, ''))
+        generatorOwned ? !plan.has(key) : !existsSync(join(bundleDir, target))
       ) {
         issues.push({
           code: 'okf-dangling-link',

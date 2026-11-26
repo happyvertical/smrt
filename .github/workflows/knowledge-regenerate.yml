@@ -53,12 +53,10 @@ jobs:
         env:
           NODE_AUTH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
-      - name: Regenerate pages
-        run: pnpm knowledge:okf
-
       # The same App the release uses, so the pushed branch and the PR trigger
       # Required CI (a GITHUB_TOKEN push would not). Minted after the build so
-      # it cannot expire during it.
+      # it cannot expire during it, and before generation, which seeds from
+      # the pending branch.
       - name: Generate token from GitHub App
         id: generate_token
         uses: tibdex/github-app-token@3beb63f4bd073e61482598c45c71c1019b59b73a # v2
@@ -68,6 +66,24 @@ jobs:
           # Least privilege: only this repository, only branch pushes and PRs.
           repositories: '["smrt"]'
           permissions: '{"contents":"write","pull_requests":"write","metadata":"read"}'
+
+      # Seed the pending bot branch's pages before generating: the generator
+      # keeps `generated.at` for every page whose source_revision is unchanged,
+      # so a page the open PR already carries regenerates byte-identically and
+      # a later main push that changes nothing for it does not restart the
+      # PR's CI (#5705).
+      - name: Regenerate pages
+        env:
+          GH_TOKEN: ${{ steps.generate_token.outputs.token }}
+        run: |
+          set -euo pipefail
+          auth="$(printf 'x-access-token:%s' "$GH_TOKEN" | base64 -w0)"
+          echo "::add-mask::$auth"
+          if git -c "http.https://github.com/.extraheader=AUTHORIZATION: basic $auth" \
+            fetch --no-tags --depth=1 origin "$BOT_BRANCH" 2>/dev/null; then
+            git checkout FETCH_HEAD -- docs/knowledge/components docs/knowledge/index.md
+          fi
+          pnpm knowledge:okf
 
       - name: Update the rolling regeneration pull request
         env:
