@@ -18,6 +18,20 @@ export {
   versionConditionalResponse,
   warnIfSharedCacheNeutralized,
 } from './conditional-get';
+// The one CORS policy shared by REST and generated SvelteKit routes
+export {
+  applyCorsHeaders,
+  CORS_ALLOWED_HEADERS,
+  CORS_ALLOWED_METHODS,
+  CORS_MAX_AGE,
+  type CorsConfig,
+  corsPreflightHeaders,
+  corsPreflightResponse,
+  corsResponseHeaders,
+  isCorsEnabled,
+  normalizeCorsOrigins,
+  resolveCorsOrigin,
+} from './cors';
 export {
   type ApiMethodExposure,
   type ApiMethodRejectionCode,

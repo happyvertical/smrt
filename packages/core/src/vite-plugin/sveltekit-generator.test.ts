@@ -314,6 +314,126 @@ describe('SvelteKit Route Generator', () => {
     }
   });
 
+  describe('cors option (#5195)', () => {
+    const reportManifest: SmartObjectManifest = {
+      version: '1',
+      timestamp: 0,
+      objects: {
+        Report: {
+          className: 'Report',
+          name: 'Report',
+          filePath: '',
+          collection: 'reports',
+          fields: {},
+          methods: {
+            archive: {
+              name: 'archive',
+              async: true,
+              parameters: [],
+              returnType: 'Promise<void>',
+              isStatic: false,
+              isPublic: true,
+            },
+          },
+          decoratorConfig: {
+            api: { routes: { archive: { method: 'POST' } } },
+          },
+        },
+      },
+    };
+    const baseOptions = {
+      enabled: true,
+      routesDir: 'src/routes/api',
+      objectsDir: 'src/lib/objects',
+    };
+    const written = (needle: string) =>
+      String(
+        vi
+          .mocked(writeFileSync)
+          .mock.calls.find(([path]) => String(path).includes(needle))?.[1],
+      );
+
+    it('emits no CORS surface by default', async () => {
+      await generateSvelteKitRoutes(projectRoot, reportManifest, baseOptions);
+      for (const needle of [
+        'reports/+server.ts',
+        'reports/[id]/+server.ts',
+        'reports/[id]/archive/+server.ts',
+        'sync/apply/+server.ts',
+      ]) {
+        const source = written(needle);
+        expect(source, needle).toContain('export const');
+        expect(source, needle).not.toContain('ROUTE_CORS');
+        expect(source, needle).not.toContain('OPTIONS');
+      }
+    });
+
+    it('emits no CORS surface for an empty or wildcard allow-list', async () => {
+      await generateSvelteKitRoutes(projectRoot, reportManifest, {
+        ...baseOptions,
+        cors: { allowedOrigins: ['*', ' '], allowCredentials: true },
+      });
+      expect(written('reports/+server.ts')).not.toContain('ROUTE_CORS');
+    });
+
+    it('wraps CRUD, action and sync/apply routes and adds OPTIONS', async () => {
+      await generateSvelteKitRoutes(projectRoot, reportManifest, {
+        ...baseOptions,
+        cors: {
+          allowedOrigins: ['https://app.example.com'],
+          allowCredentials: true,
+        },
+      });
+      for (const [needle, methods] of [
+        ['reports/+server.ts', ['GET', 'POST']],
+        ['reports/[id]/+server.ts', ['GET', 'PUT', 'DELETE']],
+        ['reports/[id]/archive/+server.ts', ['POST']],
+        ['sync/apply/+server.ts', ['POST']],
+        ['_changes/+server.ts', ['GET']],
+      ] as const) {
+        const source = written(needle);
+        expect(source, needle).toContain(
+          '{"allowedOrigins":["https://app.example.com"],"allowCredentials":true}',
+        );
+        expect(source, needle).toContain('export const OPTIONS');
+        expect(source, needle).toContain('corsPreflightResponse');
+        for (const method of methods) {
+          expect(source, `${needle} ${method}`).toContain(
+            `export const ${method}: RequestHandler = withRouteCors(${method}Handler);`,
+          );
+          expect(source, `${needle} ${method}`).not.toContain(
+            `export const ${method}: RequestHandler = async`,
+          );
+        }
+        expect(source, needle).not.toContain("'*'");
+      }
+    });
+
+    it('inherits the allow-list for _events unless eventsRoute sets its own', async () => {
+      await generateSvelteKitRoutes(projectRoot, reportManifest, {
+        ...baseOptions,
+        cors: { allowedOrigins: ['https://app.example.com'] },
+      });
+      const inherited = written('_events/+server.ts');
+      expect(inherited).toContain('["https://app.example.com"]');
+      expect(inherited).not.toContain('Access-Control-Allow-Credentials');
+
+      vi.mocked(writeFileSync).mockClear();
+      await generateSvelteKitRoutes(projectRoot, reportManifest, {
+        ...baseOptions,
+        cors: { allowedOrigins: ['https://app.example.com'] },
+        eventsRoute: {
+          allowedOrigins: ['https://events.example.com'],
+          allowCredentials: true,
+        },
+      });
+      const own = written('_events/+server.ts');
+      expect(own).toContain('["https://events.example.com"]');
+      expect(own).not.toContain('https://app.example.com');
+      expect(own).toContain('Access-Control-Allow-Credentials');
+    });
+  });
+
   describe('Configuration File Generation', () => {
     it('should generate config file when it does not exist', async () => {
       vi.mocked(existsSync).mockReturnValue(false);

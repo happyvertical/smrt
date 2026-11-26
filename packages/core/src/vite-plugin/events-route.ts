@@ -41,6 +41,7 @@ import {
   resolveAnchorClassName,
 } from './changes-route.js';
 import type { RouteFilePlan } from './generated-route-files.js';
+import { resolveRouteCors } from './route-cors.js';
 import { AUTO_GENERATED_ROUTE_HEADER } from './route-header.js';
 import { generateCollectionAccessImports } from './sveltekit-config-import.js';
 import type { SvelteKitOptions } from './sveltekit-generator.js';
@@ -69,14 +70,28 @@ export function generateEventsRoute(
     return false;
   }
 
+  // `eventsRoute.allowedOrigins` wins for `_events`; without one the route
+  // inherits the shared `cors` allow-list (#5195).
+  const own = normalizeAllowedOrigins(options.eventsRoute?.allowedOrigins);
+  const eventsCors = own
+    ? {
+        allowedOrigins: own,
+        allowCredentials: options.eventsRoute?.allowCredentials === true,
+      }
+    : {
+        allowedOrigins: resolveRouteCors(options.cors)?.allowedOrigins as
+          | string[]
+          | undefined,
+        allowCredentials: options.cors?.allowCredentials === true,
+      };
   const routeDir = join(projectRoot, options.routesDir, '_events');
   const content = generateEventsRouteTemplate(
     anchorClassName,
     manifestHasTenantScopedObject(manifest),
     webManifestHash,
     options.eventsRoute?.maxSubscribers,
-    normalizeAllowedOrigins(options.eventsRoute?.allowedOrigins),
-    options.eventsRoute?.allowCredentials === true,
+    eventsCors.allowedOrigins,
+    eventsCors.allowCredentials,
     generateCollectionAccessImports(projectRoot, routeDir, options, [
       'getCollection',
     ]),

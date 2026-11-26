@@ -600,7 +600,7 @@ CLI generation does not live here. `@happyvertical/smrt-core` shipped an in-proc
 
 ### REST API Generation
 
-`APIGenerator` serves REST for whatever `@smrt()` objects are registered; `createRestServer(objects)` / `startRestServer(objects)` serve only `objects`. `APIConfig` is `{ basePath?, enableCors?, allowedOrigins?, allowCredentials?, customRoutes?, authMiddleware?, resolvePrincipal?, onRequest?, port?, hostname?, eventsRoute?, manifestHash?, playbookPreflight? }` — there is no `collections`, `outputDir`, `includeSwagger`, or `middleware` option, and no `generate()` method.
+`APIGenerator` serves REST for whatever `@smrt()` objects are registered; `createRestServer(objects)` / `startRestServer(objects)` serve only `objects`. `APIConfig` is `{ basePath?, enableCors?, allowedOrigins?, allowCredentials?, customRoutes?, authMiddleware?, resolvePrincipal?, onRequest?, port?, hostname?, eventsRoute?, manifestHash?, playbookPreflight? }` — there is no `collections`, `outputDir`, `includeSwagger`, or `middleware` option, and no `generate()` method. CORS is an explicit allow-list: `enableCors` with a non-empty `allowedOrigins` echoes only a listed `Origin` (never `*`) with `Vary: Origin`, and `allowCredentials: true` adds credentials for that origin only. Generated SvelteKit routes take the same list as `sveltekit.cors: { allowedOrigins, allowCredentials }` (off by default) and answer through the same policy (`generators/cors.ts`), including an `OPTIONS` preflight on CRUD, custom action, `sync/apply` and `_changes` routes.
 
 ```typescript
 import { APIGenerator, startRestServer } from '@happyvertical/smrt-core/generators';

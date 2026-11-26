@@ -37,6 +37,7 @@ import type {
   SmartObjectManifest,
 } from '../scanner/types';
 import type { RouteFilePlan } from './generated-route-files.js';
+import { applyRouteCors } from './route-cors.js';
 import { AUTO_GENERATED_ROUTE_HEADER } from './route-header.js';
 import { generateCollectionAccessImports } from './sveltekit-config-import.js';
 import type { SvelteKitOptions } from './sveltekit-generator.js';
@@ -120,7 +121,7 @@ export function generateChangesRoute(
   plan.emit({
     root: join(projectRoot, options.routesDir),
     routeDir,
-    content,
+    content: applyRouteCors(content, options.cors),
     label: '_changes',
   });
   return true;

@@ -174,6 +174,24 @@ the read-filter rule; `apiPrincipalFromLocals()` derives the principal of a Svel
 request from `locals`. Callers pass model policy in (no registry); super-admin bypass
 counts only with `allowSuperAdminBypass`.
 
+**One CORS policy** (`generators/cors.ts`, #5195). Pure functions on an origin and
+`{ allowedOrigins, allowCredentials }`: an origin is echoed only when it is
+listed verbatim (never `*`; a `*` entry is dropped), with `Vary: Origin`;
+`Access-Control-Allow-Credentials: true` only for an echoed origin and only
+with `allowCredentials`, so an empty list never carries credentials; a
+preflight (`corsPreflightResponse`, 200) answers with the allowed methods,
+headers and max-age; an existing `Vary` is extended, not replaced. REST
+(`enableCors` + `allowedOrigins` + `allowCredentials`) and generated SvelteKit
+routes (`sveltekit.cors: { allowedOrigins, allowCredentials }`) both decide
+through it, so one origin gets identical headers on both. SvelteKit default is
+off: no CORS headers, same-origin only. `vite-plugin/route-cors.ts`
+(`applyRouteCors`) wraps each emitted method handler of the CRUD, custom
+action, `sync/apply` and `_changes` routes (a thrown `error()` included) and
+adds `OPTIONS`. `sveltekit.eventsRoute.allowedOrigins` / `allowCredentials`
+still configure `_events` alone and win over `cors` there; with none of its own,
+`_events` inherits the `cors` allow-list (its narrower GET-only header set is
+unchanged).
+
 `APIConfig.resolvePrincipal(req)` returns the request's
 `APIRequestPrincipal` (`{ tenantId, allowCrossTenant, authenticated, userId?,
 permissions?, callerKind?, superAdminBypass? }`) or `null` (anonymous). The

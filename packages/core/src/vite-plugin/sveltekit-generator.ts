@@ -73,6 +73,7 @@ import {
   generateResourcesRoute,
   reservesResourcesRoute,
 } from './resources-route.js';
+import { applyRouteCors, type SvelteKitCorsOptions } from './route-cors.js';
 import { AUTO_GENERATED_ROUTE_HEADER } from './route-header.js';
 import {
   allowsSuperAdminBypass,
@@ -137,6 +138,21 @@ export interface SvelteKitOptions {
    * `SMRT_DEV_MCP_TOKEN` at runtime.
    */
   devPlaneRoute?: { enabled?: boolean };
+  /**
+   * Cross-origin access (#5195), the same explicit allow-list the runtime REST
+   * handler takes. Off by default: no CORS headers, same-origin only. With a
+   * non-empty `allowedOrigins`, the generated CRUD, custom action,
+   * `sync/apply` and `_changes` routes answer through the shared policy
+   * (`generators/cors.ts`): an `OPTIONS` preflight, and `Access-Control-Allow-
+   * Origin` (the request's origin, never `*`) with `Vary: Origin` on every
+   * response to an allow-listed origin. `allowCredentials: true` also adds
+   * `Access-Control-Allow-Credentials: true`. CORS never authorizes.
+   *
+   * `eventsRoute.allowedOrigins` / `allowCredentials` keep working and take
+   * precedence for `_events` alone; `_events` inherits this allow-list when it
+   * sets none of its own.
+   */
+  cors?: SvelteKitCorsOptions;
   /**
    * Live `_events` SSE route generation (#1763). Enabled by default (the route
    * is auth-guarded fail-closed, same-origin only); set `enabled: false` to
@@ -2558,7 +2574,7 @@ async function generateRoutesForObject(
       plan.emit({
         root: routesRoot,
         routeDir,
-        content: collectionRoute,
+        content: applyRouteCors(collectionRoute, options.cors),
         label: `${className} collection`,
       }),
     );
@@ -2583,7 +2599,7 @@ async function generateRoutesForObject(
       plan.emit({
         root: routesRoot,
         routeDir: join(routeDir, '[id]'),
-        content: itemRoute,
+        content: applyRouteCors(itemRoute, options.cors),
         label: `${className} item`,
       }),
     );
@@ -2652,7 +2668,7 @@ async function generateRoutesForObject(
       plan.emit({
         root: join(projectRoot, options.routesDir),
         routeDir: actionRouteDir,
-        content: actionRoute,
+        content: applyRouteCors(actionRoute, options.cors),
         label: `${className} action ${routeSpecs.map(({ actionName }) => actionName).join(', ')}`,
       }),
     );
@@ -2746,7 +2762,7 @@ async function generateCollectionRoutesForObject(
       plan.emit({
         root: join(projectRoot, options.routesDir),
         routeDir: actionRouteDir,
-        content: actionRoute,
+        content: applyRouteCors(actionRoute, options.cors),
         label: `${className} action ${routeSpecs.map(({ actionName }) => actionName).join(', ')}`,
       }),
     );
