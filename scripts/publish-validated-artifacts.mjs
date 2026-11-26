@@ -61,8 +61,8 @@ function existsOnRegistryStrict(name, version, runNpm, registry) {
 
 // npm's own message for "this exact version is already on the registry".
 // Trusting this (after a content-identity check) recovers a run whose
-// pre-publish existence check missed the version because of a transient
-// read failure, without trusting any other publish failure (auth, network,
+// pre-publish existence check missed the version (a read race, or a version
+// whose packument was not yet visible), without trusting any other publish failure (auth, network,
 // a genuinely different-content collision) as harmless.
 //
 // npm.happyvertical.com (Verdaccio) words the same conflict as "409 Conflict
@@ -115,7 +115,10 @@ function defaultVerifyExistingContentMatches(artifact, runNpm, registry) {
     // The packument has no such version (or no integrity for it). Do not
     // treat as a verified match; let the caller fall through to a normal
     // publish attempt / fail on the original conflict instead of silently
-    // skipping unverified content.
+    // skipping unverified content. If a tarball blob exists without a
+    // packument entry (for example a truncated upload after the registry's
+    // disk filled), the publish keeps conflicting: the operator must remove
+    // that orphaned blob from registry storage; this script never deletes.
     return false;
   }
   const localValue = localIntegrity(artifact.path);
@@ -181,8 +184,8 @@ export function publishRelease(
       ]);
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
-      // The dedup check above can miss an already-published version during
-      // a transient registry read failure; npm's own publish-time conflict
+      // The dedup check above can miss an already-published version (a read
+      // race or a not-yet-visible packument); npm's own publish-time conflict
       // is authoritative. Still run the same content-identity check the
       // dedup pass uses before accepting it — a genuine different-content
       // collision (the #2871 "different base" scenario) must keep failing,

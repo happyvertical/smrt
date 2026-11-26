@@ -390,6 +390,26 @@ test('fails closed, publishing nothing, when the pre-publish existence check hit
   assert.equal(calls.filter((args) => args[0] === 'publish').length, 0);
 });
 
+test('aborts before publishing anything when the integrity read errors during the pre-publish pass', () => {
+  const calls = [];
+  assert.throws(
+    () =>
+      publishRelease(release(), {
+        log: () => {},
+        runNpm: (args) => {
+          calls.push(args);
+          if (args[2] === 'dist.integrity') {
+            throw new Error('npm error 500 Internal Server Error');
+          }
+          if (args[0] === 'view') return '0.40.0';
+          throw new Error('unexpected npm publish attempt');
+        },
+      }),
+    /500 Internal Server Error/,
+  );
+  assert.equal(calls.filter((args) => args[0] === 'publish').length, 0);
+});
+
 test('an empty registry read counts as not published, not as published', () => {
   const calls = [];
   let published = false;
@@ -547,8 +567,7 @@ test('treats an npm publish-conflict on an already-published version as success 
     },
     {
       log: (message) => logs.push(message),
-      // The pre-publish check missed it (transient read error, treated as
-      // "not yet published" per the test above), so the publish loop
+      // The pre-publish check missed it (a 404 read race), so the publish loop
       // attempts to publish; npm's own conflict is authoritative.
       runNpm: (args) => {
         if (args[0] === 'view') return null;
