@@ -525,6 +525,12 @@ export interface HostedReconcileTarget {
   budget?: HostedInferenceBudget;
   /** Users to hold an active grant while entitled (idempotent). */
   users?: readonly string[];
+  /**
+   * Re-checked inside the tenant lock, per user, right before that user is
+   * provisioned: false skips them (they stopped being wanted since `users`
+   * was read). Never called for users already holding an active grant.
+   */
+  stillWanted?: (userId: string) => Promise<boolean>;
 }
 
 /** Per-user outcome of a reconcile. */
@@ -597,6 +603,13 @@ export interface HostedInferenceProvisioner {
     tenantId: string;
     userId: string;
     reason?: string;
+    /**
+     * Re-checked inside the tenant lock, right before the revoke: when it
+     * returns false the grant is left alone (the result has `revoked: false`
+     * and `gateway: 'none'`). Lets a caller that decided on stale data, such
+     * as a membership read, confirm the decision atomically with the revoke.
+     */
+    onlyIf?: () => Promise<boolean>;
   }): Promise<RevokeHostedInferenceResult>;
   syncBudget(options: {
     tenantId: string;
@@ -1833,13 +1846,25 @@ export function createHostedInferenceProvisioner(
       const userId = requireId(input.userId, 'userId');
       return locked(
         tenantId,
-        (secrets) =>
-          revokeUserLocked(
+        async (secrets) => {
+          if (input.onlyIf && !(await input.onlyIf())) {
+            return {
+              ...describeState(
+                tenantId,
+                userId,
+                await readState(secrets, userId),
+              ),
+              revoked: false,
+              gateway: 'none' as const,
+            };
+          }
+          return revokeUserLocked(
             tenantId,
             userId,
             secrets,
             text(input.reason) ?? 'revoke',
-          ),
+          );
+        },
         { userId },
       );
     },
@@ -2003,16 +2028,26 @@ export function createHostedInferenceProvisioner(
           } else {
             const wanted = new Set(users);
             for (const userId of wanted) {
-              await attempt(userId, () =>
-                reconcileUserLocked(
+              await attempt(userId, async () => {
+                // Only a user about to get a NEW key is re-checked: one with
+                // an active grant is handled (synced) as before.
+                if (target.stillWanted) {
+                  const held = states.some(
+                    (entry) =>
+                      entry.userId === userId &&
+                      entry.state.status === 'active',
+                  );
+                  if (!held && !(await target.stillWanted(userId))) return;
+                }
+                await reconcileUserLocked(
                   tenantId,
                   userId,
                   budget as Required<HostedInferenceBudget>,
                   gateway as HostedGatewayConfig,
                   secrets,
                   result,
-                ),
-              );
+                );
+              });
             }
             if (budget) {
               for (const { userId, state } of states) {
@@ -2131,6 +2166,11 @@ export interface HostedInferenceEntitlementListenerOptions {
    */
   users(tenantId: string): Promise<readonly string[]>;
   /**
+   * Re-check, inside the provisioner's tenant lock, that a user from
+   * `users()` should still get a NEW key ({@link HostedReconcileTarget.stillWanted}).
+   */
+  stillWanted?(tenantId: string, userId: string): Promise<boolean>;
+  /**
    * The budget for the tenant's plan. Default: the `inference.hosted`
    * grant's `metadata.budget` ({@link hostedBudgetFromGrantMetadata}), else
    * `defaultBudget`.
@@ -2208,6 +2248,15 @@ export function createHostedInferenceReconciler(
       entitled: true,
       budget,
       users: await options.users(tenantId),
+      ...(options.stillWanted
+        ? {
+            stillWanted: (userId: string) =>
+              (options.stillWanted as NonNullable<typeof options.stillWanted>)(
+                tenantId,
+                userId,
+              ),
+          }
+        : {}),
     });
     throwReconcileFailures(result);
     return result;

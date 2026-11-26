@@ -34,6 +34,14 @@ hand).
   `inference.hosted.revoke-retry` with `settled: [{ keyId, keyAlias,
   gateway }]`, closing those records. Entries without an id stay for an
   operator (`acknowledgeGatewayRevocation`).
+- **Re-checks under the lock.** `revoke({ onlyIf })` runs `onlyIf()` inside the
+  tenant lock and leaves the grant alone (`revoked: false`, `gateway: 'none'`)
+  when it returns false; `reconcileTenant(.., { stillWanted })` re-checks each
+  user who is about to get a NEW key (a user already holding one is synced as
+  before); `createHostedInferenceEntitlementListener` / `Reconciler` pass it
+  through as `stillWanted(tenantId, userId)`. They let a host that decided on
+  stale data (a member list read before the lock) confirm it atomically with
+  the key change.
 - **Config, read once from the environment** (`getHostedGatewayConfig()`;
   unset provider = hosted off): `SMRT_INFERENCE_HOSTED_PROVIDER`
   (`bifrost|litellm`), `_BASE_URL` (the OpenAI-compatible endpoint keys are
