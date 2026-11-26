@@ -65,6 +65,20 @@ export type NodePinProvenanceTable = Readonly<
 
 // BEGIN GENERATED PINS (scripts/update-node-pins.mjs)
 const NODE_PINS_DATA: NodePinTable = {
+  '26.12.1': {
+    'node-v26.12.1-darwin-arm64.tar.gz':
+      '1901d539912c02afa10d1cc126943a8855a7eedebe830119463470db5e6c59e8',
+    'node-v26.12.1-darwin-x64.tar.gz':
+      'b85c2ea4420ad0bc4abf2dc6cf1f55130ed681f1cabf60cf3f526e4c9e2712ff',
+    'node-v26.12.1-linux-arm64.tar.gz':
+      'a6c01af459dd8972ab3fb08ee5da81244d26ba8c4944a62d5bbba8c597ae154f',
+    'node-v26.12.1-linux-x64.tar.gz':
+      '0fd1eb7770598f52a21995edf6ed35fc690400fa437c2386af329519e9143132',
+    'win-arm64/node.exe':
+      '7384299eeb99f419acaa4142771689fbca72e1c942f8da02b7928ffe1744e3ff',
+    'win-x64/node.exe':
+      '1c63f1417e2e26d83ca9a9ec1d548524ab1305bc7209d90ebca56257ff0d84ed',
+  },
   '26.8.1': {
     'node-v26.8.1-darwin-arm64.tar.gz':
       '6e577fd0d9db776db82306629e441a9dace416702622aebdd171c9dfaa41f4d2',
@@ -81,6 +95,14 @@ const NODE_PINS_DATA: NodePinTable = {
   },
 };
 const NODE_PIN_PROVENANCE_DATA: NodePinProvenanceTable = {
+  '26.12.1': {
+    verification: 'gpg-verified',
+    source: 'https://nodejs.org/dist/v26.12.1/SHASUMS256.txt',
+    retrieved: '2026-11-19T17:18:00Z',
+    shasumsSha256:
+      '5f4c83027c433198a63e1f15eddc5dab519e843c4e67566fe7dd33832dee67f4',
+    signerFingerprints: ['5BE8A3F6C8A5C01D106C0AD820B1A390B168D356'],
+  },
   '26.8.1': {
     verification: 'unverified',
     source: 'https://nodejs.org/dist/v26.8.1/SHASUMS256.txt',

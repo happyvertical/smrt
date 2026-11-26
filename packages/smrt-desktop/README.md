@@ -310,9 +310,10 @@ Node.js release keys from `https://github.com/nodejs/release-keys`, can write
 that says `gpg-verified` without fingerprints or digest counts as unverified,
 and the repository tests fail on it.
 
-**Status: the only pin, Node 26.8.1, is `unverified`.** It was copied from the
-TLS-served `SHASUMS256.txt` on a machine without `gpg`, so the signature check
-is blocked until a maintainer runs the script where `gpg` exists. Until then:
+**Node 26.12.1 is pinned and `gpg-verified` for all six supported targets.**
+It is the default (the newest pinned Node 26 release); select it explicitly
+with `nodeVersion: '26.12.1'` in the bundler API. Node 26.8.1 remains available
+for existing callers, with its original `unverified` provenance:
 
 - every bundle records the provenance it used in `bundle-report.json`
   (`node.pin`: `verification`, `source`, `retrieved`, `shasumsSha256`,
@@ -500,7 +501,11 @@ configuration is not loaded either.
 A production closure of a real app is mostly packages a desktop product does
 not use. Segmentation **removes** packages, never adds: a package goes when
 every path from the app's direct dependencies to it passes through a disabled
-root (or an `exclude` entry). The catalog:
+root (or an `exclude` entry). Missing optional peers are permitted, including
+packages also listed in `dependencies`, only when the same package is declared
+in `peerDependencies` with `peerDependenciesMeta[name].optional: true`. Present
+optional peers remain graph edges; the import scan still rejects unresolved
+runtime imports. The catalog:
 
 | Feature | Removes unless enabled |
 | --- | --- |
