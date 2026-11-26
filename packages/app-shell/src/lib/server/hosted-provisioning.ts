@@ -131,8 +131,12 @@ async function reconcileTenant(
   if (!out.entitled) return out;
   // The reconciler only adds and syncs while entitled: take the keys back
   // from people who are no longer members.
+  // Read the keys BEFORE the members: a key that exists by then belongs to a
+  // member whose row is already committed, so the later member read includes
+  // them. The other order could revoke a joiner provisioned in between.
+  const holders = await ctx.provisioner.listActive(tenantId);
   const members = new Set(await activeMembers(ctx.db, tenantId));
-  for (const userId of await ctx.provisioner.listActive(tenantId)) {
+  for (const userId of holders) {
     if (members.has(userId)) continue;
     try {
       const result = await ctx.provisioner.revoke({
@@ -291,6 +295,8 @@ async function reconcileAllTenants(
     failures: [],
   };
   for (const tenantId of await activeTenantIds(ctx.db)) {
+    // Shutdown or a reinstall stops a pass between tenants.
+    if (activeContext !== ctx) break;
     total.tenants += 1;
     try {
       const one = await reconcileTenant(ctx, tenantId);
@@ -334,7 +340,9 @@ function watchMemberships(
   const pending = new Set<string>();
   let draining = false;
   let stopped = false;
-  let table: string | undefined;
+  // Looked up once, not per signal (every tenant write in the deployment signals).
+  const table = membershipTable(db);
+  table.catch((error) => reportFailures([{ tenantId: '(all)', error }]));
   const drain = async () => {
     // `draining` clears in the same turn the loop sees `pending` empty, so a
     // signal arriving later starts a new drain instead of being lost.
@@ -357,10 +365,9 @@ function watchMemberships(
   const unsubscribe = subscribeToChangeSignals(db, (signal) => {
     if (stopped || !signal.tenantId) return;
     const tenantId = signal.tenantId;
-    void membershipTable(db)
+    void table
       .then((name) => {
-        table ??= name;
-        if (signal.table !== table || stopped) return;
+        if (signal.table !== name || stopped) return;
         pending.add(tenantId);
         if (!draining) void drain();
       })

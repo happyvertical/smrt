@@ -13,6 +13,7 @@ import type {
 import {
   setAiUsageUserResolver,
   setInferenceGate,
+  subscribeToChangeSignals,
 } from '@happyvertical/smrt-core';
 import {
   type HostedGatewayAdmin,
@@ -58,6 +59,16 @@ import {
   reconcileHostedTenant,
   resetHostedProvisioning,
 } from './hosted-provisioning.ts';
+
+// A pass-through spy: the watcher really subscribes, and a test can see whether it did.
+vi.mock('@happyvertical/smrt-core', async (importOriginal) => {
+  const actual =
+    await importOriginal<typeof import('@happyvertical/smrt-core')>();
+  return {
+    ...actual,
+    subscribeToChangeSignals: vi.fn(actual.subscribeToChangeSignals),
+  };
+});
 
 const GATEWAY_ENV = {
   SMRT_INFERENCE_HOSTED_PROVIDER: 'litellm',
@@ -351,10 +362,21 @@ describe('scheduled repair reconcile', () => {
     await setPlan(h.b.tenantId, 5_000_000);
     const before = keyCount(admin);
 
-    // Simulate a lost reaction: a member whose key was never minted.
+    // A lost reaction: the member joins while nothing is watching, so no
+    // signal reaches the watcher and only the repair pass can find them.
+    resetHostedProvisioning();
     const fay = await h.newUser('fay@example.test');
     await addMember(h.a.tenantId, h.a.id, fay.id);
+    await installHostedProvisioning({
+      db: async () => h.db,
+      admin,
+      env: GATEWAY_ENV,
+      reconcileIntervalMs: 0,
+    });
+    expect(await storedConfig(h.a.tenantId, fay.id)).toBeUndefined();
     const first = await reconcileAllHostedTenants();
+    expect(first?.failures).toEqual([]);
+    expect(first?.provisioned).toBeGreaterThanOrEqual(1);
     expect(first?.failures).toEqual([]);
     expect(await storedConfig(h.a.tenantId, fay.id)).toMatchObject({
       source: 'hosted',
@@ -402,6 +424,7 @@ describe('scheduled repair reconcile', () => {
   it('makes no call and no query without a gateway or off the cloud', async () => {
     const admin = new FakeAdmin();
     await installHostedInferenceGate({ db: async () => h.db });
+    vi.mocked(subscribeToChangeSignals).mockClear();
     expect(
       await installHostedProvisioning({
         db: async () => h.db,
@@ -411,6 +434,8 @@ describe('scheduled repair reconcile', () => {
     ).toBe(false);
     expect(await reconcileAllHostedTenants()).toBeUndefined();
     expect(await reconcileHostedTenant(h.a.tenantId)).toBeUndefined();
+    // No change-signal subscription was added for the repair or the members.
+    expect(subscribeToChangeSignals).not.toHaveBeenCalled();
     useProfile('local');
     expect(
       await installHostedProvisioning({
@@ -420,29 +445,42 @@ describe('scheduled repair reconcile', () => {
       }),
     ).toBe(false);
     expect(await reconcileAllHostedTenants()).toBeUndefined();
+    expect(subscribeToChangeSignals).not.toHaveBeenCalled();
     expect(keyCount(admin)).toBe(0);
   });
 
-  it('arms the repair timer only when a gateway is installed', async () => {
-    vi.useFakeTimers();
-    try {
-      const admin = new FakeAdmin();
-      await installHostedInferenceGate({ db: async () => h.db });
-      await installHostedProvisioning({
+  it('the armed timer runs the repair, and stopping it runs nothing', async () => {
+    const admin = new FakeAdmin();
+    await installHostedInferenceGate({ db: async () => h.db });
+    const installTimer = () =>
+      installHostedProvisioning({
         db: async () => h.db,
         admin,
         env: GATEWAY_ENV,
-        reconcileIntervalMs: 1000,
+        reconcileIntervalMs: 50,
       });
-      await setPlan(h.b.tenantId, 5_000_000);
-      const fay = await h.newUser('gus@example.test');
-      resetHostedProvisioning();
-      await addMember(h.b.tenantId, h.b.id, fay.id);
-      // Stopped: the elapsed timers run nothing.
-      await vi.advanceTimersByTimeAsync(5000);
-      expect(await storedConfig(h.b.tenantId, fay.id)).toBeUndefined();
-    } finally {
-      vi.useRealTimers();
-    }
+    await installTimer();
+    await setPlan(h.b.tenantId, 5_000_000);
+    // Joins while nothing watches, so only the timer's pass can repair it.
+    resetHostedProvisioning();
+    const gus = await h.newUser('gus@example.test');
+    await addMember(h.b.tenantId, h.b.id, gus.id);
+    await installTimer();
+    // The timer is real here and short: it must fire without any signal.
+    await vi.waitFor(
+      async () =>
+        expect(await storedConfig(h.b.tenantId, gus.id)).toMatchObject({
+          source: 'hosted',
+        }),
+      { timeout: 5000 },
+    );
+    // Stopped: a later joiner is not repaired by the timer.
+    resetHostedProvisioning();
+    // A pass already running finishes its tenant, then stops.
+    await new Promise((r) => setTimeout(r, 150));
+    const hal = await h.newUser('hal@example.test');
+    await addMember(h.b.tenantId, h.b.id, hal.id);
+    await new Promise((r) => setTimeout(r, 200));
+    expect(await storedConfig(h.b.tenantId, hal.id)).toBeUndefined();
   });
 });

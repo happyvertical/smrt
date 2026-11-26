@@ -83,8 +83,8 @@ features/subscriptions/gate on SQLite, fake resolver), `hooks.server.test.ts`.
   written to stderr and left to the repair pass. (2) A timer: sixty seconds after
   start, then every `HOSTED_RECONCILE_INTERVAL_MS` (six hours; `reconcileIntervalMs`
   overrides, 0 turns it off), `reconcileAllHostedTenants` lists the active tenants
-  (`TenantCollection`, paged) and reconciles each, so a reaction lost to a crash
-  repairs itself. The shell has no job runner in the cloud profile, so this is an
+  (`TenantCollection`, active status only, paged) and reconciles each, so a reaction lost to a crash
+  repairs itself (the removal step reads the key holders before the members, so a joiner provisioned meanwhile is never taken for a leaver; a suspended tenant keeps its keys until its plan changes). The shell has no job runner in the cloud profile, so this is an
   unref'd in-process timer like the owner-link renewal, not a `smrt-jobs` job;
   every replica runs it, which the per-tenant advisory lock and idempotence
   allow. Both are installed only by `installHostedProvisioning`, so on the
