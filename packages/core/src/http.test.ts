@@ -1,4 +1,4 @@
-import { createServer, type Server } from 'node:http';
+import { createServer, request as httpRequest, type Server } from 'node:http';
 import type { AddressInfo } from 'node:net';
 import { afterEach, describe, expect, it } from 'vitest';
 import { normalizeTypedHttpError } from './generators/typed-http-error.js';
@@ -88,6 +88,15 @@ describe('@happyvertical/smrt-core/http helpers (#5674)', () => {
     });
     await expect(
       parseJsonRequestBody(wrongTypeReq, 1024),
+    ).rejects.toBeInstanceOf(HttpBadRequestError);
+
+    const invalidUtf8Req = new Request('http://localhost/test', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: new Uint8Array([0xff, 0xfe, 0x7b, 0x7d]),
+    });
+    await expect(
+      parseJsonRequestBody(invalidUtf8Req, 1024),
     ).rejects.toBeInstanceOf(HttpBadRequestError);
 
     // Oversized declared Content-Length fails before consuming stream
@@ -240,5 +249,95 @@ describe('@happyvertical/smrt-core/http helpers (#5674)', () => {
       proto: 'https:',
       ip: '203.0.113.7',
     });
+
+    // Chunked Transfer-Encoding (no Content-Length) exceeding maxBodyBytes returns 413 cleanly
+    const chunkedResult = await new Promise<{
+      status: number;
+      connection: string | undefined;
+      body: string;
+    }>((resolve, reject) => {
+      const clientReq = httpRequest(
+        {
+          host: '127.0.0.1',
+          port,
+          path: '/echo',
+          method: 'POST',
+          headers: {
+            'content-type': 'application/json',
+            'transfer-encoding': 'chunked',
+          },
+        },
+        (res) => {
+          const parts: Buffer[] = [];
+          res.on('data', (c: Buffer) => parts.push(c));
+          res.on('end', () => {
+            clientReq.destroy();
+            resolve({
+              status: res.statusCode ?? 0,
+              connection: res.headers.connection,
+              body: Buffer.concat(parts).toString('utf8'),
+            });
+          });
+        },
+      );
+      clientReq.on('error', reject);
+      clientReq.write('{"echo":"');
+      clientReq.write('z'.repeat(200));
+    });
+    expect(chunkedResult.status).toBe(413);
+    expect(chunkedResult.connection).toBe('close');
+    expect(JSON.parse(chunkedResult.body)).toEqual({
+      error: 'Request body exceeds 128 byte limit',
+    });
+  });
+
+  it('survives throwing onError mappers and strips stale encoding/hop-by-hop headers on proxied responses', async () => {
+    const unhandled: unknown[] = [];
+    const onUnhandled = (reason: unknown) => unhandled.push(reason);
+    process.on('unhandledRejection', onUnhandled);
+
+    try {
+      const server = createServer(
+        createNodeHttpHandler(
+          async (request) => {
+            const url = new URL(request.url);
+            if (url.pathname === '/proxy') {
+              return new Response(JSON.stringify({ decoded: true }), {
+                status: 200,
+                headers: {
+                  'content-type': 'application/json',
+                  'content-encoding': 'gzip',
+                  'content-length': '3',
+                  'transfer-encoding': 'chunked',
+                },
+              });
+            }
+            throw new Error('handler exploded');
+          },
+          {
+            onError: () => {
+              throw new Error('onError also exploded');
+            },
+          },
+        ),
+      );
+      servers.push(server);
+      await new Promise<void>((resolve) =>
+        server.listen(0, '127.0.0.1', resolve),
+      );
+      const { port } = server.address() as AddressInfo;
+
+      const boomRes = await fetch(`http://127.0.0.1:${port}/boom`);
+      expect(boomRes.status).toBe(500);
+      expect(await boomRes.json()).toEqual({ error: 'Internal server error' });
+
+      const proxyRes = await fetch(`http://127.0.0.1:${port}/proxy`);
+      expect(proxyRes.status).toBe(200);
+      expect(proxyRes.headers.get('content-encoding')).toBeNull();
+      expect(await proxyRes.json()).toEqual({ decoded: true });
+      expect(unhandled).toEqual([]);
+    } finally {
+      process.off('unhandledRejection', onUnhandled);
+    }
   });
 });

@@ -164,10 +164,21 @@ export async function readBoundedBody(
   return merged;
 }
 
+const strictUtf8Decoder = new TextDecoder('utf-8', { fatal: true });
+
+function decodeStrictUtf8Json<T>(bytes: Uint8Array): T {
+  try {
+    return JSON.parse(strictUtf8Decoder.decode(bytes)) as T;
+  } catch {
+    throw new HttpBadRequestError('Malformed JSON body');
+  }
+}
+
 /**
  * Parse a required `application/json` request body within `maxBytes`.
- * Throws `HttpBadRequestError` (400) on wrong `Content-Type`, empty body, or
- * invalid JSON, and `HttpPayloadTooLargeError` (413) when exceeding `maxBytes`.
+ * Throws `HttpBadRequestError` (400) on wrong `Content-Type`, empty body,
+ * invalid UTF-8, or invalid JSON, and `HttpPayloadTooLargeError` (413) when
+ * exceeding `maxBytes`.
  */
 export async function parseJsonRequestBody<T = unknown>(
   request: Request,
@@ -182,17 +193,13 @@ export async function parseJsonRequestBody<T = unknown>(
     throw new HttpBadRequestError('Request body must not be empty');
   }
 
-  try {
-    return JSON.parse(Buffer.from(bytes).toString('utf8')) as T;
-  } catch {
-    throw new HttpBadRequestError('Malformed JSON body');
-  }
+  return decodeStrictUtf8Json<T>(bytes);
 }
 
 /**
  * Parse an optional `application/json` request body within `maxBytes`.
  * Empty bodies return `{}` without requiring `Content-Type: application/json`;
- * non-empty bodies require `application/json` and valid JSON.
+ * non-empty bodies require `application/json` and valid UTF-8 JSON.
  */
 export async function parseOptionalJsonRequestBody<T = Record<string, unknown>>(
   request: Request,
@@ -205,11 +212,7 @@ export async function parseOptionalJsonRequestBody<T = Record<string, unknown>>(
   if (!isJsonContentType(request.headers.get('content-type'))) {
     throw new HttpBadRequestError('Content-Type must be application/json');
   }
-  try {
-    return JSON.parse(Buffer.from(bytes).toString('utf8')) as T;
-  } catch {
-    throw new HttpBadRequestError('Malformed JSON body');
-  }
+  return decodeStrictUtf8Json<T>(bytes);
 }
 
 /**
@@ -474,21 +477,57 @@ function defaultErrorResponse(error: unknown): Response {
   });
 }
 
+const STRIPPED_BUFFERED_RESPONSE_HEADERS = new Set([
+  'connection',
+  'content-encoding',
+  'content-length',
+  'keep-alive',
+  'proxy-authenticate',
+  'proxy-authorization',
+  'te',
+  'trailer',
+  'transfer-encoding',
+  'upgrade',
+]);
+
+function statusForbidsBody(status: number): boolean {
+  return (
+    (status >= 100 && status < 200) ||
+    status === 204 ||
+    status === 205 ||
+    status === 304
+  );
+}
+
 /**
  * Write a Web Standard `Response` onto a Node.js `ServerResponse`, preserving
- * multi-header `Set-Cookie` values.
+ * multi-header `Set-Cookie` values and stripping hop-by-hop / stale encoding
+ * headers after decoding the `Response` payload.
  */
 export async function writeWebResponseToNode(
   res: ServerResponse,
   webResponse: Response,
 ): Promise<void> {
+  const body = statusForbidsBody(webResponse.status)
+    ? null
+    : Buffer.from(await webResponse.arrayBuffer());
+
   res.statusCode = webResponse.status;
   const setCookies =
     typeof webResponse.headers.getSetCookie === 'function'
       ? webResponse.headers.getSetCookie()
       : [];
+  const requestedClose = webResponse.headers
+    .get('connection')
+    ?.split(',')
+    .some((token) => token.trim().toLowerCase() === 'close');
+
   webResponse.headers.forEach((value, key) => {
-    if (key.toLowerCase() === 'set-cookie' && setCookies.length > 0) {
+    const lower = key.toLowerCase();
+    if (lower === 'set-cookie' && setCookies.length > 0) {
+      return;
+    }
+    if (STRIPPED_BUFFERED_RESPONSE_HEADERS.has(lower)) {
       return;
     }
     res.setHeader(key, value);
@@ -496,8 +535,105 @@ export async function writeWebResponseToNode(
   if (setCookies.length > 0) {
     res.setHeader('set-cookie', setCookies);
   }
-  const body = Buffer.from(await webResponse.arrayBuffer());
-  res.end(body);
+  if (requestedClose || !res.shouldKeepAlive) {
+    res.shouldKeepAlive = false;
+    res.setHeader('connection', 'close');
+  }
+  if (body !== null) {
+    res.setHeader('content-length', String(body.byteLength));
+  }
+
+  const isHead = res.req?.method?.toUpperCase() === 'HEAD';
+  await new Promise<void>((resolve) => {
+    let settled = false;
+    const done = () => {
+      if (!settled) {
+        settled = true;
+        res.off('close', done);
+        res.off('error', done);
+        resolve();
+      }
+    };
+    res.once('close', done);
+    res.once('error', done);
+    if (body === null || isHead) {
+      res.end(done);
+    } else {
+      res.end(body, done);
+    }
+  });
+}
+
+function readNodeRequestBody(
+  req: IncomingMessage,
+  maxBodyBytes: number,
+): Promise<Buffer> {
+  return new Promise<Buffer>((resolve, reject) => {
+    const chunks: Buffer[] = [];
+    let total = 0;
+    let settled = false;
+
+    const cleanup = () => {
+      req.off('data', onData);
+      req.off('end', onEnd);
+      req.off('error', onError);
+      req.off('aborted', onAborted);
+    };
+
+    const onData = (chunk: Buffer | string) => {
+      const buf = Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk);
+      total += buf.byteLength;
+      if (total > maxBodyBytes) {
+        settled = true;
+        cleanup();
+        req.pause();
+        reject(
+          new HttpPayloadTooLargeError(formatBodyLimitMessage(maxBodyBytes)),
+        );
+        return;
+      }
+      chunks.push(buf);
+    };
+
+    const onEnd = () => {
+      if (settled) return;
+      settled = true;
+      cleanup();
+      resolve(Buffer.concat(chunks, total));
+    };
+
+    const onError = (err: Error) => {
+      if (settled) return;
+      settled = true;
+      cleanup();
+      reject(err);
+    };
+
+    const onAborted = () => {
+      if (settled) return;
+      settled = true;
+      cleanup();
+      reject(new HttpBadRequestError('Request aborted by client'));
+    };
+
+    req.on('data', onData);
+    req.once('end', onEnd);
+    req.once('error', onError);
+    req.once('aborted', onAborted);
+  });
+}
+
+function scheduleUnreadBodyTeardown(req: IncomingMessage): void {
+  if (req.destroyed || req.complete) {
+    return;
+  }
+  const timer = setTimeout(() => {
+    if (!req.destroyed) {
+      req.destroy();
+    }
+  }, 200);
+  timer.unref?.();
+  req.once('close', () => clearTimeout(timer));
 }
 
 /**
@@ -551,11 +687,7 @@ export function createNodeHttpHandler(
         const host = req.headers.host || 'localhost';
         targetUrl = new URL(req.url ?? '/', `${proto}://${host}`);
       } catch {
-        await writeWebResponseToNode(
-          res,
-          await mapError(new HttpBadRequestError('Invalid request URL')),
-        );
-        return;
+        throw new HttpBadRequestError('Invalid request URL');
       }
 
       const headers = new Headers();
@@ -573,43 +705,23 @@ export function createNodeHttpHandler(
       let bodyBuffer: Buffer | undefined;
       if (method !== 'GET' && method !== 'HEAD') {
         const maxBodyBytes = resolveMaxBytes(targetUrl.pathname, method);
+        if (!Number.isSafeInteger(maxBodyBytes) || maxBodyBytes < 0) {
+          throw new RangeError(
+            `Invalid maxBodyBytes value: ${String(maxBodyBytes)}`,
+          );
+        }
         const contentLengthRaw = Array.isArray(req.headers['content-length'])
           ? req.headers['content-length'][0]
           : req.headers['content-length'];
         const declaredLength = parseContentLengthHeader(contentLengthRaw);
         if (declaredLength !== null && declaredLength > maxBodyBytes) {
-          await writeWebResponseToNode(
-            res,
-            await mapError(
-              new HttpPayloadTooLargeError(
-                formatBodyLimitMessage(maxBodyBytes),
-              ),
-            ),
+          req.pause();
+          throw new HttpPayloadTooLargeError(
+            formatBodyLimitMessage(maxBodyBytes),
           );
-          req.resume();
-          return;
         }
 
-        const chunks: Buffer[] = [];
-        let total = 0;
-        for await (const chunk of req) {
-          const buf = Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk);
-          total += buf.byteLength;
-          if (total > maxBodyBytes) {
-            await writeWebResponseToNode(
-              res,
-              await mapError(
-                new HttpPayloadTooLargeError(
-                  formatBodyLimitMessage(maxBodyBytes),
-                ),
-              ),
-            );
-            req.destroy();
-            return;
-          }
-          chunks.push(buf);
-        }
-        bodyBuffer = Buffer.concat(chunks, total);
+        bodyBuffer = await readNodeRequestBody(req, maxBodyBytes);
       }
 
       const webRequest = new Request(targetUrl, {
@@ -624,15 +736,48 @@ export function createNodeHttpHandler(
       const webResponse = await handle(webRequest, req.socket?.remoteAddress);
       await writeWebResponseToNode(res, webResponse);
     } catch (error) {
+      const shouldCloseConnection =
+        !req.complete ||
+        error instanceof HttpPayloadTooLargeError ||
+        error instanceof HttpBadRequestError;
+      if (shouldCloseConnection) {
+        req.pause();
+        res.shouldKeepAlive = false;
+      }
       if (!res.headersSent) {
-        await writeWebResponseToNode(res, await mapError(error));
+        let errorResponse: Response;
+        try {
+          errorResponse = await mapError(error);
+        } catch {
+          errorResponse = defaultErrorResponse(
+            new Error('Unhandled error mapper failure'),
+          );
+        }
+        try {
+          await writeWebResponseToNode(res, errorResponse);
+        } catch {
+          res.destroy();
+        }
       } else {
-        res.end();
+        try {
+          res.end();
+        } catch {
+          res.destroy();
+        }
+      }
+      if (shouldCloseConnection) {
+        scheduleUnreadBodyTeardown(req);
       }
     }
   }
 
   return (req: IncomingMessage, res: ServerResponse): void => {
-    void dispatch(req, res);
+    void dispatch(req, res).catch(() => {
+      try {
+        res.destroy();
+      } catch {
+        // Ignore teardown failures on destroyed sockets.
+      }
+    });
   };
 }
