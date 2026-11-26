@@ -1,5 +1,18 @@
 # @happyvertical/smrt-app-runtime
 
+## 0.71.0
+
+### Patch Changes
+
+- Updated dependencies
+  - @happyvertical/smrt-core@0.71.0
+  - @happyvertical/smrt-approvals@0.71.0
+  - @happyvertical/smrt-jobs@0.71.0
+  - @happyvertical/smrt-profiles@0.71.0
+  - @happyvertical/smrt-tenancy@0.71.0
+  - @happyvertical/smrt-users@0.71.0
+  - @happyvertical/smrt-config@0.71.0
+
 ## 0.70.3
 
 ### Patch Changes
