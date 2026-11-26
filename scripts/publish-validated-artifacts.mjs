@@ -25,62 +25,64 @@ function npm(args, { allowNotFound = false } = {}) {
   return result.stdout.trim();
 }
 
+// Only a definite "absent" answer (E404, or an empty read) means the version
+// is not published. Any other failure (5xx, timeout, DNS) propagates: a
+// registry that cannot answer has not told us the version is missing.
 function existsOnRegistry(name, version, runNpm, registry) {
-  return (
-    runNpm(
-      [
-        'view',
-        `${name}@${version}`,
-        'version',
-        ...registryArgs(registry),
-        '--prefer-online',
-      ],
-      {
-        allowNotFound: true,
-      },
-    ) !== null
+  const output = runNpm(
+    [
+      'view',
+      `${name}@${version}`,
+      'version',
+      ...registryArgs(registry),
+      '--prefer-online',
+    ],
+    {
+      allowNotFound: true,
+    },
   );
+  return output !== null && output !== '';
 }
 
-// A transient registry read failure here (EAI_AGAIN, a timeout, any non-404
-// npm() throw) happens strictly before this run's own `npm publish` calls —
-// the dedup loop below always finishes before the publish loop starts — so
-// treating it as "not yet confirmed published" cannot mask a version this
-// run already published. It can only cause an unnecessary publish attempt
-// for a version that is, in fact, already there; npm's own publish-time
-// conflict response is the authoritative fallback for that (see
-// isAlreadyPublishedConflict below), and it still runs the content-identity
-// check before accepting the conflict as "already published" — so a real
-// different-content collision keeps aborting instead of silently skipping.
-function existsOnRegistryTolerant(name, version, runNpm, log, registry) {
+// Fails closed: this runs before any `npm publish` of the dedup loop, so
+// throwing on a non-404 read error (for example a 500 from a registry whose
+// storage is full, smrt#5659) aborts while nothing new has been published,
+// instead of guessing "not published" and pushing more bytes at a broken
+// registry. Only a definite 404 or empty read means "not published".
+function existsOnRegistryStrict(name, version, runNpm, registry) {
   try {
     return existsOnRegistry(name, version, runNpm, registry);
   } catch (error) {
-    log(
-      `⚠️ Pre-publish existence check for ${name}@${version} errored (${error instanceof Error ? error.message : error}); treating as not yet published. If it is already published, the publish attempt's own conflict response will be verified and recorded as complete instead of failing the run.`,
+    throw new Error(
+      `Refusing to guess whether ${name}@${version} is published: the registry read failed (${error instanceof Error ? error.message : error}). Only a 404 means "not published"; retry once the registry answers.`,
     );
-    return false;
   }
 }
 
 // npm's own message for "this exact version is already on the registry".
 // Trusting this (after a content-identity check) recovers a run whose
-// pre-publish existence check missed the version because of a transient
-// read failure, without trusting any other publish failure (auth, network,
+// pre-publish existence check missed the version (a read race, or a version
+// whose packument was not yet visible), without trusting any other publish failure (auth, network,
 // a genuinely different-content collision) as harmless.
+//
+// npm.happyvertical.com (Verdaccio) words the same conflict as "409 Conflict
+// ... this package is already present". That 409 is also what a retry hits
+// after a first upload left a truncated tarball behind (disk full), so the
+// message alone proves nothing: it is only accepted after the packument's
+// dist.integrity equals the authorized tarball's integrity.
 function isAlreadyPublishedConflict(message) {
-  return /cannot publish over the previously published version/i.test(
+  return /cannot publish over the previously published version|this package is already present/i.test(
     message,
   );
 }
 
 // defaultVerifyExistingContentMatches's own confirmed-mismatch error (a
-// registry tarball whose shasum genuinely differs from this run's
+// registry packument whose integrity genuinely differs from this run's
 // artifact) is the one throw from that function that must always be
 // surfaced, never treated as ambiguous — it is a definite different-content
 // collision, not a read failure.
 function isConfirmedContentMismatch(message) {
-  return /does not match this run's verified local artifact sha1/.test(
+  return /does not match this run's verified local artifact integrity/.test(
     message,
   );
 }
@@ -89,32 +91,40 @@ function isConfirmedContentMismatch(message) {
 // published from *different* content than what this run built — e.g. two
 // independent runs computing the same next version from a stale base (the
 // exact "silently skip packages it thinks it already handled" failure
-// #2871 warned about). Compare the registry tarball's shasum against the
-// already-verified local artifact before trusting "already exists" as
-// "already exists with our content" and skipping it.
+// #2871 warned about). Compare the integrity the registry's packument
+// records for this version against the already-verified local artifact
+// before trusting "already exists" as "already exists with our content".
+// The packument is the only authority: a tarball blob can exist without
+// metadata (or truncated) and says nothing about publication (smrt#5659).
+export function localIntegrity(path) {
+  return `sha512-${createHash('sha512').update(readFileSync(path)).digest('base64')}`;
+}
+
 function defaultVerifyExistingContentMatches(artifact, runNpm, registry) {
-  const registryShasum = runNpm(
+  const registryIntegrity = runNpm(
     [
       'view',
       `${artifact.name}@${artifact.version}`,
-      'dist.shasum',
+      'dist.integrity',
       ...registryArgs(registry),
       '--prefer-online',
     ],
     { allowNotFound: true },
   );
-  if (registryShasum === null) {
-    // Existed a moment ago, gone now (race/propagation). Do not treat as a
-    // verified match; let the caller fall through to a normal publish
-    // attempt instead of silently skipping unverified content.
+  if (registryIntegrity === null || registryIntegrity === '') {
+    // The packument has no such version (or no integrity for it). Do not
+    // treat as a verified match; let the caller fall through to a normal
+    // publish attempt / fail on the original conflict instead of silently
+    // skipping unverified content. If a tarball blob exists without a
+    // packument entry (for example a truncated upload after the registry's
+    // disk filled), the publish keeps conflicting: the operator must remove
+    // that orphaned blob from registry storage; this script never deletes.
     return false;
   }
-  const localShasum = createHash('sha1')
-    .update(readFileSync(artifact.path))
-    .digest('hex');
-  if (registryShasum !== localShasum) {
+  const localValue = localIntegrity(artifact.path);
+  if (registryIntegrity !== localValue) {
     throw new Error(
-      `Refusing to treat ${artifact.name}@${artifact.version} as already published: registry tarball sha1 ${registryShasum} does not match this run's verified local artifact sha1 ${localShasum}. That version already exists with different content — bump a new version instead of reusing this one.`,
+      `Refusing to treat ${artifact.name}@${artifact.version} as already published: registry integrity ${registryIntegrity} does not match this run's verified local artifact integrity ${localValue}. That version already exists with different content — bump a new version instead of reusing this one.`,
     );
   }
   return true;
@@ -146,11 +156,10 @@ export function publishRelease(
   const alreadyPublished = new Set();
   for (const artifact of release.packages) {
     if (
-      existsOnRegistryTolerant(
+      existsOnRegistryStrict(
         artifact.name,
         artifact.version,
         runNpm,
-        log,
         registry,
       ) &&
       verifyExistingContentMatches(artifact, runNpm, registry)
@@ -175,8 +184,8 @@ export function publishRelease(
       ]);
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
-      // The dedup check above can miss an already-published version during
-      // a transient registry read failure; npm's own publish-time conflict
+      // The dedup check above can miss an already-published version (a read
+      // race or a not-yet-visible packument); npm's own publish-time conflict
       // is authoritative. Still run the same content-identity check the
       // dedup pass uses before accepting it — a genuine different-content
       // collision (the #2871 "different base" scenario) must keep failing,
