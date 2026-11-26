@@ -477,9 +477,8 @@ function defaultErrorResponse(error: unknown): Response {
   });
 }
 
-const STRIPPED_BUFFERED_RESPONSE_HEADERS = new Set([
+const STRIPPED_HOP_BY_HOP_HEADERS = new Set([
   'connection',
-  'content-encoding',
   'content-length',
   'keep-alive',
   'proxy-authenticate',
@@ -501,8 +500,8 @@ function statusForbidsBody(status: number): boolean {
 
 /**
  * Write a Web Standard `Response` onto a Node.js `ServerResponse`, preserving
- * multi-header `Set-Cookie` values and stripping hop-by-hop / stale encoding
- * headers after decoding the `Response` payload.
+ * multi-header `Set-Cookie` values, stripping hop-by-hop headers, and dropping
+ * stale `content-encoding` only on `fetch()`-decoded responses (`response.url !== ''`).
  */
 export async function writeWebResponseToNode(
   res: ServerResponse,
@@ -511,6 +510,7 @@ export async function writeWebResponseToNode(
   const body = statusForbidsBody(webResponse.status)
     ? null
     : Buffer.from(await webResponse.arrayBuffer());
+  const isFetchDecodedResponse = webResponse.url !== '';
 
   res.statusCode = webResponse.status;
   const setCookies =
@@ -527,7 +527,10 @@ export async function writeWebResponseToNode(
     if (lower === 'set-cookie' && setCookies.length > 0) {
       return;
     }
-    if (STRIPPED_BUFFERED_RESPONSE_HEADERS.has(lower)) {
+    if (STRIPPED_HOP_BY_HOP_HEADERS.has(lower)) {
+      return;
+    }
+    if (lower === 'content-encoding' && isFetchDecodedResponse) {
       return;
     }
     res.setHeader(key, value);
@@ -745,6 +748,9 @@ export function createNodeHttpHandler(
         res.shouldKeepAlive = false;
       }
       if (!res.headersSent) {
+        for (const headerName of res.getHeaderNames()) {
+          res.removeHeader(headerName);
+        }
         let errorResponse: Response;
         try {
           errorResponse = await mapError(error);

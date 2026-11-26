@@ -1,5 +1,6 @@
 import { createServer, request as httpRequest, type Server } from 'node:http';
 import type { AddressInfo } from 'node:net';
+import { gzipSync } from 'node:zlib';
 import { afterEach, describe, expect, it } from 'vitest';
 import { normalizeTypedHttpError } from './generators/typed-http-error.js';
 import {
@@ -291,26 +292,51 @@ describe('@happyvertical/smrt-core/http helpers (#5674)', () => {
     });
   });
 
-  it('survives throwing onError mappers and strips stale encoding/hop-by-hop headers on proxied responses', async () => {
+  it('survives throwing onError mappers, distinguishes fetch-decoded vs pre-compressed gzip responses, and clears partial headers on failure', async () => {
     const unhandled: unknown[] = [];
     const onUnhandled = (reason: unknown) => unhandled.push(reason);
     process.on('unhandledRejection', onUnhandled);
 
     try {
+      const upstream = createServer((_req, res) => {
+        const gz = gzipSync(Buffer.from(JSON.stringify({ upstream: 'ok' })));
+        res.writeHead(200, {
+          'content-type': 'application/json',
+          'content-encoding': 'gzip',
+          'content-length': String(gz.byteLength),
+        });
+        res.end(gz);
+      });
+      servers.push(upstream);
+      await new Promise<void>((resolve) =>
+        upstream.listen(0, '127.0.0.1', resolve),
+      );
+      const { port: upstreamPort } = upstream.address() as AddressInfo;
+
       const server = createServer(
         createNodeHttpHandler(
           async (request) => {
             const url = new URL(request.url);
             if (url.pathname === '/proxy') {
-              return new Response(JSON.stringify({ decoded: true }), {
+              return fetch(`http://127.0.0.1:${upstreamPort}/data`);
+            }
+            if (url.pathname === '/precompressed') {
+              const gz = gzipSync(
+                Buffer.from(JSON.stringify({ precompressed: true })),
+              );
+              return new Response(new Uint8Array(gz), {
                 status: 200,
                 headers: {
                   'content-type': 'application/json',
                   'content-encoding': 'gzip',
-                  'content-length': '3',
-                  'transfer-encoding': 'chunked',
                 },
               });
+            }
+            if (url.pathname === '/bad-header') {
+              const headers = new Headers();
+              headers.append('set-cookie', 'leaked=1; Path=/');
+              headers.set('x-invalid', 'bad\u0001value');
+              return new Response('ok', { status: 200, headers });
             }
             throw new Error('handler exploded');
           },
@@ -334,7 +360,16 @@ describe('@happyvertical/smrt-core/http helpers (#5674)', () => {
       const proxyRes = await fetch(`http://127.0.0.1:${port}/proxy`);
       expect(proxyRes.status).toBe(200);
       expect(proxyRes.headers.get('content-encoding')).toBeNull();
-      expect(await proxyRes.json()).toEqual({ decoded: true });
+      expect(await proxyRes.json()).toEqual({ upstream: 'ok' });
+
+      const precompRes = await fetch(`http://127.0.0.1:${port}/precompressed`);
+      expect(precompRes.status).toBe(200);
+      expect(precompRes.headers.get('content-encoding')).toBe('gzip');
+      expect(await precompRes.json()).toEqual({ precompressed: true });
+
+      const badHeaderRes = await fetch(`http://127.0.0.1:${port}/bad-header`);
+      expect(badHeaderRes.status).toBe(500);
+      expect(badHeaderRes.headers.getSetCookie()).toEqual([]);
       expect(unhandled).toEqual([]);
     } finally {
       process.off('unhandledRejection', onUnhandled);
