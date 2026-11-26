@@ -1183,15 +1183,19 @@ adapter has no inspector, so such a handle is compared like the database and
 sees its own uncommitted DDL. On any other engine the adapter must provide
 `getTableSchema()`. The SQLite reader reads the catalog the SQL adapter's
 inspector reads and confirms the engine first (`SELECT sqlite_version()`; an
-in-memory DuckDB handle can read as SQLite by its URL). The two return the same
-description except that the adapter's inspector hides indexes named like
+in-memory DuckDB handle can read as SQLite by its URL). For ordinary columns
+the two return the same description except that the adapter's inspector hides indexes named like
 `sqliteX_…` (it treats `_` as a wildcard) and marks only the first column of
 a composite primary key, while the reader describes both. The reader names the
 `main` schema in every pragma, so a temporary table of the same name never
 answers for the permanent one, and matches names exactly;
 `unreadable-table.test.ts` holds them side by side, so change them together.
 Column names, including `__proto__`, are defined as own properties rather than
-invoking object prototype setters.
+invoking object prototype setters. The query-only reader uses `table_xinfo`:
+generated columns (hidden 2/3) remain visible, module implementation columns
+(hidden 1) stay excluded. A generated column whose expression the owning
+reader cannot describe is unreadable by name, never an ordinary or missing
+column. All reads stay on the supplied handle, including caller-owned DDL.
 
 A table the catalog lists that still cannot be described throws
 `TableSchemaUnreadableError` from `compare()` and `compareTable()`, before

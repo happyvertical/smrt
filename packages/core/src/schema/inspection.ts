@@ -170,14 +170,16 @@ export async function inspectTableSchema(
 
 /**
  * SQLite through `query()` alone, for a handle without `getTableSchema()`. It
- * reads the same catalog the SQL adapter's own SQLite inspector reads, so a
- * comparison made through such a handle plans what the same comparison plans
- * through the adapter; `migrations/__tests__/unreadable-table.test.ts` holds
- * the two side by side. Two differences: the adapter's inspector skips every
+ * reads ordinary metadata alongside the SQL adapter's SQLite inspector;
+ * `migrations/__tests__/unreadable-table.test.ts` holds the two side by side,
+ * including the reader's corrections for adapter omissions. The adapter skips every
  * index whose name matches `sqlite_%` with `_` as a wildcard (so
  * `sqliteX_unique` is hidden), while this reader skips only the literal
  * `sqlite_` prefix; and the adapter marks only the first column of a
  * composite primary key as a key column, while this reader marks all of them.
+ * This reader also includes generated columns from table_xinfo (hidden 2/3),
+ * excludes virtual-table module columns (hidden 1), and refuses generated
+ * columns whose expressions the owning reader cannot describe.
  *
  * The engine is confirmed first. An in-memory DuckDB handle can read as SQLite
  * by its URL, and DuckDB answers some of these catalog queries with different
@@ -201,13 +203,36 @@ async function inspectSqliteTableSchema(
   // name answers first, while the catalog read above and the migration DDL
   // address the permanent table.
   const columnRows = await db.query(
-    "SELECT * FROM pragma_table_info(?, 'main')",
+    "SELECT * FROM pragma_table_xinfo(?, 'main')",
     tableName,
   );
+  const visibleRows = columnRows.rows.filter((row) => {
+    const hidden =
+      typeof row.hidden === 'number' || typeof row.hidden === 'bigint'
+        ? Number(row.hidden)
+        : Number.NaN;
+    if (![0, 1, 2, 3].includes(hidden))
+      throw new TableSchemaUnreadableError(tableName, 'sqlite');
+    return hidden !== 1; // Module implementation columns are not application columns.
+  });
+  const generatedRows = visibleRows.filter((row) => Number(row.hidden) > 1);
+  if (generatedRows.length) {
+    try {
+      // Reuse the owning expression reader rather than inventing ordinary
+      // columns when SQLite accepts a DDL spelling that reader cannot parse.
+      const { readGeneratedColumns } = await import('../generated-fields.js');
+      const generated = await readGeneratedColumns(db, tableName, 'sqlite');
+      if (generatedRows.some((row) => !generated.has(String(row.name))))
+        throw new TableSchemaUnreadableError(tableName, 'sqlite');
+    } catch (cause) {
+      if (cause instanceof TableSchemaUnreadableError) throw cause;
+      throw new TableSchemaUnreadableError(tableName, 'sqlite', { cause });
+    }
+  }
   // Define own properties rather than assigning: `__proto__` is a valid SQL
   // column name and must not invoke Object.prototype's legacy setter.
   const columns: TableSchemaInfo['columns'] = Object.fromEntries(
-    columnRows.rows.map((row) => [
+    visibleRows.map((row) => [
       String(row.name),
       {
         type: row.type as string,

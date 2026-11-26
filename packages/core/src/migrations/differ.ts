@@ -3743,7 +3743,8 @@ export class SchemaComparer {
     dbSchema: SqlTableSchemaInfo,
     dbColumnNames: Set<string>,
     manifestColumnNames: ReadonlySet<string>,
-  ): Promise<void> {
+  ): Promise<ReadonlySet<string>> {
+    const generatedNames = new Set<string>();
     try {
       const { rows } = await this.db.query(
         'SELECT * FROM pragma_table_xinfo($1) WHERE hidden IN (2, 3)',
@@ -3751,6 +3752,7 @@ export class SchemaComparer {
       );
       for (const row of rows) {
         const name = String(row.name);
+        generatedNames.add(name);
         if (manifestColumnNames.has(name) || dbSchema.columns[name]) continue;
         // Never an insert blocker: a generated column cannot be supplied, so a
         // NOT NULL here must not raise the NOT NULL-orphan warning.
@@ -3765,6 +3767,7 @@ export class SchemaComparer {
     } catch {
       // Keep the ordinary column list.
     }
+    return generatedNames;
   }
 
   private async compareColumns(
@@ -4718,14 +4721,15 @@ export class SchemaComparer {
 
     // Orphan columns: always reported, dropped only on request (#2369).
     const manifestColumnNames = new Set(Object.keys(manifest.columns));
-    if (this.engine === 'sqlite') {
-      await this.addLiveGeneratedColumns(
-        tableName,
-        dbSchema,
-        dbColumnNames,
-        manifestColumnNames,
-      );
-    }
+    const sqliteGeneratedNames =
+      this.engine === 'sqlite'
+        ? await this.addLiveGeneratedColumns(
+            tableName,
+            dbSchema,
+            dbColumnNames,
+            manifestColumnNames,
+          )
+        : undefined;
     for (const colName of dbColumnNames) {
       if (manifestColumnNames.has(colName)) continue;
       const dbCol = dbSchema.columns[colName];
@@ -4742,7 +4746,14 @@ export class SchemaComparer {
         });
         continue;
       }
-      changes.push(this.describeOrphanColumn(tableName, colName, dbCol));
+      changes.push(
+        this.describeOrphanColumn(
+          tableName,
+          colName,
+          dbCol,
+          sqliteGeneratedNames?.has(colName),
+        ),
+      );
     }
 
     changes.push(
@@ -5991,10 +6002,11 @@ export class SchemaComparer {
     tableName: string,
     colName: string,
     dbCol: SqlTableSchemaInfo['columns'][string],
+    isGenerated = false,
   ): SchemaChange {
     const dbHasDefault =
       dbCol.defaultValue !== null && dbCol.defaultValue !== undefined;
-    const blocking = dbCol.notNull === true && !dbHasDefault;
+    const blocking = !isGenerated && dbCol.notNull === true && !dbHasDefault;
     const quotedTable = this.quoteIdentifier(tableName);
     const quotedCol = this.quoteIdentifier(colName);
     const dropSql = `ALTER TABLE ${quotedTable} DROP COLUMN ${quotedCol}`;

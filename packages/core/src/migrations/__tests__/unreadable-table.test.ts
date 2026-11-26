@@ -15,6 +15,7 @@ import { join } from 'node:path';
 import { type DatabaseInterface, getDatabase } from '@happyvertical/sql';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { field } from '../../decorators/index.js';
+import { compileGeneratedExpression } from '../../generated-fields.js';
 import { SmrtObject } from '../../object.js';
 import { ObjectRegistry } from '../../registry.js';
 import {
@@ -329,7 +330,7 @@ describe('an existing table that cannot be read stops the migrate', () => {
     expect(await columnNames(db, 'unreadable_items')).toContain('note');
   });
 
-  it('SQLite: a handle without an inspector describes a table exactly as the database handle does', async () => {
+  it('SQLite: a query-only handle preserves adapter metadata and includes readable generated columns', async () => {
     const db = await open('sqlite');
     await db.query('CREATE TABLE unreadable_parents (id TEXT PRIMARY KEY)');
     await db.query(`CREATE TABLE unreadable_shapes (
@@ -361,11 +362,17 @@ describe('an existing table that cannot be read stops the migrate', () => {
       'unreadable_absent',
     ]) {
       const fromDatabase = (await db.getTableSchema?.(table)) ?? null;
-      // The one difference: the adapter marks only the first column of a
-      // composite primary key as a key column, the reader marks every one.
+      // Correct the adapter's documented omissions using the fixture DDL.
       if (table === 'unreadable_pairs' && fromDatabase)
         for (const column of Object.values(fromDatabase.columns))
           column.primaryKey = true;
+      if (table === 'unreadable_shapes' && fromDatabase)
+        fromDatabase.columns.label = {
+          type: 'TEXT',
+          primaryKey: false,
+          notNull: false,
+          defaultValue: null,
+        };
       const fromTransaction = await db.transaction?.((tx) =>
         inspectTableSchema(
           queryOnly(tx as unknown as DatabaseInterface),
@@ -375,6 +382,192 @@ describe('an existing table that cannot be read stops the migrate', () => {
       );
       expect(fromTransaction, table).toEqual(fromDatabase);
     }
+  });
+
+  it.each([
+    'VIRTUAL',
+    'STORED',
+  ] as const)('SQLite transaction: %s generated columns remain visible and an unchanged declaration does not add them twice', async (storage) => {
+    const db = await open('sqlite');
+    await db.transaction?.(async (tx) => {
+      const scoped = queryOnly(tx as unknown as DatabaseInterface);
+      const expression = compileGeneratedExpression(
+        { op: 'mul', left: { col: 'qty' }, right: { value: 2 } },
+        'sqlite',
+        { qty: 'number' },
+      );
+      await scoped.query(
+        `CREATE TABLE unreadable_generated (id TEXT PRIMARY KEY, qty INTEGER, total INTEGER GENERATED ALWAYS AS (${expression}) ${storage})`,
+      );
+      const live = await inspectTableSchema(
+        scoped,
+        'unreadable_generated',
+        'sqlite',
+      );
+      expect(Object.keys(live?.columns ?? {})).toEqual(['id', 'qty', 'total']);
+      const diff = await new SchemaComparer(scoped, {
+        engineHint: 'sqlite',
+      }).compare({
+        unreadable_generated: {
+          tableName: 'unreadable_generated',
+          columns: {
+            id: { type: 'TEXT', primaryKey: true },
+            qty: { type: 'INTEGER' },
+            total: {
+              type: 'INTEGER',
+              generated: {
+                op: 'mul',
+                left: { col: 'qty' },
+                right: { value: 2 },
+              },
+              generatedInputTypes: { qty: 'number' },
+            },
+          },
+          indexes: [],
+          foreignKeys: [],
+          triggers: [],
+          dependencies: [],
+          version: 'generated-test',
+        },
+      });
+      expect(diff.has_changes).toBe(false);
+    });
+  });
+
+  it('SQLite transaction: a generated column whose expression cannot be described is refused before a duplicate ADD can be planned', async () => {
+    const db = await open('sqlite');
+    await db.transaction?.(async (tx) => {
+      const scoped = queryOnly(tx as unknown as DatabaseInterface);
+      // SQLite accepts AS without GENERATED ALWAYS; the owning expression reader
+      // does not describe that spelling. Physical xinfo still identifies it.
+      await scoped.query(
+        'CREATE TABLE unreadable_generated_short (id TEXT PRIMARY KEY, qty INTEGER, total INTEGER AS (qty * 2) VIRTUAL)',
+      );
+      const attempt = new SchemaComparer(scoped, {
+        engineHint: 'sqlite',
+      }).compare({
+        unreadable_generated_short: {
+          tableName: 'unreadable_generated_short',
+          columns: {
+            id: { type: 'TEXT', primaryKey: true },
+            qty: { type: 'INTEGER' },
+            total: {
+              type: 'INTEGER',
+              generated: {
+                op: 'mul',
+                left: { col: 'qty' },
+                right: { value: 2 },
+              },
+              generatedInputTypes: { qty: 'number' },
+            },
+          },
+          indexes: [],
+          foreignKeys: [],
+          triggers: [],
+          dependencies: [],
+          version: 'generated-test',
+        },
+      });
+      await expect(attempt).rejects.toBeInstanceOf(TableSchemaUnreadableError);
+      expect(
+        (
+          await scoped.query(
+            "SELECT name FROM pragma_table_xinfo(?, 'main')",
+            'unreadable_generated_short',
+          )
+        ).rows.map((row) => row.name),
+      ).toEqual(['id', 'qty', 'total']);
+    });
+  });
+
+  it('SQLite transaction: virtual-table module hidden columns are not application columns', async () => {
+    const db = await open('sqlite');
+    await db.transaction?.(async (tx) => {
+      const scoped = queryOnly(tx as unknown as DatabaseInterface);
+      await scoped.query(
+        'CREATE VIRTUAL TABLE unreadable_search USING fts5(body)',
+      );
+      const live = await inspectTableSchema(
+        scoped,
+        'unreadable_search',
+        'sqlite',
+      );
+      expect(Object.keys(live?.columns ?? {})).toEqual(['body']);
+      const xinfo = await scoped.query(
+        "SELECT * FROM pragma_table_xinfo(?, 'main')",
+        'unreadable_search',
+      );
+      expect(
+        xinfo.rows
+          .filter((row) => Number(row.hidden) === 1)
+          .map((row) => row.name),
+      ).toEqual(['unreadable_search', 'rank']);
+    });
+  });
+
+  it.each([
+    99,
+    null,
+  ])('SQLite transaction: invalid xinfo hidden flag %s is refused rather than treated as ordinary', async (hidden) => {
+    const db = await open('sqlite');
+    await db.transaction?.(async (tx) => {
+      const scoped = queryOnly(tx as unknown as DatabaseInterface);
+      await scoped.query('CREATE TABLE unreadable_flags (id TEXT PRIMARY KEY)');
+      const invalid = new Proxy(scoped, {
+        get(target, key, receiver) {
+          if (key === 'query')
+            return async (...args: Parameters<DatabaseInterface['query']>) => {
+              const result = await target.query(...args);
+              return String(args[0]).includes('pragma_table_xinfo')
+                ? {
+                    ...result,
+                    rows: result.rows.map((row) => ({ ...row, hidden })),
+                  }
+                : result;
+            };
+          const value = Reflect.get(target, key, receiver);
+          return typeof value === 'function' ? value.bind(target) : value;
+        },
+      });
+      await expect(
+        inspectTableSchema(invalid, 'unreadable_flags', 'sqlite'),
+      ).rejects.toBeInstanceOf(TableSchemaUnreadableError);
+    });
+  });
+
+  it('SQLite transaction: an undeclared generated NOT NULL column is not an insert blocker', async () => {
+    const db = await open('sqlite');
+    await db.transaction?.(async (tx) => {
+      const scoped = queryOnly(tx as unknown as DatabaseInterface);
+      await scoped.query(
+        'CREATE TABLE unreadable_orphan_generated (id TEXT PRIMARY KEY, qty INTEGER, total INTEGER GENERATED ALWAYS AS (qty * 2) VIRTUAL NOT NULL)',
+      );
+      const live = await inspectTableSchema(
+        scoped,
+        'unreadable_orphan_generated',
+        'sqlite',
+      );
+      expect(live?.columns.total.notNull).toBe(true);
+      const diff = await new SchemaComparer(scoped, {
+        engineHint: 'sqlite',
+      }).compare({
+        unreadable_orphan_generated: {
+          tableName: 'unreadable_orphan_generated',
+          columns: {
+            id: { type: 'TEXT', primaryKey: true },
+            qty: { type: 'INTEGER' },
+          },
+          indexes: [],
+          foreignKeys: [],
+          triggers: [],
+          dependencies: [],
+          version: 'generated-test',
+        },
+      });
+      expect(
+        diff.changes.find((change) => change.name === 'total'),
+      ).toMatchObject({ advisory: { severity: 'info' } });
+    });
   });
 
   it('SQLite: prototype-like SQL column names remain own columns and compare as unchanged', async () => {
