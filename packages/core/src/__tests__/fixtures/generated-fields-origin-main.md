@@ -138,3 +138,19 @@ DDL, migration and OpenAPI digests have not moved since the recapture above.
   (`applyRouteCors`) instead of its own helpers. Manifest, schema, DDL,
   migration and OpenAPI digests are unchanged; only the emitted route digests
   moved.
+
+## Re-baseline of the emitted routes for #5195
+
+`sourceRevision` (and `BASELINE` in the test) is now
+`bfe0e7a0d6c178bbf7ab2d037a1d0deed2773778`, the commit whose production sources
+under `packages/core/src` produced the current digests, so the capture gate
+(`SMRT_CAPTURE_ORIGIN_MAIN`, a clean `git diff` of production sources against
+that commit) applies to it. The digests were not recaptured from a pre-#5195
+tree: the #5195 route templates change the emitted SvelteKit routes on purpose,
+and the digests of exactly those files were replaced (the entry above lists
+the change). Compared with the fixture on `release/5195-auth-contract` before
+this change, only `source/sveltekit/**` digests moved (five per case: the list
+and item routes, `sync/apply`, `_changes`, `_events`). The manifest, schema,
+registry schema, OpenAPI, DDL (`ddl/*`), migration and `source/single/**` /
+`source/modular/**` digests, and the SQLite deployment SQL, are identical to
+the #4972 baseline `0f16192e1b3b5d64b639cce688aaa35075a71464`.
