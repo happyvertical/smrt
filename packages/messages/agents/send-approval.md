@@ -42,7 +42,7 @@ outside system access. For an agent under `require_approval` it:
    both return `pendingApproval` and send nothing. The agent never sends a
    held draft itself; it goes out once, as the approving person.
 
-A held message is set to `draft` (a persona route creates it `pending`), so
+A held message is set to `draft` and flagged `isDraft` (a persona route creates it `pending`), so
 it leaves every pending/scheduled outbox and a person can decide it. A
 persona message is held even under system access, so a system drain never
 sends it around its approval. Send-time attachment bytes (for example
@@ -114,8 +114,16 @@ grants and account owner are read before the write (a single-connection
 engine cannot serve the policy handle inside a transaction); the write then
 re-reads the stored row and refuses a save that now needs more.
 `Attachment.save()`/`delete()` need the same scope when the message they
-belong to (or are moved from) is draft content on an owned account; that
-check runs just before the write, not inside it.
+belong to (or are moved from) is unsent outgoing mail on an owned account
+(`isUnsentOutgoing`): draft content as above, or any stored send status other
+than `sent` and `draft` (`pending`, `scheduled`, `sending`, `failed`, and an
+unknown value, which fails closed). `Message.save()`/`delete()` apply the same
+test to the stored row, and to a stored row moved into such a status, so the
+parent cannot be relabelled around the attachment check; a fresh row created
+as `pending` (outbox, persona route) is not a write to stored content. An
+unflagged `draft` is what received mail carries, so it stays as it was; a held
+send's binding hash still covers its attachment rows. The attachment check
+runs just before the write, not inside it.
 That covers generated routes, collection `delete`/`getOrUpsert`,
 `createReply`/`createForward` + `save()` and `MailDraftService`. Trusted work
 (`runWithMailSystemAccess`: sync, outbox, triage write-back, approval edits)

@@ -505,6 +505,23 @@ export function isUnsentDraft(sendStatus: unknown, isDraft: unknown): boolean {
 }
 
 /**
+ * Unsent outgoing mail: {@link isUnsentDraft}, or any stored send status other
+ * than `sent` and `draft` (`pending`, `scheduled`, `sending`, `failed`, and any
+ * unknown value, which fails closed). An unflagged `draft` is what received
+ * mail carries, so it is not outgoing; `sent` is done.
+ */
+export function isUnsentOutgoing(
+  sendStatus: unknown,
+  isDraft: unknown,
+): boolean {
+  if (isUnsentDraft(sendStatus, isDraft)) return true;
+  if (sendStatus === undefined || sendStatus === null || sendStatus === '') {
+    return false;
+  }
+  return sendStatus !== 'sent' && sendStatus !== 'draft';
+}
+
+/**
  * Gate for writes that create, change or delete a draft: the principal needs
  * the `draft` scope on every listed account. Trusted system work
  * ({@link runWithMailSystemAccess}) and unowned accounts pass; an account that

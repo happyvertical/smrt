@@ -19,7 +19,7 @@ import {
   assertHydratedMailAccess,
   assertMailDraftWrite,
   inMailSystemAccess,
-  isUnsentDraft,
+  isUnsentOutgoing,
   learnMailAccessOptions,
 } from '../access.js';
 import {
@@ -94,9 +94,10 @@ export class Attachment extends SmrtObject {
   }
 
   /**
-   * An attachment is part of what its message will send, so writing one on an
-   * unsent email draft of an owned account needs the same `draft` scope as
-   * writing the draft (see `Message.save()`), whichever route the write takes.
+   * An attachment is part of what its message will send, so writing one on
+   * unsent outgoing mail of an owned account (a flagged draft, or any status
+   * but `sent` and `draft`) needs the same `draft` scope as writing the
+   * message (see `Message.save()`), whichever route the write takes.
    * Both the parent it is saved onto and the parent it is stored on count, so
    * an attachment cannot be moved on or off a draft without the scope.
    */
@@ -188,7 +189,7 @@ export class Attachment extends SmrtObject {
         string,
         unknown
       > | null;
-      if (parent && isUnsentDraft(parent.send_status, parent.is_draft)) {
+      if (parent && isUnsentOutgoing(parent.send_status, parent.is_draft)) {
         accountIds.push((parent.account_id as string | null) ?? null);
       }
     }

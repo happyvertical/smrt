@@ -37,6 +37,7 @@ import {
   decideMailAccess,
   inMailSystemAccess,
   isUnsentDraft,
+  isUnsentOutgoing,
   learnMailAccessOptions,
   MailAccessError,
   type MailPrincipal,
@@ -138,6 +139,9 @@ const SEND_PATH_MAY_CHANGE = new Set([
   'handledByKind',
   'handledAt',
   'updatedAt',
+  // A row created in this process holds its in-memory timestamp, which the
+  // stored one can differ from; the send path never reads it back.
+  'createdAt',
 ]);
 
 const DATE_LIKE =
@@ -468,15 +472,15 @@ export class Message extends SmrtObject {
   ): Promise<Set<string>> {
     const needed = new Set<string>();
     const row = this as unknown as Record<string, unknown>;
-    const draftNow =
-      'isDraft' in this && isUnsentDraft(row.sendStatus, row.isDraft);
+    const flag = 'isDraft' in this ? row.isDraft : false;
+    const draftNow = isUnsentDraft(row.sendStatus, flag);
     const priorAccountIds: string[] = [];
     let stored: Record<string, unknown> | null = null;
     let unchanged = false;
     if (this.id) {
       stored = await this.getCanonicalPersistedRow({ id: this.id });
       if (stored) {
-        if (isUnsentDraft(stored.send_status, stored.is_draft)) {
+        if (isUnsentOutgoing(stored.send_status, stored.is_draft)) {
           priorAccountIds.push(String(stored.account_id ?? ''));
         }
         unchanged = this.matchesStoredBeyondSendPath(stored);
@@ -504,19 +508,27 @@ export class Message extends SmrtObject {
             if (keyed.id === this.id) continue;
             takesOver = true;
             unchanged = false;
-            if (isUnsentDraft(keyed.send_status, keyed.is_draft)) {
+            if (isUnsentOutgoing(keyed.send_status, keyed.is_draft)) {
               priorAccountIds.push(String(keyed.account_id ?? ''));
             }
           }
         }
       }
     }
-    if (!draftNow && !priorAccountIds.length) return needed;
+    // A stored row moved into an outgoing status (a received or plain row made
+    // `pending`) changes what will be sent. A fresh row created in one (the
+    // outbox, a persona route) is not a write to stored content.
+    const movedOut =
+      (Boolean(stored) || takesOver) && isUnsentOutgoing(row.sendStatus, flag);
+    if (!draftNow && !movedOut && !priorAccountIds.length) return needed;
     const scope: MailScope =
       lifecycle && ((stored && unchanged) || (!stored && !takesOver))
         ? 'send'
         : 'draft';
-    for (const id of [draftNow ? this.accountId : '', ...priorAccountIds]) {
+    for (const id of [
+      draftNow || movedOut ? this.accountId : '',
+      ...priorAccountIds,
+    ]) {
       if (id) needed.add(`${scope}:${id}`);
     }
     return needed;
@@ -535,6 +547,10 @@ export class Message extends SmrtObject {
     ]);
     for (const name of names) {
       if (SEND_PATH_MAY_CHANGE.has(name)) continue;
+      // A held send flags the message as a draft; it may raise the flag only.
+      if (name === 'isDraft' && heldSaves.has(this) && mailFlag(row[name])) {
+        continue;
+      }
       const column = name.replace(/[A-Z]/g, (c) => `_${c.toLowerCase()}`);
       // A property with no column cannot be stored, so it cannot carry an edit.
       if (!(column in stored)) continue;
@@ -871,8 +887,17 @@ export class Message extends SmrtObject {
       const toDraft =
         held.pendingApproval !== undefined && this.sendStatus !== 'draft';
       if (toDraft) this.sendStatus = 'draft';
+      // A held message is a flagged draft, not a plain `draft` status (which
+      // received mail carries), so it stays under the draft scope.
+      const flagDraft =
+        held.pendingApproval !== undefined &&
+        'isDraft' in this &&
+        !mailFlag((this as unknown as { isDraft?: unknown }).isDraft);
+      if (flagDraft) (this as unknown as { isDraft: boolean }).isDraft = true;
       if (held.pendingApproval?.created) stampHandledBy(this, actor);
-      if (toDraft || held.pendingApproval?.created) await saveHeld(this);
+      if (toDraft || flagDraft || held.pendingApproval?.created) {
+        await saveHeld(this);
+      }
       // A refused send of a queued message fails definitely (nothing left),
       // so it does not linger as `pending` for a later drain.
       if (
