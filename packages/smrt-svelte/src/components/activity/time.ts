@@ -20,6 +20,8 @@ export interface FormatActivityTimestampOptions {
 }
 
 const CALENDAR_DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
+const ISO_OFFSET_DATETIME_RE =
+  /^\d{4}-\d{2}-\d{2}[T ]\d{2}:\d{2}(?::\d{2}(?:\.\d{1,9})?)?(?:Z|[+-]\d{2}:?\d{2})$/i;
 
 function resolveTimeZone(timeZone: string | undefined): string {
   const candidate = timeZone?.trim();
@@ -114,7 +116,16 @@ export function formatActivityTimestamp(
   if (!trimmed) return null;
 
   const isCalendarDate = CALENDAR_DATE_RE.test(trimmed);
-  const parsed = new Date(trimmed);
+  const isOffsetDateTime =
+    !isCalendarDate && ISO_OFFSET_DATETIME_RE.test(trimmed);
+  if (!isCalendarDate && !isOffsetDateTime) {
+    return { title: trimmed, label: trimmed };
+  }
+
+  const normalized = isCalendarDate
+    ? `${trimmed}T00:00:00.000Z`
+    : trimmed.replace(' ', 'T').replace(/([+-]\d{2})(\d{2})$/, '$1:$2');
+  const parsed = new Date(normalized);
   const ms = parsed.getTime();
   if (
     !Number.isFinite(ms) ||

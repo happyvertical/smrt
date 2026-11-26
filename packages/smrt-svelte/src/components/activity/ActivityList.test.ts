@@ -82,6 +82,32 @@ describe('formatActivityTimestamp & safeActivityHref', () => {
       });
       expect(tokyo?.label).toMatch(/1 hr\. ago/);
       expect(tokyo?.title).toContain('Nov 27, 2026');
+
+      // Offset-bearing timestamps parse identically to their UTC instant;
+      // offset-free datetime strings render literally without host-TZ parsing.
+      const offsetExplicit = formatActivityTimestamp(
+        '2026-11-26T14:00:00-05:00',
+        {
+          locale: 'en-US',
+          timeZone: 'UTC',
+          now: NOW,
+        },
+      );
+      expect(offsetExplicit).toMatchObject({
+        datetime: '2026-11-26T19:00:00.000Z',
+      });
+      expect(offsetExplicit?.label).toMatch(/1 hr\. ago/);
+
+      expect(
+        formatActivityTimestamp('2026-11-26T19:00:00', {
+          locale: 'en-US',
+          timeZone: 'America/New_York',
+          now: NOW,
+        }),
+      ).toEqual({
+        title: '2026-11-26T19:00:00',
+        label: '2026-11-26T19:00:00',
+      });
     } finally {
       spy.mockRestore();
     }
