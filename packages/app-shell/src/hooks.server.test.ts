@@ -14,6 +14,7 @@ const mocks = vi.hoisted(() => ({
   gate: vi.fn(),
   provisioning: vi.fn(),
   stopProvisioning: vi.fn(),
+  settleProvisioning: vi.fn(),
   methodCode: vi.fn(),
   env: { dev: false, building: false },
 }));
@@ -35,6 +36,7 @@ vi.mock('$lib/server/method-code', () => ({
 vi.mock('$lib/server/hosted-provisioning', () => ({
   installHostedProvisioning: mocks.provisioning,
   stopHostedProvisioning: mocks.stopProvisioning,
+  settleHostedProvisioning: mocks.settleProvisioning,
 }));
 vi.mock('$lib/server/owner-handoff', () => ({
   ensureOwnerHandoff: mocks.handoff,
@@ -111,6 +113,7 @@ it('hands the ordered drain to the entries once the runtime is ready, not under 
   const { stopWork } = mocks.createDrain.mock.calls[0][0];
   await stopWork();
   expect(mocks.stopProvisioning).toHaveBeenCalledOnce();
+  expect(mocks.settleProvisioning).toHaveBeenCalledOnce();
   expect(mocks.stopImports).toHaveBeenCalledOnce();
   expect(mocks.install).toHaveBeenCalledWith(drainFn, {
     run: expect.any(Function),

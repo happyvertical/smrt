@@ -637,6 +637,10 @@ one bundle (`format: 2`), so a desktop app moves to a hosted one and back.
   migration and not a live fallback, until an operator removes it (never
   automatic); opening it lets the engine add its bookkeeping rows
   (`_smrt_changes`/`_smrt_migrations`), user rows are untouched.
+- **Downgrade** (`downgradeUserAppToSqlite`): drops the schema and the marker, only
+  when the schema's export and the kept `app.db` both digest to the completion
+  fact's digest, checked and dropped under the app's claim (`dropAppSchemaChecked`);
+  otherwise `HostedWritesError`, nothing changed.
 - **Approvals and drafts in a move.** Not carried: the caller (the CLI) refuses an
   export while changes wait (a working copy open, or a batch with an active card)
   and drops approvals still waiting (`pending`/`accepted`/`executing`), reporting

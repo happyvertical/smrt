@@ -16,6 +16,7 @@ import { drainShell, shellProfile } from '$lib/server/host';
 import { installHostedInferenceGate } from '$lib/server/hosted-inference';
 import {
   installHostedProvisioning,
+  settleHostedProvisioning,
   stopHostedProvisioning,
 } from '$lib/server/hosted-provisioning';
 import { shellImports, stopShellImports } from '$lib/server/import-runtime';
@@ -44,7 +45,7 @@ export const init = async () => {
         endStreams: closeAllStreams,
         stopWork: async () => {
           stopHostedProvisioning();
-          await stopShellImports();
+          await Promise.all([settleHostedProvisioning(), stopShellImports()]);
         },
       }),
       // One-shot operator commands (`smrt-app-shell migrate-to-postgres`,

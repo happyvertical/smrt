@@ -58,6 +58,8 @@ import {
   reconcileAllHostedTenants,
   reconcileHostedTenant,
   resetHostedProvisioning,
+  settleHostedProvisioning,
+  stopHostedProvisioning,
 } from './hosted-provisioning.ts';
 
 // A pass-through spy: the watcher really subscribes, and a test can see whether it did.
@@ -482,5 +484,151 @@ describe('scheduled repair reconcile', () => {
     await addMember(h.b.tenantId, h.b.id, hal.id);
     await new Promise((r) => setTimeout(r, 200));
     expect(await storedConfig(h.b.tenantId, hal.id)).toBeUndefined();
+  });
+});
+
+/** Flip a membership's status behind the framework's back (no change signal). */
+async function setStatusRaw(membershipId: string, status: MembershipStatus) {
+  const table = (await MembershipCollection.create({ db: h.db })).tableName;
+  await h.db.query(`UPDATE ${table} SET status = ? WHERE id = ?`, [
+    status,
+    membershipId,
+  ]);
+}
+
+/** Run `after` once, right after the n-th membership read the code makes. */
+function afterNthMembershipRead(n: number, after: () => Promise<void>) {
+  const original = MembershipCollection.prototype.findActiveByTenant;
+  let calls = 0;
+  return vi
+    .spyOn(MembershipCollection.prototype, 'findActiveByTenant')
+    .mockImplementation(async function (this: MembershipCollection, ...args) {
+      const result = await original.apply(this, args);
+      calls += 1;
+      if (calls === n) await after();
+      return result;
+    });
+}
+
+describe('membership changes between the read and the key change', () => {
+  it('keeps the key of a member reactivated after the repair read them inactive', async () => {
+    const admin = new FakeAdmin();
+    await installHostedInferenceGate({ db: async () => h.db });
+    const installIt = () =>
+      installHostedProvisioning({
+        db: async () => h.db,
+        admin,
+        env: GATEWAY_ENV,
+        reconcileIntervalMs: 0,
+      });
+    await installIt();
+    await setPlan(h.b.tenantId, 5_000_000);
+    const ida = await h.newUser('ida@example.test');
+    const membership = await addMember(h.b.tenantId, h.b.id, ida.id);
+    await vi.waitFor(async () =>
+      expect(await storedConfig(h.b.tenantId, ida.id)).toMatchObject({
+        source: 'hosted',
+      }),
+    );
+    const deletedBefore = admin.deleted.length;
+    resetHostedProvisioning();
+    await installIt();
+    await setStatusRaw(String(membership.id), MembershipStatus.INACTIVE);
+    // Read 1: the reconciler's member list; read 2: the removal pass (ida is
+    // inactive in both). Then ida is reactivated: only the re-check inside
+    // the lock can still see it.
+    const spy = afterNthMembershipRead(2, () =>
+      setStatusRaw(String(membership.id), MembershipStatus.ACTIVE),
+    );
+    try {
+      const outcome = await reconcileHostedTenant(h.b.tenantId);
+      expect(outcome?.removed).toBe(0);
+    } finally {
+      spy.mockRestore();
+    }
+    expect(admin.deleted).toHaveLength(deletedBefore);
+    expect(await storedConfig(h.b.tenantId, ida.id)).toMatchObject({
+      source: 'hosted',
+    });
+  });
+
+  it('gives no new key to a member removed after the member list was read', async () => {
+    const admin = new FakeAdmin();
+    await installHostedInferenceGate({ db: async () => h.db });
+    const installIt = () =>
+      installHostedProvisioning({
+        db: async () => h.db,
+        admin,
+        env: GATEWAY_ENV,
+        reconcileIntervalMs: 0,
+      });
+    await installIt();
+    await setPlan(h.b.tenantId, 5_000_000);
+    resetHostedProvisioning();
+    const jo = await h.newUser('jo@example.test');
+    const membership = await addMember(h.b.tenantId, h.b.id, jo.id);
+    await installIt();
+    const keysBefore = keyCount(admin);
+    // Read 1 is the reconciler's member list (jo is active); jo is then
+    // removed, and the re-check inside the lock must see it.
+    const spy = afterNthMembershipRead(1, () =>
+      setStatusRaw(String(membership.id), MembershipStatus.INACTIVE),
+    );
+    try {
+      await reconcileHostedTenant(h.b.tenantId);
+    } finally {
+      spy.mockRestore();
+    }
+    expect(keyCount(admin)).toBe(keysBefore);
+    expect(await storedConfig(h.b.tenantId, jo.id)).toBeUndefined();
+  });
+});
+
+describe('shutdown', () => {
+  it('waits for a reconcile that is mid-gateway-call', async () => {
+    let release!: () => void;
+    let started!: () => void;
+    const gate = new Promise<void>((r) => {
+      release = r;
+    });
+    const running = new Promise<void>((r) => {
+      started = r;
+    });
+    let hold = false;
+    class SlowAdmin extends FakeAdmin {
+      async createVirtualKey(o: CreateAIVirtualKeyOptions) {
+        if (hold) {
+          started();
+          await gate;
+        }
+        return super.createVirtualKey(o);
+      }
+    }
+    const admin = new SlowAdmin();
+    await installHostedInferenceGate({ db: async () => h.db });
+    await installHostedProvisioning({
+      db: async () => h.db,
+      admin,
+      env: GATEWAY_ENV,
+      reconcileIntervalMs: 0,
+    });
+    await setPlan(h.b.tenantId, 5_000_000);
+    hold = true;
+    const kay = await h.newUser('kay@example.test');
+    await addMember(h.b.tenantId, h.b.id, kay.id);
+    await running;
+    stopHostedProvisioning();
+    let settled = false;
+    const waiting = settleHostedProvisioning().then(() => {
+      settled = true;
+    });
+    await new Promise((r) => setTimeout(r, 100));
+    expect(settled).toBe(false);
+    release();
+    await waiting;
+    // The provisioning finished before shutdown moved on.
+    expect(await storedConfig(h.b.tenantId, kay.id)).toMatchObject({
+      source: 'hosted',
+    });
   });
 });

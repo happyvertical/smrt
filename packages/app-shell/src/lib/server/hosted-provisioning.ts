@@ -38,6 +38,25 @@ const TENANT_PAGE = 200;
 
 let unregister: (() => void) | undefined;
 let stopRunning: (() => void) | undefined;
+/** Reconciles running now (watcher drains and repair passes), for shutdown. */
+const inflight = new Set<Promise<unknown>>();
+
+function track<T>(work: Promise<T>): Promise<T> {
+  inflight.add(work);
+  const done = () => inflight.delete(work);
+  work.then(done, done);
+  return work;
+}
+
+/**
+ * Wait for the reconciles running now to settle (gateway calls and secret
+ * writes must not be cut off by the process exiting). Call after
+ * {@link stopHostedProvisioning}, which stops new work; the shutdown sequence's
+ * own deadline bounds the wait.
+ */
+export async function settleHostedProvisioning(): Promise<void> {
+  while (inflight.size > 0) await Promise.allSettled([...inflight]);
+}
 
 /**
  * The users who should hold a hosted key while the tenant is entitled: its
@@ -143,6 +162,10 @@ async function reconcileTenant(
         tenantId,
         userId,
         reason: 'member-removed',
+        // Re-read inside the provisioner's tenant lock: a member reactivated
+        // since the read above keeps the key.
+        onlyIf: async () =>
+          !(await activeMembers(ctx.db, tenantId)).includes(userId),
       });
       if (result.revoked) {
         out.revoked += 1;
@@ -231,6 +254,9 @@ export async function installHostedProvisioning(options: {
   const listenerOptions = {
     provisioner,
     users: (tenantId: string) => activeMembers(db, tenantId),
+    // A member removed since `users()` was read gets no new key.
+    stillWanted: async (tenantId: string, userId: string) =>
+      (await activeMembers(db, tenantId)).includes(userId),
   };
   const ctx = {
     db,
@@ -369,7 +395,7 @@ function watchMemberships(
       .then((name) => {
         if (signal.table !== name || stopped) return;
         pending.add(tenantId);
-        if (!draining) void drain();
+        if (!draining) void track(drain());
       })
       .catch(() => {});
   });
@@ -389,13 +415,17 @@ function scheduleRepair(
   let timer: ReturnType<typeof setTimeout> | undefined;
   let stopped = false;
   const arm = (delay: number) => {
-    timer = setTimeout(async () => {
-      try {
-        await task();
-      } catch (error) {
-        reportFailures([{ tenantId: '(all)', error }]);
-      }
-      if (!stopped) arm(intervalMs);
+    timer = setTimeout(() => {
+      void track(
+        (async () => {
+          try {
+            await task();
+          } catch (error) {
+            reportFailures([{ tenantId: '(all)', error }]);
+          }
+          if (!stopped) arm(intervalMs);
+        })(),
+      );
     }, delay);
     timer.unref?.();
   };

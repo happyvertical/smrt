@@ -84,12 +84,12 @@ features/subscriptions/gate on SQLite, fake resolver), `hooks.server.test.ts`.
   start, then every `HOSTED_RECONCILE_INTERVAL_MS` (six hours; `reconcileIntervalMs`
   overrides, 0 turns it off), `reconcileAllHostedTenants` lists the active tenants
   (`TenantCollection`, active status only, paged) and reconciles each, so a reaction lost to a crash
-  repairs itself (the removal step reads the key holders before the members, so a joiner provisioned meanwhile is never taken for a leaver; a suspended tenant keeps its keys until its plan changes). The shell has no job runner in the cloud profile, so this is an
+  repairs itself (the removal step reads the key holders before the members and re-reads the member list inside the provisioner's tenant lock (`revoke({ onlyIf })`, `stillWanted` for new keys), so a member reactivated or removed meanwhile keeps or never gets a key; a suspended tenant keeps its keys until its plan changes). The shell has no job runner in the cloud profile, so this is an
   unref'd in-process timer like the owner-link renewal, not a `smrt-jobs` job;
   every replica runs it, which the per-tenant advisory lock and idempotence
   allow. Both are installed only by `installHostedProvisioning`, so on the
   desktop, or in cloud without a gateway, there is no subscription, no timer and
-  no query; `stopHostedProvisioning` (the shutdown `stopWork`) stops both.
+  no query; the shutdown `stopWork` calls `stopHostedProvisioning` (no new work; a running pass stops between tenants) and waits in `settleHostedProvisioning` for reconciles already in a gateway call, within the shutdown deadline.
 - **Not covered.** PostgreSQL (the spend reader's JSON tag matching and
   required-tenancy reads, and the provisioner's per-tenant advisory lock, which
   needs a pool of at least three connections, run on SQLite here); the repair pass and

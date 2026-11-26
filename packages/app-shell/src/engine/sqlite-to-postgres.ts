@@ -19,6 +19,9 @@
 //    transaction (`MIGRATION_COMPLETION_KEY`). `app.db` stays, a snapshot as of
 //    the migration, until an operator removes it.
 //
+// The way back, `downgradeUserAppToSqlite`, is allowed only while the hosted
+// app has taken no writes since the move (see its comment).
+//
 // The schema comes only from the host's `database` config, never from input.
 // Waiting changes, drafts and who may run this are the CALLER's (see
 // `lib/server`); this module only moves the data.
@@ -32,8 +35,10 @@ import {
 } from 'node:fs';
 import { join } from 'node:path';
 import { assertDatabaseConfig, type DatabaseConfig } from './db/index.ts';
-import { EngineError } from './errors.ts';
+import { EngineError, HostedWritesError } from './errors.ts';
 import {
+  countUserRows,
+  dropAppSchemaChecked,
   exportUserApp,
   hasUserAppDatabase,
   importUserApp,
@@ -256,6 +261,117 @@ export async function migrateUserAppToPostgres(
     rows: fact.rows,
     digest: fact.digest,
   };
+}
+
+export interface DowngradeToSqliteOptions {
+  /** The app's live directory, holding the kept `app.db`. */
+  dataDir: string;
+  /** The host's config for this app's schema (PostgreSQL or PGlite). */
+  database: DatabaseConfig;
+  /** The app's version history from the caller's own store, oldest first. */
+  versions: VersionRecord[];
+}
+
+export interface DowngradeToSqliteResult {
+  status: 'downgraded';
+  tables: number;
+  rows: number;
+  digest: string;
+}
+
+/**
+ * Take a migrated app back to its kept `app.db` (#5193). Allowed only while the
+ * hosted app has taken no writes since the migration; otherwise refused with
+ * `HostedWritesError` and nothing changed.
+ *
+ * "Taken no writes" is read from the signal the migration already recorded: the
+ * bundle digest in the completion fact (rows of every table plus the version
+ * history). The schema's current export must digest to it, and so must the kept
+ * file. Rows added, changed or removed, a new version (a publish or an undo) and
+ * a changed history all move the digest, so nothing needs a write-time hook. The
+ * check and the drop run under the app's claim, so no host can write between
+ * them, and a host holding the app refuses the downgrade. Content-based by
+ * design: a write that was fully reverted leaves nothing to lose and is allowed.
+ *
+ * It drops the schema (this removes the completion fact), then the marker file;
+ * the app is then the SQLite file alone. A crash between the two is finished by
+ * a rerun. The hosted shell refuses to open the app until it is migrated again.
+ */
+export async function downgradeUserAppToSqlite(
+  options: DowngradeToSqliteOptions,
+): Promise<DowngradeToSqliteResult> {
+  const { dataDir, database } = options;
+  if (database.kind === 'sqlite')
+    throw new EngineError('the source is not a PostgreSQL database', 'refused');
+  assertDatabaseConfig(database);
+  if (!hasUserAppDatabase(dataDir))
+    throw new EngineError(
+      'the desktop app.db is not there, so there is nothing to go back to; nothing was changed',
+      'refused',
+    );
+  const marked = readPostgresMigrationMarker(dataDir);
+  const recorded = await readAppMetaValue({
+    dataDir,
+    database,
+    key: MIGRATION_COMPLETION_KEY,
+  });
+  if (recorded === null && !marked)
+    throw new EngineError(
+      'this app was not migrated from a SQLite file to PostgreSQL; nothing was changed',
+      'refused',
+    );
+  const fact = recorded !== null ? parseCompletion(recorded) : marked;
+  if (!fact || fact.schema !== database.schema)
+    throw new EngineError(
+      'the migration record names another schema; nothing was changed',
+      'refused',
+    );
+  const result: DowngradeToSqliteResult = {
+    status: 'downgraded',
+    tables: fact.tables,
+    rows: fact.rows,
+    digest: fact.digest,
+  };
+  // The kept file must still be the migrated snapshot, or it is not the app.
+  // `versions` is the history as the caller holds it NOW, so a version added on
+  // PostgreSQL moves this digest too; that is a hosted write and is named as one.
+  const keptMatches = async () =>
+    (await exportUserApp({ dataDir, versions: options.versions })).digest ===
+    fact.digest;
+  const keptChanged = () =>
+    new EngineError(
+      'the desktop app.db no longer matches what was migrated; nothing was changed',
+      'refused',
+    );
+  // No fact, but the marker: a crash after the drop. Finish only when the schema
+  // really holds nothing: a recreated or refilled schema is never discarded
+  // here (no host can be writing it, the app does not open without the fact).
+  if (recorded === null) {
+    const held = await countUserRows({ dataDir, database });
+    if (held > 0)
+      throw new EngineError(
+        `the migration record is gone but the schema still holds ${held} rows; an operator must check the schema before the marker is removed; nothing was changed`,
+        'refused',
+      );
+    if (!(await keptMatches())) throw keptChanged();
+    rmSync(join(dataDir, POSTGRES_MIGRATION_MARKER), { force: true });
+    return result;
+  }
+  await dropAppSchemaChecked({
+    database,
+    check: async () => {
+      // The hosted side first, so a hosted write is refused by its own name.
+      const now = await exportUserApp({
+        dataDir,
+        database,
+        versions: options.versions,
+      });
+      if (now.digest !== fact.digest) throw new HostedWritesError();
+      if (!(await keptMatches())) throw keptChanged();
+    },
+  });
+  rmSync(join(dataDir, POSTGRES_MIGRATION_MARKER), { force: true });
+  return result;
 }
 
 function parseCompletion(text: string): PostgresMigrationMarker {
