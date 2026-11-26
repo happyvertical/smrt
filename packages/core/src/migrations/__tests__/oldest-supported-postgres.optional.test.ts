@@ -142,8 +142,9 @@ describe.skipIf(!pgUrl)(
               break;
             } catch (error) {
               const e = error as { code?: string; cause?: { code?: string } };
-              const code = e.code ?? e.cause?.code;
-              if (attempt >= 20 || code !== '55006') throw error;
+              // The wrapper's own `code` is generic; SQLSTATE is on the cause.
+              const busy = e.cause?.code === '55006' || e.code === '55006';
+              if (attempt >= 20 || !busy) throw error;
               await new Promise((resolve) => setTimeout(resolve, 250));
             }
           }
