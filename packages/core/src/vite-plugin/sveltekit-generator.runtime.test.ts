@@ -219,6 +219,7 @@ function writeWorkspaceCoreShim(projectRoot: string): void {
       // The real request-key rule over the fixture registry's fields.
       '  isServiceOptionInput(name, key) { return globalThis.__smrtGeneratedIsServiceOptionInput(key, (field) => (globalThis.__smrtGeneratedRegistry?.getFields(name) ?? new Map()).has(field)); },',
       '  getConfig(name) { return globalThis.__smrtGeneratedRegistry?.getConfig(name) ?? {}; },',
+      '  getTenantScopedConfig(name) { return globalThis.__smrtGeneratedRegistry?.getTenantScopedConfig?.(name); },',
       '  getClass(name) { return globalThis.__smrtGeneratedRegistry?.getClass?.(name); },',
       '  async getCollection(...args) {',
       '    globalThis.__smrtGeneratedHelperCalls.push(args);',
@@ -542,19 +543,29 @@ describe('generated SvelteKit helper runtime', () => {
     return await import(`${pathToFileURL(outputPath).href}?${Date.now()}`);
   }
 
-  async function importGeneratedCollectionPost(principalContext = false) {
+  async function importGeneratedCollectionPost(
+    principalContext = false,
+    baseBypass = false,
+  ) {
     const objectFilePath = join(projectRoot, 'src/lib/objects/Widget.ts');
-    await generateSvelteKitRoutes(
+    const manifest = createManifest(
       projectRoot,
-      createManifest(projectRoot, objectFilePath, ['create'], principalContext),
-      {
-        configFileName: 'smrt.ts',
-        configPath: 'src/lib/server',
-        enabled: true,
-        objectsDir: 'src/lib/objects',
-        routesDir: 'src/routes/api',
-      },
+      objectFilePath,
+      ['create'],
+      principalContext,
     );
+    if (baseBypass) {
+      (
+        manifest.objects.Widget.decoratorConfig as Record<string, unknown>
+      ).tenantScoped = { mode: 'optional', allowSuperAdminBypass: true };
+    }
+    await generateSvelteKitRoutes(projectRoot, manifest, {
+      configFileName: 'smrt.ts',
+      configPath: 'src/lib/server',
+      enabled: true,
+      objectsDir: 'src/lib/objects',
+      routesDir: 'src/routes/api',
+    });
 
     return await bundleGeneratedRoute(
       'src/routes/api/widgets/+server.ts',
@@ -981,6 +992,58 @@ describe('generated SvelteKit helper runtime', () => {
         expect((await call({ createType: type })).status).toBe(400);
       }
       expect(create).toHaveBeenCalledTimes(2);
+    } finally {
+      restore();
+    }
+  });
+
+  it.each([
+    { baseOptsIn: true, subtypeOptsIn: false, bypassCreatesSubtype: false },
+    { baseOptsIn: true, subtypeOptsIn: true, bypassCreatesSubtype: true },
+  ])('reads the bypass opt-in of a created STI subtype from the subtype (%j)', async ({
+    subtypeOptsIn,
+    bypassCreatesSubtype,
+  }) => {
+    const restore = snapshotObjectRegistryState();
+    const child = '@test/generated-helper-app:SpecialWidget';
+    class Widget extends SmrtObject {
+      name = '';
+    }
+    class SpecialWidget extends Widget {}
+    field({ type: 'text' })(Widget.prototype, 'name');
+    ObjectRegistry.register(Widget, {
+      packageName: '@test/generated-helper-app',
+      tableName: 'generated_widgets',
+      tableStrategy: 'sti',
+      tenantScoped: { mode: 'optional', allowSuperAdminBypass: true },
+    } as never);
+    ObjectRegistry.register(SpecialWidget, {
+      packageName: '@test/generated-helper-app',
+      tenantScoped: { mode: 'optional', allowSuperAdminBypass: subtypeOptsIn },
+    } as never);
+    const globals = globalThis as Record<string, unknown>;
+    globals.__smrtGeneratedRegistry = ObjectRegistry;
+    const create = vi.fn(async (data) => ({ toPublicJSON: () => data }));
+    globals.__smrtGeneratedRouteCollection = { create };
+    try {
+      const route = await importGeneratedCollectionPost(false, true);
+      const bypass = {
+        tenantContext: { superAdminBypass: true },
+        user: { id: 'operator' },
+      };
+      const post = (body: Record<string, unknown>) =>
+        route.POST({
+          locals: bypass,
+          request: new Request('http://fixture/api/widgets', {
+            method: 'POST',
+            body: JSON.stringify(body),
+          }),
+        });
+      // The base opted in: the bypass creates a base row.
+      expect((await post({ name: 'base' })).status).toBe(201);
+      const subtype = await post({ name: 'sub', createType: child });
+      expect(subtype.status).toBe(bypassCreatesSubtype ? 201 : 403);
+      expect(create).toHaveBeenCalledTimes(bypassCreatesSubtype ? 2 : 1);
     } finally {
       restore();
     }

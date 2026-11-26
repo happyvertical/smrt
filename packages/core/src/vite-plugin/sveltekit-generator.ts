@@ -3233,7 +3233,8 @@ function requireCreateTargetAccess(locals: unknown, model: string): void {
     op: 'create',
     permissionCollection: PERMISSION_COLLECTION,
     publicAccess: publicAccess === true,
-    allowSuperAdminBypass: ALLOW_SUPER_ADMIN_BYPASS,
+    // The subtype's own opt-in, as REST reads it (a base's does not carry over).
+    allowSuperAdminBypass: ObjectRegistry.getTenantScopedConfig(model)?.allowSuperAdminBypass === true,
   });
   if (!decision.allow) routeDenial(decision);
 }
