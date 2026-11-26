@@ -22,7 +22,7 @@ import { reviseChangeCard } from './changes.ts';
 import { ENGINE_TOOLS, isEngineTool, runEngineTool } from './engine-tools.ts';
 import { getShellDb, hostFor, shellDbSync } from './host.ts';
 import { HttpError } from './http.ts';
-import { runAs } from './owner.ts';
+import { principalFor, runAs } from './owner.ts';
 import { ownerSafe } from './owner-text.ts';
 import { reportFailureForOwner } from './report-display.ts';
 import {
@@ -240,9 +240,13 @@ export async function listShellTools(
 }
 
 /** Tools of the user app on one copy, as that copy's running worker generates them. */
-export async function listAppTools(target: Target): Promise<CatalogTool[]> {
+export async function listAppTools(
+  target: Target,
+  owner: { id: string; tenantId: string },
+): Promise<CatalogTool[]> {
   const host = await hostFor(target);
-  return (await host.appTools()).map((t) => ({
+  // `owner` is a principal policy.ts already verified as the owner.
+  return (await host.appTools(principalFor(owner, host.def))).map((t) => ({
     name: t.name,
     description: t.description,
     inputSchema: t.inputSchema ?? { type: 'object', properties: {} },
@@ -264,9 +268,12 @@ export async function listCatalog(
 ): Promise<CatalogTool[]> {
   const shell = await listShellTools(principal);
   const taken = new Set(shell.map((t) => t.name));
-  const app = (await listAppTools(scope.records)).filter(
-    (t) => !taken.has(t.name),
-  );
+  const app = (
+    await listAppTools(
+      scope.records,
+      principal as { id: string; tenantId: string },
+    )
+  ).filter((t) => !taken.has(t.name));
   const all = [...shell, ...app].sort((a, b) => (a.name < b.name ? -1 : 1));
   // A comment turn is about ONE card: read tools and change_revise only. No
   // structural builder tool (those make new cards) and no record writes.
@@ -361,7 +368,12 @@ async function dispatchInner(
       }),
     );
   }
-  const out = await runAppTool(tool.name, args, principal.id, scope.records);
+  const out = await runAppTool(
+    tool.name,
+    args,
+    { id: principal.id, tenantId: principal.tenantId ?? '' },
+    scope.records,
+  );
   if (
     out &&
     typeof out === 'object' &&

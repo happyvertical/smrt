@@ -32,12 +32,12 @@ present and `persist` is on, plus `usage.handlers`; instances also keep an
   `withAiUsage()` on a config that already carries a sink inherits its explicit
   attribution unless its own options set one. Instance clients record even when
   the caller's callback throws (the error still propagates).
-- User (#4760): `setAiUsageUserResolver()` is the ambient-user slot. When
-  registered (the hosted gate registers the principal's user), every row
-  whose event and attribution carry no `userId` tag gets the resolver's
-  user as `userId` (`AI_USAGE_USER_TAG`); an explicit tag wins and a
-  throwing resolver attributes nothing. Per-user hosted spend caps meter
-  that tag.
+- User (#4760): a row's `userId` (`AI_USAGE_USER_TAG`) comes only from
+  trusted sources: the sink attribution's tag (host code that built the
+  sink), else `setAiUsageUserResolver()`'s user (the hosted gate registers
+  the principal's, and only for the tenant the row bills: the resolver is
+  called with that tenant and answers no user for another). A per-call `usageTags.userId` is dropped, and a throwing
+  resolver attributes nothing. Per-user hosted spend caps meter that tag.
 - Tenant: explicit `tenantId` (a string; `null` = global, skip ambient) →
   instance `tenantId` (non-empty) → ambient tenant from
   `setAiUsageTenantResolver()` → none. smrt-tenancy registers `getTenantId()`
@@ -64,7 +64,7 @@ row's own `id` is its call id and is written to `call_id` too (#5005).
 | `promptKey` | `prompt_key` | `resolvePrompt()` via `promptMessageOptions()` (smrt-prompts) |
 | `tierRequested` | `tier_requested` | inference tier path (#4750) |
 | `tierResolved` | `tier_resolved` | inference tier path (#4750); fallback (#4752) |
-| `runId` | `run_id` | multi-call runs, e.g. fusions (#4753) |
+| `runId` | `run_id` | a tracked call's settlement only (#4753, #5005); on any other event the persistence handler drops it and its step tags |
 | `callId` | `entry_call_id` | transcript wrapper, while transcripts are enabled (#4780); the entry call's id, shared by the calls of a chain or fusion. A row without the tag is its own entry call |
 | `templateHash` | `template_hash` | prompt version (smrt-prompts, #5005) |
 
@@ -219,7 +219,15 @@ lock timeout, a write conflict on the job row) is rethrown as is, so
 
 **Call ids.** Every tracked call gets a call id before it is sent; its usage
 row is written with `id = call_id` (`ON CONFLICT (id) DO NOTHING`), so a
-retried save never makes a second row. `entry_call_id` is the entry call's id
+retried save never makes a second row. The `aiCallId` tag is core's: in
+`AiUsagePersistenceHandler` it stays the row id only for the settled event
+and for an event naming a tracked call core minted (its live route in this
+process, or its persisted `call` event in a run of the event's tenant on
+that database; a host recorder on its own client converges on the same
+row); any other event carrying it is
+written under its own id without the tag (warned once), and the same event
+object saved twice still writes one row. Such an event's `runId` and step
+tags are dropped too, so a caller's tags never place a row in a run. `entry_call_id` is the entry call's id
 (the `callId` tag), shared by every call of an alias chain or fusion. A
 transcript joins on `_smrt_ai_usage.entry_call_id = _smrt_ai_transcripts.call_id`.
 
@@ -227,7 +235,36 @@ transcript joins on `_smrt_ai_usage.entry_call_id = _smrt_ai_transcripts.call_id
 client whose calls that carry a `runContext` option are calls of that run:
 reserved (or, with a held reservation, taking it), sent with the run's usage
 tags and the output limit the reservation decided, then settled with their
-usage row; the usage handlers run only after the settle commits. The run
+usage row; the usage handlers run only after the settle commits. A call's
+usage still reaches it after it ended, because the SDK does not await
+`onUsage` and an app's own callback runs first. Its capture stays registered
+for 60 s (`ai-run-client.ts`), and `beginAiRunCall` opens a route for the
+call id it minted (`src/system/ai-run-late-usage.ts`, not exported; bounded
+to 10 000 calls and one hour per process) holding the call's database, run
+and tenant; the route, not the caller, holds the once-only state.
+`dispatchAiUsageEvent` hands an event carrying `aiCallId` and `runId` to the
+route only when the pipeline's persistence database, the `runId` tag and
+the event's tenant all match, so a caller's `aiCallId` tag alone (another
+database, tenant or run) is never applied to the call. The route takes an
+event only when it has something to apply, once: a call released without
+usage settles late (`settled_late`); a call settled from its response or
+fallback row (a decision that recorded no usage included) gets its usage
+row and its tenant-bounded chain's totals corrected to the provider's
+measured counts, after its settlement has committed (a queued settlement
+included), retried on failure (a redelivery retries too), never touching a
+row of another run or tenant under the id and never taking a total below
+zero. An event without token counts never replaces counts. Every event the
+route does not take reaches the handlers as it would without it; the
+settled event itself is marked (`markAiRunSettledUsageEvent`) and never
+routed back. **Known limit (#5516):** the route is process-local. A late
+event delivered on another worker, or after the route expired (one hour, or
+10 000 newer calls in the process), keeps the provisional counts: a call
+settled from its response or fallback row keeps those counts (a detectable
+estimate, never another call's usage) and the event reaches the handlers
+again. A released call is still settled from its persisted reservation by
+the persistence handler (`reconcileLateAiRunUsage`), so its row and its
+run's totals agree. A durable cross-worker correction is tracked in #5516.
+The run
 context is always passed explicitly, never read from a process-wide variable;
 `serializeAiRunContext` / `restoreAiRunContext` carry it through a job payload
 (tenant-checked). Without `runTracking` a client is exactly as before.
@@ -325,20 +362,50 @@ earlier run, possibly pruned) and `handoff` (`running` until its child ends).
 A `check` or `approval` request points at the judged `call` or `handoff`
 event. A decision counts once, in the run that recorded it; a request counts
 only as requested; approval rate = approved / (approved + refused).
-Payloads are redacted through the transcripts' one path
-(`redactAiTranscriptPart`: an event-specific `options.redact`, then the host
-redactor with the run row's tenant, read behind the claim fence, then the
-built-in redactor) and
-capped (head and tail kept, `truncated`); `payload_ref` points at content the
-host owns, and the framework stores nothing behind it. Read-time rule:
-`getRunTrajectory` runs only the built-in redactor again on stored payloads
-(credential-named fields, token shapes; the host redactor runs on the write
-path only and is never called by a read), so a payload stored by an earlier
-version is masked by today's built-in rules; a truncated payload's `head` and
-`tail` (JSON text fragments) are masked at string level
-(`maskSecretFieldsInJsonText`: credential-named field values, then token
-shapes), never returned as stored. A host's field-based policy installed
-after a payload was written does not apply to it.
+Payloads are redacted on the transcripts' path (`input.payload` is read
+once; an event-specific `options.redact`, then the host redactor with the run
+row's tenant, read behind the claim fence; then the value is turned into
+inert JSON data once, every property read once and `toJSON` run there and
+nowhere later, and the built-in redactor runs on that value) and capped at
+`maxPayloadBytes` (omitted means 16 KiB; anything but a safe integer >= 256,
+`null` included, is a `RangeError` before anything is read or written): a
+larger payload is stored as `{ truncated, originalBytes, redaction, head,
+tail }`, the head and tail of exactly the redacted JSON text, cut between
+whole characters, with the row's `truncated` flag set. `redaction` is
+`builtInRedactionStamp()` (`ai-transcripts.ts`):
+`CORE_REDACTION_RULES_VERSION * 1000` plus smrt-config's
+`SECRET_VALUE_RULES_VERSION`; only `appendAiRunEvent` writes it, through a
+private insert. The public `capAiRunEventPayload` redacts nothing and never
+stamps, and the public `insertAiRunEventTx` drops a `redaction` field from a
+`truncated` payload. Raise the matching version with any change to what the
+built-in rules mask: `src/redaction-rules-ledger.json` (core) and config's
+`src/secret-value-rules-ledger.json` pin the source between the rules markers
+and the corpus output to each version (their ledger tests compile the marked
+region on its own; core's corpus runs with config's value rules replaced by
+the identity, so a config-only change bumps config's version, and with it the
+stamp, without a core edit). `pnpm check:redaction-ledgers` (CI: CI Control
+Plane Regression) fails when a row the base already has is edited or
+removed, or a version does not increase. `payload_ref` points at content the
+host owns, and the framework stores nothing behind it. Read-time rule,
+applied in `toAiRunEvent` (so `getRunTrajectory` and a host converting rows
+itself agree): the row's payload is turned into inert data once (text
+parsed, an object value read once). The `truncated` flag has three states:
+`1`, `1n`, `'1'` or `true` is a cut row (verified as below); `0`, `0n`, `'0'`
+or `false` is whole; anything else (a missing column, `2`, an unrecognised
+value) never verifies: an envelope-shaped payload (`truncated: true` with a
+`head` or `tail`) is withheld, any other payload is read as whole.
+`insertAiRunEventTx` reads each declared field once (prototype getters
+included) and strips and stores those values. A row not flagged is redacted again by the built-in redactor only, as a
+structured value whatever its fields (the host redactor runs on the write
+path only); a flagged row returns `{ truncated, originalBytes, head, tail }`
+as written only when it has exactly the writer's five fields and a stamp
+strictly equal to the current one (`redaction` dropped). Every other flagged
+row (no payload; no stamp, as every row stored before the stamp existed; an
+older, newer or malformed stamp; other fields) returns `head: ''`, `tail:
+''`, `withheld: ['head', 'tail']` and `originalBytes` only when it is a valid
+byte count (else `null`): a cut can fall before the delimiter a rule needs,
+so stored fragments are never masked and shown. A host's field-based policy
+installed after a payload was written does not apply to it.
 
 **The `ai-runs` task** (retention sweep, `sweepAiRuns`): reconciles `call`
 reservations older than the smallest `callTimeoutMs` on their chain plus a

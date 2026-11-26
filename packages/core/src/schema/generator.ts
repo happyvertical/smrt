@@ -31,6 +31,7 @@ import {
 import { getDDLStrategy } from './ddl/index.js';
 import type { DatabaseEngine } from './ddl/types.js';
 import {
+  parseForeignKeyReference,
   resolveForeignKeyDeleteAction,
   resolveForeignKeyUpdateAction,
 } from './foreign-key-policy.js';
@@ -418,7 +419,9 @@ export class SchemaGenerator {
         continue;
       }
 
-      const [, declaredTargetColumn] = field.related.split('.');
+      const { column: declaredTargetColumn } = parseForeignKeyReference(
+        field.related,
+      );
       const targetName = this.resolveRegistryForeignKeyTarget(
         className,
         fieldName,
@@ -470,7 +473,12 @@ export class SchemaGenerator {
         `Cannot resolve foreign key ${className}.${fieldName}: target constructor is unregistered or the target name is ambiguous`,
       );
     }
-    return target ?? field.related?.split('.')[0];
+    return (
+      target ??
+      (field.related
+        ? parseForeignKeyReference(field.related).target
+        : undefined)
+    );
   }
 
   /**

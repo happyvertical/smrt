@@ -1,5 +1,6 @@
 import { writeFileSync } from 'node:fs';
-import { afterAll, beforeAll, describe, expect, it } from 'vitest';
+import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
+import { hostOwner } from '../../test/engine-principal.ts';
 import { decideApproval, returnedFailure } from './approvals.ts';
 import { getHost } from './host.ts';
 import { callTool } from './policy.ts';
@@ -43,7 +44,9 @@ describe('an approved action that comes back as an error is a failed approval', 
     });
     await applyWaiting(h.owner);
     const host = await getHost();
-    const rec = (await host.create('Chore', { title: 'gone soon' })) as {
+    const rec = (await host.create(hostOwner(host), 'Chore', {
+      title: 'gone soon',
+    })) as {
       id: string;
     };
     const pending = await callTool(h.owner, 'chore_delete', { id: rec.id });
@@ -52,8 +55,8 @@ describe('an approved action that comes back as an error is a failed approval', 
     );
     const id = (approvalId.result ?? approvalId).approvalId as string;
     // The record disappears between the request and the decision.
-    await host.remove('Chore', rec.id);
-    const outcome = await decideApproval(id, true, h.owner.id);
+    await host.remove(hostOwner(host), 'Chore', rec.id);
+    const outcome = await decideApproval(id, true, h.owner);
     expect(outcome.status).toBe('failed');
   });
 });
@@ -69,6 +72,7 @@ it('the real undo and decision routes preserve records and version after a later
   const { getApprovalView } = await import('./approvals.ts');
   const host = await getHost();
   await host.execute(
+    hostOwner(host),
     {
       type: 'defineModel',
       name: 'UndoContact',
@@ -77,8 +81,12 @@ it('the real undo and decision routes preserve records and version after a later
     },
     { author: h.owner.id, approved: true },
   );
-  const row = await host.create('UndoContact', { name: 'Acme', amount: 1 });
+  const row = await host.create(hostOwner(host), 'UndoContact', {
+    name: 'Acme',
+    amount: 1,
+  });
   await host.execute(
+    hostOwner(host),
     {
       type: 'loadRecords',
       model: 'UndoContact',
@@ -108,7 +116,9 @@ it('the real undo and decision routes preserve records and version after a later
   const pending = await undo(event('/api/shell/undo'));
   expect(pending.status).toBe(202);
   const approval = await pending.json();
-  await host.update('UndoContact', String(row.id), { amount: 3 });
+  await host.update(hostOwner(host), 'UndoContact', String(row.id), {
+    amount: 3,
+  });
   const version = host.version;
   const response = await decide(
     event(
@@ -123,26 +133,23 @@ it('the real undo and decision routes preserve records and version after a later
   expect(result.error).toContain('Contacts “Acme”');
   expect(result.error).not.toContain('the app did not start');
   expect(host.version).toBe(version);
-  expect((await host.get('UndoContact', String(row.id)))?.amount).toBe(3);
+  expect(
+    (await host.get(hostOwner(host), 'UndoContact', String(row.id)))?.amount,
+  ).toBe(3);
   const persisted = await getApprovalView(approval.approvalId);
   expect(persisted?.status).toBe('failed');
   expect(persisted?.summary).toBe('Undo: load into Contacts');
   const deletions = [
-    await requestRecordDelete(
-      'UndoContact',
-      String(row.id),
-      h.owner.id,
-      'live',
-    ),
+    await requestRecordDelete('UndoContact', String(row.id), h.owner, 'live'),
     await runAppTool(
       'undocontact_delete',
       { id: String(row.id) },
-      h.owner.id,
+      h.owner,
       'live',
     ),
     await runRest(
       { method: 'DELETE', url: `/api/undo_contacts/${row.id}` },
-      h.owner.id,
+      h.owner,
       'live',
     ),
   ];
@@ -180,6 +187,7 @@ it('refuses a known undo conflict before storage through HTTP and the assistant,
     await import('./approvals.ts');
   const host = await getHost();
   await host.execute(
+    hostOwner(host),
     {
       type: 'defineModel',
       name: 'Order',
@@ -188,11 +196,12 @@ it('refuses a known undo conflict before storage through HTTP and the assistant,
     },
     { author: h.owner.id, approved: true },
   );
-  const row = await host.create('Order', {
+  const row = await host.create(hostOwner(host), 'Order', {
     name: 'QA changed order',
     amount: 1,
   });
   await host.execute(
+    hostOwner(host),
     {
       type: 'loadRecords',
       model: 'Order',
@@ -202,7 +211,7 @@ it('refuses a known undo conflict before storage through HTTP and the assistant,
     },
     { author: h.owner.id, approved: true },
   );
-  await host.update('Order', String(row.id), { amount: 3 });
+  await host.update(hostOwner(host), 'Order', String(row.id), { amount: 3 });
   const count = await pendingApprovalCount();
   const version = host.version;
   const reason =
@@ -233,7 +242,9 @@ it('refuses a known undo conflict before storage through HTTP and the assistant,
   });
   expect(await pendingApprovalCount()).toBe(count);
   expect(host.version).toBe(version);
-  expect((await host.get('Order', String(row.id)))?.amount).toBe(3);
+  expect(
+    (await host.get(hostOwner(host), 'Order', String(row.id)))?.amount,
+  ).toBe(3);
   // Simulate a pre-upgrade pending row using the real engine conflict preview.
   const plan = await host.plan({ type: 'undo' });
   const legacy = await requestApproval(
@@ -257,9 +268,11 @@ it('refuses a known undo conflict before storage through HTTP and the assistant,
   expect((await denied.json()).status).toBe('denied');
   expect(await pendingApprovalCount()).toBe(count);
   expect(host.version).toBe(version);
-  expect((await host.get('Order', String(row.id)))?.amount).toBe(3);
+  expect(
+    (await host.get(hostOwner(host), 'Order', String(row.id)))?.amount,
+  ).toBe(3);
   // Removing the conflict restores the ordinary decidable undo path.
-  await host.update('Order', String(row.id), { amount: 2 });
+  await host.update(hostOwner(host), 'Order', String(row.id), { amount: 2 });
   const allowed = await undo(event('/api/shell/undo'));
   expect(allowed.status).toBe(202);
   const pending = await allowed.json();
@@ -271,5 +284,150 @@ it('refuses a known undo conflict before storage through HTTP and the assistant,
     ),
   );
   expect((await applied.json()).status).toBe('approved');
-  expect((await host.get('Order', String(row.id)))?.amount).toBe(1);
+  expect(
+    (await host.get(hostOwner(host), 'Order', String(row.id)))?.amount,
+  ).toBe(1);
+});
+
+describe('an approval whose change has an unknown outcome (#5486)', () => {
+  it('stays executing, reads unknown, refuses a replay, and is settled once by the reopen', async () => {
+    const { ClaimLostError } = await import('../../engine/index.ts');
+    const { approvalStatuses, getApprovalView, settleRecoveredChange } =
+      await import('./approvals.ts');
+    await runAs(h.owner, async () => {
+      await callTool(h.owner, 'app_definemodel', {
+        name: 'Unsure',
+        fields: { title: { type: 'text' } },
+      });
+    });
+    await applyWaiting(h.owner);
+    const host = await getHost();
+    const rec = (await host.create(hostOwner(host), 'Unsure', {
+      title: 'maybe',
+    })) as { id: string };
+    const pending = await callTool(h.owner, 'unsure_delete', { id: rec.id });
+    const raw = JSON.parse((pending.content as { text: string }[])[0].text);
+    const id = (raw.result ?? raw).approvalId as string;
+    const remove = vi.spyOn(host, 'callAppTool').mockRejectedValueOnce(
+      new ClaimLostError('whether the change took effect is unknown', {
+        outcome: 'unknown',
+      }),
+    );
+    const outcome = await decideApproval(id, true, h.owner);
+    remove.mockRestore();
+    expect(outcome.status).toBe('unknown');
+    expect(outcome.error).toMatch(/unknown/);
+    expect((await getApprovalView(id))?.status).toBe('unknown');
+    expect((await approvalStatuses([id])).get(id)).toBe('unknown');
+    // A retry cannot replay it.
+    await expect(decideApproval(id, true, h.owner)).rejects.toThrow(/already/);
+    // The reopen decided it: settle once.
+    expect(
+      await settleRecoveredChange({ request: id, outcome: 'applied' }),
+    ).toBe(true);
+    expect((await getApprovalView(id))?.status).toBe('approved');
+    expect(
+      await settleRecoveredChange({ request: id, outcome: 'not-applied' }),
+    ).toBe(false);
+    expect((await getApprovalView(id))?.status).toBe('approved');
+  });
+
+  it('an approval this process is applying reads approved, not unknown', async () => {
+    const { getApprovalView } = await import('./approvals.ts');
+    await runAs(h.owner, async () => {
+      await callTool(h.owner, 'app_definemodel', {
+        name: 'Slow',
+        fields: { title: { type: 'text' } },
+      });
+    });
+    await applyWaiting(h.owner);
+    const host = await getHost();
+    const rec = (await host.create(hostOwner(host), 'Slow', {
+      title: 'x',
+    })) as { id: string };
+    const pending = await callTool(h.owner, 'slow_delete', { id: rec.id });
+    const raw = JSON.parse((pending.content as { text: string }[])[0].text);
+    const id = (raw.result ?? raw).approvalId as string;
+    let release!: () => void;
+    const gate = new Promise<void>((r) => {
+      release = r;
+    });
+    const real = host.callAppTool.bind(host);
+    const spy = vi
+      .spyOn(host, 'callAppTool')
+      .mockImplementationOnce(async (...a: Parameters<typeof real>) => {
+        await gate;
+        return real(...a);
+      });
+    const deciding = decideApproval(id, true, h.owner);
+    let seen: string | undefined;
+    for (let i = 0; i < 100 && seen !== 'approved'; i++) {
+      await new Promise((r) => setTimeout(r, 20));
+      seen = (await getApprovalView(id))?.status;
+    }
+    expect(seen).toBe('approved');
+    release();
+    expect((await deciding).status).toBe('approved');
+    spy.mockRestore();
+  });
+
+  it('a recovered step of a longer undo settles as failed with its own words', async () => {
+    const { getApprovalView, settleRecoveredChange } = await import(
+      './approvals.ts'
+    );
+    const { ClaimLostError } = await import('../../engine/index.ts');
+    await runAs(h.owner, async () => {
+      await callTool(h.owner, 'app_definemodel', {
+        name: 'Steps',
+        fields: { title: { type: 'text' } },
+      });
+    });
+    await applyWaiting(h.owner);
+    const host = await getHost();
+    const rec = (await host.create(hostOwner(host), 'Steps', {
+      title: 'x',
+    })) as { id: string };
+    const pending = await callTool(h.owner, 'steps_delete', { id: rec.id });
+    const raw = JSON.parse((pending.content as { text: string }[])[0].text);
+    const id = (raw.result ?? raw).approvalId as string;
+    const spy = vi
+      .spyOn(host, 'callAppTool')
+      .mockRejectedValueOnce(
+        new ClaimLostError('unknown', { outcome: 'unknown' }),
+      );
+    expect((await decideApproval(id, true, h.owner)).status).toBe('unknown');
+    spy.mockRestore();
+    await settleRecoveredChange({
+      request: id,
+      outcome: 'applied',
+      partial: true,
+    });
+    const view = await getApprovalView(id);
+    expect(view?.status).toBe('failed');
+    expect(JSON.stringify(view?.result)).toMatch(/Part of this undo/);
+  });
+
+  it('an error that is not marked unknown still completes as failed', async () => {
+    const { ClaimLostError } = await import('../../engine/index.ts');
+    await runAs(h.owner, async () => {
+      await callTool(h.owner, 'app_definemodel', {
+        name: 'Unmarked',
+        fields: { title: { type: 'text' } },
+      });
+    });
+    await applyWaiting(h.owner);
+    const host = await getHost();
+    const rec = (await host.create(hostOwner(host), 'Unmarked', {
+      title: 'x',
+    })) as { id: string };
+    const pending = await callTool(h.owner, 'unmarked_delete', { id: rec.id });
+    const raw = JSON.parse((pending.content as { text: string }[])[0].text);
+    const id = (raw.result ?? raw).approvalId as string;
+    const remove = vi
+      .spyOn(host, 'callAppTool')
+      .mockRejectedValueOnce(new ClaimLostError('this call wrote nothing'));
+    const outcome = await decideApproval(id, true, h.owner);
+    remove.mockRestore();
+    expect(outcome.status).toBe('failed');
+  });
 });

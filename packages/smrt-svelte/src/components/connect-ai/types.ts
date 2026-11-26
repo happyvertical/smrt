@@ -28,6 +28,12 @@ export interface ConnectAiState {
     account?: { label: string };
   };
   apiReady: boolean;
+  /**
+   * A hosted deployment: the server has no CLI to find and no browser to sign
+   * in with, so only the owner's own API key is offered (no ChatGPT row, no
+   * ChatGPT preview note). Absent is the desktop.
+   */
+  hosted?: boolean;
 }
 
 /** Browser transport; keys and credentials are handled by inference settings, never this API. */

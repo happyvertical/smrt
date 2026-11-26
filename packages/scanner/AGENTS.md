@@ -52,6 +52,11 @@ executes the source.
   transient, relationship, and static fields are exempt.
   `sourceMayContainNumericPrecisionIssue(source)` is the cheap pre-filter
   callers use to avoid parsing every file; `dev:knowledge-check` drives both.
+- `lintSetterHiddenReads(source, filePath)` — flags a setter whose body reads
+  a hidden field (`@field({ sensitive: true })` or `readPermission`) of its own
+  class (#5603); a plain `this.f = v` is not a read. Syntactic and direct only.
+  `sourceMayContainSetterHiddenRead` is the pre-filter; `dev:knowledge-check`
+  reports it as `setter-reads-hidden-field`.
 - `verifyManifestCompleteness({ packageDir })` — publish guard: re-scans `src/`
   and asserts every `@smrt()` object reached `dist/manifest.json` (issue #1483).
   Returns `ok` / `incomplete` / `missing-manifest` / `scan-error` / `skipped`.

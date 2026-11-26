@@ -69,6 +69,8 @@ export interface ExecuteOptions {
   approved?: boolean;
   /** Counts shown in the approval; growth requires a fresh decision. */
   reviewedPreview?: Record<string, unknown>;
+  /** The approval this command runs under; a claimed host journals it so a reopen can settle it (#5486). */
+  request?: string;
 }
 
 /** A template: the definition (and optionally the records) of an app. */

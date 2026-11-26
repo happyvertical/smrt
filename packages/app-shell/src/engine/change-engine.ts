@@ -7,8 +7,10 @@
 // is a thin layer over `forkDraft` / `previewPublish` / `publishDraft` /
 // `undoTo`; a hosted engine (#5187) can implement the same interface.
 //
-// `principal` (#5188) and `fence` (#5190) are placeholders: every method takes
-// them, the SQLite adapter ignores them.
+// `principal` (#5188) is the caller: every method refuses without a valid one
+// for the live host's tenant, and a guest. The structural work itself runs as
+// the host's own system principal. `fence` (#5190) is a placeholder the SQLite
+// adapter ignores.
 import { createHash } from 'node:crypto';
 import type { Command } from './commands.ts';
 import { type AppDefinition, type Step, validate } from './definition.ts';
@@ -23,11 +25,15 @@ import type {
   PublishPreview,
   PublishResult,
 } from './host.ts';
+import { type EnginePrincipal, requireOwnerPrincipal } from './principal.ts';
 import { canonical, chainDigest, type DraftChain } from './publish.ts';
 
-/** Who is asking. Enforced by the hosted engine (#5188); unused on SQLite. */
-export interface ChangePrincipal {
-  id: string;
+/** Who is asking: a principal built by `enginePrincipal()` for the live host's tenant (#5188). */
+export type ChangePrincipal = EnginePrincipal;
+
+/** The caller of a change-engine method, or a refusal: only the app's owner changes it. */
+function asCaller(principal: ChangePrincipal, live: AppHost): ChangePrincipal {
+  return requireOwnerPrincipal(principal, live.tenantId);
 }
 
 /** Generation fence (#5190): a hosted engine refuses work from a stale generation. Unused on SQLite. */
@@ -215,7 +221,7 @@ function touched(step: Step): { table: string; column: string }[] {
 export function findChainBlockers(chain: DraftChain): BatchBlocker[] {
   const out: BatchBlocker[] = [];
   chain.versions.forEach((rec) => {
-    for (const e of validate(rec.definition)) {
+    for (const e of validate(rec.definition, rec.definition)) {
       const m = /^report ([^:]+): unknown field (.+)$/.exec(e);
       if (m)
         out.push({
@@ -320,42 +326,47 @@ const sameDefinition = (a: AppDefinition, b: AppDefinition) =>
 
 export class SqliteChangeEngine implements ChangeEngine {
   forkDraft(
-    _principal: ChangePrincipal,
+    principal: ChangePrincipal,
     live: AppHost,
     draftDir: string,
     opts: ForkDraftOptions,
     _fence?: ChangeFence,
   ) {
-    return live.forkDraft(draftDir, opts);
+    asCaller(principal, live);
+    return live.forkDraft(principal, draftDir, opts);
   }
 
   previewPublish(
-    _principal: ChangePrincipal,
+    principal: ChangePrincipal,
     live: AppHost,
     draft: AppHost,
     _fence?: ChangeFence,
   ) {
+    asCaller(principal, live);
     return live.previewPublish(draft);
   }
 
   publishDraft(
-    _principal: ChangePrincipal,
+    principal: ChangePrincipal,
     live: AppHost,
     draft: AppHost,
     opts: PublishOptions,
     _fence?: ChangeFence,
   ) {
-    return live.publishDraft(draft, opts);
+    asCaller(principal, live);
+    return live.publishDraft(principal, draft, opts);
   }
 
   undoTo(
-    _principal: ChangePrincipal,
+    principal: ChangePrincipal,
     live: AppHost,
     version: number,
     opts: { author: string; from?: number },
     _fence?: ChangeFence,
   ) {
+    asCaller(principal, live);
     return live.execute(
+      principal,
       { type: 'undoTo', version, from: opts.from },
       { author: opts.author, approved: true },
     );
@@ -367,6 +378,7 @@ export class SqliteChangeEngine implements ChangeEngine {
     input: RebuildInput,
     fence?: ChangeFence,
   ): Promise<RebuildResult> {
+    asCaller(principal, live);
     const draft = await this.forkDraft(
       principal,
       live,
@@ -383,7 +395,7 @@ export class SqliteChangeEngine implements ChangeEngine {
         try {
           // The working copy approves its own risky changes (`autoApprove`,
           // draft hosts only), so no `approved` flag is passed here.
-          const r = (await draft.execute(command, {
+          const r = (await draft.execute(principal, command, {
             author: input.author,
           })) as ChangeResult;
           applied.push({ key, version: r.version });
@@ -413,6 +425,7 @@ export class SqliteChangeEngine implements ChangeEngine {
     draft: AppHost,
     fence?: ChangeFence,
   ): Promise<BatchCheck> {
+    asCaller(principal, live);
     const chain = await draft.draftChain();
     const blockers: BatchBlocker[] = [];
     if (
@@ -463,6 +476,7 @@ export class SqliteChangeEngine implements ChangeEngine {
     input: UndoBatchInput,
     fence?: ChangeFence,
   ): Promise<ChangeResult> {
+    asCaller(principal, live);
     const { versions } = input;
     if (!versions.length || !versions.every(Number.isInteger))
       throw new EngineError('undoBatch needs the applied versions', 'refused');

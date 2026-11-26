@@ -5,10 +5,10 @@ description: "A smrt app that builds and runs a person's own smrt app from defin
 status: "stable"
 generated:
   by: "smrt/scripts/generate-knowledge-okf.ts"
-  at: "2026-11-22T04:35:02Z"
+  at: "2026-11-25T13:28:06Z"
 audience: "internal"
 evidence_level: "source-inspected"
-source_revision: "sha256:553856f220d356989f26431d9b12ffcb9593be7cf21c39e11a3c2fc37cd66fb2"
+source_revision: "sha256:ded86ff4fad1e32fa17fdb597015c82361a314628593681d1d17755930c1a4b0"
 sources:
   - id: "manifest"
     resource: "https://github.com/happyvertical/smrt/blob/main/packages/app-shell/package.json"
@@ -35,9 +35,12 @@ sources:
     resource: "https://github.com/happyvertical/smrt/blob/main/packages/app-shell/agents/imports.md"
     title: "@happyvertical/smrt-app-shell packages/app-shell/agents/imports.md"
   - id: "agents-8"
+    resource: "https://github.com/happyvertical/smrt/blob/main/packages/app-shell/agents/method-code.md"
+    title: "@happyvertical/smrt-app-shell packages/app-shell/agents/method-code.md"
+  - id: "agents-9"
     resource: "https://github.com/happyvertical/smrt/blob/main/packages/app-shell/agents/shared-pieces.md"
     title: "@happyvertical/smrt-app-shell packages/app-shell/agents/shared-pieces.md"
-  - id: "agents-9"
+  - id: "agents-10"
     resource: "https://github.com/happyvertical/smrt/blob/main/packages/app-shell/agents/storage-metering.md"
     title: "@happyvertical/smrt-app-shell packages/app-shell/agents/storage-metering.md"
 ---
@@ -60,6 +63,7 @@ sources:
 - `packages/app-shell/agents/engine.md`
 - `packages/app-shell/agents/hosted-inference.md`
 - `packages/app-shell/agents/imports.md`
+- `packages/app-shell/agents/method-code.md`
 - `packages/app-shell/agents/shared-pieces.md`
 - `packages/app-shell/agents/storage-metering.md`
 

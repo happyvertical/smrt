@@ -15,13 +15,15 @@
 import { isPending, requestRecordDelete } from '$lib/server/builder';
 import { hostFor } from '$lib/server/host';
 import { guarded, ident, json, ownerOf, readJson } from '$lib/server/http';
+import { principalFor } from '$lib/server/owner';
 import type { RequestHandler } from './$types';
 
 export const GET: RequestHandler = guarded(async (event) => {
-  await ownerOf(event);
+  const owner = await ownerOf(event);
   const host = await hostFor('live');
   return json(
     await host.get(
+      principalFor(owner, host.def),
       ident(event.params.model, 'model'),
       ident(event.params.id, 'id'),
     ),
@@ -29,11 +31,12 @@ export const GET: RequestHandler = guarded(async (event) => {
 });
 
 export const PUT: RequestHandler = guarded(async (event) => {
-  await ownerOf(event);
+  const owner = await ownerOf(event);
   const data = await readJson(event.request);
   const host = await hostFor('live');
   return json(
     await host.update(
+      principalFor(owner, host.def),
       ident(event.params.model, 'model'),
       ident(event.params.id, 'id'),
       data,
@@ -46,7 +49,7 @@ export const DELETE: RequestHandler = guarded(async (event) => {
   const out = await requestRecordDelete(
     ident(event.params.model, 'model'),
     ident(event.params.id, 'id'),
-    owner.id,
+    owner,
     'live',
   );
   return isPending(out) ? json(out, 202) : json(out);

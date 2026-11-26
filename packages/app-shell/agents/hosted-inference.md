@@ -12,7 +12,11 @@ features/subscriptions/gate on SQLite, fake resolver), `hooks.server.test.ts`.
   (`runtime.deployedRuntime().db`, not `getShellDb()`: the gate runs without a
   tenant), reads the global kill switch once, then
   `registerHostedInferenceGate`. Any failure (missing tables, no database)
-  rejects `init`, so a cloud process does not start without the gate. The
+  rejects `init`, so a cloud process does not start without the gate. Before
+  building anything it calls core's `requireInferenceGate(true)`: from then on
+  a hosted call that finds no gate (never built, or cleared) is blocked with
+  policy `gate-error` and a zero-usage `blocked` row, never run unchecked
+  (core's default stays fail-open for other hosts; the flag is per realm). The
   `smrt db:migrate` for the deployment must therefore include the features and
   subscriptions tables (both are in `smrt.config.ts` `consumer.packages`).
 - **Tenant context.** Plan and usage rows are tenant-scoped. The gate wraps
@@ -20,6 +24,21 @@ features/subscriptions/gate on SQLite, fake resolver), `hooks.server.test.ts`.
   ambient, so a background call that names only a tenant (no user, no session)
   is evaluated and metered for that tenant; the per-user cap applies only when a
   user is present.
+- **Whose calls are metered to whom (engine, MCP, jobs).** One rule everywhere:
+  the gate and the usage recorder read the acting user from the ambient
+  principal (tenancy context, then users session), and only for the tenant the
+  call bills. Shell-side MCP tool dispatch (`dispatchTool`), every import-workflow step
+  (`runAs` on the stored owner row) and the assistant run inside `runAs`, so
+  their calls are metered to the user and held to the per-user cap; a call that
+  names a tenant and has no principal (a scheduled job) is metered to the
+  tenant, no per-user cap; a principal of another tenant than the one billed
+  is never tagged on the row (the usage user resolver gets the billed tenant,
+  the same rule the gate applies). The app engine makes no hosted call: its
+  worker thread has no inference binding and no gate (both live on the main
+  thread), so no hosted target can bind there; if one ever must, the worker
+  needs its own gate and `requireInferenceGate`, and `AppRuntime.tenantScope`
+  (which enters `{ tenantId }` only) must carry the op principal's user.
+  Tests: `hosted-inference-attribution.test.ts`.
 - **Assistant.** In cloud `resolveAssistantOptions` accepts the owner's own key
   (as before) or a stored `source: 'hosted'` binding that carries its own key and
   whose `baseUrl` is the operator gateway's origin
@@ -55,10 +74,9 @@ features/subscriptions/gate on SQLite, fake resolver), `hooks.server.test.ts`.
   needs a pool of at least three connections, run on SQLite here); a scheduled
   repair reconcile and provisioning for a member who joins while the tenant is
   already entitled (the host calls `provision()`; no tenant listing or member
-  flow in the shell); the caller (user) of an engine, MCP or job call, so
-  per-user caps and attribution there wait for #5188/#5189/#5375;
+  flow in the shell); a hosted call from inside the app worker (see above);
   a removed member's active key is budget-synced but not revoked while the
   tenant stays entitled;
-  `plugins.remote`, `sync.devices`, `backup.vault` and `cloud.hosted` have no
+  `app.methods` is wired ([method code](method-code.md)); `plugins.remote`, `sync.devices`, `backup.vault` and `cloud.hosted` have no
   shell surface to gate. `cloud.hosted` is deliberately not a gate on the whole
   cloud shell (v1 decision); the gate is code-local, so that stays possible.

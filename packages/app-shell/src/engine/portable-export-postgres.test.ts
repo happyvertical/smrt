@@ -5,16 +5,19 @@
 // a real server when `SMRT_TEST_POSTGRES_URL` is set (CI's "Registered
 // PostgreSQL Suites" lane); each case gets its own schema, created and dropped
 // here as a host's provisioning would.
+
 import { mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { getDatabase } from '@happyvertical/sql';
 import { importPGlite } from '@happyvertical/sql/pglite';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
+import { hostOwner } from '../test/engine-principal.ts';
 import type { DatabaseConfig, PGliteClient } from './db/index.ts';
 import {
   AppHost,
   checkUserAppBundle,
+  discardUnfilledImport,
   exportUserApp,
   importUserApp,
   inspectUserApp,
@@ -22,6 +25,7 @@ import {
   type PortableUserApp,
   verifyUserApp,
 } from './index.ts';
+import { asEngine } from './pg-test-support.ts';
 
 const serverUrl = process.env.SMRT_TEST_POSTGRES_URL;
 const backends = ['pglite', ...(serverUrl ? ['postgres'] : [])] as const;
@@ -56,7 +60,7 @@ describe.each(
       ? { kind: 'postgres', schema, connection: { url: serverUrl, max: 2 } }
       : { kind: 'pglite', schema, client: pglite as PGliteClient };
   const rows = async (sql: string, params: unknown[] = []) =>
-    (await admin.query(sql, params)).rows as Array<Record<string, any>>;
+    asEngine(admin as any, sql, params);
 
   beforeAll(async () => {
     if (backend === 'postgres') {
@@ -91,6 +95,7 @@ describe.each(
       store,
     });
     await host.execute(
+      hostOwner(host),
       {
         type: 'defineModel',
         name: 'Owner',
@@ -99,6 +104,7 @@ describe.each(
       A,
     );
     await host.execute(
+      hostOwner(host),
       {
         type: 'defineModel',
         name: 'Chore',
@@ -117,8 +123,8 @@ describe.each(
       },
       A,
     );
-    const ann = await host.create('Owner', { name: 'Ann' });
-    await host.create('Chore', {
+    const ann = await host.create(hostOwner(host), 'Owner', { name: 'Ann' });
+    await host.create(hostOwner(host), 'Chore', {
       title: 'Bins',
       points: 3,
       done: true,
@@ -130,7 +136,7 @@ describe.each(
       secret: 's-1',
       notes: 'note 1',
     });
-    await host.create('Chore', {
+    await host.create(hostOwner(host), 'Chore', {
       title: 'Dishes',
       points: 0,
       done: false,
@@ -139,10 +145,12 @@ describe.each(
       notes: 'note 2',
     });
     await host.execute(
+      hostOwner(host),
       { type: 'hideField', model: 'Chore', field: 'secret' },
       A,
     );
     await host.execute(
+      hostOwner(host),
       { type: 'removeField', model: 'Chore', field: 'notes' },
       OK,
     );
@@ -164,6 +172,125 @@ describe.each(
       ...(database ? { database } : {}),
     });
   };
+
+  it("installs over the engine's own untouched first start, and never over an app that was built in (#5193)", async () => {
+    const { store, dataDir } = await desktopApp();
+    const local = viaJson(
+      await exportUserApp({ dataDir, versions: await store.list() }),
+    ) as PortableUserApp;
+
+    // A hosted tenant opened its app once: version 0, no model, no row.
+    const fresh = await newSchema('untouched');
+    const freshDir = dir();
+    const first = await AppHost.open(freshDir, {
+      allowUnfencedStore: true,
+      store: new MemoryVersionStore(),
+      database: config(fresh),
+    });
+    await first.close();
+    const placed = await importUserApp({
+      dataDir: freshDir,
+      database: config(fresh),
+      bundle: local,
+    });
+    expect(placed.status).toBe('imported');
+    expect(
+      (
+        await verifyUserApp({
+          dataDir: freshDir,
+          database: config(fresh),
+          bundle: local,
+        })
+      ).ok,
+    ).toBe(true);
+
+    // An app that was built in (a model, even with no row) is someone's: refused.
+    const built = await newSchema('built');
+    const builtDir = dir();
+    const host = await AppHost.open(builtDir, {
+      allowUnfencedStore: true,
+      store: new MemoryVersionStore(),
+      database: config(built),
+    });
+    await host.execute(
+      hostOwner(host),
+      { type: 'defineModel', name: 'Mine', fields: { n: { type: 'text' } } },
+      A,
+    );
+    await host.close();
+    await expect(
+      importUserApp({
+        dataDir: builtDir,
+        database: config(built),
+        bundle: local,
+      }),
+    ).rejects.toThrow(/different version|different user app/);
+  });
+
+  it('discards an import that never committed a row, and only that (#5193)', async () => {
+    const { store, dataDir } = await desktopApp();
+    const local = viaJson(
+      await exportUserApp({ dataDir, versions: await store.list() }),
+    ) as PortableUserApp;
+    const schemaExists = async (name: string) =>
+      (await rows(`SELECT 1 AS x FROM pg_namespace WHERE nspname = $1`, [name]))
+        .length > 0;
+    const key = 'user-app-received';
+
+    // Half-built: the engine's own start made the tables, no row, no fact.
+    const half = await newSchema('half');
+    const halfDir = dir();
+    await (
+      await AppHost.open(halfDir, {
+        allowUnfencedStore: true,
+        store: new MemoryVersionStore(),
+        database: config(half),
+      })
+    ).close();
+    expect(
+      await discardUnfilledImport({
+        dataDir: halfDir,
+        database: config(half),
+        key,
+      }),
+    ).toBe(true);
+    expect(await schemaExists(half)).toBe(false);
+
+    // Rows in (no fact): somebody's app, left alone.
+    const full = await newSchema('full');
+    const fullDir = dir();
+    await importUserApp({
+      dataDir: fullDir,
+      database: config(full),
+      bundle: local,
+    });
+    expect(
+      await discardUnfilledImport({
+        dataDir: fullDir,
+        database: config(full),
+        key,
+      }),
+    ).toBe(false);
+    expect(await schemaExists(full)).toBe(true);
+
+    // The completion fact (rows committed): left alone, even with no row.
+    const done = await newSchema('done');
+    const doneDir = dir();
+    await importUserApp({
+      dataDir: doneDir,
+      database: config(done),
+      bundle: local,
+      completion: { key, value: '{}' },
+    });
+    expect(
+      await discardUnfilledImport({
+        dataDir: doneDir,
+        database: config(done),
+        key,
+      }),
+    ).toBe(false);
+    expect(await schemaExists(done)).toBe(true);
+  });
 
   it('moves a desktop app to PostgreSQL and back: every record, hidden field, timestamp, history and undo point', async () => {
     const { store, dataDir } = await desktopApp();
@@ -212,21 +339,23 @@ describe.each(
     });
     expect(hosted.source).toBe('postgres');
     expect(hosted.digest).toBe(local.digest);
-    expect(hosted.tables.map((t) => [t.name, t.digest])).toEqual(
-      local.tables.map((t) => [t.name, t.digest]),
-    );
+    // Core's `_smrt_*` tables stay out of the comparison: SQLite carries
+    // them, PostgreSQL's own boot makes them.
+    const appTables = (b: typeof local) =>
+      b.tables
+        .filter((t) => !t.name.startsWith('_smrt_'))
+        .map((t) => [t.name, t.digest]);
+    expect(appTables(hosted)).toEqual(appTables(local));
 
     // And the hosted app works: records, and undo of the removed field.
     const h1 = await hostOn(local, hostedDir, database);
-    expect((await h1.list('Chore')).map((r: any) => r.title).sort()).toEqual([
-      'Bins',
-      'Dishes',
-    ]);
-    expect(await h1.execute({ type: 'undo' }, OK)).toBeTruthy();
-    expect((await h1.list('Chore')).map((r: any) => r.notes).sort()).toEqual([
-      'note 1',
-      'note 2',
-    ]);
+    expect(
+      (await h1.list(hostOwner(h1), 'Chore')).map((r: any) => r.title).sort(),
+    ).toEqual(['Bins', 'Dishes']);
+    expect(await h1.execute(hostOwner(h1), { type: 'undo' }, OK)).toBeTruthy();
+    expect(
+      (await h1.list(hostOwner(h1), 'Chore')).map((r: any) => r.notes).sort(),
+    ).toEqual(['note 1', 'note 2']);
     await h1.close();
 
     // Back to a desktop database.
@@ -245,11 +374,10 @@ describe.each(
     });
     expect(again.digest).toBe(local.digest);
     const h2 = await hostOn(local, back);
-    expect(await h2.execute({ type: 'undo' }, OK)).toBeTruthy();
-    expect((await h2.list('Chore')).map((r: any) => r.notes).sort()).toEqual([
-      'note 1',
-      'note 2',
-    ]);
+    expect(await h2.execute(hostOwner(h2), { type: 'undo' }, OK)).toBeTruthy();
+    expect(
+      (await h2.list(hostOwner(h2), 'Chore')).map((r: any) => r.notes).sort(),
+    ).toEqual(['note 1', 'note 2']);
     await h2.close();
   });
 
@@ -333,6 +461,7 @@ describe.each(
     // The archive's identity continues after the carried ids.
     const h = await hostOn(bundle, target, database);
     await h.execute(
+      hostOwner(h),
       { type: 'removeField', model: 'Chore', field: 'title' },
       OK,
     );
@@ -402,14 +531,14 @@ describe.each(
     expect(inspected).toMatchObject({ integrity: true, recorded: true });
     expect(inspected.rows).toBeGreaterThan(2);
 
-    await admin.query(
+    await rows(
       `UPDATE "${schema}".u_chores SET _sync_revision = 1152921504606846976 WHERE title = 'Bins'`,
     );
     await expect(
       exportUserApp({ dataDir: target, database, versions: bundle.versions }),
     ).rejects.toThrow(/2\^53/);
     // The digits a server pool returns (and a safe value) are read exactly.
-    await admin.query(
+    await rows(
       `UPDATE "${schema}".u_chores SET _sync_revision = 9007199254740991 WHERE title = 'Bins'`,
     );
     const ok = await exportUserApp({
@@ -432,6 +561,7 @@ describe.each(
       store,
     });
     await host.execute(
+      hostOwner(host),
       {
         type: 'defineModel',
         name: 'Gadget',
@@ -442,11 +572,12 @@ describe.each(
       },
       A,
     );
-    await host.create('Gadget', {
+    await host.create(hostOwner(host), 'Gadget', {
       extraData: { a: 1, b: [1, 2] },
       armed: true,
     });
     await host.execute(
+      hostOwner(host),
       { type: 'hideField', model: 'Gadget', field: 'armed' },
       A,
     );
@@ -475,6 +606,7 @@ describe.each(
     // Un-hiding works: the column holds the kind the engine expects.
     const h = await hostOn(bundle, target, database);
     await h.execute(
+      hostOwner(h),
       {
         type: 'addField',
         model: 'Gadget',

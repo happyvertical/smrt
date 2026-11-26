@@ -2,11 +2,13 @@
 // core's startup check (#4927) must not refuse it in a production build. The
 // worker inherits this process's environment, so NODE_ENV=production here is
 // what the desktop sidecar's worker sees.
+
 import { mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { parseRuntimeReportSpec } from '@happyvertical/smrt-reports';
 import { afterAll, beforeAll, expect, it } from 'vitest';
+import { hostOwner } from '../test/engine-principal.ts';
 import { AppHost, type Command, MemoryVersionStore } from './index.ts';
 import { onPglite } from './pglite-env.ts';
 
@@ -17,7 +19,7 @@ const saved = {
 };
 let live: AppHost;
 const run = (host: AppHost, cmd: Command) =>
-  host.execute(cmd, { author: 't', approved: true });
+  host.execute(hostOwner(host), cmd, { author: 't', approved: true });
 
 beforeAll(async () => {
   process.env.NODE_ENV = 'production';
@@ -41,10 +43,17 @@ afterAll(async () => {
 });
 
 it('reads and writes app.db through core collections under NODE_ENV=production', async () => {
-  const created = await live.create('Note', { title: 'first', size: 2 });
+  const created = await live.create(hostOwner(live), 'Note', {
+    title: 'first',
+    size: 2,
+  });
   expect(created.title).toBe('first');
-  expect((await live.list('Note')).map((row) => row.title)).toEqual(['first']);
-  expect((await live.get('Note', String(created.id)))?.size).toBe(2);
+  expect(
+    (await live.list(hostOwner(live), 'Note')).map((row) => row.title),
+  ).toEqual(['first']);
+  expect(
+    (await live.get(hostOwner(live), 'Note', String(created.id)))?.size,
+  ).toBe(2);
 });
 
 it('covers a draft copy and the read-only report worker', {
@@ -63,14 +72,19 @@ it('covers a draft copy and the read-only report worker', {
       }),
     },
   });
-  expect((await live.runReport('sizes')).rowCount).toBe(1);
-  const draft = await live.forkDraft(join(root, 'draft'), {
+  expect((await live.runReport(hostOwner(live), 'sizes')).rowCount).toBe(1);
+  const draft = await live.forkDraft(hostOwner(live), join(root, 'draft'), {
     store: new MemoryVersionStore(),
   });
   try {
-    const row = await draft.create('Note', { title: 'draft only', size: 5 });
-    expect((await draft.get('Note', String(row.id)))?.title).toBe('draft only');
-    expect((await draft.list('Note')).length).toBe(2);
+    const row = await draft.create(hostOwner(draft), 'Note', {
+      title: 'draft only',
+      size: 5,
+    });
+    expect(
+      (await draft.get(hostOwner(draft), 'Note', String(row.id)))?.title,
+    ).toBe('draft only');
+    expect((await draft.list(hostOwner(draft), 'Note')).length).toBe(2);
   } finally {
     await draft.discard();
   }
@@ -81,23 +95,32 @@ it('covers a draft copy and the read-only report worker', {
 // boots a worker (a new one per definition change) or a rehearsal copy that
 // must declare its own handle, under NODE_ENV=production.
 it('boots a new worker with a migration, then reads and writes the added field', async () => {
-  const before = await live.create('Note', { title: 'pre-migration', size: 1 });
+  const before = await live.create(hostOwner(live), 'Note', {
+    title: 'pre-migration',
+    size: 1,
+  });
   await run(live, {
     type: 'addField',
     model: 'Note',
     field: 'rank',
     definition: { type: 'integer' },
   });
-  const after = await live.create('Note', { title: 'post', size: 3, rank: 7 });
-  expect((await live.get('Note', String(after.id)))?.rank).toBe(7);
-  expect((await live.get('Note', String(before.id)))?.title).toBe(
-    'pre-migration',
-  );
+  const after = await live.create(hostOwner(live), 'Note', {
+    title: 'post',
+    size: 3,
+    rank: 7,
+  });
+  expect(
+    (await live.get(hostOwner(live), 'Note', String(after.id)))?.rank,
+  ).toBe(7);
+  expect(
+    (await live.get(hostOwner(live), 'Note', String(before.id)))?.title,
+  ).toBe('pre-migration');
 });
 
 it('undoes the migration (the down steps), then reads', async () => {
   await run(live, { type: 'undo' });
-  const rows = await live.list('Note');
+  const rows = await live.list(hostOwner(live), 'Note');
   expect(rows.length).toBeGreaterThan(0);
   expect(rows.some((row) => row.title === 'post')).toBe(true);
   expect(live.def.models.Note.fields.rank).toBeUndefined();
@@ -116,10 +139,14 @@ it('publishes a draft that adds a field and reads it from live', {
       name: 'Chore',
       fields: { title: { type: 'text' } },
     });
-    await host.create('Chore', { title: 'Bins' });
-    const draft = await host.forkDraft(join(publishRoot, 'draft'), {
-      store: new MemoryVersionStore(),
-    });
+    await host.create(hostOwner(host), 'Chore', { title: 'Bins' });
+    const draft = await host.forkDraft(
+      hostOwner(host),
+      join(publishRoot, 'draft'),
+      {
+        store: new MemoryVersionStore(),
+      },
+    );
     host.setFrozen(true);
     await run(draft, {
       type: 'addField',
@@ -128,13 +155,18 @@ it('publishes a draft that adds a field and reads it from live', {
       definition: { type: 'integer' },
     });
     const preview = await host.previewPublish(draft);
-    await host.publishDraft(draft, {
+    await host.publishDraft(hostOwner(host), draft, {
       author: 't',
       approved: true,
       expect: preview.digest,
     });
-    const row = await host.create('Chore', { title: 'Dishes', points: 5 });
-    expect((await host.get('Chore', String(row.id)))?.points).toBe(5);
+    const row = await host.create(hostOwner(host), 'Chore', {
+      title: 'Dishes',
+      points: 5,
+    });
+    expect(
+      (await host.get(hostOwner(host), 'Chore', String(row.id)))?.points,
+    ).toBe(5);
     await draft.close().catch(() => {});
   } finally {
     await host.close();

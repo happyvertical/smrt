@@ -1,6 +1,7 @@
 import { writeFileSync } from 'node:fs';
 import { afterAll, beforeAll, expect, it } from 'vitest';
 import { ApprovalRequiredError, type Command } from '../../engine/index.ts';
+import { hostOwner } from '../../test/engine-principal.ts';
 import { ApprovalCollection } from '../objects/Approval.ts';
 import { describeApproval } from '../ui/approvals.ts';
 import { publishDataLines } from '../ui/publish.ts';
@@ -20,7 +21,7 @@ afterAll(async () => {
   await harness.close();
 });
 const execute = async (command: Command) =>
-  (await getHost()).execute(command, {
+  (await getHost()).execute(hostOwner(await getHost()), command, {
     author: harness.owner.id,
     approved: true,
   });
@@ -29,14 +30,14 @@ async function card(command: Command) {
   // release is reproduced from the live host's own refusal.
   const live = await getHost();
   const pending = await live
-    .execute(command, { author: harness.owner.id })
+    .execute(hostOwner(live), command, { author: harness.owner.id })
     .then(
       () => {
         throw new Error('expected the command to need approval');
       },
       (e) => {
         if (!(e instanceof ApprovalRequiredError)) throw e;
-        return requestCommandApproval(live, command, e, harness.owner.id);
+        return requestCommandApproval(live, command, e, harness.owner);
       },
     );
   const approval = (await listApprovalViews()).find(
@@ -69,13 +70,13 @@ it('projects real engine previews through stored approvals into card text', asyn
       fields: { name: { type: 'text' } },
     });
     const host = await getHost();
-    const first = await host.create('Customer', {
+    const first = await host.create(hostOwner(host), 'Customer', {
       name: 'Acme',
       amount: 8,
       qty: 2,
       category: 'Food',
     });
-    const second = await host.create('Customer', {
+    const second = await host.create(hostOwner(host), 'Customer', {
       name: 'Other',
       amount: 3,
       qty: 1,
@@ -108,7 +109,10 @@ it('projects real engine previews through stored approvals into card text', asyn
         customer: { type: 'reference', ref: 'Customer' },
       },
     });
-    await host.create('Order', { name: 'First order', customer: second.id });
+    await host.create(hostOwner(host), 'Order', {
+      name: 'First order',
+      customer: second.id,
+    });
     const merge = await card({
       type: 'mergeRecords',
       model: 'Customer',
@@ -182,7 +186,7 @@ it('limits stored reference labels to models used by the card', async () =>
   }));
 it('projects only data-step model labels into publish previews', async () =>
   runAs(harness.owner, async () => {
-    await startDraft('Data labels', harness.owner.id);
+    await startDraft('Data labels', harness.owner);
     try {
       await runCommand(
         {
@@ -191,7 +195,7 @@ it('projects only data-step model labels into publish previews', async () =>
           mode: 'insert',
           rows: [{ name: 'Draft import' }],
         },
-        harness.owner.id,
+        harness.owner,
         'draft',
       );
       const { preview } = await previewDraft();
@@ -219,11 +223,13 @@ it('hydrates legacy merge reference labels through list, get and reused approval
       },
     });
     const host = await getHost();
-    const kept = await host.create('MergeCustomer', { name: 'Acme' });
-    const removed = await host.create('MergeCustomer', {
+    const kept = await host.create(hostOwner(host), 'MergeCustomer', {
+      name: 'Acme',
+    });
+    const removed = await host.create(hostOwner(host), 'MergeCustomer', {
       name: `<b>Removed</b> ${'very long record label '.repeat(12)}`,
     });
-    await host.create('MergeOrder', {
+    await host.create(hostOwner(host), 'MergeOrder', {
       name: 'First order',
       customer: removed.id,
     });
@@ -260,9 +266,9 @@ it('hydrates legacy merge reference labels through list, get and reused approval
       id: row.id,
       preview: { referenceLabels: { MergeOrder: 'Orders' } },
     });
-    await startDraft('Merge references', harness.owner.id);
+    await startDraft('Merge references', harness.owner);
     try {
-      await runCommand(command, harness.owner.id, 'draft');
+      await runCommand(command, harness.owner, 'draft');
       const { preview } = await previewDraft();
       expect(preview.modelLabels).toMatchObject({
         MergeCustomer: 'Customers',

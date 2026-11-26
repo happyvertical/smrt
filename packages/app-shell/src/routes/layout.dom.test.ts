@@ -62,6 +62,15 @@ beforeEach(() => {
     addEventListener() {},
     removeEventListener() {},
   }));
+  // jsdom has no ResizeObserver; the toast viewport measures its anchor with one.
+  vi.stubGlobal(
+    'ResizeObserver',
+    class {
+      observe() {}
+      unobserve() {}
+      disconnect() {}
+    },
+  );
   // The panel asks the server about the assistant; a quiet answer is enough.
   vi.stubGlobal(
     'fetch',
@@ -136,11 +145,11 @@ const follows = (a: Element | null, b: Element | null) =>
   );
 
 describe('desktop layout', () => {
-  it('shows the left sidebar, then the chat, then the content', async () => {
+  it('shows the left sidebar, then the content, then the chat at the right', async () => {
     await render();
     const left = q('#smrt-admin-shell-left-panel');
-    expect(follows(left, panel())).toBe(true);
-    expect(follows(panel(), q('#smrt-admin-shell-main'))).toBe(true);
+    expect(follows(left, q('#smrt-admin-shell-main'))).toBe(true);
+    expect(follows(q('#smrt-admin-shell-main'), panel())).toBe(true);
     expect(panel()?.getAttribute('hidden')).toBeNull();
     expect(panel()?.textContent).toContain('Assistant');
     expect(q('#assistant-input')).toBeTruthy();
@@ -232,6 +241,34 @@ describe('desktop layout', () => {
     await tick();
     await tick();
     expect(panel()?.getAttribute('hidden')).toBeNull();
+  });
+
+  it('docks the chat at the right of the page at 400px, with no engine line', async () => {
+    await render();
+    const main = q('#smrt-admin-shell-main');
+    expect(
+      Boolean(
+        main &&
+          panel() &&
+          main.compareDocumentPosition(panel() as Element) &
+            Node.DOCUMENT_POSITION_FOLLOWING,
+      ),
+    ).toBe(true);
+    expect(q('.smrt-admin-shell__body')?.getAttribute('data-panel-side')).toBe(
+      'end',
+    );
+    expect(panel()?.getAttribute('style')).toContain(
+      '--smrt-admin-shell-panel-width: 400px',
+    );
+    expect(panel()?.textContent).not.toMatch(/Using /);
+  });
+
+  it('anchors toasts to the content region so they never sit over the chat column', async () => {
+    await render();
+    const toasts = q('[data-smrt-component="ToastViewport"]');
+    expect(toasts?.getAttribute('style')).toContain(
+      '--smrt-toast-viewport-right',
+    );
   });
 
   it('has a resizable separator between the chat and the content', async () => {
@@ -410,10 +447,11 @@ describe('the chat width', () => {
     await render();
     const before = Number(separator()?.getAttribute('aria-valuenow'));
     separator()?.dispatchEvent(
-      new KeyboardEvent('keydown', { key: 'ArrowRight', bubbles: true }),
+      new KeyboardEvent('keydown', { key: 'ArrowLeft', bubbles: true }),
     );
     await tick();
     const after = Number(separator()?.getAttribute('aria-valuenow'));
+    // the chat is at the right: it grows toward the content, to the left
     expect(after).toBe(before + 16);
     const stored = JSON.parse(
       localStorage.getItem('smrt-app-shell:layout:owner-1') ?? '{}',

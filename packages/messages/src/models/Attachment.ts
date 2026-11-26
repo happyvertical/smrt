@@ -9,32 +9,24 @@
 import '../__smrt-register__.js';
 import {
   foreignKey,
-  importOptionalDependency,
+  ObjectRegistry,
   SmrtObject,
+  type SmrtSaveOptions,
   smrt,
 } from '@happyvertical/smrt-core';
 import { TenantScoped, tenantId } from '@happyvertical/smrt-tenancy/decorators';
-import { assertHydratedMailAccess } from '../access.js';
+import {
+  assertHydratedMailAccess,
+  assertMailDraftWrite,
+  inMailSystemAccess,
+  isUnsentDraft,
+  learnMailAccessOptions,
+} from '../access.js';
+import {
+  readStoredAttachmentFile,
+  scopeAttachmentPath,
+} from '../attachment-storage.js';
 import type { AttachmentOptions } from '../types';
-
-/**
- * Split an absolute path into its directory and file name, or return null for
- * a relative path. Plain string handling rather than `node:path`: the package
- * root must stay browser-reachable (the bundle-gate forbids `node:*` there).
- */
-function splitAbsolutePath(
-  filePath: string,
-): { dir: string; base: string } | null {
-  // A backslash separates segments only in a Windows path; in a POSIX path it
-  // is an ordinary filename character.
-  const windows = /^[A-Za-z]:[\\/]/.test(filePath);
-  if (!windows && !filePath.startsWith('/')) return null;
-  const cut = windows
-    ? Math.max(filePath.lastIndexOf('/'), filePath.lastIndexOf('\\'))
-    : filePath.lastIndexOf('/');
-  const dir = filePath.slice(0, cut) || filePath.slice(0, cut + 1);
-  return { dir, base: filePath.slice(cut + 1) };
-}
 
 @TenantScoped({ mode: 'optional' })
 @smrt({
@@ -99,6 +91,108 @@ export class Attachment extends SmrtObject {
   override async loadFromSlug() {
     await super.loadFromSlug();
     await assertHydratedMailAccess(this);
+  }
+
+  /**
+   * An attachment is part of what its message will send, so writing one on an
+   * unsent email draft of an owned account needs the same `draft` scope as
+   * writing the draft (see `Message.save()`), whichever route the write takes.
+   * Both the parent it is saved onto and the parent it is stored on count, so
+   * an attachment cannot be moved on or off a draft without the scope.
+   */
+  override async save(options?: SmrtSaveOptions): Promise<this> {
+    // A stored path is relative to the attachment storage root and under the
+    // message account's directory: refuse anything else before it is written,
+    // and keep the normalised form.
+    if (this.filePath) {
+      this.filePath = scopeAttachmentPath(
+        this.filePath,
+        await this.currentAccountId(),
+      );
+    }
+    await this.assertDraftParentWrite();
+    return super.save(options);
+  }
+
+  override async delete(
+    options: { expectedUpdatedAt?: Date | string } = {},
+  ): Promise<void> {
+    await this.assertDraftParentWrite();
+    return super.delete(options);
+  }
+
+  /**
+   * The account of the message this row is stored on now, read from the
+   * stored message (never from the row's own `accountId`), or null.
+   */
+  private async currentAccountId(): Promise<string | null> {
+    if (!this.messageId) return null;
+    try {
+      const { MessageCollection } = await import(
+        '../collections/MessageCollection.js'
+      );
+      const messages = await MessageCollection.create(this.options as never);
+      const parent = (await this.db.get(messages.tableName, {
+        id: this.messageId,
+      })) as Record<string, unknown> | null;
+      return (parent?.account_id as string | null) || null;
+    } catch {
+      return null;
+    }
+  }
+
+  /**
+   * Trusted system work and non-draft parents pass. Unlike the message check
+   * this runs before the write, not inside its transaction: the attachment
+   * save interceptor builds collections from the instance's options, and
+   * inside a transaction those would register the transaction's handle as a
+   * policy database.
+   */
+  private async assertDraftParentWrite(): Promise<void> {
+    learnMailAccessOptions(this.options);
+    if (inMailSystemAccess()) return;
+    const parentIds = new Set<string>();
+    if (this.messageId) parentIds.add(this.messageId);
+    if (this.id) {
+      const stored = await this.getCanonicalPersistedRow({ id: this.id });
+      if (typeof stored?.message_id === 'string' && stored.message_id) {
+        parentIds.add(stored.message_id);
+      }
+    }
+    // A new attachment is written over the stored row that carries its slug
+    // (its own, or the one the save derives from its id): that row's parent is
+    // the one it changes.
+    const slug = this.isPersisted ? '' : this.slug || (await this.getSlug());
+    if (slug) {
+      const columns = ObjectRegistry.getConflictColumns(
+        this.getResolvedQualifiedName(),
+      );
+      if (columns.includes('slug')) {
+        for (const keyed of await this.getCanonicalPersistedRows({
+          slug,
+        })) {
+          if (typeof keyed.message_id === 'string' && keyed.message_id) {
+            parentIds.add(keyed.message_id);
+          }
+        }
+      }
+    }
+    if (!parentIds.size) return;
+    const { MessageCollection } = await import(
+      '../collections/MessageCollection.js'
+    );
+    const messages = await MessageCollection.create(this.options as never);
+    const accountIds: Array<string | null> = [];
+    for (const id of parentIds) {
+      const parent = (await this.db.get(messages.tableName, { id })) as Record<
+        string,
+        unknown
+      > | null;
+      if (parent && isUnsentDraft(parent.send_status, parent.is_draft)) {
+        accountIds.push((parent.account_id as string | null) ?? null);
+      }
+    }
+    await assertMailDraftWrite(accountIds, this.options);
   }
 
   /**
@@ -169,38 +263,21 @@ export class Attachment extends SmrtObject {
   }
 
   /**
-   * Read file content (if stored externally)
+   * Read the stored file's bytes, or null when the row has no file or the
+   * file is missing or unreadable.
    *
-   * The files SDK is loaded through core's bundler-invisible optional-import
-   * boundary so it never enters provider-neutral consumer bundles (#1979).
-   * Absence of the SDK at runtime degrades to the existing null contract.
-   *
-   * The local provider joins every path onto its base path (the process cwd
-   * by default), so an absolute `filePath` is rooted at its own directory, and
-   * the bytes are read raw: decoding a PDF as UTF-8 corrupts it (#3808).
+   * `filePath` is relative to the root set with `configureAttachmentStorage`
+   * and must lie under `<accountId>/` of the message's current account.
+   * Throws `AttachmentStorageError` when no root is configured, or when the
+   * stored path (or a symlink under it) leaves the root or the account's
+   * directory; this includes rows stored before the root existed. The bytes are read
+   * raw: decoding a PDF as UTF-8 corrupts it (#3808).
    */
   async readContent(): Promise<Buffer | null> {
     if (!this.filePath) return null;
-
-    try {
-      const { getFilesystem, initializeProviders } =
-        (await importOptionalDependency(
-          '@happyvertical/files',
-          "Import '@happyvertical/smrt-core/filesystem' (or '@happyvertical/smrt-assets/filesystem') during server startup to read externally-stored attachments in bundled builds.",
-        )) as typeof import('@happyvertical/files');
-      // The SDK registers its providers asynchronously on import; make the
-      // local one available before asking for it.
-      await initializeProviders?.();
-      const split = splitAbsolutePath(this.filePath);
-      const files = await getFilesystem(
-        split ? { type: 'local', basePath: split.dir } : { type: 'local' },
-      );
-      const data = await files.read(split ? split.base : this.filePath, {
-        raw: true,
-      });
-      return data instanceof Buffer ? data : Buffer.from(data);
-    } catch {
-      return null;
-    }
+    return readStoredAttachmentFile(
+      this.filePath,
+      await this.currentAccountId(),
+    );
   }
 }

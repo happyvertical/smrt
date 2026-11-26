@@ -29,7 +29,7 @@ import { fileURLToPath } from 'node:url';
 import { getCurrentTenant, withTenant } from '@happyvertical/smrt-tenancy';
 import { TenantCollection } from '@happyvertical/smrt-users';
 import type { DatabaseInterface } from '@happyvertical/sql';
-import type { DatabaseConfig } from '../../engine/db/index.ts';
+import type { AppClaim, DatabaseConfig } from '../../engine/db/index.ts';
 import { CapacityError } from '../../engine/errors.ts';
 import {
   AppHost,
@@ -38,6 +38,7 @@ import {
   discardOrphanDraft,
   EngineError,
   isMigratedToPostgres,
+  type MethodCodeGate,
   type MigrateToPostgresResult,
   migrateUserAppToPostgres,
   type WorkerLimits,
@@ -49,6 +50,7 @@ import { ApprovalCollection } from '../objects/Approval.ts';
 import { ChangeBatchCollection } from '../objects/ChangeBatch.ts';
 import { ChangeCardCollection } from '../objects/ChangeCard.ts';
 import { versionSummary } from '../ui/command-summary.ts';
+import { DEFAULT_OP_DEADLINE_MS } from './app-limits-env.ts';
 import { publish, setTenantScopedEvents } from './events.ts';
 import {
   HOST_OVERHEAD,
@@ -57,6 +59,12 @@ import {
   type HostMetrics,
 } from './host-lifecycle.ts';
 import { assertOwner, PolicyError } from './owner.ts';
+import {
+  bindAmbientShellScope,
+  isPostgresHandle,
+  requireShellTenancy,
+  tenantBoundDb,
+} from './shell-tenancy.ts';
 import type { Target } from './target.ts';
 import { DraftVersionStore, ShellVersionStore } from './version-store.ts';
 
@@ -106,6 +114,15 @@ export interface ShellContext {
     tenantId: string,
   ) => AppLimits | undefined | Promise<AppLimits | undefined>;
   /**
+   * Cloud only (#5194): whether a tenant may run app-authored method code
+   * (the `app.methods` entitlement). Handed to the tenant's live host and to a
+   * draft host reopened after a restart (a draft forked from live inherits it
+   * from the engine); asked by the engine on each call, so a change of plan
+   * applies at once. Absent: method code always runs, with no lookup. The
+   * desktop never has one.
+   */
+  methodCode?: MethodCodeGate;
+  /**
    * How many apps one process keeps open (#5192): idle eviction, a cap on
    * open apps, a cap on concurrent wakes. Honoured by the `cloud` profile only;
    * absent (the desktop, every test that does not choose) the host is opened
@@ -125,6 +142,12 @@ export interface ShellContext {
    * never creates one. Absent: the app's data is a SQLite file in its
    * directory under the data root (tests, and a deployment with no server
    * for the apps yet). The desktop ignores it: it never leaves SQLite.
+   *
+   * With separate runtime and admin credentials (#5188, `app-database.ts`),
+   * `config(schema)` names the runtime login in `connection`, the admin
+   * credentials in `admin` and the app roles in `roles`, and `provision`
+   * also creates and grants those roles and refuses a runtime login that is
+   * too powerful.
    */
   appDatabase?: {
     config: (schema: string) => DatabaseConfig;
@@ -195,6 +218,8 @@ export async function shellProfile(): Promise<ShellProfile> {
   const value = resolve ? await resolve() : 'local';
   if (value !== 'local' && value !== 'cloud')
     throw new Error('the shell profile is not known');
+  // Cloud only: every shell model in `required` mode before anything reads it.
+  if (value === 'cloud') requireShellTenancy();
   profileCache = value;
   setTenantScopedEvents(value === 'cloud');
   return value;
@@ -232,8 +257,12 @@ export async function requireCloudProfile(what: string): Promise<void> {
  * tenant's rows. It refuses instead (401).
  */
 export async function getShellDb(): Promise<DatabaseInterface> {
-  if ((await shellProfile()) === 'cloud') requestTenant();
-  const db = await requireContext().db();
+  const cloud = (await shellProfile()) === 'cloud';
+  if (cloud) requestTenant();
+  const base = await requireContext().db();
+  // Cloud on PostgreSQL: every operation carries the tenant to the database's
+  // row-level security (shell-tenancy.ts). SQLite (tests) has no policies.
+  const db = cloud && isPostgresHandle(base) ? tenantBoundDb(base) : base;
   syncDb = db;
   return db;
 }
@@ -418,15 +447,28 @@ export function wireHostEvents(
 }
 
 /**
- * The worker limits with the connection budget: every worker that opens a
- * pool reserves it (`AppWorker`, #5464). Only a hosted process with a
- * lifecycle policy counts; nothing else changes.
+ * The worker limits with the connection budget (#5464, #5188): every
+ * PostgreSQL worker's operations go through the process's one shared pool
+ * (`HostLifecycle.brokerPool`), whose connections are reserved once. Only a
+ * hosted process (a lifecycle policy, or PostgreSQL for apps) counts; nothing
+ * else changes.
  */
 function budgetedLimits(): WorkerLimits | undefined {
-  const limits = requireContext().workerLimits;
-  return lifecycleOn()
-    ? { ...limits, connections: lifecycle.workerBudget }
-    : limits;
+  const ctx = requireContext();
+  // A hosted process with PostgreSQL for its apps always shares one bounded
+  // pool (#5188), counted in the budget when there is one; a lifecycle policy
+  // alone also keeps the per-host overhead accounting.
+  return lifecycleOn() || ctx.appDatabase
+    ? {
+        // Hosted PostgreSQL: a user's operation never stays open without end
+        // (boot, migration and snapshots are not bound by the default).
+        ...(ctx.appDatabase
+          ? { dataOpDeadlineMs: DEFAULT_OP_DEADLINE_MS }
+          : {}),
+        ...ctx.workerLimits,
+        connections: lifecycle.workerBudget,
+      }
+    : ctx.workerLimits;
 }
 
 /**
@@ -467,6 +509,17 @@ export async function withConnections(
   return host;
 }
 
+/**
+ * The tenant an app host serves (#5188): every call into it carries a principal
+ * of this tenant. Cloud: the holder's tenant. Desktop: the installation's one
+ * tenant (the store pin), else the tenant of the request that opens the app.
+ * With none the engine's desktop default applies and no owner's call matches.
+ */
+function hostTenant(tenant: string | null): { tenantId?: string } {
+  const id = tenant ?? getCurrentTenant()?.tenantId;
+  return id ? { tenantId: id } : {};
+}
+
 /** drafts.ts: open a draft worker for the current app under the connection budget. */
 export async function withDraftConnections(
   open: () => Promise<AppHost>,
@@ -486,19 +539,48 @@ export function openDraftHost(
   pin: string | null = null,
   database: DatabaseConfig | null = null,
   appLimits?: AppLimits,
+  /** The live host's claim, lent for the draft's store writes (#5486); never released by the draft. */
+  claim?: AppClaim,
+  methodCode?: MethodCodeGate,
 ): Promise<AppHost> {
   return withConnections(database, 'draft', () =>
     AppHost.open(dir, {
+      autoApprove: true,
       store: new DraftVersionStore(db, id, pin),
+      ...(claim ? { claim } : {}),
+      ...hostTenant(pin),
       workerUrl: workerUrl(),
       workerLimits: budgetedLimits(),
-      autoApprove: true,
       ...(appLimits ? { appLimits } : {}),
+      ...(methodCode ? { methodCode } : {}),
       // A draft on PostgreSQL reopens with the LIVE app's config; its own
       // schema comes from the marker in `dir`.
       ...(database ? { database } : {}),
     }),
   );
+}
+
+/**
+ * Run `work` on the draft rows. On a live host with a fenced claim it is one
+ * claim transaction (#5486): the claim's proof comes first, so a host that lost
+ * its claim changes no draft row, whoever holds the app now.
+ */
+export async function withDraftRows<T>(
+  live: AppHost,
+  work: (drafts: AppDraftCollection) => Promise<T>,
+): Promise<T> {
+  if (live.lendableClaim)
+    return live.claimTransaction(async (tx) => {
+      if (
+        (await shellProfile()) === 'cloud' &&
+        isPostgresHandle(await getShellDb())
+      )
+        await bindAmbientShellScope(tx);
+      return work(
+        await AppDraftCollection.create({ db: tx as DatabaseInterface }),
+      );
+    });
+  return work(await AppDraftCollection.create({ db: await getShellDb() }));
 }
 
 /**
@@ -517,28 +599,39 @@ async function adoptDraft(
   const drafts = await AppDraftCollection.create({ db });
   const now = new Date().toISOString();
   const rows = await drafts.list({ limit: 1000 });
-  for (const row of rows.filter((r) => r.status === 'starting')) {
-    row.status = 'discarded';
-    row.note = 'the start did not finish';
-    row.endedAt = now;
-    await row.save();
-  }
+  // On a host with a claim these writes are one claim transaction (#5486): a
+  // host that lost its claim marks no draft discarded, whoever holds it now.
+  const discard = async (list: typeof rows, note: string) => {
+    if (!list.length) return;
+    await withDraftRows(live, async (coll) => {
+      for (const r of list) {
+        const row = (await coll.get(r.id as string)) ?? r;
+        row.status = 'discarded';
+        row.note = note;
+        row.endedAt = now;
+        await row.save();
+      }
+    });
+  };
+  await discard(
+    rows.filter((r) => r.status === 'starting'),
+    'the start did not finish',
+  );
   const open = rows
     .filter((r) => r.status === 'open')
     .sort((a, b) => (String(a.createdAt) < String(b.createdAt) ? 1 : -1));
-  for (const extra of open.slice(1)) {
-    extra.status = 'discarded';
-    extra.note = 'another draft was open';
-    extra.endedAt = now;
-    await extra.save();
-  }
+  await discard(open.slice(1), 'another draft was open');
   const row = open[0];
   if (!row) {
     // A copy nothing refers to any more (a crash after a publish or discard
     // was recorded): the engine removes it, and only if it is one of its own.
     if (existsSync(dir))
       try {
-        await discardOrphanDraft(dir, database ?? undefined);
+        await discardOrphanDraft(
+          dir,
+          database ?? undefined,
+          live.lendableClaim,
+        );
       } catch {
         // not removable (no marker, a symlink): left alone, never forced
       }
@@ -552,8 +645,15 @@ async function adoptDraft(
     host: null,
     problem: null,
   };
-  const imports = await AppImportCollection.create({ db });
-  const pending = await imports.list({ where: { draftId: slot.id }, limit: 1 });
+  // Workbook import is the desktop's: in cloud `app_imports` (no tenancy, no
+  // policy) is never read.
+  const pending =
+    (await shellProfile()) === 'cloud'
+      ? []
+      : await (await AppImportCollection.create({ db })).list({
+          where: { draftId: slot.id },
+          limit: 1,
+        });
   if (
     pending[0] &&
     !['review', 'published', 'discarded'].includes(pending[0].status)
@@ -575,6 +675,8 @@ async function adoptDraft(
       holder.pin,
       database,
       await appLimitsOf(holder),
+      live.lendableClaim,
+      methodCodeOf(holder),
     );
     wireHostEvents(draft, 'draft', holder.tenantId);
     slot.host = lifecycleOn() ? leased(holder, draft) : draft;
@@ -648,6 +750,41 @@ async function liveDatabase(
 }
 
 /**
+ * Refuse while the tenant has an open draft (working copy), waiting changes or
+ * an unsettled approval, none of which a move carries (#5193); each is named so
+ * the owner knows what to settle. `moving` completes "before ...".
+ */
+export async function assertNothingPending(
+  db: DatabaseInterface,
+  tenant: string,
+  draft: string,
+  moving: 'migrating' | 'receiving an app',
+): Promise<void> {
+  if (existsSync(draft))
+    throw new EngineError(
+      `an open draft (working copy) exists; apply or discard it before ${moving}`,
+      'refused',
+    );
+  const pending = await withTenant(
+    { tenantId: tenant, permissions: new Set<string>() },
+    async () => ({
+      changes: await hasWaitingChanges(db),
+      approvals: await hasUnsettledApprovals(db),
+    }),
+  );
+  if (pending.changes)
+    throw new EngineError(
+      `changes are waiting; apply or discard them before ${moving}`,
+      'refused',
+    );
+  if (pending.approvals)
+    throw new EngineError(
+      `an approval is unsettled (pending, accepted, executing, or approved with no result, i.e. a crashed execution); decide it before ${moving}`,
+      'refused',
+    );
+}
+
+/**
  * Migrate one tenant's SQLite app into its PostgreSQL schema (#5193), so the
  * refusal above clears. Idempotent and safe to rerun after any crash; the
  * SQLite file is only read and stays as the backup. Refuses (nothing written)
@@ -655,8 +792,8 @@ async function liveDatabase(
  * copy exists (neither is carried). The tenant, app and
  * schema come from the shell's own rows, never from input.
  *
- * NOT wired to any caller yet: who may run it (an operator, the owner) is the
- * hosted caller/principal work (#5188/#5195/#5375).
+ * Run by the operator command (`operator.ts`), which verifies the user is the
+ * tenant's owner and calls this inside that owner's scope; there is no owner route.
  */
 export async function migrateOwnAppToPostgres(): Promise<MigrateToPostgresResult> {
   const provider = requireContext().appDatabase;
@@ -675,36 +812,46 @@ export async function migrateOwnAppToPostgres(): Promise<MigrateToPostgresResult
     tenant,
     app.id as string,
   );
-  // None of these is carried across; each is named so the owner knows what to settle.
-  if (existsSync(draft))
-    throw new EngineError(
-      'an open draft (working copy) exists; apply or discard it before migrating',
-      'refused',
-    );
-  const pending = await withTenant(
-    { tenantId: tenant, permissions: new Set<string>() },
-    async () => ({
-      changes: await hasWaitingChanges(db),
-      approvals: await hasUnsettledApprovals(db),
-    }),
-  );
-  if (pending.changes)
-    throw new EngineError(
-      'changes are waiting; apply or discard them before migrating',
-      'refused',
-    );
-  if (pending.approvals)
-    throw new EngineError(
-      'an approval is unsettled (pending, accepted, executing, or approved with no result, i.e. a crashed execution); decide it before migrating',
-      'refused',
-    );
+  await assertNothingPending(db, tenant, draft, 'migrating');
   const schema = appSchemaName(tenant, app.id as string);
   return migrateUserAppToPostgres({
     dataDir: live,
+    tenantId: tenant,
     database: provider.config(schema),
     versions: await store.list(),
     provision: () => provider.provision(schema),
   });
+}
+
+/** The hosted PostgreSQL provider for apps, or a refusal when none is configured. */
+export function requireAppDatabase(): NonNullable<ShellContext['appDatabase']> {
+  const provider = requireContext().appDatabase;
+  if (!provider)
+    throw new EngineError(
+      'there is no PostgreSQL database for apps configured',
+      'refused',
+    );
+  return provider;
+}
+
+/**
+ * Hosted: close the signed-in tenant's app (live and draft host) and forget its
+ * holder, so the next request opens it fresh. For the one operation that
+ * installs data under a closed app (`receive-user-app.ts`, #5193). Refused while
+ * a call is inside the app.
+ */
+export async function closeOwnApp(): Promise<void> {
+  await shellProfile();
+  const holder = holders.get(currentHolderKeySync());
+  if (!holder) return;
+  if (holder.leases > 0 || holder.handouts > 0 || holder.slotRef?.hold)
+    throw new EngineError('the app is in use; try again', 'refused');
+  const pending = holder.hostPromise;
+  await holder.slotRef?.host?.close().catch(() => {});
+  await (holder.hostRef ?? (await pending?.catch(() => null)))
+    ?.close()
+    .catch(() => {});
+  if (holders.get(holder.key) === holder) holders.delete(holder.key);
 }
 
 /**
@@ -712,9 +859,12 @@ export async function migrateOwnAppToPostgres(): Promise<MigrateToPostgresResult
  * open: on PostgreSQL its schema goes too. The engine removes only what is one
  * of its own drafts.
  */
-export async function discardStaleDraft(dir: string): Promise<void> {
+export async function discardStaleDraft(
+  dir: string,
+  live?: AppHost,
+): Promise<void> {
   const database = (await currentHolder()).database;
-  await discardOrphanDraft(dir, database ?? undefined);
+  await discardOrphanDraft(dir, database ?? undefined, live?.lendableClaim);
 }
 
 /** True when an approval is still waiting to be decided or applied. */
@@ -779,6 +929,11 @@ async function appLimitsOf(holder: Holder): Promise<AppLimits | undefined> {
   return (await limits(holder.tenantId)) ?? undefined;
 }
 
+/** The method-code gate of a cloud tenant's app (#5194); none on the desktop. */
+function methodCodeOf(holder: Holder): MethodCodeGate | undefined {
+  return holder.tenantId ? requireContext().methodCode : undefined;
+}
+
 /** Open one holder's live host: the app, its draft, the freeze. */
 async function openLive(holder: Holder): Promise<AppHost> {
   const db = await getShellDb();
@@ -791,9 +946,11 @@ async function openLive(holder: Holder): Promise<AppHost> {
   const host = await withConnections(database, 'live', () =>
     AppHost.open(dirs.live, {
       store,
+      ...hostTenant(holder.tenantId ?? holder.pin),
       workerUrl: workerUrl(),
       workerLimits: budgetedLimits(),
       ...(appLimits ? { appLimits } : {}),
+      ...(methodCodeOf(holder) ? { methodCode: methodCodeOf(holder) } : {}),
       ...(database ? { database } : {}),
     }),
   );
@@ -804,9 +961,35 @@ async function openLive(holder: Holder): Promise<AppHost> {
   try {
     await adoptDraft(holder, db, host, dirs.draft, database);
     await freezeForWaitingChanges(db, host);
+    // The change an earlier host of this app left unfinished (#5486) was
+    // decided by the open: settle the approval that asked for it. A failure
+    // fails the open (below), so nothing is served, and no change can overwrite
+    // the persisted outcome, until a later open settles it.
+    const recovered = host.recoveredChange;
+    if (recovered?.request) {
+      const approvals = await import('./approvals.ts');
+      try {
+        await approvals.settleRecoveredChange({
+          request: recovered.request,
+          outcome: recovered.outcome,
+          partial: recovered.partial,
+        });
+        await host.acknowledgeRecovery(recovered.id);
+      } catch (e) {
+        const summary = await approvals
+          .getApprovalView(recovered.request)
+          .then((v) => v?.summary)
+          .catch(() => undefined);
+        throw new EngineError(
+          `the app cannot open yet: the approval ${recovered.request}${summary ? ` ("${summary}")` : ''} has an unsettled outcome from an interrupted change and could not be settled (${e instanceof Error ? e.message : String(e)}). Try again; nothing is lost.`,
+          'refused',
+        );
+      }
+    }
   } catch (e) {
     // Never serve live thawed when we could not tell whether a draft is
     // open: fail the open; the next call retries.
+    await holder.slotRef?.host?.close().catch(() => {});
     holder.slotRef = null;
     await host.close().catch(() => {});
     throw e;

@@ -3,6 +3,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { DatabaseSync } from 'node:sqlite';
 import { afterEach, beforeEach, expect, it, vi } from 'vitest';
+import { hostOwner } from '../test/engine-principal.ts';
 import {
   AppHost,
   ApprovalRequiredError,
@@ -15,7 +16,7 @@ let dir: string;
 let store: MemoryVersionStore;
 let host: AppHost;
 const run = (cmd: Command) =>
-  host.execute(cmd, { author: 't', approved: true });
+  host.execute(hostOwner(host), cmd, { author: 't', approved: true });
 const raw = (dataDir = dir) => {
   const db = new DatabaseSync(join(dataDir, 'app.db'));
   try {
@@ -35,7 +36,7 @@ beforeEach(async () => {
     name: 'Customer',
     fields: { name: { type: 'text' } },
   });
-  await host.create('Customer', { name: 'Ada' });
+  await host.create(hostOwner(host), 'Customer', { name: 'Ada' });
   await run({
     type: 'defineModel',
     name: 'Sale',
@@ -76,10 +77,12 @@ it('loads 10,000 coerced rows with batched lookups; undo removes only its insert
   const result = (await run(cmd)) as { snapshot: string | null };
   expect(result.snapshot).toBeTruthy();
   expect(raw()).toHaveLength(10000);
-  expect((await host.list('Sale', 1))[0].total).toBe(20);
-  await host.create('Sale', { code: 'later', qty: 9 });
+  expect((await host.list(hostOwner(host), 'Sale', 1))[0].total).toBe(20);
+  await host.create(hostOwner(host), 'Sale', { code: 'later', qty: 9 });
   await run({ type: 'undo' });
-  expect((await host.list('Sale')).map((r) => r.code)).toEqual(['later']);
+  expect((await host.list(hostOwner(host), 'Sale')).map((r) => r.code)).toEqual(
+    ['later'],
+  );
 }, 120000);
 
 it('refuses invalid load plans with bounded actionable row problems', async () => {
@@ -107,7 +110,7 @@ it('refuses invalid load plans with bounded actionable row problems', async () =
   await expect(
     host.plan({ ...cmd, rows: [{ code: 'x'.repeat(8 * 1024 * 1024) }] }),
   ).rejects.toThrow(/bytes/);
-  await host.create('Customer', { name: 'Ada' });
+  await host.create(hostOwner(host), 'Customer', { name: 'Ada' });
   await expect(
     host.plan({ ...cmd, rows: [{ code: 'ambiguous', customer: 'Ada' }] }),
   ).rejects.toThrow(
@@ -116,8 +119,10 @@ it('refuses invalid load plans with bounded actionable row problems', async () =
 });
 
 it('upserts by key, counts unchanged, requires approval, and restores exact originals', async () => {
-  if (!(await host.list('Sale')).some((r) => r.code === 'later'))
-    await host.create('Sale', { code: 'later', qty: 9 });
+  if (
+    !(await host.list(hostOwner(host), 'Sale')).some((r) => r.code === 'later')
+  )
+    await host.create(hostOwner(host), 'Sale', { code: 'later', qty: 9 });
   const before = raw();
   const cmd: Command = {
     type: 'loadRecords',
@@ -135,9 +140,9 @@ it('upserts by key, counts unchanged, requires approval, and restores exact orig
     unchanged: 0,
     rejected: 0,
   });
-  await expect(host.execute(cmd, { author: 't' })).rejects.toBeInstanceOf(
-    ApprovalRequiredError,
-  );
+  await expect(
+    host.execute(hostOwner(host), cmd, { author: 't' }),
+  ).rejects.toBeInstanceOf(ApprovalRequiredError);
   await run(cmd);
   expect((await host.plan(cmd)).preview).toMatchObject({
     unchanged: 2,
@@ -149,7 +154,7 @@ it('upserts by key, counts unchanged, requires approval, and restores exact orig
 });
 
 it('rolls back a mid-load database failure, restarts intact, and replays from a draft', async () => {
-  await host.create('Sale', { code: 'later', qty: 9 });
+  await host.create(hostOwner(host), 'Sale', { code: 'later', qty: 9 });
   const before = raw();
   const version = host.version;
   const history = await store.list();
@@ -204,12 +209,13 @@ it('rolls back a mid-load database failure, restarts intact, and replays from a 
   await host.close();
   host = await AppHost.open(dir, { store });
   expect(raw()).toEqual(before);
-  const draft = await host.forkDraft(`${dir}-draft`, {
+  const draft = await host.forkDraft(hostOwner(host), `${dir}-draft`, {
     store: new MemoryVersionStore(),
   });
   try {
     expect(raw(draft.dataDir)).toEqual(before);
     await draft.execute(
+      hostOwner(draft),
       {
         type: 'loadRecords',
         model: 'Sale',
@@ -218,35 +224,34 @@ it('rolls back a mid-load database failure, restarts intact, and replays from a 
       },
       { author: 't' },
     );
-    const id = (await draft.list('Sale')).find(
+    const id = (await draft.list(hostOwner(draft), 'Sale')).find(
       (r) => r.code === 'replayed',
     )?.id;
-    await draft.create('Sale', { code: 'draft-only' });
-    await host.create('Sale', { code: 'live-only' });
+    await draft.create(hostOwner(draft), 'Sale', { code: 'draft-only' });
+    await host.create(hostOwner(host), 'Sale', { code: 'live-only' });
     const liveBeforePublish = raw();
     const p = await host.previewPublish(draft);
     expect(raw()).toEqual(liveBeforePublish);
-    await host.publishDraft(draft, {
+    await host.publishDraft(hostOwner(host), draft, {
       author: 't',
       approved: true,
       expect: p.digest,
     });
-    expect((await host.get('Sale', String(id))).total).toBe(50);
-    expect((await host.list('Sale')).map((r) => r.code).sort()).toEqual([
-      'later',
-      'live-only',
-      'replayed',
-    ]);
+    expect((await host.get(hostOwner(host), 'Sale', String(id))).total).toBe(
+      50,
+    );
+    expect(
+      (await host.list(hostOwner(host), 'Sale')).map((r) => r.code).sort(),
+    ).toEqual(['later', 'live-only', 'replayed']);
     expect(
       raw()
         .map((r) => r.code)
         .sort(),
     ).toEqual(['later', 'live-only', 'replayed']);
     await run({ type: 'undo' });
-    expect((await host.list('Sale')).map((r) => r.code).sort()).toEqual([
-      'later',
-      'live-only',
-    ]);
+    expect(
+      (await host.list(hostOwner(host), 'Sale')).map((r) => r.code).sort(),
+    ).toEqual(['later', 'live-only']);
     expect(raw()).toEqual(liveBeforePublish);
   } finally {
     await draft.discard();
@@ -263,9 +268,10 @@ it('pins queued command data and restores rows with hidden generated storage', a
   const pending = run(command);
   command.rows[0].qty = 999;
   await pending;
-  expect((await host.list('Sale')).find((r) => r.code === 'pinned')?.qty).toBe(
-    3,
-  );
+  expect(
+    (await host.list(hostOwner(host), 'Sale')).find((r) => r.code === 'pinned')
+      ?.qty,
+  ).toBe(3);
   await run({ type: 'hideField', model: 'Sale', field: 'total' });
   const before = raw();
   await run({
@@ -298,10 +304,12 @@ it.each([
   'create',
   'update',
 ] as const)('refuses load undo atomically after a later reference %s, then succeeds once removed', async (operation) => {
-  const customers = await host.list('Customer');
+  const customers = await host.list(hostOwner(host), 'Customer');
   const sale =
     operation === 'update'
-      ? await host.create('Sale', { code: 'updated-reference' })
+      ? await host.create(hostOwner(host), 'Sale', {
+          code: 'updated-reference',
+        })
       : undefined;
   await run({
     type: 'loadRecords',
@@ -309,18 +317,20 @@ it.each([
     mode: 'insert',
     rows: [{ name: 'Referenced' }, { name: 'Unreferenced' }],
   });
-  const loaded = await host.list('Customer');
+  const loaded = await host.list(hostOwner(host), 'Customer');
   const customer = loaded.find((r) => r.name === 'Referenced');
   const referring = sale
-    ? await host.update('Sale', String(sale.id), { customer: customer?.id })
-    : await host.create('Sale', {
+    ? await host.update(hostOwner(host), 'Sale', String(sale.id), {
+        customer: customer?.id,
+      })
+    : await host.create(hostOwner(host), 'Sale', {
         code: 'created-reference',
         customer: customer?.id,
       });
   const sales = raw();
   const version = host.version;
   await expect(
-    host.execute({ type: 'undo' }, { author: 't' }),
+    host.execute(hostOwner(host), { type: 'undo' }, { author: 't' }),
   ).rejects.toBeInstanceOf(ApprovalRequiredError);
   const failure = await run({ type: 'undo' }).catch((error) => error);
   expect(failure).toBeInstanceOf(EngineError);
@@ -330,11 +340,11 @@ it.each([
     /Sale “(?:created|updated)-reference”: still refers to a record this undo would remove/,
   );
   expect(host.version).toBe(version);
-  expect(await host.list('Customer')).toEqual(loaded);
+  expect(await host.list(hostOwner(host), 'Customer')).toEqual(loaded);
   expect(raw()).toEqual(sales);
-  await host.remove('Sale', String(referring.id));
+  await host.remove(hostOwner(host), 'Sale', String(referring.id));
   await run({ type: 'undo' });
-  expect(await host.list('Customer')).toEqual(customers);
+  expect(await host.list(hostOwner(host), 'Customer')).toEqual(customers);
 });
 
 it.each([
@@ -399,8 +409,11 @@ it.each([
 });
 
 it('upsert undo keeps untouched fields and refuses later edits, deletions and edits of inserted rows', async () => {
-  const customer = (await host.list('Customer'))[0];
-  const sale = await host.create('Sale', { code: 'undo-safe', qty: 1 });
+  const customer = (await host.list(hostOwner(host), 'Customer'))[0];
+  const sale = await host.create(hostOwner(host), 'Sale', {
+    code: 'undo-safe',
+    qty: 1,
+  });
   const cmd: Command = {
     type: 'loadRecords',
     model: 'Sale',
@@ -409,17 +422,21 @@ it('upsert undo keeps untouched fields and refuses later edits, deletions and ed
     rows: [{ code: 'undo-safe', qty: 2 }],
   };
   await run(cmd);
-  await host.update('Sale', String(sale.id), { customer: customer.id });
+  await host.update(hostOwner(host), 'Sale', String(sale.id), {
+    customer: customer.id,
+  });
   await run({ type: 'undo' });
-  expect(await host.get('Sale', String(sale.id))).toMatchObject({
+  expect(
+    await host.get(hostOwner(host), 'Sale', String(sale.id)),
+  ).toMatchObject({
     qty: 1,
     customer: customer.id,
   });
   await run(cmd);
-  await host.update('Sale', String(sale.id), { qty: 3 });
+  await host.update(hostOwner(host), 'Sale', String(sale.id), { qty: 3 });
   await expect(run({ type: 'undo' })).rejects.toThrow(/changed since/);
-  await host.update('Sale', String(sale.id), { qty: 2 });
-  await host.remove('Sale', String(sale.id));
+  await host.update(hostOwner(host), 'Sale', String(sale.id), { qty: 2 });
+  await host.remove(hostOwner(host), 'Sale', String(sale.id));
   await expect(run({ type: 'undo' })).rejects.toThrow(/deleted since/);
   await run({
     type: 'loadRecords',
@@ -427,16 +444,21 @@ it('upsert undo keeps untouched fields and refuses later edits, deletions and ed
     mode: 'insert',
     rows: [{ code: 'insert-undo', qty: 1 }],
   });
-  const inserted = (await host.list('Sale')).find(
+  const inserted = (await host.list(hostOwner(host), 'Sale')).find(
     (r) => r.code === 'insert-undo',
   );
-  await host.update('Sale', String(inserted?.id), { qty: 8 });
+  await host.update(hostOwner(host), 'Sale', String(inserted?.id), { qty: 8 });
   await expect(run({ type: 'undo' })).rejects.toThrow(/changed since/);
-  expect((await host.get('Sale', String(inserted?.id))).qty).toBe(8);
+  expect(
+    (await host.get(hostOwner(host), 'Sale', String(inserted?.id))).qty,
+  ).toBe(8);
 });
 
 it('rechecks load update risk inside the transaction after an insert-only preview', async () => {
-  const row = await host.create('Sale', { code: 'stale-load', qty: 7 });
+  const row = await host.create(hostOwner(host), 'Sale', {
+    code: 'stale-load',
+    qty: 7,
+  });
   const cmd: Command = {
     type: 'loadRecords',
     model: 'Sale',
@@ -475,19 +497,25 @@ it('rechecks load update risk inside the transaction after an insert-only previe
     });
   try {
     await expect(
-      host.execute(cmd, { author: 't', approved: true }),
+      host.execute(hostOwner(host), cmd, { author: 't', approved: true }),
     ).rejects.toThrow(/preview became stale/);
   } finally {
     spy.mockRestore();
   }
   expect(host.version).toBe(version);
-  expect(await host.get('Sale', String(row.id))).toMatchObject({
-    qty: 7,
-    code: 'stale-load',
-  });
-  await expect(host.execute(cmd, { author: 't' })).rejects.toMatchObject({
+  expect(await host.get(hostOwner(host), 'Sale', String(row.id))).toMatchObject(
+    {
+      qty: 7,
+      code: 'stale-load',
+    },
+  );
+  await expect(
+    host.execute(hostOwner(host), cmd, { author: 't' }),
+  ).rejects.toMatchObject({
     code: 'approval_required',
   });
   await run(cmd);
-  expect((await host.get('Sale', String(row.id))).qty).toBe(99);
+  expect((await host.get(hostOwner(host), 'Sale', String(row.id))).qty).toBe(
+    99,
+  );
 });

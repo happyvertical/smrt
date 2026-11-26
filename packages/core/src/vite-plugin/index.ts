@@ -89,6 +89,7 @@ import {
   type HostToolNameDeclaration,
 } from './host-tool-names.js';
 import { importBuildAwareModule } from './import-build-aware.js';
+import { createPackageOwnerResolver } from './package-owner.js';
 import { injectPackageStamps, packageStampText } from './package-stamp.js';
 import {
   findCliApiCoherenceViolations,
@@ -611,8 +612,11 @@ export async function stampPackageModule(
   code: string,
   id: string,
   manifest: SmartObjectManifest,
+  ownerOf?: (filePath: string) => string | undefined,
 ): Promise<{ code: string; map: null } | null> {
-  const packageName = manifest.packageName;
+  // A module compiled from another workspace package's source registers under
+  // that package (#5655), so its stamp names the owner, as its manifest key does.
+  const packageName = ownerOf?.(id.split('?')[0]) ?? manifest.packageName;
   const cleanId = id.split('?')[0];
   if (
     !packageName?.startsWith('@') ||
@@ -1438,7 +1442,8 @@ export function smrtPlugin(
         // metadata upgrade; inferring it reads the full project superset.
         if (!config?.build?.lib) {
           const cleanId = id.split('?')[0];
-          const packageName = manifest.packageName;
+          const ownerOf = createPackageOwnerResolver(projectRoot);
+          const packageName = ownerOf(cleanId) ?? manifest.packageName;
           const ownsSource =
             svelteKit.lazyActivation &&
             Object.values(manifest.objects).some(
@@ -1448,7 +1453,7 @@ export function smrtPlugin(
                 resolve(projectRoot, object.filePath) === resolve(cleanId),
             );
           return ownsSource && !isRegisterShimModuleId(id)
-            ? stampPackageModule(code, id, manifest)
+            ? stampPackageModule(code, id, manifest, ownerOf)
             : null;
         }
         if (isRegisterShimModuleId(id)) {
@@ -1459,7 +1464,12 @@ export function smrtPlugin(
             map: null,
           };
         }
-        return stampPackageModule(code, id, manifest);
+        return stampPackageModule(
+          code,
+          id,
+          manifest,
+          createPackageOwnerResolver(projectRoot),
+        );
       },
     },
 
@@ -1871,6 +1881,9 @@ export function smrtPlugin(
         typeAliases: results.typeAliases,
         recipes: results.recipes,
         uiSelectors: results.uiSelectors,
+        // A class compiled from a workspace package's source belongs to that
+        // package, whose own build is what registers it at runtime (#5655).
+        packageNameForFile: createPackageOwnerResolver(rootDir),
       });
 
       // Add moduleType identifier

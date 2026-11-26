@@ -1,7 +1,9 @@
 // Per-app caps in a running cloud shell (#5503): the shell passes `appLimits`
 // to the live host and to a draft host it reopens, per tenant; the desktop
 // passes none. SQLite, two tenants, no containers.
+
 import { afterEach, describe, expect, it } from 'vitest';
+import { hostOwner } from '../../test/engine-principal.ts';
 import { App } from '../objects/App.ts';
 import {
   appLimitsFromEnv,
@@ -50,7 +52,9 @@ async function openCapped() {
   return cloud;
 }
 const add = (o: CloudHarness['a'], title: string) =>
-  runAs(o, async () => (await getHost()).create('Chore', { title }));
+  runAs(o, async () =>
+    (await getHost()).create(hostOwner(await getHost()), 'Chore', { title }),
+  );
 
 describe('app limits in the cloud shell', () => {
   it("caps the live app of a tenant its plan caps, and only that tenant's", async () => {
@@ -70,7 +74,8 @@ describe('app limits in the cloud shell', () => {
     await add(a, '1');
     await runAs(a, () =>
       startDraftWith(
-        async ({ dir, store, live }) => live.forkDraft(dir, { store }),
+        async ({ dir, store, live }) =>
+          live.forkDraft(hostOwner(live), dir, { store }),
         'd',
         a.id,
       ),
@@ -82,10 +87,10 @@ describe('app limits in the cloud shell', () => {
     expect(hostMetrics().open).toBe(0);
     const draft = (await runAs(a, () => getDraftSlot()))?.host;
     expect(draft).toBeTruthy();
-    await draft?.create('Chore', { title: 'd1' });
-    await expect(draft?.create('Chore', { title: 'd2' })).rejects.toThrow(
-      /app limit reached \(maxRowsPerModel\)/,
-    );
+    await draft?.create(hostOwner(draft!), 'Chore', { title: 'd1' });
+    await expect(
+      draft?.create(hostOwner(draft!), 'Chore', { title: 'd2' }),
+    ).rejects.toThrow(/app limit reached \(maxRowsPerModel\)/);
   });
 
   it('the desktop passes none and never asks', async () => {
@@ -102,8 +107,9 @@ describe('app limits in the cloud shell', () => {
     );
     await applyWaiting(owner);
     const host = await runAs(owner, () => getHost());
-    for (const t of ['1', '2', '3']) await host.create('Chore', { title: t });
-    expect(await host.list('Chore')).toHaveLength(3);
+    for (const t of ['1', '2', '3'])
+      await host.create(hostOwner(host), 'Chore', { title: t });
+    expect(await host.list(hostOwner(host), 'Chore')).toHaveLength(3);
     expect(asked).toBe(0);
   });
 });

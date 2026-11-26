@@ -44,18 +44,23 @@ import {
 } from './db/index.ts';
 import {
   acquireOwnership,
+  awaitFenceHolders,
   DEFAULT_LOCK_TIMEOUT_MS,
+  deleteMeta,
   dropSchema,
   forkSchema,
+  holdFence,
   listSideSchemas,
   markPublished,
   readDumpHeader,
+  readMeta,
   readPublished,
   restoreDump,
   revokeSchema,
   type SqlDatabase,
   schemaExists,
   swapSchemas,
+  writeMeta,
 } from './db/postgres-copy.ts';
 import { assertSchemaName, isSideSchema } from './db/schema-name.ts';
 import {
@@ -95,11 +100,27 @@ import {
   CapacityError,
   ClaimLostError,
   EngineError,
+  NoPrincipalError,
+  PermissionDeniedError,
   StaleFenceError,
 } from './errors.ts';
 import type { ExtractPreview } from './extract-model.ts';
 import { WORKBOOK_LOOKUP, WORKBOOK_ROW } from './import-bookkeeping.ts';
 import type { MergePreview } from './merge-records.ts';
+import {
+  introducedCode,
+  METHOD_CODE_DENIED,
+  type MethodCodeGate,
+  methodCodeMessage,
+  methodCodeTarget,
+} from './method-code.ts';
+import {
+  type EnginePrincipal,
+  mintSystemPrincipal,
+  requireOwnerPrincipal,
+  requirePrincipal,
+  tenantFor,
+} from './principal.ts';
 import {
   archivedTables,
   assertNoAside,
@@ -138,6 +159,13 @@ const now = () => new Date().toISOString();
 
 export interface HostOptions {
   store: VersionStore;
+  /**
+   * The tenant of the app (#5188). Every call into the app carries a principal
+   * of this tenant and a call for another is refused, on every backend. The
+   * shell sets it from the holder: the tenant in cloud, and on the desktop the
+   * installation's one tenant (the store's pin). Default: the desktop tenant.
+   */
+  tenantId?: string;
   /** The worker entry. Defaults to `./app-worker.ts` or `.js` next to this module. */
   workerUrl?: URL | string;
   /**
@@ -151,6 +179,13 @@ export interface HostOptions {
    * Absent: unlimited, as on the desktop.
    */
   appLimits?: AppLimits;
+  /**
+   * Whether the app's tenant may run app-authored method code (#5194). Asked
+   * on the host before each call that would run method code and before a
+   * change that adds or changes it; refused without a "yes". Absent: allowed
+   * with no lookup (the desktop). A draft forked from this host inherits it.
+   */
+  methodCode?: MethodCodeGate;
   /**
    * Start frozen: every structural command is refused (see
    * {@link AppHost.setFrozen}). Records, reports, the app's own tools and REST
@@ -187,7 +222,9 @@ export interface HostOptions {
   /**
    * Tests only: a claim over an in-process PGlite (see `unprovenClaim`) in
    * place of the one a PostgreSQL server host makes itself. Production PGlite
-   * hosts have none.
+   * hosts have none. On a DRAFT host: the live host's claim, lent (#5486): the
+   * draft's change and undo store writes run on it, and the draft never
+   * releases it.
    */
   claim?: AppClaim;
   /**
@@ -410,21 +447,84 @@ const MAX_REVIEW_CODE_CHARS = 200_000;
 const isObj = (v: unknown): v is Row =>
   !!v && typeof v === 'object' && !Array.isArray(v);
 
+/** `_app_meta` keys of a claimed host's change journal (#5486). */
+const CHANGE_KEY = 'change';
+const APPLIED_KEY = 'applied';
+const REVERSED_KEY = 'reversed';
+
+/**
+ * What a claimed host writes before it changes the app (#5486): which change
+ * this is, so a reopen can finish it (roll the store forward) or say it never
+ * landed. `committed` is set by the change's own store transaction.
+ */
+interface ChangeKey {
+  id: string;
+  from: number;
+  to: number;
+  /** The forward change's version record; null for an undo step. */
+  record: VersionRecord | null;
+  /** The approval that asked for it, when it ran under one. */
+  request: string | null;
+  /** Step `index` of `of` when the change is one step of an `undoTo`. */
+  part?: { index: number; of: number };
+  committed?: boolean;
+  /**
+   * What a reopen decided, kept (with the key) until the shell has settled the
+   * approval that asked for it (`acknowledgeRecovery`): a failed open or a
+   * stopped process in between must not lose the outcome.
+   */
+  decided?: 'applied' | 'not-applied';
+}
+
+/** What the reopen decided about the change an earlier host left in flight. */
+export interface RecoveredChange {
+  id: string;
+  request: string | null;
+  outcome: 'applied' | 'not-applied';
+  /** One step of a longer undo: the outcome says nothing about the whole of it. */
+  partial: boolean;
+}
+
+const UNKNOWN_CHANGE =
+  'this host lost its claim on the app while a change was running, so whether the change took effect is unknown; reopen the app and check before repeating it.';
+
+/** Did the server itself answer (a SQLSTATE that is not a connection failure)? */
+function serverAnswered(e: unknown): boolean {
+  const code = String((e as { code?: unknown } | undefined)?.code ?? '');
+  return /^[0-9A-Z]{5}$/.test(code) && !/^(08|57P)/.test(code);
+}
+
 export class AppHost extends EventEmitter {
   def: AppDefinition = EMPTY_APP;
   version = 0;
   readonly dataDir: string;
+  /** The tenant of the app (#5188): the only tenant a call's principal may name. */
+  readonly tenantId: string;
+  /** The engine's own authority in this tenant; never leaves this class. */
+  readonly #system: EnginePrincipal;
   lastSwapMs = 0;
   private store: VersionStore;
   private workerUrl: URL | string;
   private workerLimits: WorkerLimits | undefined;
   private appLimits: AppLimits | undefined;
+  private methodCode: MethodCodeGate | undefined;
   private database: DatabaseConfig;
   private dialect: EngineDialect;
   private releaseDatabase?: () => Promise<void>;
   /** PostgreSQL server: the claim this live host's swap and store commits run on (#5470). */
   private claim?: AppClaim;
+  /** A draft host: the live host's claim, lent for its store writes; never released here (#5486). */
+  private borrowed?: AppClaim;
+  private unlisten?: () => void;
   private claimLost: Error | null = null;
+  /** The approval a running command was asked under (the queue runs one at a time; #5486). */
+  private currentRequest: string | null = null;
+  /** The step of an `undoTo` that is running (journaled with its change). */
+  private currentPart: { index: number; of: number } | null = null;
+  /** What boot decided about a change an earlier host left in flight; the shell settles its approval. */
+  recoveredChange: RecoveredChange | null = null;
+  /** `changed`, emitted once the host is open and its owner can listen (a rolled-forward change). */
+  private recoveredEvent: { version: number; summary: string } | null = null;
   private readonly allowUnfencedStore: boolean;
   /**
    * What the chosen database cannot do yet, said plainly, for the shell to
@@ -451,15 +551,20 @@ export class AppHost extends EventEmitter {
     dataDir: string,
     opts: HostOptions,
     database: HostDatabase,
+    borrowed?: AppClaim,
   ) {
     super();
     this.dataDir = dataDir;
+    this.tenantId = tenantFor(opts.tenantId, database.config.kind);
+    this.#system = mintSystemPrincipal(this.tenantId);
     this.database = database.config;
     this.dialect = dialectFor(database.config);
     this.releaseDatabase = database.release;
     this.claim = database.claim;
     this.allowUnfencedStore = opts.allowUnfencedStore === true;
     this.claim?.onLost((e) => this.loseClaim(e));
+    this.borrowed = borrowed;
+    this.unlisten = this.borrowed?.onLost((e) => this.loseClaim(e));
     this.lockTimeoutMs = opts.swapLockTimeoutMs ?? DEFAULT_LOCK_TIMEOUT_MS;
     this.store = opts.store;
     this.workerUrl = opts.workerUrl ?? defaultWorkerUrl();
@@ -470,6 +575,7 @@ export class AppHost extends EventEmitter {
       ...opts.appLimits,
       methodRunState: new Float64Array(new SharedArrayBuffer(16)),
     };
+    this.methodCode = opts.methodCode;
     this.frozenNow = opts.frozen === true;
     this.#autoApprove = opts.autoApprove === true;
     this.draft = readDraftMarker(dataDir);
@@ -542,11 +648,23 @@ export class AppHost extends EventEmitter {
       release: claim ? () => claim.release() : undefined,
       claim,
     };
+    let made: AppHost | undefined;
     try {
-      const host = new AppHost(dataDir, opts, database);
+      const host = new AppHost(
+        dataDir,
+        opts,
+        database,
+        marker ? opts.claim : undefined,
+      );
+      made = host;
       await host.boot();
+      const recovered = host.recoveredEvent;
+      host.recoveredEvent = null;
+      if (recovered) setImmediate(() => host.emit('changed', recovered));
       return host;
     } catch (e) {
+      // A draft that never opened must not stay subscribed to the lent claim.
+      made?.unlisten?.();
       await claim?.release();
       throw e;
     }
@@ -559,9 +677,11 @@ export class AppHost extends EventEmitter {
     // With a claim (#5470) every step here is a claim transaction, so a host
     // whose claim died bumps and drops nothing.
     if (this.claim) await this.checkClaimedStore();
-    const fence = this.claim
+    // A live host bumps on its own claim; a draft on the live host's lent one
+    // (#5486): either way a host without a claim bumps and drops nothing.
+    const fence = this.fenceClaim
       ? await acquireOwnership(
-          this.claim.admin,
+          this.fenceClaim.admin,
           schemaOf(this.database),
           this.lockTimeoutMs,
         )
@@ -582,11 +702,13 @@ export class AppHost extends EventEmitter {
     }
     this.recovery = reconcilePublish(this.dataDir, cur);
     if (atomicOutcome) this.recovery = atomicOutcome;
+    // A change an earlier host left between its migration and its store write.
+    if (this.fenced) cur = await this.reconcileChange(cur);
     // A crash outside the journal's window (a rehearsal or a restore that
     // never got to swap) leaves a side schema: drop the app's own.
     if (this.onServer && !this.draft) await this.sweepSideSchemas();
     if (cur === null) {
-      await this.store.append({
+      const seed: VersionRecord = {
         version: 0,
         parent: null,
         author: 'engine',
@@ -594,8 +716,18 @@ export class AppHost extends EventEmitter {
         definition: EMPTY_APP,
         migration: null,
         createdAt: now(),
-      });
-      await this.store.setCurrent(0);
+      };
+      if (this.fenced) {
+        // The first version is a store write like any other: under the claim.
+        const schema = schemaOf(this.database);
+        await (this.fenceClaim as AppClaim).transaction(async (tx) => {
+          await holdFence(tx, schema, this.fence as number);
+          await this.store.commitIn?.(tx, [seed], 0, null);
+        });
+      } else {
+        await this.store.append(seed);
+        await this.store.setCurrent(0);
+      }
       cur = 0;
     }
     const rec = await this.store.get(cur);
@@ -604,7 +736,7 @@ export class AppHost extends EventEmitter {
         `version ${cur} is missing from the store`,
         'not_found',
       );
-    const errs = validate(rec.definition);
+    const errs = validate(rec.definition, rec.definition);
     if (errs.length)
       throw new EngineError(
         `the stored definition is invalid: ${errs.join('; ')}`,
@@ -620,11 +752,134 @@ export class AppHost extends EventEmitter {
     await this.app.ready;
   }
 
+  /**
+   * Settle the change an earlier host of this app left in flight (#5486), by
+   * its journal alone, in one claim transaction. Returns the store's current
+   * version after it.
+   * - `committed`: it landed. Nothing to write.
+   * - `applied` is its id, and the store and the data's version are where the
+   *   change started and ended: its migration committed but the store write
+   *   never did, so the store rolls forward.
+   * - no `applied` and the data and the store are both at its start: it never
+   *   landed.
+   * - anything else: left as it is, with a notice.
+   * The journal is removed either way (a fork or a snapshot copies it).
+   */
+  private async reconcileChange(cur: number | null): Promise<number | null> {
+    const schema = schemaOf(this.database);
+    const store = this.store;
+    let current = cur;
+    let outcome: 'applied' | 'not-applied' | 'undecided' | null = null;
+    let found: ChangeKey | null = null;
+    let forward = false;
+    await (this.fenceClaim as AppClaim).transaction(async (tx) => {
+      await holdFence(tx, schema, this.fence as number);
+      const meta = await readMeta(tx, schema, [
+        CHANGE_KEY,
+        APPLIED_KEY,
+        REVERSED_KEY,
+        'version',
+      ]);
+      if (meta[CHANGE_KEY] === undefined) {
+        await deleteMeta(tx, schema, [APPLIED_KEY, REVERSED_KEY]);
+        return;
+      }
+      try {
+        found = JSON.parse(meta[CHANGE_KEY]) as ChangeKey;
+      } catch {
+        found = null;
+      }
+      const data = meta.version === undefined ? null : Number(meta.version);
+      if (!found) outcome = 'undecided';
+      else if (found.decided) outcome = found.decided;
+      else if (found.committed) outcome = 'applied';
+      else if (meta[REVERSED_KEY] === found.id) outcome = 'not-applied';
+      else if (
+        meta[APPLIED_KEY] === found.id &&
+        found.from === cur &&
+        data === found.to
+      ) {
+        await store.commitIn?.(
+          tx,
+          found.record ? [found.record] : [],
+          found.to,
+          found.from,
+        );
+        current = found.to;
+        forward = true;
+        outcome = 'applied';
+      } else if (
+        meta[APPLIED_KEY] !== found.id &&
+        data === found.from &&
+        cur === found.from
+      )
+        outcome = 'not-applied';
+      else outcome = 'undecided';
+      const f = found as ChangeKey | null;
+      if (f?.request && (outcome === 'applied' || outcome === 'not-applied')) {
+        // Decided for an approval: keep the journal until it is acknowledged.
+        await writeMeta(
+          tx,
+          schema,
+          CHANGE_KEY,
+          JSON.stringify({ ...f, decided: outcome }),
+        );
+        await deleteMeta(tx, schema, [APPLIED_KEY, REVERSED_KEY]);
+      } else
+        await deleteMeta(tx, schema, [CHANGE_KEY, APPLIED_KEY, REVERSED_KEY]);
+    });
+    if (outcome === 'undecided')
+      this.notices.push(
+        'A change was running when this app last stopped and could not be settled either way; check the version history.',
+      );
+    const f = found as ChangeKey | null;
+    if (f?.request && (outcome === 'applied' || outcome === 'not-applied'))
+      this.recoveredChange = {
+        id: f.id,
+        request: f.request,
+        outcome,
+        // The last step landing, or the first not landing, decides the whole undo.
+        partial:
+          !!f.part &&
+          !(outcome === 'applied' && f.part.index === f.part.of - 1) &&
+          !(outcome === 'not-applied' && f.part.index === 0),
+      };
+    if (forward && f)
+      this.recoveredEvent = {
+        version: f.to,
+        summary: f.record?.summary ?? 'recovered change',
+      };
+    return current;
+  }
+
+  /**
+   * The shell settled the approval of `recoveredChange` (or found nothing to
+   * settle): drop the journal that kept its outcome (#5486). A failure leaves
+   * it for the next open, which settles again.
+   */
+  async acknowledgeRecovery(id: string): Promise<void> {
+    if (!this.fenced || this.claimLost) return;
+    const schema = schemaOf(this.database);
+    await (this.fenceClaim as AppClaim).transaction(async (tx) => {
+      await holdFence(tx, schema, this.fence as number);
+      const raw = (await readMeta(tx, schema, [CHANGE_KEY]))[CHANGE_KEY];
+      try {
+        const k = raw ? (JSON.parse(raw) as ChangeKey) : null;
+        if (k?.id === id && k.decided)
+          await deleteMeta(tx, schema, [CHANGE_KEY]);
+      } catch {
+        /* an unreadable journal is the next open's notice */
+      }
+    });
+    if (this.recoveredChange?.id === id) this.recoveredChange = null;
+  }
+
   /** Connections parked by `retireApp` for the next worker; see there. */
   private spare: (() => void) | null = null;
 
   private spawn(def: AppDefinition, version: number, migration?: Migration) {
     const worker = new AppWorker(this.workerUrl, {
+      tenantId: this.tenantId,
       dataDir: this.dataDir,
       def,
       version,
@@ -692,6 +947,12 @@ export class AppHost extends EventEmitter {
     def: AppDefinition,
     version: number,
     migration?: Migration,
+    /**
+     * A claimed host's change in flight (#5486): `change` is the forward
+     * swap's intent id; `reverse` marks the change's own reverse. In flight a
+     * lost claim or an unknown outcome never respawns the old worker.
+     */
+    flight?: { change?: string; reverse?: boolean },
   ) {
     const t0 = performance.now();
     const migrating = !!migration?.steps.length;
@@ -701,20 +962,46 @@ export class AppHost extends EventEmitter {
     try {
       next = this.spawn(def, version, migration);
       booted = await next.ready;
+      if (flight?.change && this.claimLost) {
+        // The claim died while the new worker booted: it must not serve.
+        await next.terminate().catch(() => {});
+        throw await this.abandonChange();
+      }
     } catch (e) {
+      if (e instanceof ClaimLostError && e.details?.outcome === 'unknown')
+        throw e;
+      let respawn = true;
+      // The reverse never boots the old worker on data it could not put back.
+      let unknown = !!flight?.reverse;
       try {
         if (next) {
           this.keepBudget(next);
           await next.terminate();
         }
         if (migrating) {
-          this.app = this.spawn(this.def, this.version);
-          await this.app.ready.catch(() => {});
-          this.app.settleBudget();
+          if (flight?.reverse) respawn = false;
+          else if (flight?.change) {
+            // #5486: did the migration commit? Bump the generation (waiting
+            // for its transaction) and read; only "no" is safe to respawn on.
+            respawn = !this.claimLost && (await this.notApplied(flight.change));
+            unknown = !respawn;
+          }
+          if (respawn) {
+            this.app = this.spawn(this.def, this.version);
+            await this.app.ready.catch(() => {});
+            this.app.settleBudget();
+          }
+        } else if (flight?.change && !this.claimLost) {
+          // No steps: the old worker never stopped, so no bump. But the new
+          // worker's boot may have committed with its reply lost: wait for it
+          // to end and read what it left.
+          unknown = !(await this.notCommitted(flight.change));
         }
       } finally {
         this.releaseSpare();
       }
+      if (unknown || (flight && this.claimLost))
+        throw await this.abandonChange(e);
       if (e instanceof CapacityError) throw e;
       if (
         e instanceof EngineError &&
@@ -742,7 +1029,11 @@ export class AppHost extends EventEmitter {
     nextVersion: number,
     migration: Migration | undefined,
     persist: () => Promise<void>,
+    /** The records the store commits with this change; a claimed host (#5486) writes them under its claim. */
+    records?: VersionRecord[],
   ) {
+    if (this.fenced && records)
+      return this.transitionClaimed(next, nextVersion, migration, records);
     const swapped = await this.swap(next, nextVersion, migration);
     try {
       await persist();
@@ -766,6 +1057,168 @@ export class AppHost extends EventEmitter {
     return swapped;
   }
 
+  /**
+   * A change on a claimed host (#5486). S = the store's current version, D =
+   * the data's version, g = this host's generation.
+   *   P0  claim tx: proof, fence = g, compare S = p, write `change`.
+   *   M   the worker's migration (g-fenced; a migrating one also writes `applied`).
+   *   T_c claim tx: proof, fence = g, record the version and move S p -> v.
+   * A host that dies between M and T_c leaves D = v, S = p: the next open
+   * reads `change` and `applied` and rolls the store forward (`reconcileChange`).
+   * From P0 on, a lost claim or an unknown outcome stops the host (it never
+   * respawns an old worker on data that may have moved) and says so.
+   */
+  private async transitionClaimed(
+    next: AppDefinition,
+    nextVersion: number,
+    migration: Migration | undefined,
+    records: VersionRecord[],
+  ) {
+    const claim = this.fenceClaim as AppClaim;
+    const store = this.store;
+    const schema = schemaOf(this.database);
+    const from = this.version;
+    const change: ChangeKey = {
+      id: randomUUID(),
+      from,
+      to: nextVersion,
+      record: records[0] ?? null,
+      request: this.currentRequest,
+      ...(this.currentPart ? { part: this.currentPart } : {}),
+    };
+    await claim.transaction(async (tx) => {
+      await holdFence(tx, schema, this.fence as number);
+      // A decided outcome nobody has acknowledged yet must not be overwritten.
+      const prior = (await readMeta(tx, schema, [CHANGE_KEY]))[CHANGE_KEY];
+      let unsettled: ChangeKey | null = null;
+      try {
+        const k = prior ? (JSON.parse(prior) as ChangeKey) : null;
+        if (k?.decided) unsettled = k;
+      } catch {
+        /* an unreadable journal is overwritten as before */
+      }
+      if (unsettled)
+        throw new EngineError(
+          `an earlier interrupted change${unsettled.request ? ` (approval ${unsettled.request})` : ''} has not been settled yet; reopen the app`,
+          'refused',
+        );
+      await store.commitIn?.(tx, [], from, from);
+      await writeMeta(tx, schema, CHANGE_KEY, JSON.stringify(change));
+    });
+    const migrating = !!migration?.steps.length;
+    // Every claimed change journals `applied` in its worker's boot transaction
+    // (one with the migration's steps and the version), steps or not.
+    const swapped = await this.swap(
+      next,
+      nextVersion,
+      {
+        steps: [],
+        direction: 'up',
+        version: nextVersion,
+        ...migration,
+        intent: change.id,
+      },
+      { change: change.id },
+    );
+    let done = false;
+    try {
+      await claim.transaction(async (tx) => {
+        await holdFence(tx, schema, this.fence as number);
+        await store.commitIn?.(tx, records, nextVersion, from);
+        await writeMeta(
+          tx,
+          schema,
+          CHANGE_KEY,
+          JSON.stringify({ ...change, committed: true }),
+        );
+        done = true;
+      });
+    } catch (e) {
+      // Refused (no COMMIT sent) or answered by the server (rolled back), with
+      // the claim still proven: nothing committed and nobody else can have
+      // moved the app, so the migration is reversed under the same claim.
+      // Anything else (a lost claim, a reply that never came) is unknown.
+      const proven = !claim.lost;
+      if (!proven || (done && !serverAnswered(e)))
+        throw await this.abandonChange(e);
+      const back: Migration = {
+        steps: migration?.steps ?? [],
+        direction: migration?.direction === 'up' ? 'down' : 'up',
+        version: migration?.version ?? nextVersion,
+        intent: change.id,
+        reverse: true,
+      };
+      await this.swap(this.def, this.version, back, { reverse: true });
+      throw e;
+    }
+    this.def = next;
+    this.version = nextVersion;
+    return swapped;
+  }
+
+  /**
+   * Did the in-flight migration of change `id` commit? Takes ownership (bumps
+   * the generation, which waits for any transaction of the migration still
+   * open and fences it out) and reads `applied` in that same transaction, so
+   * the answer is final. True only for "no", with the new generation adopted;
+   * an error or "yes" means the old worker must not come back.
+   */
+  private async notApplied(id: string): Promise<boolean> {
+    const claim = this.fenceClaim;
+    if (!claim) return false;
+    try {
+      const schema = schemaOf(this.database);
+      let applied = false;
+      const fence = await acquireOwnership(
+        claim.admin,
+        schema,
+        this.lockTimeoutMs,
+        async (tx) => {
+          applied =
+            (await readMeta(tx, schema, [APPLIED_KEY]))[APPLIED_KEY] === id;
+        },
+      );
+      this.database = { ...this.database, fence } as DatabaseConfig;
+      return !applied;
+    } catch {
+      return false;
+    }
+  }
+
+  /** A swap with no steps failed: did its boot commit anyway? True only for a definite "no". */
+  private async notCommitted(id: string): Promise<boolean> {
+    const claim = this.fenceClaim;
+    if (!claim) return false;
+    try {
+      const schema = schemaOf(this.database);
+      return await claim.transaction(async (tx) => {
+        await awaitFenceHolders(tx, schema);
+        return (await readMeta(tx, schema, [APPLIED_KEY]))[APPLIED_KEY] !== id;
+      });
+    } catch {
+      return false;
+    }
+  }
+
+  /**
+   * A change of this host has an unknown outcome (or the claim died under
+   * it): stop serving, end the claim's session (so nothing of it can still
+   * commit) and tell the caller. The next open settles what happened.
+   */
+  private async abandonChange(cause?: unknown): Promise<ClaimLostError> {
+    const unknown = new ClaimLostError(UNKNOWN_CHANGE, { outcome: 'unknown' });
+    unknown.cause = cause;
+    if (!this.claimLost) {
+      this.claimLost = new ClaimLostError(
+        'this host stopped serving the app after a change whose outcome is unknown; reopen the app. This call wrote nothing.',
+      );
+      this.emit('claim-lost', this.claimLost);
+    }
+    await this.app?.terminate().catch(() => {});
+    await this.claim?.release().catch(() => {});
+    return unknown;
+  }
+
   /** Validate, start the new app runtime, record the version. Every change takes this path. */
   private async applyChange(
     next: AppDefinition,
@@ -775,29 +1228,37 @@ export class AppHost extends EventEmitter {
     converting = new Set<string>(),
   ): Promise<ChangeResult> {
     const errs = [
-      ...validate(next),
+      ...validate(next, this.def),
       ...refuseChanges(this.def, next, converting, (t) =>
         this.dialect.columnType(t),
       ),
     ];
     if (errs.length) throw new EngineError(errs.join('\n'));
+    await this.requireMethodCodeFor(this.def, next);
     const v = (await this.store.maxVersion()) + 1;
     const parent = this.version;
     const migration: Migration | undefined = steps.length
       ? { steps, direction: 'up', version: v }
       : undefined;
-    const swapped = await this.transition(next, v, migration, async () => {
-      await this.store.append({
-        version: v,
-        parent,
-        author,
-        summary,
-        definition: next,
-        migration: steps.length ? { steps } : null,
-        createdAt: now(),
-      });
-      await this.store.setCurrent(v);
-    });
+    const record: VersionRecord = {
+      version: v,
+      parent,
+      author,
+      summary,
+      definition: next,
+      migration: steps.length ? { steps } : null,
+      createdAt: now(),
+    };
+    const swapped = await this.transition(
+      next,
+      v,
+      migration,
+      async () => {
+        await this.store.append(record);
+        await this.store.setCurrent(v);
+      },
+      [record],
+    );
     this.emit('changed', { version: v, summary });
     return {
       version: v,
@@ -891,8 +1352,14 @@ export class AppHost extends EventEmitter {
    * Apply a command. A risky one throws {@link ApprovalRequiredError} unless
    * `approved` is true, and then nothing has changed.
    */
-  execute(cmd: Command, opts: ExecuteOptions): Promise<ExecuteResult> {
+  execute(
+    principal: EnginePrincipal,
+    cmd: Command,
+    opts: ExecuteOptions,
+  ): Promise<ExecuteResult> {
     try {
+      // First: nothing is cloned, queued or read for a caller who may not.
+      requireOwnerPrincipal(principal, this.tenantId);
       if (cmd.type === 'loadRecords') assertLoadBounds(cmd);
       cmd = structuredClone(cmd);
     } catch (e) {
@@ -949,7 +1416,12 @@ export class AppHost extends EventEmitter {
         )
           throw new ApprovalRequiredError(a.plan);
       }
-      return a.apply(opts.author);
+      this.currentRequest = opts.request ?? null;
+      try {
+        return await a.apply(opts.author);
+      } finally {
+        this.currentRequest = null;
+      }
     });
   }
 
@@ -1420,6 +1892,9 @@ export class AppHost extends EventEmitter {
       }
       case 'addMethod': {
         this.model(cmd.model);
+        // Before the parser: unentitled code never reaches QuickJS here.
+        if (this.methodCode)
+          await this.requireMethodCode(`${cmd.model}.${cmd.name}()`);
         const problem = await checkSyntax(cmd.method?.code ?? '');
         if (problem) throw new EngineError(`method does not parse: ${problem}`);
         const d = this.clone();
@@ -1536,7 +2011,7 @@ export class AppHost extends EventEmitter {
   }
 
   private assertValid(d: AppDefinition) {
-    const errs = validate(d);
+    const errs = validate(d, this.def);
     if (errs.length) throw new EngineError(errs.join('\n'));
   }
 
@@ -1606,6 +2081,8 @@ export class AppHost extends EventEmitter {
         preview,
       },
       apply: async () => {
+        // Undo can bring back code a later version removed: same rule as a change.
+        await this.requireMethodCodeFor(this.def, parent.definition);
         const migration: Migration | undefined = rec.migration?.steps.length
           ? {
               steps: rec.migration.steps,
@@ -1618,6 +2095,7 @@ export class AppHost extends EventEmitter {
           parent.version,
           migration,
           () => this.store.setCurrent(parent.version),
+          [],
         );
         const summary = `undo: ${rec.summary}${swapped.skipped ? `; skipped ${swapped.skipped} deleted referring records` : ''}`;
         this.emit('changed', { version: parent.version, summary });
@@ -1726,6 +2204,7 @@ export class AppHost extends EventEmitter {
         let skipped = 0;
         for (const [i, r] of undone.entries()) {
           try {
+            this.currentPart = { index: i, of: undone.length };
             const step = await (await this.analyseUndo(r.version)).apply('');
             const c = step as ChangeResult;
             statements.push(...c.statements);
@@ -1733,6 +2212,12 @@ export class AppHost extends EventEmitter {
             appRestartMs += c.appRestartMs;
             skipped += c.skipped ?? 0;
           } catch (e) {
+            if (e instanceof ClaimLostError && e.details?.outcome === 'unknown')
+              throw new ClaimLostError(
+                `undid ${i} of ${undone.length} changes; the outcome of the next one is unknown; reopen the app and check before repeating it.`,
+                { outcome: 'unknown' },
+              );
+            this.currentPart = null;
             const code = e instanceof EngineError ? e.code : 'migration_failed';
             throw new EngineError(
               `undid ${i} of ${undone.length} changes; the app is now at version ${this.version}: ${(e as Error).message}`,
@@ -1740,6 +2225,7 @@ export class AppHost extends EventEmitter {
             );
           }
         }
+        this.currentPart = null;
         return {
           version: target,
           summary:
@@ -1938,6 +2424,7 @@ export class AppHost extends EventEmitter {
         report.spec = parseRuntimeReportSpec(report.spec);
       // Plan against the imported registry, without touching app.db or creating tables.
       const worker = new AppWorker(this.workerUrl, {
+        tenantId: this.tenantId,
         dataDir: this.dataDir,
         def,
         version: this.version,
@@ -1960,6 +2447,7 @@ export class AppHost extends EventEmitter {
       code: string;
     }[] = [];
     let codeChars = 0;
+    await this.requireMethodCodeFor(EMPTY_APP, def);
     for (const [m, md] of Object.entries(def.models))
       for (const [n, meth] of Object.entries(md.methods ?? {})) {
         const problem = await checkSyntax(meth.code);
@@ -2035,9 +2523,8 @@ export class AppHost extends EventEmitter {
    * connection of its own.
    */
   private admin<T>(work: (db: SqlDatabase) => Promise<T>): Promise<T> {
-    return this.claim
-      ? work(this.claim.admin)
-      : withSchemaAdmin(this.database, work);
+    const claim = this.fenceClaim;
+    return claim ? work(claim.admin) : withSchemaAdmin(this.database, work);
   }
 
   /** The claim died: retire the worker; every call now refuses with the claim's error. */
@@ -2072,6 +2559,38 @@ export class AppHost extends EventEmitter {
   /** The error that lost this host's claim (#5470), or null: a lost host serves nothing. */
   get lostClaim(): Error | null {
     return this.claimLost;
+  }
+
+  /** The claim this host's change and undo store writes run on: its own, or a draft's lent one (#5486). */
+  private get fenceClaim(): AppClaim | undefined {
+    return this.claim ?? this.borrowed;
+  }
+
+  /** Do this host's change and undo store writes run on a claim (#5486)? */
+  private get fenced() {
+    return !!this.fenceClaim && !!this.store.commitIn;
+  }
+
+  /**
+   * The claim a live host lends to its drafts (#5486), only when its store
+   * writes are fenced; undefined for a draft and for every host without one.
+   */
+  get lendableClaim(): AppClaim | undefined {
+    return this.fenced && !this.draft ? this.claim : undefined;
+  }
+
+  /**
+   * Run `work` in one claim transaction: the claim's proof first, so a host
+   * that lost its claim writes nothing (#5486). For the shell's own rows
+   * (`adoptDraft`) on a host that has one; check `lendableClaim` first.
+   */
+  claimTransaction<T>(work: (tx: unknown) => Promise<T>): Promise<T> {
+    if (!this.claim || this.draft)
+      throw new EngineError(
+        'this host has no claim of its own to run a transaction on',
+        'refused',
+      );
+    return this.claim.transaction(work);
   }
 
   /** Does this host commit the store inside the swap's transaction (#5470)? */
@@ -2188,8 +2707,22 @@ export class AppHost extends EventEmitter {
   private async sweepSideSchemas() {
     const base = schemaOf(this.database);
     await this.admin(async (db) => {
-      for (const n of await listSideSchemas(db, base, 'ron'))
-        await dropSchema(db, n, this.lockTimeoutMs, base);
+      for (const n of await listSideSchemas(db, base, 'ron')) {
+        // A rehearsal a crashed or terminated host left may still have a
+        // session finishing its last statement: DROP SCHEMA can lose a
+        // deadlock to it (40P01, the server's own victim pick). The drop is
+        // idempotent and nothing was dropped, so try again; the session is
+        // gone or done by then.
+        for (let attempt = 1; ; attempt++) {
+          try {
+            await dropSchema(db, n, this.lockTimeoutMs, base);
+            break;
+          } catch (e) {
+            if (attempt >= 4 || !isDeadlockError(e)) throw e;
+            await new Promise((r) => setTimeout(r, 250 * attempt));
+          }
+        }
+      }
     });
   }
 
@@ -2293,7 +2826,7 @@ export class AppHost extends EventEmitter {
     let worker: AppWorker | undefined;
     try {
       const rec = await this.store.get(version);
-      if (!rec || validate(rec.definition).length) return false;
+      if (!rec || validate(rec.definition, rec.definition).length) return false;
       worker = this.spawn(rec.definition, version);
       await worker.ready;
       return true;
@@ -2341,6 +2874,7 @@ export class AppHost extends EventEmitter {
    * app as it was.
    */
   restoreSnapshot(
+    principal: EnginePrincipal,
     name: string,
     opts: { approved?: boolean } = {},
   ): Promise<{
@@ -2349,6 +2883,11 @@ export class AppHost extends EventEmitter {
     /** The snapshot of the data this restore replaced. */
     snapshot: string;
   }> {
+    try {
+      requireOwnerPrincipal(principal, this.tenantId);
+    } catch (e) {
+      return Promise.reject(e);
+    }
     if (!this.onServer)
       return Promise.reject(
         new EngineError(
@@ -2451,10 +2990,23 @@ export class AppHost extends EventEmitter {
 
   // ---------- the running app ----------
 
-  /** Talk to the app. Callers inside the change queue use this; others use onApp. */
-  private async callApp<T>(op: WorkerOp, ...args: unknown[]): Promise<T> {
+  /**
+   * The engine's own call into the app: change-queue work, as the system
+   * principal of this host's tenant. Never reachable for a caller's request;
+   * those go through `onApp` with the caller's principal.
+   */
+  private callApp<T>(op: WorkerOp, ...args: unknown[]): Promise<T> {
+    return this.callAs<T>(this.#system, op, ...args);
+  }
+
+  /** Talk to the app as `principal` (already checked by the caller of this). */
+  private async callAs<T>(
+    principal: EnginePrincipal,
+    op: WorkerOp,
+    ...args: unknown[]
+  ): Promise<T> {
     try {
-      return await this.app.call<T>(op, ...args);
+      return await this.app.call<T>(op, principal, ...args);
     } catch (e) {
       // A call in flight when the claim was lost sees the loss, not the
       // retired worker's crash. The worker commits on its own connection, so
@@ -2467,6 +3019,8 @@ export class AppHost extends EventEmitter {
         throw lost;
       }
       if (e instanceof AppCallError) {
+        if (e.code === 'unauthorized') throw new NoPrincipalError(e.message);
+        if (e.code === 'forbidden') throw new PermissionDeniedError(e.message);
         if (e.stale) throw new StaleFenceError(e.message);
         if (e.user) throw new EngineError(e.message, 'invalid', e.details);
         throw new EngineError(e.message, 'refused');
@@ -2475,20 +3029,69 @@ export class AppHost extends EventEmitter {
     }
   }
 
-  private async onApp<T>(op: WorkerOp, ...args: unknown[]): Promise<T> {
+  /**
+   * Refuse unless the tenant's entitlement grants method code (#5194). The
+   * answer comes from the injected gate on this host, per call; a failed
+   * lookup is a refusal ("unavailable"), never a yes.
+   */
+  private async requireMethodCode(what: string): Promise<void> {
+    const gate = this.methodCode;
+    if (!gate) return;
+    let ok = false;
+    try {
+      ok = (await gate(this.tenantId)) === true;
+    } catch {
+      throw new EngineError(
+        `${what}: whether custom method code is enabled for this workspace could not be checked, so nothing was run or saved; try again shortly`,
+        'unavailable',
+      );
+    }
+    if (!ok)
+      throw new EngineError(methodCodeMessage(what), 'refused', {
+        code: METHOD_CODE_DENIED,
+      });
+  }
+
+  /** Refuse a change that adds or changes method code when it is not granted. */
+  private async requireMethodCodeFor(
+    from: AppDefinition,
+    to: AppDefinition,
+  ): Promise<void> {
+    if (!this.methodCode) return;
+    const added = introducedCode(from, to);
+    if (added.length) await this.requireMethodCode(added.join(', '));
+  }
+
+  private async onApp<T>(
+    principal: EnginePrincipal,
+    op: WorkerOp,
+    ...args: unknown[]
+  ): Promise<T> {
+    // No principal, or one of another tenant: nothing is queued or posted.
+    requirePrincipal(principal, this.tenantId);
     // Never talk to an app that is being replaced: wait until the queue is
     // idle AND no change was queued while waiting. The check and the call below
     // run in one synchronous step, so no change can start in between.
+    // A call that would run method code is also checked against the tenant's
+    // entitlement (#5194); the check awaits, so the queue is looked at again.
+    let entitled = false;
     for (;;) {
       const q = this.queue;
       await q;
-      if (q === this.queue) break;
+      if (q !== this.queue) continue;
+      const target =
+        entitled || !this.methodCode
+          ? null
+          : methodCodeTarget(this.def, op, args);
+      if (!target) break;
+      await this.requireMethodCode(`${target.model}.${target.method}()`);
+      entitled = true;
     }
     if (this.closed) throw new EngineError('the host is closed', 'refused');
     if (this.claimLost) throw this.claimLost;
     this.inflight++;
     try {
-      return await this.callApp<T>(op, ...args);
+      return await this.callAs<T>(principal, op, ...args);
     } finally {
       if (--this.inflight === 0) {
         const waiters = this.idleWaiters;
@@ -2519,7 +3122,16 @@ export class AppHost extends EventEmitter {
    * Only an ordinary (live) host can fork. Live may keep serving records while
    * the draft is open; the caller freezes live structure with `setFrozen`.
    */
-  forkDraft(draftDir: string, opts: ForkDraftOptions): Promise<AppHost> {
+  forkDraft(
+    principal: EnginePrincipal,
+    draftDir: string,
+    opts: ForkDraftOptions,
+  ): Promise<AppHost> {
+    try {
+      requireOwnerPrincipal(principal, this.tenantId);
+    } catch (e) {
+      return Promise.reject(e);
+    }
     if (this.draft)
       return Promise.reject(
         new EngineError('a draft cannot be forked again', 'refused'),
@@ -2546,19 +3158,35 @@ export class AppHost extends EventEmitter {
         : undefined;
       const liveSchema = schema ? schemaOf(this.database) : undefined;
       try {
-        if (schema) await this.forkSchemaTo(schema);
-        else await this.callApp('copyTo', join(dir, 'app.db'));
+        if (schema) {
+          await this.forkSchemaTo(schema);
+          // The copy carries the live app's change journal (#5486): a draft
+          // starts with none of its own.
+          await withSchemaAdmin(
+            { ...this.database, schema } as DatabaseConfig,
+            (db) =>
+              db.transaction((tx) =>
+                deleteMeta(tx, schema, [CHANGE_KEY, APPLIED_KEY, REVERSED_KEY]),
+              ),
+          );
+        } else await this.callApp('copyTo', join(dir, 'app.db'));
         writeDraftMarker(dir, this.dataDir, base.version, schema, liveSchema);
         await opts.store.append(structuredClone(base));
         await opts.store.setCurrent(base.version);
         return await AppHost.open(dir, {
           store: opts.store,
+          tenantId: this.tenantId,
           workerUrl: this.workerUrl,
           workerLimits: this.workerLimits,
           appLimits: this.appLimits,
+          methodCode: this.methodCode,
           autoApprove: true,
           database: schema ? this.database : undefined,
           swapLockTimeoutMs: this.lockTimeoutMs,
+          // Its store writes run on this host's claim, lent, never released.
+          ...(schema && this.lendableClaim
+            ? { claim: this.lendableClaim }
+            : {}),
         });
       } catch (e) {
         rmSync(dir, { recursive: true, force: true });
@@ -2600,6 +3228,7 @@ export class AppHost extends EventEmitter {
       if (at !== 0) return false; // changes since the base, or unreadable
       await this.drainInflight();
       this.closed = true;
+      this.unlisten?.();
       await this.app.terminate();
       if (draft.schema)
         await this.dropSideSchema(draft.schema, true, this.fence);
@@ -2664,6 +3293,12 @@ export class AppHost extends EventEmitter {
       );
     if (!chain.versions.length)
       throw new EngineError('the draft has no changes to publish', 'refused');
+    // Method code the draft adds or changes needs the entitlement at publish
+    // too (a card made while entitled, applied after it was lost).
+    await this.requireMethodCodeFor(
+      this.def,
+      chain.versions[chain.versions.length - 1].definition,
+    );
     return { chain, digest: chainDigest(this.version, chain) };
   }
 
@@ -2694,7 +3329,7 @@ export class AppHost extends EventEmitter {
     try {
       for (let i = 0; i < chain.versions.length; i++) {
         const rec = chain.versions[i];
-        const errs = validate(rec.definition);
+        const errs = validate(rec.definition, rec.definition);
         if (errs.length)
           throw new EngineError(
             `"${rec.summary}" from the draft is invalid: ${errs.join('; ')}`,
@@ -2721,6 +3356,7 @@ export class AppHost extends EventEmitter {
           const before =
             carried ??
             new AppWorker(this.workerUrl, {
+              tenantId: this.tenantId,
               dataDir: dir,
               def: chain.base.definition,
               version: chain.baseVersion,
@@ -2736,6 +3372,7 @@ export class AppHost extends EventEmitter {
               if (step.op === 'loadRecords') {
                 const counts = await before.call<LoadPreview>(
                   'previewLoad',
+                  this.#system,
                   step.command,
                 );
                 step.maxUpdates = counts.update;
@@ -2753,6 +3390,7 @@ export class AppHost extends EventEmitter {
                   step.op === 'extractModel'
                     ? 'previewExtract'
                     : 'previewMerge',
+                  this.#system,
                   step.command,
                 );
                 impacts.push({
@@ -2768,6 +3406,7 @@ export class AppHost extends EventEmitter {
         }
         dataSteps.push(impacts);
         const w = new AppWorker(this.workerUrl, {
+          tenantId: this.tenantId,
           dataDir: dir,
           def: rec.definition,
           version: numbers[i],
@@ -2784,12 +3423,13 @@ export class AppHost extends EventEmitter {
           if (i === chain.versions.length - 1) {
             archives = await w.call(
               'countArchives',
+              this.#system,
               numbers,
               archivedTables(allSteps),
             );
             // SQLite: the result is written as one standalone file. On
             // PostgreSQL the rehearsal schema already is the result.
-            if (!place.database) await w.call('copyTo', file);
+            if (!place.database) await w.call('copyTo', this.#system, file);
           }
         } catch (e) {
           await w.terminate().catch(() => {});
@@ -2921,7 +3561,16 @@ export class AppHost extends EventEmitter {
    * `app.db` is byte-for-byte what it was) and leaves the version unchanged.
    * Live records wait (not fail) while this runs. The caller discards the draft.
    */
-  publishDraft(draft: AppHost, opts: PublishOptions): Promise<PublishResult> {
+  publishDraft(
+    principal: EnginePrincipal,
+    draft: AppHost,
+    opts: PublishOptions,
+  ): Promise<PublishResult> {
+    try {
+      requireOwnerPrincipal(principal, this.tenantId);
+    } catch (e) {
+      return Promise.reject(e);
+    }
     if (!opts || typeof opts.author !== 'string' || !opts.author)
       return Promise.reject(new EngineError('publish needs an author'));
     if (typeof opts.expect !== 'string' || !opts.expect)
@@ -3219,9 +3868,15 @@ export class AppHost extends EventEmitter {
 
   /** Bounded read worker: a timeout never terminates the live app worker. */
   runReport(
+    principal: EnginePrincipal,
     input: string | RuntimeReportSpec,
     options: ReportOptions = {},
   ): Promise<AppReportResult> {
+    try {
+      requirePrincipal(principal, this.tenantId);
+    } catch (e) {
+      return Promise.reject(e);
+    }
     const timeoutMs = options.timeoutMs ?? 5000;
     const maxRows = options.maxRows ?? 1000;
     if (
@@ -3238,6 +3893,7 @@ export class AppHost extends EventEmitter {
     return this.run(async () => {
       await this.drainInflight();
       const worker = new AppWorker(this.workerUrl, {
+        tenantId: this.tenantId,
         dataDir: this.dataDir,
         def: this.def,
         version: this.version,
@@ -3251,7 +3907,9 @@ export class AppHost extends EventEmitter {
       try {
         await worker.ready;
         return await Promise.race([
-          worker.call<AppReportResult>('runReport', input, { maxRows }),
+          worker.call<AppReportResult>('runReport', principal, input, {
+            maxRows,
+          }),
           new Promise<never>((_, reject) => {
             timer = setTimeout(
               () =>
@@ -3269,13 +3927,14 @@ export class AppHost extends EventEmitter {
     });
   }
 
-  countRows(model: string) {
+  countRows(principal: EnginePrincipal, model: string) {
     if (
       !Object.hasOwn(this.def.models, model) ||
       this.def.models[model].extends
     )
       throw new EngineError('Row counting requires an app-owned model.');
     return this.onApp<number>(
+      principal,
       'countRows',
       tableFor(model, this.def.models[model]),
     );
@@ -3283,6 +3942,7 @@ export class AppHost extends EventEmitter {
 
   /** Bounded engine read-back, including hidden provenance; never exposed as a tool. */
   readStoredRows(
+    principal: EnginePrincipal,
     model: string,
     fields: string[],
     order: string,
@@ -3290,6 +3950,7 @@ export class AppHost extends EventEmitter {
     options?: { limit?: number; nullsLast?: boolean },
   ) {
     return this.onApp<Row[]>(
+      principal,
       'readStoredRows',
       model,
       fields,
@@ -3300,39 +3961,51 @@ export class AppHost extends EventEmitter {
   }
 
   /** Read only the linked records requested, in bounded core batches. */
-  listByIds(model: string, ids: string[]) {
-    return this.onApp<Row[]>('listByIds', model, ids);
+  listByIds(principal: EnginePrincipal, model: string, ids: string[]) {
+    return this.onApp<Row[]>(principal, 'listByIds', model, ids);
   }
 
-  list(model: string, limit = 200) {
-    return this.onApp<Row[]>('list', model, limit);
+  list(principal: EnginePrincipal, model: string, limit = 200) {
+    return this.onApp<Row[]>(principal, 'list', model, limit);
   }
-  get(model: string, id: string) {
-    return this.onApp<Row>('get', model, id);
+  get(principal: EnginePrincipal, model: string, id: string) {
+    return this.onApp<Row>(principal, 'get', model, id);
   }
-  async create(model: string, data: Row) {
-    const r = await this.onApp<Row>('create', model, data);
+  async create(principal: EnginePrincipal, model: string, data: Row) {
+    const r = await this.onApp<Row>(principal, 'create', model, data);
     this.emit('records', { model });
     return r;
   }
-  async update(model: string, id: string, data: Row) {
-    const r = await this.onApp<Row>('update', model, id, data);
+  async update(
+    principal: EnginePrincipal,
+    model: string,
+    id: string,
+    data: Row,
+  ) {
+    const r = await this.onApp<Row>(principal, 'update', model, id, data);
     this.emit('records', { model });
     return r;
   }
-  async remove(model: string, id: string) {
-    const r = await this.onApp<{ deleted: string }>('remove', model, id);
+  async remove(principal: EnginePrincipal, model: string, id: string) {
+    const r = await this.onApp<{ deleted: string }>(
+      principal,
+      'remove',
+      model,
+      id,
+    );
     this.emit('records', { model });
     return r;
   }
 
   async runMethod(
+    principal: EnginePrincipal,
     model: string,
     method: string,
     id: string | null = null,
     params: Row = {},
   ) {
     const out = await this.onApp<MethodResult>(
+      principal,
       'runMethod',
       model,
       method,
@@ -3344,14 +4017,15 @@ export class AppHost extends EventEmitter {
   }
 
   /** The app's own generated MCP tools. */
-  appTools() {
+  appTools(principal: EnginePrincipal) {
     return this.onApp<
       { name: string; description?: string; inputSchema?: unknown }[]
-    >('tools');
+    >(principal, 'tools');
   }
 
   /** Call one of the app's generated tools. A delete needs `approved: true`. */
   async callAppTool(
+    principal: EnginePrincipal,
     name: string,
     args: Row = {},
     opts: { approved?: boolean } = {},
@@ -3362,7 +4036,7 @@ export class AppHost extends EventEmitter {
         risky: true,
         preview: { tool: name, args },
       });
-    const r = await this.onApp<ToolResult>('callTool', name, args);
+    const r = await this.onApp<ToolResult>(principal, 'callTool', name, args);
     if (!r.isError) {
       const model =
         Object.entries(this.def.models).find(([m, md]) =>
@@ -3375,6 +4049,7 @@ export class AppHost extends EventEmitter {
 
   /** The worker's generated REST routes, passed through. A DELETE needs `approved: true`. */
   async rest(
+    principal: EnginePrincipal,
     req: { method: string; url: string; body?: string },
     opts: { approved?: boolean } = {},
   ) {
@@ -3393,7 +4068,10 @@ export class AppHost extends EventEmitter {
         risky: true,
         preview: { method, url: req.url },
       });
-    const r = await this.onApp<RestResult>('rest', { ...req, method });
+    const r = await this.onApp<RestResult>(principal, 'rest', {
+      ...req,
+      method,
+    });
     if (method !== 'GET' && method !== 'HEAD' && r.status < 400)
       this.emit('records', { model: null });
     return r;
@@ -3436,6 +4114,7 @@ export class AppHost extends EventEmitter {
   async close() {
     await this.queue;
     this.closed = true;
+    this.unlisten?.(); // a draft stops listening to the claim it was lent
     this.releaseSpare();
     try {
       await this.app.terminate();
@@ -3454,11 +4133,13 @@ function shown(fd: FieldDef): FieldDef {
 /**
  * Discard a draft directory no host holds (a crash left it). On PostgreSQL the
  * draft's schema goes too, through the live app's `database` config; on SQLite
- * `discardDraftDirectory` is enough.
+ * `discardDraftDirectory` is enough. With `claim` (the live host's, #5486) the
+ * drop is a claim transaction: a host that lost its claim drops nothing.
  */
 export async function discardOrphanDraft(
   dataDir: string,
   database: DatabaseConfig = SQLITE,
+  claim?: AppClaim,
 ): Promise<void> {
   const marker = readDraftMarker(dataDir);
   if (marker?.schema) {
@@ -3477,9 +4158,18 @@ export async function discardOrphanDraft(
         'refused',
       );
     const schema = assertSchemaName(marker.schema);
-    await withSchemaAdmin({ ...database, schema }, (db) =>
-      dropSchema(db, schema, undefined, marker.liveSchema),
-    );
+    const drop = (db: SqlDatabase) =>
+      dropSchema(db, schema, undefined, marker.liveSchema);
+    if (claim) await drop(claim.admin as unknown as SqlDatabase);
+    else await withSchemaAdmin({ ...database, schema }, drop);
   }
   removeDraftDirectory(dataDir, true);
+}
+
+/** A PostgreSQL deadlock the server resolved by cancelling this statement (SQLSTATE 40P01). */
+function isDeadlockError(error: unknown): boolean {
+  let e = error as { code?: unknown; cause?: unknown } | undefined;
+  for (let i = 0; e && i < 6; i++, e = e.cause as typeof e)
+    if (e.code === '40P01') return true;
+  return false;
 }

@@ -494,6 +494,8 @@ export {
   inferenceBlockedUsageRecord,
   inferenceGateRequest,
   isHostedInferenceTarget,
+  isInferenceGateRequired,
+  requireInferenceGate,
   setInferenceGate,
 } from './inference-gate';
 export {
@@ -694,6 +696,7 @@ export {
   applyUpdateInput,
   assertCreateInput,
   assertUpdateInput,
+  prepareWriteInput,
   updateInputRulesFor,
 } from './request-input';
 // The request tenancy policy source and bound member policy smrt-tenancy's
@@ -859,11 +862,19 @@ export {
 export {
   assignUpdateInput,
   classifyUpdateKey,
+  FIELD_NOT_WRITABLE_CODE,
+  FieldNotWritableError,
+  isServerManagedWriteKey,
   isWriteInputError,
+  notWritableFieldOf,
   resolveUpdateInput,
+  resolveWriteBody,
+  SERVER_MANAGED_WRITE_KEYS,
   STRUCTURAL_UPDATE_RULES,
+  sameStoredValue,
   type UpdateInputRules,
   type UpdateKeyKind,
+  type WriteBodyPolicy,
   WriteInputError,
 } from './write-input';
 

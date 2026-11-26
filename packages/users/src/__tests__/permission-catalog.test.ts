@@ -705,6 +705,116 @@ describe('PermissionCatalogService', () => {
     expect(policyNames.some((name) => name.includes('_delete_'))).toBe(true);
   });
 
+  describe('scoped to one app schema (#5189)', () => {
+    const only = (className: string) => ({
+      includeClass: (c: { className: string }) => c.className === className,
+    });
+
+    it('addresses tables and helper functions in the given schema, never public', () => {
+      const result = generatePostgresPermissionSql(
+        {},
+        { schemaName: 'app_one', ...only('PermissionCatalogRecord') },
+      );
+      expect(result.targets.map((t) => t.schemaName)).toEqual(['app_one']);
+      expect(result.sql).not.toContain('"public"');
+      expect(result.statements).toEqual(
+        expect.arrayContaining([
+          expect.stringContaining(
+            'CREATE OR REPLACE FUNCTION "app_one".smrt_rls_bypass()',
+          ),
+          expect.stringContaining(
+            'ALTER TABLE "app_one"."permission_catalog_records" FORCE ROW LEVEL SECURITY',
+          ),
+        ]),
+      );
+      // Policies call the helpers through the transaction's search_path, so a
+      // schema copied whole keeps its own.
+      expect(result.sql).toContain('smrt_rls_bypass() OR');
+      expect(result.sql).not.toContain('"app_one".smrt_rls_bypass() OR');
+    });
+
+    it('only includes the classes the scope accepts and ignores explicit bindings', () => {
+      const unregister = registerPermissionDefinitions([
+        {
+          postgres: {
+            bindings: [
+              { action: 'select', tableName: 'permission_catalog_records' },
+            ],
+          },
+          slug: 'permission_catalog_records.audit',
+        },
+      ]);
+      cleanupFns.push(unregister);
+      const result = generatePostgresPermissionSql(
+        {},
+        { schemaName: 'app_one', ...only('PermissionCatalogRecord') },
+      );
+      expect(result.targets).toHaveLength(1);
+      expect(result.targets[0].actions.SELECT).toEqual([
+        'permission_catalog_records.read',
+      ]);
+    });
+
+    it('takes the permission slugs the host names', () => {
+      const result = generatePostgresPermissionSql(
+        {},
+        {
+          schemaName: 'app_one',
+          ...only('PermissionCatalogRecord'),
+          permissionsFor: () => ({
+            SELECT: ['t.list', 't.get'],
+            INSERT: ['t.create'],
+            UPDATE: ['t.update'],
+            DELETE: ['t.delete'],
+          }),
+        },
+      );
+      expect(result.targets[0].actions.SELECT).toEqual(['t.get', 't.list']);
+      expect(result.sql).toContain("smrt_has_permission('t.create')");
+    });
+
+    it('names policies differently for the same table in two schemas, and keeps the public names', () => {
+      const names = (schemaName: string) =>
+        generatePostgresPermissionSql(
+          {},
+          { schemaName, ...only('PermissionCatalogRecord') },
+        )
+          .statements.map((x) => x.match(/CREATE POLICY "([^"]+)"/)?.[1])
+          .filter(Boolean);
+      const a = names('app_one');
+      const b = names('app_two');
+      expect(a).toHaveLength(4);
+      expect(a.filter((n) => b.includes(n))).toEqual([]);
+      const unscoped = generatePostgresPermissionSql()
+        .statements.filter((x) =>
+          x.includes('"public"."permission_catalog_records"'),
+        )
+        .map((x) => x.match(/CREATE POLICY "([^"]+)"/)?.[1])
+        .filter(Boolean);
+      // Unscoped names are unchanged by the scope work.
+      expect(unscoped.every((n) => !a.includes(n))).toBe(true);
+    });
+
+    it('refuses a scope without a usable schema name', () => {
+      for (const schemaName of ['', 'Has Space', 'a"b'])
+        expect(() =>
+          generatePostgresPermissionSql(
+            {},
+            { schemaName, ...only('PermissionCatalogRecord') },
+          ),
+        ).toThrow(/schemaName/);
+    });
+
+    it('does not call a sibling function from a function body (a copy creates them in name order)', () => {
+      const sql = generatePostgresPermissionSql().sql;
+      const body = sql.slice(
+        sql.indexOf('FUNCTION smrt_has_permission'),
+        sql.indexOf('FUNCTION smrt_has_permission') + 600,
+      );
+      expect(body).not.toContain('SELECT smrt_rls_bypass()');
+    });
+  });
+
   it('should reject invalid Postgres permission bindings from config', () => {
     setConfig({
       packages: {

@@ -58,7 +58,7 @@ describe('approval gate invariants', () => {
     // the definition plus the one call inside applyOwnBatch
     expect(approvals.match(/decideApproval\s*\(/g)?.length).toBe(2);
     expect(approvals).toMatch(
-      /export async function applyOwnBatch[\s\S]*await assertOwner\(\)[\s\S]*typeof expect !== 'string'[\s\S]*requestApply\(expect, owner\.id, opts\)[\s\S]*decideApproval\(pending\.approvalId, true, owner\.id\)/,
+      /export async function applyOwnBatch[\s\S]*await assertOwner\(\)[\s\S]*typeof expect !== 'string'[\s\S]*requestApply\(expect, owner\.id, opts\)[\s\S]*decideApproval\(pending\.approvalId, true, owner\)/,
     );
   });
 
@@ -404,7 +404,7 @@ describe('approval gate invariants', () => {
     // exactly one site, inside the function that opens a draft's host
     expect(host.match(/autoApprove\s*:\s*true/g)?.length).toBe(1);
     expect(host).toMatch(
-      /export function openDraftHost[\s\S]{0,400}autoApprove: true/,
+      /export function openDraftHost[\s\S]{0,600}autoApprove: true/,
     );
   });
 
@@ -462,5 +462,30 @@ describe('approval gate invariants', () => {
       'runreport',
     ])
       expect(adapter).toContain(`app_${name}`);
+  });
+});
+
+describe('engine principal invariants (#5188)', () => {
+  it('nothing outside the engine mints the system principal', () => {
+    const offenders = files
+      .filter(([, t]) => /mintSystemPrincipal/.test(t))
+      .map(([f]) => f);
+    expect(offenders).toEqual([]);
+    const index = readFileSync(join(root, 'engine', 'index.ts'), 'utf8');
+    expect(index).not.toMatch(/mintSystemPrincipal/);
+  });
+
+  it('no route or shell source builds a principal by hand', () => {
+    // `enginePrincipal` is called only from owner.ts (`principalFor`), which
+    // takes an owner that `requireOwner` verified.
+    const offenders = files
+      .filter(
+        ([f, t]) =>
+          !f.endsWith('lib/server/owner.ts') &&
+          !f.startsWith('test/') &&
+          /enginePrincipal\s*\(/.test(t),
+      )
+      .map(([f]) => f);
+    expect(offenders).toEqual([]);
   });
 });

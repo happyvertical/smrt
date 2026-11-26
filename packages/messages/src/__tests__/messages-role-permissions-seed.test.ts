@@ -1,7 +1,8 @@
 /**
  * `seedMessagesRolePermissions()` (#5162): the additive, idempotent
  * system-role matrix for the `messages.*` slugs. Without it a fresh app fails
- * closed on every grant and on `messages.manage-access`, owners included.
+ * closed on every grant and on `messages.manage-access`, even for users
+ * holding the `owner` system role.
  */
 
 import { getTestDatabase } from '@happyvertical/smrt-core/testing';

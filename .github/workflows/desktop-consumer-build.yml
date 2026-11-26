@@ -393,7 +393,7 @@ jobs:
         run: echo "DESKTOP_PKG=$RUNNER_TEMP/release-tools" >> "$GITHUB_ENV"
 
       # Refuses unless the environment has required reviewers (self-review
-      # prevented), no admin bypass and a deployment rule of exactly the default
+      # is allowed: single-owner repository), no admin bypass and a deployment rule of exactly the default
       # branch: a workflow naming a missing environment creates it unprotected.
       # Catches the owner's mistake; the environment's branch rule is the
       # control. No secret in this step.

@@ -7,6 +7,7 @@ import {
 } from '@happyvertical/smrt-ui/themes';
 import { cookbookStore } from '../cookbook/store.svelte.ts';
 import { customCssApproved } from '../theme/custom-css.svelte.ts';
+import { autoSchemeHint, useHostedTheme } from '../theme/host.ts';
 import {
   type BorderRadiusSetting,
   type ColorSchemeSetting,
@@ -24,6 +25,7 @@ interface Props {
 let { provider = true, advancedStylesHref = '#/advanced-styles/' }: Props =
   $props();
 const context = tryGetThemeContext();
+const hosted = useHostedTheme();
 const custom = $derived(cookbookStore.theme?.custom);
 let hex = $state('');
 let invalid = $state(false);
@@ -47,7 +49,7 @@ const schemes: {
 }[] = [
   { id: 'light', label: 'Light', icon: '☀', hint: 'Bright all the time' },
   { id: 'dark', label: 'Dark', icon: '☾', hint: 'Dim all the time' },
-  { id: 'system', label: 'Auto', icon: '◐', hint: 'Follow this device' },
+  { id: 'system', label: 'Auto', icon: '◐', hint: autoSchemeHint(hosted) },
 ];
 
 // Corner radius, density and contrast. Each control shows the effective value;

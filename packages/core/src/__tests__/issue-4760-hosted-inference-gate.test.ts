@@ -40,6 +40,7 @@ import {
   type InferenceGate,
   type InferenceGateDecision,
   type InferenceGateRequest,
+  requireInferenceGate,
   setInferenceGate,
 } from '../inference-gate.js';
 import { getInferenceStatus } from '../inference-status.js';
@@ -132,6 +133,7 @@ describe('#4760 hosted inference gate seam', () => {
     setInferenceResolver(undefined);
     setInferenceGate(undefined);
     setAiUsageUserResolver(undefined);
+    requireInferenceGate(false);
   });
 
   it('never consults the gate for byo, local or app targets', async () => {
@@ -149,6 +151,42 @@ describe('#4760 hosted inference gate seam', () => {
     setInferenceResolver(resolverFor('hosted'));
     const doc = new Issue4760Doc({ ai: BASE_AI } as never);
     await expect(doc.do('summarize', { tier: 'good' })).resolves.toBe('done');
+  });
+
+  it('refuses a hosted call with no gate once the process requires one (fail closed)', async () => {
+    setInferenceResolver(resolverFor('hosted'));
+    requireInferenceGate(true);
+    const doc = new Issue4760Doc({
+      ai: BASE_AI,
+      usage: { handlers: [usage] },
+    } as never);
+    const error = (await caught(
+      doc.do('summarize', { tier: 'good' }),
+    )) as InferenceUnavailableError;
+    expect(error.reason).toBe('entitlement');
+    expect(error.entitlement).toEqual({ policy: 'gate-error' });
+    expect(messageMock).not.toHaveBeenCalled();
+    const row = usage.handle.mock.calls[0]?.[0] as { operation: string };
+    expect(row.operation).toBe('blocked');
+    // The requirement never touches the other sources, and a registered
+    // gate answers as before.
+    for (const source of ['byo', 'local', 'app'] as const) {
+      setInferenceResolver(resolverFor(source));
+      await expect(
+        new Issue4760Doc({ ai: BASE_AI } as never).do('x', { tier: 'good' }),
+      ).resolves.toBe('done');
+    }
+    setInferenceResolver(resolverFor('hosted'));
+    setInferenceGate(gateAnswering({ action: 'allow' }));
+    await expect(
+      new Issue4760Doc({ ai: BASE_AI } as never).do('x', { tier: 'good' }),
+    ).resolves.toBe('done');
+    // Off again: back to the pre-#4760 default.
+    setInferenceGate(undefined);
+    requireInferenceGate(false);
+    await expect(
+      new Issue4760Doc({ ai: BASE_AI } as never).do('x', { tier: 'good' }),
+    ).resolves.toBe('done');
   });
 
   it('allows and warns without blocking, asking with the call scope', async () => {
@@ -461,19 +499,28 @@ describe('#4760 hosted inference gate seam', () => {
     }
   });
 
-  it('tags usage rows with the ambient user unless one is given', () => {
+  it('takes the metered user from the sink attribution or the ambient principal, never a per-call tag', () => {
     setAiUsageUserResolver(() => 'user-1');
-    const event = (tags?: Record<string, string>) =>
+    const event = (
+      tags?: Record<string, string>,
+      attribution?: Record<string, string>,
+    ) =>
       normalizeAiUsageEvent(
         { provider: 'openai', model: 'm', operation: 'chat', tags },
         undefined,
+        attribution ? { tags: attribution } : {},
       );
     expect(event()?.tags).toEqual({ userId: 'user-1' });
-    expect(event({ userId: 'explicit' })?.tags).toEqual({ userId: 'explicit' });
+    expect(event({ userId: 'explicit' })?.tags).toEqual({ userId: 'user-1' });
+    expect(event({ userId: 'explicit' }, { userId: 'host' })?.tags).toEqual({
+      userId: 'host',
+    });
     setAiUsageUserResolver(() => {
       throw new Error('no context');
     });
     expect(event()?.tags).toBeUndefined();
+    // With no trusted user, a per-call tag still names nobody.
+    expect(event({ userId: 'explicit', a: 'b' })?.tags).toEqual({ a: 'b' });
     setAiUsageUserResolver(undefined);
     expect(event({ a: 'b' })?.tags).toEqual({ a: 'b' });
   });

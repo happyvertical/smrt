@@ -1,5 +1,80 @@
 # @happyvertical/smrt-svelte
 
+## 0.71.0
+
+### Patch Changes
+
+- Updated dependencies
+  - @happyvertical/smrt-core@0.71.0
+  - @happyvertical/smrt-chat@0.71.0
+  - @happyvertical/smrt-fields@0.71.0
+  - @happyvertical/smrt-inference@0.71.0
+  - @happyvertical/smrt-languages@0.71.0
+  - @happyvertical/smrt-mcp-apps@0.71.0
+  - @happyvertical/smrt-web@0.71.0
+  - @happyvertical/smrt-ui@0.71.0
+  - @happyvertical/smrt-types@0.71.0
+
+## 0.70.3
+
+### Patch Changes
+
+- Updated dependencies
+  - @happyvertical/smrt-core@0.70.3
+  - @happyvertical/smrt-chat@0.70.3
+  - @happyvertical/smrt-fields@0.70.3
+  - @happyvertical/smrt-inference@0.70.3
+  - @happyvertical/smrt-languages@0.70.3
+  - @happyvertical/smrt-mcp-apps@0.70.3
+  - @happyvertical/smrt-web@0.70.3
+  - @happyvertical/smrt-ui@0.70.3
+  - @happyvertical/smrt-types@0.70.3
+
+## 0.70.2
+
+### Patch Changes
+
+- Updated dependencies
+  - @happyvertical/smrt-core@0.70.2
+  - @happyvertical/smrt-chat@0.70.2
+  - @happyvertical/smrt-fields@0.70.2
+  - @happyvertical/smrt-inference@0.70.2
+  - @happyvertical/smrt-languages@0.70.2
+  - @happyvertical/smrt-mcp-apps@0.70.2
+  - @happyvertical/smrt-web@0.70.2
+  - @happyvertical/smrt-ui@0.70.2
+  - @happyvertical/smrt-types@0.70.2
+
+## 0.70.1
+
+### Patch Changes
+
+- Updated dependencies
+  - @happyvertical/smrt-core@0.70.1
+  - @happyvertical/smrt-chat@0.70.1
+  - @happyvertical/smrt-fields@0.70.1
+  - @happyvertical/smrt-inference@0.70.1
+  - @happyvertical/smrt-languages@0.70.1
+  - @happyvertical/smrt-mcp-apps@0.70.1
+  - @happyvertical/smrt-web@0.70.1
+  - @happyvertical/smrt-ui@0.70.1
+  - @happyvertical/smrt-types@0.70.1
+
+## 0.70.0
+
+### Patch Changes
+
+- Updated dependencies
+  - @happyvertical/smrt-core@0.70.0
+  - @happyvertical/smrt-chat@0.70.0
+  - @happyvertical/smrt-fields@0.70.0
+  - @happyvertical/smrt-inference@0.70.0
+  - @happyvertical/smrt-languages@0.70.0
+  - @happyvertical/smrt-mcp-apps@0.70.0
+  - @happyvertical/smrt-web@0.70.0
+  - @happyvertical/smrt-ui@0.70.0
+  - @happyvertical/smrt-types@0.70.0
+
 ## 0.69.0
 
 ### Patch Changes

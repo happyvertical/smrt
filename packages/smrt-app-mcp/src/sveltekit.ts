@@ -481,6 +481,17 @@ function effectiveBoundPrincipal(
   );
 }
 
+/** How a mounted MCP route serves 2025-era JSON-RPC traffic. */
+export type McpLegacyProtocolPosture = 'reject' | 'stateless';
+
+function assertLegacyPosture(
+  legacy: unknown,
+): asserts legacy is McpLegacyProtocolPosture | undefined {
+  if (legacy !== undefined && legacy !== 'reject' && legacy !== 'stateless') {
+    throw new TypeError("MCP legacy must be 'reject' or 'stateless'.");
+  }
+}
+
 /** Options shared by both route mounts. */
 export interface MountMcpRouteOptions {
   /**
@@ -538,6 +549,24 @@ export interface MountMcpRouteOptions {
   allowAnonymous?: boolean;
   /** Optional extension discovery projected from the request-authorized tool catalog. */
   extensions?: McpProtocolRequestOptions['extensions'];
+  /**
+   * How 2025-era JSON-RPC traffic (an `initialize` handshake, or a request
+   * naming no protocol version) is served, with the SDK's own vocabulary:
+   *
+   * - `'reject'` (default): modern-only. Legacy requests answer the SDK's
+   *   `-32022` unsupported-protocol-version error.
+   * - `'stateless'`: explicit opt-in for clients that still speak the 2025
+   *   protocol (for example Paperclip, #5109). Each legacy request is served
+   *   by a fresh protocol server built by the same per-request factory, with
+   *   the same authenticated, bound principal, so authentication, grant
+   *   liveness, `bindPrincipal`, tool policy, scopes, confirm/approvals,
+   *   audit and 404-for-unknown all apply unchanged. Legacy clients get
+   *   stateless semantics: no sessions, no `list_changed`, no subscriptions.
+   *
+   * Mount-time only: it is never read from request data. A modern request is
+   * served identically under either value.
+   */
+  legacy?: McpLegacyProtocolPosture;
   /**
    * Resolve the request principal once for both discovery and direct calls.
    * Defaults to `event.locals.user`.
@@ -662,6 +691,8 @@ function mountMcpRouteWith(
     | null
     | Promise<McpRouteResourceAuth | null>,
 ): McpSvelteKitHandler {
+  assertLegacyPosture(options.legacy);
+  const legacy = options.legacy ?? 'reject';
   const trustedOrigins = options.checkOrigin
     ? normalizeTrustedOrigins(options.trustedOrigins ?? [])
     : undefined;
@@ -699,9 +730,10 @@ function mountMcpRouteWith(
           },
         ),
       {
-        // The legacy REST-shaped mounts below remain a deprecated migration
-        // path. This endpoint accepts only the modern MCP protocol.
-        legacy: 'reject',
+        // Default modern-only. 'stateless' is the mount-time opt-in (#5109);
+        // the SDK serves it from the same factory above, so every gate on
+        // the bound principal applies to legacy requests too.
+        legacy,
         // The SDK validates every request before consulting its listen router.
         // Zero capacity keeps this mount stateless by refusing a
         // listen request before it can open an SSE response.
@@ -744,6 +776,7 @@ export interface MountMcpAppRouteOptions
       | 'checkOrigin'
       | 'trustedOrigins'
       | 'allowAnonymous'
+      | 'legacy'
     > {
   /**
    * Resolve the request principal when no bearer adapter is active. Defaults
@@ -832,6 +865,7 @@ export function mountMcpAppRoute(
     defaultPrincipalKind,
     checkOrigin,
     trustedOrigins,
+    legacy,
     runtime,
     ...serverOptions
   } = options;
@@ -856,6 +890,7 @@ export function mountMcpAppRoute(
     // Default on: the default principal is an ambient session cookie.
     checkOrigin: checkOrigin ?? true,
     trustedOrigins,
+    legacy,
     resolvePrincipal:
       resolvePrincipal ??
       ((event) => principalFromSessionLocals(event, { defaultPrincipalKind })),

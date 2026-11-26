@@ -1,6 +1,8 @@
 // A table imported before workbook bookkeeping stopped being required is
 // repaired when the app opens, and required-field errors name the label.
+
 import { afterEach, beforeEach, expect, it } from 'vitest';
+import { hostOwner } from '../../test/engine-principal.ts';
 import { closeHost, getHost } from './host.ts';
 import { openShell, type ShellHarness } from './test-support.ts';
 
@@ -15,6 +17,7 @@ afterEach(async () => {
 async function importedLegacyTable() {
   const live = await getHost();
   await live.execute(
+    hostOwner(live),
     {
       type: 'defineModel',
       name: 'Walks',
@@ -30,8 +33,12 @@ async function importedLegacyTable() {
     },
     { author: h.owner.id },
   );
-  await live.create('Walks', { workbookRow: 2, dogName: 'Biscuit' });
+  await live.create(hostOwner(live), 'Walks', {
+    workbookRow: 2,
+    dogName: 'Biscuit',
+  });
   await live.execute(
+    hostOwner(live),
     { type: 'hideField', model: 'Walks', field: 'workbookRow' },
     { author: h.owner.id },
   );
@@ -46,14 +53,17 @@ it('opens a table imported with the old required flag so records can be added an
     required: false,
     hidden: true,
   });
-  const added = await live.create('Walks', { dogName: 'Pepper' });
+  const added = await live.create(hostOwner(live), 'Walks', {
+    dogName: 'Pepper',
+  });
   expect(added).toMatchObject({ dogName: 'Pepper' });
-  const edited = await live.update('Walks', String(added.id), {
+  const edited = await live.update(hostOwner(live), 'Walks', String(added.id), {
     dogName: 'Pepper II',
   });
   expect(edited).toMatchObject({ dogName: 'Pepper II' });
   // the imported row keeps its number
   const stored = await live.readStoredRows(
+    hostOwner(live),
     'Walks',
     ['workbookRow'],
     'workbookRow',
@@ -63,10 +73,12 @@ it('opens a table imported with the old required flag so records can be added an
 
 it('names the field label, never the field id, when a required value is missing', async () => {
   const live = await importedLegacyTable();
-  const error = await live.create('Walks', {}).catch((e: Error) => e);
+  const error = await live
+    .create(hostOwner(live), 'Walks', {})
+    .catch((e: Error) => e);
   expect((error as Error).message).toBe('Dog name is required for Walks');
-  const row = await live.create('Walks', { dogName: 'Rex' });
+  const row = await live.create(hostOwner(live), 'Walks', { dogName: 'Rex' });
   await expect(
-    live.update('Walks', String(row.id), { dogName: '' }),
+    live.update(hostOwner(live), 'Walks', String(row.id), { dogName: '' }),
   ).rejects.toThrow('Dog name is required for Walks');
 });

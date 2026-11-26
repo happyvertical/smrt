@@ -428,6 +428,8 @@ export {
   inferenceBlockedUsageRecord,
   inferenceGateRequest,
   isHostedInferenceTarget,
+  isInferenceGateRequired,
+  requireInferenceGate,
   setInferenceGate,
 } from './inference-gate';
 export {
@@ -706,6 +708,7 @@ export {
   applyUpdateInput,
   assertCreateInput,
   assertUpdateInput,
+  prepareWriteInput,
   updateInputRulesFor,
 } from './request-input';
 // The principal of the current REST request (#5195): read-only, and
@@ -923,11 +926,19 @@ export {
 export {
   assignUpdateInput,
   classifyUpdateKey,
+  FIELD_NOT_WRITABLE_CODE,
+  FieldNotWritableError,
+  isServerManagedWriteKey,
   isWriteInputError,
+  notWritableFieldOf,
   resolveUpdateInput,
+  resolveWriteBody,
+  SERVER_MANAGED_WRITE_KEYS,
   STRUCTURAL_UPDATE_RULES,
+  sameStoredValue,
   type UpdateInputRules,
   type UpdateKeyKind,
+  type WriteBodyPolicy,
   WriteInputError,
 } from './write-input';
 // Preserve the synchronous build API without importing the Vite/scanner graph

@@ -29,6 +29,7 @@ import {
   type WaitingResult,
 } from './changes.ts';
 import { hostFor } from './host.ts';
+import { authorCaller, type Principal } from './owner.ts';
 import { type PublicExecuteResult, publicChangeResult } from './results.ts';
 import type { Target } from './target.ts';
 import { templateCommands, templateSummary } from './template-records.ts';
@@ -51,9 +52,16 @@ export type BuilderResult =
 export type CommandSource = 'assistant' | 'api' | 'owner';
 
 /** Owner-facing delete details, separate from executable model keys and record ids. */
-async function recordPreview(host: AppHost, model: string, id?: string) {
+async function recordPreview(
+  host: AppHost,
+  owner: Principal,
+  model: string,
+  id?: string,
+) {
   const definition = host.def.models[model];
-  const record = id ? await host.get(model, id) : undefined;
+  const record = id
+    ? await host.get(authorCaller(owner, host), model, id)
+    : undefined;
   const title =
     definition?.titleField ??
     Object.entries(definition?.fields ?? {}).find(
@@ -70,7 +78,7 @@ async function recordPreview(host: AppHost, model: string, id?: string) {
 }
 
 /**
- * Run a command for `author`. Never passes `approved` (see approvals.ts).
+ * Run a command for the verified owner. Never passes `approved` (see approvals.ts).
  *
  * Every structural command (including loadRecords, extractModel and
  * mergeRecords) becomes a CARD in the changes waiting (changes.ts) and never
@@ -85,7 +93,7 @@ async function recordPreview(host: AppHost, model: string, id?: string) {
  */
 export async function runCommand(
   command: Command,
-  author: string,
+  owner: Principal,
   _target: Target = 'live',
   source: CommandSource = 'api',
 ): Promise<BuilderResult> {
@@ -102,7 +110,7 @@ export async function runCommand(
             ? { summary: templateSummary(template) }
             : {}),
         },
-        author,
+        owner.id,
       );
       return {
         ...waiting.result,
@@ -121,10 +129,14 @@ export async function runCommand(
   }
   const host = await hostFor('live');
   try {
-    return publicChangeResult(await host.execute(command, { author }));
+    return publicChangeResult(
+      await host.execute(authorCaller(owner, host), command, {
+        author: owner.id,
+      }),
+    );
   } catch (e) {
     if (e instanceof ApprovalRequiredError)
-      return requestCommandApproval(host, command, e, author);
+      return requestCommandApproval(host, command, e, owner);
     throw e;
   }
 }
@@ -138,7 +150,7 @@ export async function requestCommandApproval(
   host: AppHost,
   command: Command,
   e: ApprovalRequiredError,
-  author: string,
+  owner: Principal,
 ): Promise<PendingApproval> {
   // A known conflict is a refusal, not a decision the owner can approve.
   if (
@@ -171,7 +183,7 @@ export async function requestCommandApproval(
       : undefined;
   const keep =
     command.type === 'mergeRecords'
-      ? await host.get(command.model, command.keep)
+      ? await host.get(authorCaller(owner, host), command.model, command.keep)
       : undefined;
   const labelFor = (record: RecordRow | undefined) => {
     if (!record || !model) return 'the selected record';
@@ -192,7 +204,11 @@ export async function requestCommandApproval(
             .slice(0, 10)
             .map(async (id) =>
               labelFor(
-                (await host.get(command.model, id)) as RecordRow | undefined,
+                (await host.get(
+                  authorCaller(owner, host),
+                  command.model,
+                  id,
+                )) as RecordRow | undefined,
               ),
             ),
         )
@@ -252,7 +268,7 @@ export async function requestCommandApproval(
       summary: commandSummary(command, host.def, undefined, preview),
       preview,
     },
-    author,
+    owner.id,
   );
 }
 
@@ -260,12 +276,12 @@ export async function requestCommandApproval(
 export async function runAppTool(
   name: string,
   args: Record<string, unknown>,
-  author: string,
+  owner: Principal,
   target: Target,
 ) {
   const host = await hostFor(target);
   try {
-    return await host.callAppTool(name, args);
+    return await host.callAppTool(authorCaller(owner, host), name, args);
   } catch (e) {
     if (e instanceof ApprovalRequiredError) {
       const model = Object.entries(host.def.models).find(([model, md]) =>
@@ -274,6 +290,7 @@ export async function runAppTool(
       const details = model
         ? await recordPreview(
             host,
+            owner,
             model,
             typeof args.id === 'string' ? args.id : undefined,
           )
@@ -285,7 +302,7 @@ export async function runAppTool(
           summary: `Delete record${'modelLabel' in details ? ` in ${details.modelLabel}` : ''}`,
           preview: { ...e.plan.preview, ...details },
         },
-        author,
+        owner.id,
       );
     }
     throw e;
@@ -295,12 +312,12 @@ export async function runAppTool(
 /** Pass a request to the app's generated REST on `target`; a live DELETE becomes an approval. */
 export async function runRest(
   req: { method: string; url: string; body?: string },
-  author: string,
+  owner: Principal,
   target: Target,
 ) {
   const host = await hostFor(target);
   try {
-    return await host.rest(req);
+    return await host.rest(authorCaller(owner, host), req);
   } catch (e) {
     if (e instanceof ApprovalRequiredError) {
       const action: ApprovalAction = {
@@ -316,6 +333,7 @@ export async function runRest(
       const details = model
         ? await recordPreview(
             host,
+            owner,
             model,
             route[3] ? decodeURIComponent(route[3]) : undefined,
           )
@@ -327,7 +345,7 @@ export async function runRest(
           summary: `Delete record${'modelLabel' in details ? ` in ${details.modelLabel}` : ''}`,
           preview: { ...e.plan.preview, ...details },
         },
-        author,
+        owner.id,
       );
     }
     throw e;
@@ -350,19 +368,25 @@ export function isPending(x: unknown): x is PendingApproval {
 export async function requestRecordDelete(
   model: string,
   id: string,
-  author: string,
+  owner: Principal,
   target: Target,
 ): Promise<PendingApproval | { deleted: string }> {
   const host = await hostFor(target);
-  const record = await host.get(model, id); // 404s for a missing record
-  if (target === 'draft') return host.remove(model, id);
+  const caller = authorCaller(owner, host);
+  const record = await host.get(caller, model, id); // 404s for a missing record
+  if (target === 'draft') return host.remove(caller, model, id);
   return requestApproval(
     { kind: 'record-delete', model, id },
     {
       summary: `Delete record in ${host.def.models[model]?.label ?? humanize(model)}`,
       risky: true,
-      preview: { model, id, record, ...(await recordPreview(host, model, id)) },
+      preview: {
+        model,
+        id,
+        record,
+        ...(await recordPreview(host, owner, model, id)),
+      },
     },
-    author,
+    owner.id,
   );
 }

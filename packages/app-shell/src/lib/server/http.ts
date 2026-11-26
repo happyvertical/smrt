@@ -1,6 +1,6 @@
 // Shared plumbing for the shell's JSON routes: owner session required,
 // same-origin for writes, bounded JSON bodies, errors without internals.
-import { EngineError } from '../../engine/index.ts';
+import { EngineError, METHOD_CODE_DENIED } from '../../engine/index.ts';
 import {
   PolicyError,
   type Principal,
@@ -58,12 +58,13 @@ export async function ownerOf(event: EventLike): Promise<Principal> {
 
 export async function readJson(
   request: Request,
+  maxBytes = MAX_BODY_BYTES,
 ): Promise<Record<string, unknown>> {
   const type = request.headers.get('content-type') ?? '';
   if (!/^application\/json\b/i.test(type))
     throw new HttpError(415, 'send application/json');
   const text = await request.text();
-  if (text.length > MAX_BODY_BYTES) throw new HttpError(413, 'body too large');
+  if (text.length > maxBytes) throw new HttpError(413, 'body too large');
   let value: unknown;
   try {
     value = JSON.parse(text);
@@ -86,10 +87,13 @@ export async function readOptionalJson(
 const ENGINE_STATUS: Record<string, number> = {
   invalid: 400,
   not_found: 404,
+  unauthorized: 401,
+  forbidden: 403,
   refused: 409,
   approval_required: 409,
   migration_failed: 409,
   worker_crashed: 503,
+  unavailable: 503,
   stale_fence: 409,
 };
 
@@ -104,8 +108,12 @@ export function errorResponse(error: unknown): Response {
       {
         ...error.details,
         error: error.message,
-        // A cap refusal's own code survives; every other code is the engine's.
-        code: error.details?.code === 'app_limit' ? 'app_limit' : error.code,
+        // A cap or entitlement refusal's own code survives; every other code is the engine's.
+        code:
+          error.details?.code === 'app_limit' ||
+          error.details?.code === METHOD_CODE_DENIED
+            ? error.details.code
+            : error.code,
       },
       ENGINE_STATUS[error.code] ?? 400,
     );

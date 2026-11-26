@@ -1,5 +1,10 @@
 import { describe, expect, it } from 'vitest';
-import { describeApproval, failureText, splitApprovals } from './approvals.ts';
+import {
+  describeApproval,
+  failureText,
+  splitApprovals,
+  statusLabel,
+} from './approvals.ts';
 import type { ApprovalView } from './types.ts';
 
 const view = (over: Partial<ApprovalView>): ApprovalView => ({
@@ -147,6 +152,9 @@ describe('approval descriptions', () => {
       failureText(view({ status: 'failed', result: { error: 'boom' } })),
     ).toBe('boom');
     expect(failureText(view({ status: 'approved' }))).toBeNull();
+    // An approval left executing (#5486) is neither done nor failed.
+    expect(statusLabel('unknown')).toBe('Outcome unknown');
+    expect(failureText(view({ status: 'unknown' }))).toMatch(/not known/);
   });
 });
 

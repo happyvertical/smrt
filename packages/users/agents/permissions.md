@@ -211,6 +211,13 @@ inherited permissions automatically, but RLS row filtering remains bound to the
 session tenant: a root session's app-level guard authorization does not itself
 permit child rows through RLS. Preserve this distinction.
 
+A host with run-time models in an app schema passes a `PostgresPolicyScope` (second
+argument; `@happyvertical/smrt-users/postgres-policies`, `applyScopedPostgresPermissionPolicies`
+on a handle it already holds): tables and the `smrt_*` helpers live in
+`schemaName`, never `public`; only `includeClass` classes get policies;
+`permissionsFor` names the slugs; explicit bindings are not applied. Helper bodies
+never call each other (a schema copied whole creates functions in name order).
+
 RolePermission's natural key is `(role_id, permission_id)` (#3329); repeated or
 concurrent inserts converge without changing the grant ID. Existing deployments
 must run `deduplicateRolePermissions()` with stopped writers before ordinary

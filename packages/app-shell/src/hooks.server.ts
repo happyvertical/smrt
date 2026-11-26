@@ -16,6 +16,8 @@ import { drainShell, shellProfile } from '$lib/server/host';
 import { installHostedInferenceGate } from '$lib/server/hosted-inference';
 import { installHostedProvisioning } from '$lib/server/hosted-provisioning';
 import { shellImports, stopShellImports } from '$lib/server/import-runtime';
+import { installMethodCodeGate } from '$lib/server/method-code';
+import { runOperatorCommand } from '$lib/server/operator';
 import {
   ensureOwnerHandoff,
   keepOwnerHandoffFresh,
@@ -39,6 +41,15 @@ export const init = async () => {
         endStreams: closeAllStreams,
         stopWork: stopShellImports,
       }),
+      // One-shot operator commands (`smrt-app-shell migrate-to-postgres`,
+      // #5193), run by `build/operator.js` inside this bundle.
+      {
+        run: (argv) =>
+          runOperatorCommand(argv, {
+            out: (line) => process.stdout.write(`${line}\n`),
+            err: (line) => process.stderr.write(`${line}\n`),
+          }),
+      },
     );
   // The assistant's review of the changes waiting runs after the exact checks.
   installChangeReview();
@@ -50,6 +61,11 @@ export const init = async () => {
   // Plan changes provision or revoke the members' hosted keys, where the
   // operator configured a gateway (#5194). Inert otherwise and on the desktop.
   await installHostedProvisioning({
+    db: async () => (await runtime.deployedRuntime()).db,
+  });
+  // Hosted: app-authored method code runs only for a tenant whose plan grants
+  // it (#5194); the check is built here or the server does not start.
+  await installMethodCodeGate({
     db: async () => (await runtime.deployedRuntime()).db,
   });
   // The hosted app has no owner link to hand off and no embedded job runner

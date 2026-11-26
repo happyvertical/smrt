@@ -25,6 +25,7 @@ export default defineConfig({
       'src/engine/postgres-drafts.test.ts',
       'src/engine/portable-export-postgres.test.ts',
       'src/engine/postgres-claim-connection.test.ts',
+      'src/engine/runtime-rls.postgres.test.ts',
       'src/engine/store-in-swap.test.ts',
       'src/lib/server/storage-metering-postgres.test.ts',
       'src/lib/server/hosted-inference-postgres.test.ts',

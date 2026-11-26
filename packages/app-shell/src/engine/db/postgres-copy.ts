@@ -44,6 +44,33 @@ export interface SqlDatabase {
 }
 
 const qi = (s: string) => `"${s.replace(/"/g, '""')}"`;
+/**
+ * A column type as `format_type` prints it: identifiers (letters, digits,
+ * underscore, dot, space), a length or precision list, array brackets and
+ * double-quoted names. Nothing else is ever interpolated into a restore's
+ * `CAST(? AS <type>)`, so a dump that carries anything more is refused.
+ */
+const TYPE_PART = '(?:"[^"]{1,63}"|[A-Za-z_][A-Za-z0-9_ ]{0,62})';
+const COLUMN_TYPE = new RegExp(
+  String.raw`^${TYPE_PART}(?:\.${TYPE_PART})*(?:\(\s*\d{1,5}(?:\s*,\s*\d{1,5})?\s*\))?(?:\s[A-Za-z][A-Za-z0-9_ ]{0,40})?(?:\[\d{0,5}\])*$`,
+  'u',
+);
+
+/** Refuse a dumped column type that is not a plain `format_type` result. */
+export function assertColumnType(type: unknown): string {
+  if (
+    typeof type !== 'string' ||
+    type.length > 128 ||
+    !COLUMN_TYPE.test(type) ||
+    /--|\/\*/.test(type)
+  )
+    throw new EngineError(
+      'the dump is damaged: a column type is not a plain type name',
+      'refused',
+    );
+  return type;
+}
+
 const lit = (s: string) => `'${s.replace(/'/g, "''")}'`;
 const asJson = <T>(v: unknown): T =>
   (typeof v === 'string' ? JSON.parse(v) : v) as T;
@@ -444,13 +471,45 @@ const columnList = (cols: Array<{ name: string }>) =>
   cols.map((c) => qi(c.name)).join(', ');
 
 /**
- * A copy must never read through a row-level-security policy: it would drop
- * the rows the policy hides, silently. With `row_security` off the server
- * fails the read instead for a role the policies would filter, and a role
- * that owns or bypasses them reads everything.
+ * A copy must never read through a row-level-security policy that hides rows:
+ * it would drop them, silently. The tables of an app carry policies that are
+ * FORCED (they hold for their owner too, #5189), and `row_security = off`
+ * would make the server fail every such read, so the copy instead acts as the
+ * engine: `smrt.system_context` is what the policies' bypass reads. Trusted
+ * engine code only sets it, on a connection it opened for the copy. When
+ * `source` is given the policies are checked first: a table whose row-level
+ * security applies to this role (`row_security_active`) but has no policy that
+ * passes the bypass would hide its rows, so the copy is refused instead.
  */
-const readAllRows = async (tx: SqlRunner) => {
-  await tx.query(`SELECT set_config('row_security', 'off', true)`);
+export const readAllRows = async (tx: SqlRunner, source?: string) => {
+  await tx.query(`SELECT set_config('smrt.system_context', 'true', true)`);
+  await tx.query(`SELECT set_config('smrt.super_admin_bypass', 'false', true)`);
+  if (source !== undefined) {
+    // A table is covered when a permissive policy for reads AND one for
+    // inserts (a copy writes too) pass the engine's bypass.
+    const hidden = asRows(
+      await tx.query(
+        `SELECT c.relname AS name FROM pg_class c
+          WHERE c.relnamespace = to_regnamespace(${lit(source)}) AND c.relkind IN ('r', 'p') AND c.relrowsecurity AND row_security_active(c.oid)
+            AND (NOT EXISTS (
+                  SELECT 1 FROM pg_policy p
+                   WHERE p.polrelid = c.oid AND p.polpermissive AND p.polcmd IN ('*', 'r')
+                     AND coalesce(pg_get_expr(p.polqual, p.polrelid), '') LIKE '%smrt_rls_bypass()%')
+              OR NOT EXISTS (
+                  SELECT 1 FROM pg_policy p
+                   WHERE p.polrelid = c.oid AND p.polpermissive AND p.polcmd IN ('*', 'a')
+                     AND coalesce(pg_get_expr(p.polwithcheck, p.polrelid), '') LIKE '%smrt_rls_bypass()%'))
+          ORDER BY c.relname`,
+      ),
+    );
+    if (hidden.length)
+      throw new EngineError(
+        `cannot copy ${source}: row-level security on ${hidden
+          .map((r) => r.name)
+          .join(', ')} would hide rows from the copy`,
+        'refused',
+      );
+  }
   // Values travel as text: read and written in one fixed format whatever the
   // session's own settings are.
   await tx.query(`SELECT set_config('datestyle', 'ISO, MDY', true)`);
@@ -575,6 +634,8 @@ export async function acquireOwnership(
   db: SqlDatabase,
   schema: string,
   lockTimeoutMs = DEFAULT_LOCK_TIMEOUT_MS,
+  /** Run in the same transaction, after the bump (#5486: read what a change left, definitively). */
+  then?: (tx: SqlRunner, fence: number) => Promise<void>,
 ): Promise<number> {
   assertSchemaName(schema);
   return db.transaction(async (tx: SqlRunner) => {
@@ -594,6 +655,7 @@ export async function acquireOwnership(
         `INSERT INTO ${qi(schema)}._app_meta AS m (key, value) VALUES (${lit(FENCE_KEY)}, '1') ON CONFLICT (key) DO UPDATE SET value = (m.value::bigint + 1)::text RETURNING value`,
       ),
     )[0];
+    await then?.(tx, Number(got.value));
     return Number(got.value);
   });
 }
@@ -609,6 +671,88 @@ async function lockFence(tx: SqlRunner, schema: string) {
     await tx.query(
       `LOCK TABLE ${qi(schema)}._app_meta IN ACCESS EXCLUSIVE MODE`,
     );
+}
+
+/**
+ * Inside the caller's transaction: read the app's ownership generation
+ * `FOR SHARE` (held to the end of the transaction, so a takeover's bump waits
+ * for it) and refuse unless it is `expected` (#5486).
+ */
+export async function holdFence(
+  tx: SqlRunner,
+  schema: string,
+  expected: number,
+): Promise<void> {
+  assertSchemaName(schema);
+  const row = asRows(
+    await tx.query(
+      `SELECT value FROM ${qi(schema)}._app_meta WHERE key = ${lit(FENCE_KEY)} FOR SHARE`,
+    ),
+  )[0];
+  const actual = row ? Number(row.value) : null;
+  if (actual !== expected)
+    throw new StaleFenceError(
+      `this host no longer owns the app in schema ${schema} (it holds generation ${expected}, the database is at ${actual ?? 'none'}); another host opened it or a publish or restore replaced its data. Reopen the app; nothing was written.`,
+      { schema, expected, actual },
+    );
+}
+
+/**
+ * Inside the caller's transaction: wait for every transaction that holds the
+ * generation row `FOR SHARE` (a worker's boot or operation) to end, without
+ * changing the generation. After it, a read of `_app_meta` sees whatever that
+ * transaction committed (#5486).
+ */
+export async function awaitFenceHolders(
+  tx: SqlRunner,
+  schema: string,
+): Promise<void> {
+  assertSchemaName(schema);
+  await tx.query(
+    `SELECT value FROM ${qi(schema)}._app_meta WHERE key = ${lit(FENCE_KEY)} FOR NO KEY UPDATE`,
+  );
+}
+
+/** Inside the caller's transaction: the values of these `_app_meta` keys (absent ones are missing). */
+export async function readMeta(
+  tx: SqlRunner,
+  schema: string,
+  keys: string[],
+): Promise<Record<string, string>> {
+  assertSchemaName(schema);
+  const out: Record<string, string> = {};
+  for (const r of asRows(
+    await tx.query(
+      `SELECT key, value FROM ${qi(schema)}._app_meta WHERE key IN (${keys.map(lit).join(', ')})`,
+    ),
+  ))
+    out[String(r.key)] = String(r.value);
+  return out;
+}
+
+/** Inside the caller's transaction: set an `_app_meta` key (an upsert: a fork copies the table). */
+export async function writeMeta(
+  tx: SqlRunner,
+  schema: string,
+  key: string,
+  value: string,
+): Promise<void> {
+  assertSchemaName(schema);
+  await tx.query(
+    `INSERT INTO ${qi(schema)}._app_meta (key, value) VALUES (${lit(key)}, ${lit(value)}) ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value`,
+  );
+}
+
+/** Inside the caller's transaction: remove `_app_meta` keys. */
+export async function deleteMeta(
+  tx: SqlRunner,
+  schema: string,
+  keys: string[],
+): Promise<void> {
+  assertSchemaName(schema);
+  await tx.query(
+    `DELETE FROM ${qi(schema)}._app_meta WHERE key IN (${keys.map(lit).join(', ')})`,
+  );
 }
 
 /** The generation stored in `schema`, or null when it has none (an app no host owns yet). */
@@ -685,7 +829,7 @@ export async function forkSchema(
     if (await schemaExists(tx, target))
       throw new EngineError(`schema ${target} already exists`, 'refused');
     await lockForCopy(tx, source, lockTimeoutMs);
-    await readAllRows(tx);
+    await readAllRows(tx, source);
     const plan = await describeSchema(tx, source);
     await run(tx, plan.before, target);
     for (const t of plan.tables) {
@@ -903,7 +1047,7 @@ export async function dumpSchema(
   try {
     const version = await db.transaction(async (tx: SqlRunner) => {
       await lockForCopy(tx, source, lockTimeoutMs);
-      await readAllRows(tx);
+      await readAllRows(tx, source);
       const plan = await describeSchema(tx, source);
       const meta = asRows(
         await tx.query(
@@ -1040,8 +1184,10 @@ export async function restoreDump(
       }
       const l = JSON.parse(line) as DumpLine;
       if (l.k === 'sql') await tx.query(render(l.sql, target));
-      else if (l.k === 'table') table = l;
-      else if (l.k === 'rows') {
+      else if (l.k === 'table') {
+        for (const c of l.columns) assertColumnType(c.type);
+        table = l;
+      } else if (l.k === 'rows') {
         if (!table || table.name !== l.name)
           throw new EngineError(
             `${file} is damaged (rows out of place)`,

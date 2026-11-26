@@ -7,6 +7,8 @@
 import { mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
+import { ObjectRegistry } from '@happyvertical/smrt-core';
+import { createSchemaManager } from '@happyvertical/smrt-core/schema';
 import { disableTenancy, enableTenancy } from '@happyvertical/smrt-tenancy';
 import { UserCollection } from '@happyvertical/smrt-users';
 import type { DatabaseInterface } from '@happyvertical/sql';
@@ -30,19 +32,42 @@ export interface CloudHarness {
   close(): Promise<void>;
 }
 
+export interface CloudHarnessOptions {
+  /**
+   * The shell's database, already open (the caller closes it): PostgreSQL for
+   * the row-level-security suite. Default: a SQLite file in the harness's
+   * temp directory.
+   */
+  db?: DatabaseInterface;
+  /** Runs once the schema and the two owners exist, before the shell is configured. */
+  afterOwners?: (db: DatabaseInterface) => Promise<void>;
+}
+
 export async function openCloudShell(
   extra: Partial<ShellContext> = {},
+  options: CloudHarnessOptions = {},
 ): Promise<CloudHarness> {
   const dir = mkdtempSync(join(tmpdir(), 'shell-cloud-test-'));
   const actual =
     await vi.importActual<typeof import('@happyvertical/sql')>(
       '@happyvertical/sql',
     );
-  const db = await actual.getDatabase({
-    type: 'sqlite',
-    url: join(dir, 'shell.db'),
-  } as never);
-  await prepareShellSchema(db, { hosted: true });
+  const db =
+    options.db ??
+    (await actual.getDatabase({
+      type: 'sqlite',
+      url: join(dir, 'shell.db'),
+    } as never));
+  if (options.db) {
+    // `prepareShellSchema` detects the engine from the URL and does not know an
+    // in-process PGlite; the schema manager does (a deployed database is made by
+    // `smrt db:migrate`, which is this).
+    const manager = createSchemaManager(db);
+    for (const schema of Object.values(
+      ObjectRegistry.getAllSchemasAsDefinitions(),
+    ))
+      await manager.ensureTable(schema);
+  } else await prepareShellSchema(db, { hosted: true });
   const users = await UserCollection.create({ db });
   const newUser = async (email: string) => {
     const user = await users.create({ email, username: email.split('@')[0] });
@@ -55,6 +80,7 @@ export async function openCloudShell(
     const tenantId = await ownerTenantFor(db, { id: user.id, name });
     principals.push({ id: user.id, tenantId });
   }
+  await options.afterOwners?.(db);
   enableTenancy();
   setOwnerCheck(null);
   configureShell({

@@ -1,3 +1,8 @@
+<!--
+  PrebuiltComponentsSettings: the Settings section that turns the prebuilt
+  components on or off, lists owner approvals still pending
+  (OwnerApprovalsSettings) and links to re-run onboarding.
+-->
 <script lang="ts">
 import type { AssistantApprovalView } from '@happyvertical/smrt-chat/assistant-turn';
 import { type AssistantTransport } from '@happyvertical/smrt-chat/svelte';
@@ -16,11 +21,17 @@ let {
   ondecided,
   restartHref = '/onboarding?restart=1',
 }: {
+  /** Whether prebuilt components are currently turned on. */
   enabled: boolean;
+  /** Persists the new setting; reject to put the toggle back and show an error. */
   onsave: (enabled: boolean) => Promise<void>;
+  /** Server-loaded owner approvals still waiting on a decision. */
   approvals?: AssistantApprovalView[];
+  /** Connection for deciding approvals; without it the approvals list is not shown. */
   transport?: AssistantTransport;
+  /** Called after an owner decision is accepted, to refresh the page. */
   ondecided?: () => void | Promise<void>;
+  /** Where "run onboarding again" goes. Default `/onboarding?restart=1`. */
   restartHref?: string;
 } = $props();
 const { t } = useI18n();

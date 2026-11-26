@@ -2,10 +2,12 @@
 // Hidden FieldDef and MethodDef literals also follow origin/main definition.ts;
 // origin/main host.ts hideField and addMethod store these exact properties.
 // fbfe8dcbc2a474cb0c468536682da3bdf776e3d9: RECIPES and host.ts enableRecipe/defineModel (before calculated fields/reports).
+
 import { mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { expect, it } from 'vitest';
+import { hostOwner } from '../test/engine-principal.ts';
 import {
   type AppDefinition,
   AppHost,
@@ -81,16 +83,18 @@ it.each([
     expect(host.version).toBe(1);
     expect(host.describe().reports).toEqual({});
     if (definition.recipes.length) {
-      const record = await host.create('Profile', {
+      const record = await host.create(hostOwner(host), 'Profile', {
         name: 'Ada',
         email: 'ada@example.test',
       });
-      expect((await host.list('Profile')).map((r) => r.id)).toContain(
-        record.id,
-      );
+      expect(
+        (await host.list(hostOwner(host), 'Profile')).map((r) => r.id),
+      ).toContain(record.id);
     } else {
-      const customer = await host.create('Customer', { name: 'Ada' });
-      const sale = await host.create('Sale', {
+      const customer = await host.create(hostOwner(host), 'Customer', {
+        name: 'Ada',
+      });
+      const sale = await host.create(hostOwner(host), 'Sale', {
         title: 'First',
         total: 1234,
         day: '2026-01-15',
@@ -99,9 +103,15 @@ it.each([
       });
       expect(host.describe().models.Sale.fields.internal).toBeUndefined();
       expect(
-        await host.runMethod('Sale', 'label', String(sale.id), {
-          prefix: 'Sale: ',
-        }),
+        await host.runMethod(
+          hostOwner(host),
+          'Sale',
+          'label',
+          String(sale.id),
+          {
+            prefix: 'Sale: ',
+          },
+        ),
       ).toMatchObject({ result: 'Sale: First' });
       expect(sale).toMatchObject({
         total: 1234,
@@ -117,7 +127,10 @@ it.each([
     host = await AppHost.open(dir, { store });
     expect(host.version).toBe(1);
     expect(
-      await host.list(definition.recipes.length ? 'Profile' : 'Sale'),
+      await host.list(
+        hostOwner(host),
+        definition.recipes.length ? 'Profile' : 'Sale',
+      ),
     ).toHaveLength(1);
   } finally {
     await host?.close();

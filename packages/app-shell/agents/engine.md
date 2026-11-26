@@ -74,8 +74,9 @@ adds) and swaps it in once it is ready. The engine must not import SvelteKit,
 The host chooses the database; the engine assumes none. `HostOptions.database`
 is a `DatabaseConfig` (`engine/db/types.ts`): `{ kind: 'sqlite' }` (the default:
 `app.db` in the data directory, as the desktop always did), `{ kind: 'postgres',
-schema, connection }` (a server; plain data, each worker opens its own
-connection) or `{ kind: 'pglite', schema, client }` (an in-process PGlite owned
+schema, connection, admin?, roles? }` (a server; plain data that stays on the host
+thread: connections are the broker's, see "The broker" and "The shared pool") or
+`{ kind: 'pglite', schema, client }` (an in-process PGlite owned
 by the host thread). Everything that differs sits behind `EngineDialect`, one
 pure implementation per database (`db/sqlite-dialect.ts`,
 `db/postgres-dialect.ts`): column types (the PostgreSQL ones equal what core's
@@ -98,7 +99,8 @@ scans for it.
   sync are absent. A config with no schema, `public`, a system schema or a
   schema the host did not create refuses to open (`EngineError` `refused`); the
   engine never creates a schema and never falls back to `public`. Core is
-  untouched. The role and policies of a hosted deployment are #5188/#5189.
+  untouched. The role of a hosted deployment is #5188, its policies #5189
+  ("Row-level security of run-time models").
 - **Statement timeout (#5192).** `HostOptions.workerLimits.statementTimeoutMs`
   (shell: `ShellContext.workerLimits`, set in `smrt.ts` from
   `SMRT_APP_SHELL_STATEMENT_TIMEOUT_MS`, unset means none; #5503) makes `scopeDatabase` also run
@@ -117,15 +119,12 @@ scans for it.
   `statementTimeoutMs`); `copyAppDatabase` hands it to `dumpSchema`, so a
   snapshot, undo point or `copyTo` waits at most that long per table lock and
   then fails with a lock-timeout error instead of using the default.
-- **How the config reaches the worker.** `DatabaseConfig` is plain data except a
-  PGlite instance, which cannot cross threads (and two instances on one
-  storage corrupt it, yet a new worker boots while the old one still serves).
-  So the host thread keeps the one PGlite and `AppWorker` transfers one end of
-  a `MessagePort` (`db/pglite-bridge.ts`: `serveBridge` host side, a
-  PGlite-shaped `client` worker side, transactions held open on the host until
-  the worker ends them, rolled back if it dies). A server config is
-  serialised and each worker opens its own connection. The PGlite pass is not a
-  test double of the worker: it is the same worker code path.
+- **How the config reaches the worker.** The worker holds no database
+  connection and no credentials, for either database: `AppWorker` transfers one
+  end of a `MessagePort` and the host thread's broker serves the other
+  (`db/broker.ts`, worker side `db/broker-client.ts`; see "The broker").
+  `WorkerDatabaseConfig` is `{ kind, schema, port, lockTimeoutMs? }`. The PGlite
+  pass is the same worker code path as a server.
 - **Still SQLite only** (a clear `not supported on this database yet`
   `EngineError`, `requireSqlite`): the portable export and import
   (`openAppDatabase(dataDir)` opens SQLite; they refuse a host that reports
@@ -279,28 +278,98 @@ for the one operation on the host thread; a PGlite uses the host's client).
   server the tests marked [S]: a terminated claim, a delayed commit after a
   takeover, the heartbeat, a claim lost right after it was taken) and
   `claim.test.ts`.
-  **Unfenced in #5470 part 1** (hosted PostgreSQL; follow-up: #5486):
-  - Change and undo store writes (`append`/`setCurrent` after a migration):
-    unconditional, on the store pool, no claim proof. A host that loses its
-    claim after its worker's migration can still record the version after the
-    next host has read the store.
-  - Every `DraftVersionStore` write, and a draft host's boot, ownership bump
-    and schema drops (admin connections, no claim). The draft's own generation
-    still guards its schema.
-  - `adoptDraft`'s draft-row writes (starting/extra open -> discarded).
-  - The publish journal file (local data directory).
-  - `markPurged`; snapshot and rehearsal files.
+  **Change and undo store writes on the claim (#5486 slice 1; same host
+  profile).** A change or an undo step of a claimed host (S = the store's
+  current version, D = the data's `_app_meta.version`, g = the host's
+  generation) runs in three steps: **P0**, a claim transaction (proof, the
+  fence `FOR SHARE` = g, `commitIn(tx, [], p, p)` as a compare, and the
+  `change` key `{id, from, to, record, request}` in the live `_app_meta`);
+  **M**, the worker's migration, whose boot operation also writes `applied` =
+  the change id (`Migration.intent`, steps or not; it is one transaction with
+  the steps and D, committed before `ready`); **T_c**, a claim
+  transaction (proof, fence, `commitIn(tx, records, v, expected p)`, and
+  `change.committed = true`). `applied` stays (the last change's id) until the
+  next open removes it.
+  Outcome of T_c: *refused* (callback did not finish) or *answered* (the
+  server returned a SQLSTATE that is not class 08/57P) with the claim still
+  proven, so the migration is reversed under the same claim (a flagged boot of
+  the down steps, or a step-less boot of the old definition; it deletes
+  `applied` and records `reversed` = the id, so a reverse whose COMMIT reply
+  is lost still reopens as "never landed") and the error is
+  returned as today; *unknown* (the claim lost, or an error with no SQLSTATE
+  after the callback finished, such as the SDK's "rolled back the transaction
+  at commit") never reverses and never respawns an old worker: the host stops
+  its worker, ends its claim session (so nothing of it can still commit) and
+  throws a `ClaimLostError` with `details.outcome = 'unknown'`
+  (`isUnknownOutcome`). When the forward `ready` rejects with the claim
+  proven and the swap migrates, `notApplied` takes ownership (the bump waits
+  for any open migration transaction) and reads `applied` in that same
+  transaction: only "no" respawns the old worker, on the new generation. A
+  step-less swap never stopped the old worker, so it does not bump: it waits
+  for the failed boot's transaction (`awaitFenceHolders`) and reads `applied`;
+  anything but a definite "no" is unknown. A
+  claim lost while the new worker boots stops it instead of installing it.
+  **Boot** then settles what an earlier host left, in one claim transaction
+  after the publish reconcile (`reconcileChange`): `committed` -> applied;
+  `reversed` = the id -> never landed; `applied` = the id with S = from and D
+  = to -> roll the store forward (`commitIn`), emitting `changed` once the host
+  is open; no `applied` with D = S = from -> never landed; anything else -> a
+  notice. The keys are removed
+  either way (a fork or a snapshot copies them), except that a decided change
+  that names an approval keeps `change` (marked `decided`) until the shell
+  settles the approval and calls `acknowledgeRecovery`, so a failed open or a
+  stopped process in between cannot lose the outcome. The shell fails the open
+  when settling fails, and a change refuses to start while such a key stands. The first version (seed) is
+  also a claim transaction. `host.recoveredChange` names the approval
+  (`ExecuteOptions.request`) of a decided change; the shell settles it only
+  if it is still `executing` (`settleRecoveredChange`). The claim session sets
+  `idle_session_timeout` = max(30 s, 6 x heartbeat) (0 with no heartbeat), so
+  a frozen host's session cannot hold a half-answered COMMIT forever.
+  Each step of an `undoTo` journals `part` {index, of}; a recovered step
+  settles its approval as approved only when it is the last step that landed,
+  and otherwise as failed ("part of this undo took effect"). The shell shows
+  an `executing` approval as `unknown` ("Outcome unknown", a view status only;
+  nothing stores it) unless this process is applying it right now, which still
+  reads `approved` as before; `decideApproval` leaves it `executing` on an
+  unknown outcome and returns `{status: 'unknown', error}`.
+  Residual: a change interrupted before P0 leaves nothing; a part-1 host that
+  opens after an interrupted change boots the old version on the new tables
+  (drain part-1 hosts before this ships); the `ready`-rejects-after-commit
+  arm of `notApplied` is covered by reasoning (the boot operation commits
+  before `ready`), not by a test that can force a lost COMMIT reply.
+  **Drafts (#5486 slice 2).** A live host with a fenced store lends its claim
+  to its drafts (`lendableClaim`; `forkDraft` and the shell's `openDraftHost`
+  pass it as `HostOptions.claim`). A draft host never owns or releases it: it
+  is only where the draft's change and undo store writes run, through the same
+  P0 / M / T_c path with the draft schema's own generation and
+  `DraftVersionStore.commitIn` (a compare on `app_drafts.current_version`, and
+  the draft must still be `starting` or `open`). The draft stops when the lent
+  claim is lost. `forkDraft` clears the journal keys the copy inherited. The
+  shell's draft row UPDATES (`adoptDraft`'s discards, a draft's
+  starting -> open, a failed start, `discardNow`) run through `withDraftRows`,
+  one `claimTransaction` on a host with a fenced claim, so a host that lost
+  its claim changes no draft row. The `starting` row's INSERT and `forkDraft`'s
+  seeding of the new draft's own first version stay on the shell's connection
+  (they create rows nobody else holds).
+  **Draft boot and drops (#5486 slice 3).** A draft host's ownership bump
+  (`acquireOwnership`) and every schema drop or swap it makes (`admin()`) are
+  claim transactions on the lent claim, and `discardOrphanDraft` takes the live
+  host's claim too (`discardStaleDraft(dir, live)`), so a host that lost its
+  claim bumps and drops nothing.
+  **Still unfenced** (hosted PostgreSQL):
   - Fork and restore schema creation on admin connections (at worst a leaked
     side schema, removed by the sweep).
+  - The publish journal file (local data directory).
+  - `markPurged`; snapshot and rehearsal files.
   - Portable import's `populate` (claim never proven; unchanged from today).
 - **Fork** (a draft, a publish rehearsal): a live schema beside the app's, in one transaction (a
   failure leaves none). `forkDraft` writes the name in the draft marker
   (`schema`, `liveSchema`); `AppHost.open` on that directory takes the live app's database
   config and uses the marker's schema. `discard` drops it (a failure keeps
-  the marker, so it can be retried); `discardOrphanDraft(dir, database)` does
+  the marker, so it can be retried); `discardOrphanDraft(dir, database, claim?)` does
   the same for a directory no host holds.
 - **Snapshot** (undo points, `.pgdump` in `snapshots/`, same retention as
-  `.db`): restore-only, adds no table. `AppHost.restoreSnapshot(name)` builds
+  `.db`): restore-only, adds no table. `AppHost.restoreSnapshot(principal, name)` builds
   the dump as a side schema, retires the worker, swaps it in and starts a
   new worker; the data it replaces is first kept as its own snapshot
   (`migrate-before-restore`), so a restore can be undone by another. Only a
@@ -433,7 +502,7 @@ stages, refusals, digest and version numbering.
   refuses it unless the directory holds the engine's draft marker
   (`.smrt-draft.json`, written only by `forkDraft`) naming a different live
   directory. A live directory never has a marker.
-- **`live.forkDraft(draftDir, { store })`** (queue, calls drained): worker op
+- **`live.forkDraft(principal, draftDir, { store })`** (queue, calls drained): worker op
   `copyTo(path)` is `VACUUM INTO` (one consistent state, no -wal/-shm needed).
   The call creates `draftDir` (must not exist, must not be/contain/lie inside
   live), copies `app.db`, writes the marker, seeds the EMPTY draft store with
@@ -452,7 +521,7 @@ stages, refusals, digest and version numbering.
   live data (live only waits while the copy is taken); `digest` pins the draft's
   chain and every replayed load/extract/merge count; each version exposes
   `dataSteps` from that sequential rehearsal. A changed count at apply requires
-  a fresh preview before any live swap. `live.publishDraft(draft, { author, approved: true, expect: digest, draftName? })`
+  a fresh preview before any live swap. `live.publishDraft(principal, draft, { author, approved: true, expect: digest, draftName? })`
   refuses without `approved`, without the digest, if the chain or the app it
   started from changed, or if a `.prepublish` file is lying around. Inside the
   queue, calls drained: copy live, replay each draft version in order (one short
@@ -564,9 +633,10 @@ one bundle (`format: 2`), so a desktop app moves to a hosted one and back.
   written by import: it rides in the caller's own tables, and the engine reads it
   from the store when the app starts.
 - **Hosted placement.** `importUserApp({ database })` installs into the schema the
-  host chose for ONE tenant's app.
-  Receiving a bundle over the network and mapping it to a tenant needs the
-  caller hand-off (#5188), so it is not wired here. The CLI's use is in
+  host chose for ONE tenant's app (the engine's own untouched first start counts
+  as empty). The shell's receiver (`receive-user-app.ts`, cloud-profile.md
+  "Receiving a desktop app") maps a bundle to the verified owner's tenant; the operator command `smrt-app-shell migrate-to-postgres` (cloud-profile.md)
+  triggers the in-place SQLite-to-PostgreSQL move. The CLI's use is in
   `packages/cli/agents/app-commands.md`.
 - Tests: `portable-export.test.ts` (SQLite) and
   `portable-export-postgres.test.ts` (registered `test:postgres` suite: SQLite to
@@ -637,6 +707,265 @@ window lives in the host (`AppLimits.methodRunState`, shared memory each host ma
 for itself, a draft's own), so a swap, publish or structural change does not
 renew the period; a process restart does.
 
+## The caller: principals (#5188, slice 1)
+
+Every call into an app worker names who is asking. This is the SQLite half;
+the PostgreSQL half is "The broker" below.
+
+- `engine/principal.ts`: `EnginePrincipal` is frozen plain JSON (`kind`
+  `user|guest|system`, `tenantId`, `userId`, `authenticated`, `permissions`,
+  no cross-tenant flags), with core's bounds. `enginePrincipal()` builds a
+  user or guest from a VERIFIED session; `lib/server/owner.ts` `principalFor(owner,
+  def)` is the one shell call to it (the owner holds every slug of the app,
+  `appPermissionSlugs(def)`: `<table>.<list|get|create|update|delete|method>`,
+  the collection core's `operationPermissionOf` reads for a runtime model).
+  `kind: 'system'` is minted only by `mintSystemPrincipal`, which `index.ts`
+  does not export (`invariants.test.ts` fails if `src/lib` or `src/routes`
+  names it). A copy or look-alike is not a principal: `isEnginePrincipal` is a
+  WeakSet of minted, frozen objects.
+- Host and handle: `HostOptions.tenantId` is the app's tenant (cloud: the
+  holder's; desktop: the installation's one tenant, the store pin, else the
+  opening request's; default `DESKTOP_TENANT` for tests). The record API
+  takes the caller first (`list/get/create/update/remove/runMethod/appTools/
+  callAppTool/rest/listByIds/readStoredRows/countRows/runReport`).
+  `onApp` and `AppWorker.call(op, principal, ...args)` throw `NoPrincipalError`
+  (401) without a valid one and `PermissionDeniedError` (403) for another
+  tenant, before anything is queued or posted. Engine work in the change queue
+  (`callApp`) runs as the host's own system principal.
+- Change-queue entry points (#5609): `execute`, `forkDraft`, `publishDraft` and
+  `restoreSnapshot` take the caller first and check it before anything is cloned,
+  queued, created or read (`requireOwnerPrincipal`): minted, same tenant, not a
+  guest, and holding `OWNER_SLUG` (`_engine.owner`, granted only by
+  `principalFor`, held by the system). The slug does not depend on the definition,
+  which grows while a change batch replays. `ChangeEngine` (`asCaller`) checks the
+  same. What runs inside is unchanged: engine work as the system principal on the
+  owner lane, so the caller is gated at the entry, not re-checked per worker op.
+  `authorCaller(owner, host)` builds the principal from the verified shell
+  `Principal`, so a host of another tenant refuses it. `opts.author` stays a
+  History label, not an identity. Tests: `change-principal.test.ts`,
+  `author-caller.test.ts`.
+- Boot gets the system principal in `workerData.bootPrincipal`; the worker
+  refuses to start without it.
+- Worker: `app-worker.ts` re-reads the principal off the wire
+  (`readPrincipal`: shape, bounds, the app's tenant, a fresh frozen copy),
+  then `authorizeOp` (`authorize.ts`) gates the op, then runs it inside an
+  `AsyncLocalStorage` scope (`runAsPrincipal`) that `AppRuntime` reads
+  (`currentOpPrincipal`). Guests are still refused (the policies below
+  gate by slug, not by guest rules; opening them is a later slice). Change-engine ops (previews, value counts, dumps, purges, imports)
+  are system only. Reads that core's REST gates only on sign-in
+  (`list/get/listByIds/readStoredRows/countRows/columnInfo/tools/callTool`,
+  REST `GET`, `runReport`/`compileReport` on the source model and the models
+  its reference fields name) need the model's `list`/`get` slug; writes need
+  `create/update/delete`/the method's slug.
+- Generated surfaces: `AppRuntime.rest` no longer uses a pass-through
+  `authMiddleware`; it gives the APIGenerator `resolvePrincipal` (core #5588:
+  frozen snapshot, sign-in, `<collection>.<action>` on every write, tenant of
+  body and filters). `mcp()` gets the caller's tenant, user and permissions.
+- Tests: `principal.test.ts` iterates `WORKER_OPS` and shows every op throws
+  with no principal and with a foreign one at the host, the handle and the
+  raw worker thread, then two principals on one SQLite app. Other engine
+  tests get the owner from `src/test/engine-principal.ts` (`hostOwner(host)`).
+
+## The broker: one transaction per operation (#5188, slice 2)
+
+Trust model: the worker and host are trusted engine code; author code runs only
+in QuickJS. The broker is not a SQL sandbox and inspects no statements. Its job
+is that trusted main-thread code alone writes who is asking into the database.
+
+- **Host thread, `db/broker.ts`.** One `Broker` per worker (`forWorker`),
+  over a `BrokerBackend` (`pgliteBackend`: PGlite's own held `transaction()`;
+  `postgresBackend`: the SDK's pinned session connection, destroyed on release).
+  `AppWorker.call` registers `opId -> { principal, lane }` before posting; boot
+  is `BOOT_OP` (0), registered before the thread starts, ended by the `ready`
+  message. `OP_LANES` (worker-protocol.ts; `broker-host.test.ts` checks it covers
+  `WORKER_OPS`): `data` (user ops), `owner` (`snapshot`, `copyTo`,
+  `purgeArchives`, boot), `none` (`pruneSnapshots`).
+- **Transaction per op.** The worker opens the op eagerly (before any in-process
+  lock, so a connection is always taken first). The broker then: refuses a
+  principal of another tenant before `BEGIN`; opens the transaction; writes
+  `search_path`, `statement_timeout` and the six `smrt.*` settings
+  (`postgresPrincipalSettings` from `@happyvertical/smrt-users/postgres-settings`,
+  all `set_config(..., true)`); `SET LOCAL ROLE <schema>_r` (`_o` on the owner
+  lane) when the config carries `roles`; then the ownership fence. Nothing is
+  re-applied per statement (`scopeDatabase({ brokered: true })`). A reply ends the
+  op: `AppWorker.settle` calls `broker.end(opId, ok)`, the call resolves only
+  after COMMIT, a failed commit fails the call. Then `DISCARD ALL` as its own
+  statement; a failed commit/rollback/discard destroys the connection (PGlite:
+  poisons the backend, never closes the host's client).
+- **Handles.** `AppRuntime.db` is a getter: the running op's handle
+  (`BrokeredDatabase`, AsyncLocalStorage), `OperationEndedError` outside an op or
+  after it ended, and a different object per op (collections bound to it are
+  per op too). Statements of a nested `transaction` are savepoints. Ops of one
+  worker run one at a time (`app-worker.ts` queue), which also gives SQLite its
+  one-op-at-a-time. The handle's `url` is a per-worker `postgres:` marker so core
+  treats it as a server (not embedded) and creates system tables once, which boot
+  does as the owner (`warmCollections`).
+- **Death and deadline.** The worker thread exiting or its port closing rolls back
+  every open op; `workerLimits.opDeadlineMs` rolls an op back and revokes it
+  (`broker.end` then rejects).
+- **Roles (`db/roles.ts`).** `provisionAppRoles(db, schema, login, roles?, {
+  ownerLogin? })` creates NOLOGIN `<schema>_o`/`_r`, makes the login a member WITH
+  INHERIT FALSE (16+; `NOINHERIT` before), grants DML to `_r` (default privileges
+  too) and revokes TEMP from PUBLIC. With `ownerLogin` (split credentials, below)
+  the owner role goes to the admin login WITH INHERIT TRUE instead and is revoked
+  from the runtime login. `DatabaseConfig.roles` is set in production only on the
+  hosted split profile (`lib/server/app-database.ts`). Side schemas (draft,
+  rehearsal, restore copies, made by the admin connection) need no extra grant
+  step: a copy carries the source's schema, table, sequence and column ACLs and
+  ownership (`describeSchema`/`aclSql`), which name `<schema>_r`/`_o`.
+- **Restore replay.** `restoreDump` checks each dumped column type
+  (`assertColumnType`) against the `format_type` shape before it is interpolated
+  into `CAST(? AS <type>)`.
+- **Tests (in-process).** `broker.test.ts` (roles and settings in the op, threat 3
+  kept handle and late message, threat 4 no settings/temp/advisory-lock leak,
+  rollback on death and deadline, savepoints, tenant before BEGIN),
+  `broker-host.test.ts` (no principal means zero statements, role/settings
+  through a real worker, two interleaved principals, formula literal),
+  `roles.test.ts`, `broker-invariants.test.ts` (transaction-local only),
+  `restore-type-guard.test.ts`. `broker-roles.postgres.test.ts` is the gated
+  real-server lane (bare login 42501, role A on B's tables).
+- **Caveats.** Ops are serialised per worker on every database (not parallel
+  within one app), so the interleaved-principals test proves identity per op, not
+  concurrency; concurrency across apps (and an app's live, draft and report
+  workers) is what the shared pool bounds. Portable bundles no longer carry
+  core's `_smrt_*` tables (see "System tables in portable bundles" below).
+
+## The shared pool, split credentials, the runtime login (#5188, slice 3)
+
+- **One `BrokerPool` per process (`db/pool.ts`).** Replaces the per-worker pool
+  (`3 * pool` per app). Every `Broker` of a hosted PostgreSQL app takes its
+  connection through `pooledBackend(pool, tenantId)`. Bounds: `max` slots (hard
+  cap on connections in use; the owner lane's admin connections count the same),
+  `perApp` transactions per tenant, a bounded `maxQueued` wait (the next request is
+  refused at once), an `acquireTimeoutMs`, and a `releaseTimeoutMs` after which a
+  slot whose connection will not release is freed anyway. Refusals are
+  `DatabaseBusyError` (a `CapacityError`, code `unavailable`, HTTP 503); the broker
+  keeps it (`OpState.busy`) so `AppWorker.settle` fails the call with it instead of
+  the worker's own error. The pool only counts slots; a `PoolDriver` opens
+  connections (`postgresPoolDriver`: the SDK's `acquireSession`, which destroys the
+  connection on release, so no session state survives; a reusable-connection API in
+  the SDK would save the reconnect per op and is a follow-up).
+- **Budget (`lib/server/host-lifecycle.ts`).** `HostLifecycle.brokerPool(config)`
+  creates the pool on first use per server (`poolKey`) and reserves `slots + 1`
+  (the +1 is the cancel connection, `POOL_CANCEL_RESERVE`) with `takeConnections`
+  once; `ConnectionBudget.pool()` hands it to `AppWorker`, which then reserves
+  nothing per worker (a swap, report or rehearsal worker is free; `take` remains
+  only for a budget with no `pool`, the self-hosted per-worker path).
+  `appAllowance()` is now `HOST_OVERHEAD.live + .draft`; the derived budget is
+  `maxOpenApps * appAllowance() + slots + 1`. Slots: `brokerPoolSize`, else what
+  `maxAppConnections` leaves (at least 2), else 10. Env:
+  `SMRT_APP_SHELL_BROKER_POOL_SIZE`, `_PER_APP_TRANSACTIONS` (4),
+  `_MAX_QUEUED_OPERATIONS` (64), `_POOL_ACQUIRE_TIMEOUT_MS` (5000).
+  `hostMetrics().brokerPool` reports `{ inUse, queued, max }`.
+- **Operation deadline, with cancel.** `WorkerLimits.opDeadlineMs` (shell:
+  `SMRT_APP_SHELL_OP_TIMEOUT_MS`, every lane) now has a caller; hosted PostgreSQL
+  also defaults `dataOpDeadlineMs` to 60 s (`DEFAULT_OP_DEADLINE_MS`, data lane
+  only: boot, migration, snapshots and copies run long; none on the desktop). On expiry the
+  broker first cancels the running statement from outside its connection
+  (`BrokerTx.cancel`: `pg_cancel_backend(pid)` on the cancel connection, the pid
+  read right after `BEGIN`), then rolls back; a rollback that stalls past 2 s
+  destroys the connection instead. The call rejects with the deadline error; a
+  late reply is dropped. PGlite cannot cancel (rollback and revoke only).
+- **Concurrency per worker is unchanged: one op at a time.** The pool would make
+  parallel ops safe from the database's side, but a runtime's caps cache, method
+  queue and op handle are per worker, and the shell's busiest app has few
+  workers; the pool's per-app cap (4) is above what live + draft + report
+  workers can hold. Raising it later is an `app-worker.ts` change, not a pool one.
+- **Split credentials.** `DatabaseConfig.admin` (type `PostgresConnection`) are the
+  deployment's admin credentials, the role that owns the app schemas and the
+  shell's own tables: the ownership claim (`claimApp`), `openAdmin` (copies,
+  swaps, drops, `acquireOwnership`) and the owner lane (boot, migration,
+  `snapshot`, `copyTo`, `purgeArchives`, run under `SET LOCAL ROLE <schema>_o`) use
+  it. `connection` is the lesser runtime login, data lane only (member of
+  `<schema>_r` INHERIT FALSE; no access to `_o`). Absent `admin`, one login does
+  everything and no roles are set (self-hosted single-owner, unchanged).
+  `lib/server/app-database.ts` builds the provider: `DATABASE_URL` is the admin,
+  `SMRT_APP_SHELL_RUNTIME_DATABASE_URL` the runtime login. `provision(schema)`
+  creates the schema, runs `provisionAppRoles` (owner role to the admin login) and
+  `assertRuntimeLogin` as the runtime login before the app serves. Without
+  `SMRT_APP_SHELL_RUNTIME_DATABASE_URL` the provider logs one structured
+  `app-shell.database.no-role-isolation` warning at construction (behaviour
+  unchanged). Call queue: a worker runs calls one at a time (`call-queue.ts`) and
+  refuses the 65th waiting call with `DatabaseBusyError` (the pool's `maxQueued`).
+  Provisioning over an existing schema moves its tables, views and sequences to
+  `<schema>_o` (split credentials only).
+- **`assertRuntimeLogin` (`db/runtime-login.ts`).** Refuses (naming every
+  problem) a login that is superuser, BYPASSRLS, CREATEROLE or CREATEDB, owns an
+  app table, has CREATE on an app schema or on the database, holds TEMP on the
+  database, inherits an app role (`pg_has_role(.., 'USAGE')`) or holds any table
+  privilege as itself; and app roles that are superuser/BYPASSRLS/CREATEROLE/
+  CREATEDB or hold TEMP or database CREATE (the owner role may own tables and
+  create in its schema). `runtimeLoginProblems` is the pure rule over catalog facts.
+- **Caps advisory lock.** `AppCaps.withWriteLock(fn, h)` on PostgreSQL/PGlite takes
+  `pg_advisory_xact_lock(hashtext('smrt-app-caps'), hashtext(<schema>))`
+  (`takeCapsLock`) on the op's own handle, after its connection, and keeps it to
+  COMMIT/ROLLBACK (the old in-process chain released before the commit). It
+  invalidates the count cache after the lock (another connection may have
+  written). SQLite keeps the chain.
+- **System tables in portable bundles.** `_smrt_*` tables are core's framework
+  bookkeeping (migration records, change log, tombstones, AI usage), made by the
+  target's own boot (the owner role on PostgreSQL). They are not app data, so
+  `db.tables()` skips them on both databases and `compare`/`populate` skip a
+  legacy bundle's: carrying a source's rows made an import refuse ("Table
+  _smrt_migrations already holds rows"). Intended; `portable-export.test.ts` covers
+  the export and an older bundle.
+- **Tests.** In-process: `pool.test.ts` (caps, queue, timeout, fairness, release),
+  `broker-pool.test.ts` (the broker on a scripted server: 503, cancel before
+  rollback, stalled rollback, owner lane), `runtime-login.test.ts` (rules, PGlite
+  catalog), `roles.test.ts` (split grants), `app-limits.test.ts` (caps lock),
+  `lib/server/app-database.test.ts`, `connection-budget.test.ts`. Real server
+  (`*.postgres.test.ts`, registered in `vitest.postgres.config.ts`, so
+  `pnpm test:postgres` and CI's "Registered PostgreSQL Suites" lane run them):
+  `broker-pool.postgres.test.ts` (42501 for the bare login and its `SET ROLE`,
+  data vs owner session users, interleaved principals, the server's connection
+  count under load, 503, a real cancel, no leak on a pool of one, the caps lock
+  across two connections, an `AppHost` on split credentials),
+  `runtime-login.postgres.test.ts` (real logins refused one by one),
+  `broker-roles.postgres.test.ts`.
+
+## Row-level security of run-time models (#5189)
+
+- **Tenant-scoped on PostgreSQL only.** `toRuntimeModel(model, md, { tenantScoped })`
+  registers `tenantScoped: { mode: 'required' }` when the database is not SQLite
+  (`AppRuntime.register`); SQLite and the desktop are unchanged (no column, no
+  policy). The tenant column is `tenant_id UUID NOT NULL`, so a PostgreSQL app's
+  tenant must be a lower-case UUID: `tenantFor(given, kind)` (`principal.ts`) gives
+  the default `LOCAL_TENANT` and refuses anything else, at the host and the handle.
+- **Who stamps it.** The worker enables core's tenancy on PostgreSQL and runs every
+  operation (and boot) in `withTenant({ tenantId })` (`AppRuntime.tenantScope`), so
+  collections, the generated REST and MCP stamp and filter by it. The engine also
+  stamps explicitly where it writes through a collection (`create`, extract, record
+  loads: `tenantStamp()`) and scopes reports to it (`compileReport(..., tenantId)`).
+- **Policies.** `db/policies.ts` `applyRuntimeModelPolicies` calls
+  `@happyvertical/smrt-users/postgres-policies` with a `PostgresPolicyScope`
+  (`schemaName` = the app's schema, never `public`; only `@local/app` classes; the
+  slugs the engine uses: SELECT = `<table>.list|get`, INSERT/UPDATE/DELETE =
+  `create|update|delete`). It enables AND forces row-level security (policies hold
+  for the table owner too: the single-login profile owns its tables) and creates
+  the `smrt_*` helper functions in the app's schema. Policies call them through the
+  transaction's `search_path`, so a copied or swapped schema keeps its own.
+  Run in the boot transaction right after the DDL (`bootOn`), and at any boot whose
+  catalog check finds a table without flags and four policies (restore, import,
+  copy, an app that predates this). A model the generator skipped refuses the boot.
+- **Bypass.** `smrt.system_context` (the system principal: boot, owner lane) passes
+  every policy. Copies, dumps and portable reads/writes (`readAllRows`,
+  `scopeForPortable`) set it themselves instead of `row_security = off` (which
+  errors on forced tables) and refuse first when a table's policies would hide
+  rows from the role (`row_security_active`). A superuser or BYPASSRLS role
+  bypasses row-level security whatever FORCE says: the split-credentials startup
+  check (`assertRuntimeLogin`) refuses such a runtime login; the single-login
+  profile has no database-level isolation (its startup warning says so).
+- **Existing tables.** A table that predates the column gets it before the planner
+  would add it NOT NULL (`backfillTenantColumn`: nullable, every row the app's
+  tenant, NOT NULL). Portable bundles never carry the column on the app's own
+  tables: export leaves it out, import stamps it (`postgresPortable(tx, tenantId)`;
+  `ImportUserAppOptions.tenantId`, `MigrateToPostgresOptions.tenantId`).
+- **Apps sharing a tenant.** Policies decide by tenant and slug, not by schema.
+  Separation between two apps of one tenant is the per-app role (#5188).
+- Tests: `runtime-rls.postgres.test.ts` (PGlite and, with `SMRT_TEST_POSTGRES_URL`,
+  a real server): another tenant reads, changes and adds nothing; removing the
+  policies fails it.
+
 ## Lessons
 
 - A worker must not be terminated while `@happyvertical/sql`'s startup HMAC key
@@ -706,7 +1035,7 @@ ratios, not Linux targets; at 1 worker the host's own share is included), at
 `addField` and `setCalculation` validate through `runtimeModelEntry` at plan
 time; hidden inputs and generated-to-generated references are rejected by core.
 SQLite owns the VIRTUAL column. Writes use the common coercer and generated core
-record commands explicitly refuse calculated inputs with typed EngineError (invalid); generated REST/MCP surfaces instead drop them like readonly inputs, allowing whole-record round trips. `setCalculation` requires approval for conversion, replacement and clearing and replaces the column transactionally;
+record commands explicitly refuse calculated inputs with typed EngineError (invalid); generated REST/MCP surfaces instead accept an unchanged value and refuse a changed one like readonly inputs, allowing whole-record round trips. `setCalculation` requires approval for conversion, replacement and clearing and replaces the column transactionally;
 clearing materializes current calculated values into a writable column. Undoing the clear refuses if writable values differ from that materialized snapshot (including populated rows created later), so it never discards later edits. Converting a writable field archives
 its originals and is risky. Undo restores those originals or the old expression. Calculation archives encode JavaScript numbers directly, preserving finite double precision.
 Renames rewrite expressions; hide/remove/type change refuse named dependents.
@@ -830,7 +1159,10 @@ preserves the workbook's explicit display field.
 `change-engine.ts`: the interface the shell's batch service talks to, and
 `SqliteChangeEngine` (`createSqliteChangeEngine()`) over `forkDraft` /
 `previewPublish` / `publishDraft` / `undoTo`. Every method takes a `principal`
-(#5188) and an optional `fence` (#5190), unused on SQLite. Hosts are passed in.
+(an `EnginePrincipal`, #5188: refused unless it was built by `enginePrincipal()`
+for the live host's tenant, never a guest, and holding `OWNER_SLUG`: `asCaller` is
+`requireOwnerPrincipal`, so `previewPublish`/`checkBatch` refuse a member too) and an optional `fence` (#5190),
+unused on SQLite. Hosts are passed in.
 
 - `rebuild(principal, live, { draftDir, store, commands: {key, command}[], author, signal? })`:
   fresh fork, commands replayed in order. A command that no longer applies gets

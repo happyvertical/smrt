@@ -1,10 +1,12 @@
 // ChangeEngine (#5202): rebuild, checkBatch, undoBatch over the SQLite adapter.
+
 import { createHash } from 'node:crypto';
 import { existsSync, mkdtempSync, readFileSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { parseRuntimeReportSpec } from '@happyvertical/smrt-reports';
 import { afterAll, describe, expect, it } from 'vitest';
+import { hostOwner } from '../test/engine-principal.ts';
 import {
   type BatchCommand,
   batchDigest,
@@ -13,16 +15,27 @@ import {
 } from './change-engine.ts';
 import {
   AppHost,
+  appPermissionSlugs,
   type Command,
+  DESKTOP_TENANT,
   EMPTY_APP,
+  enginePrincipal,
   MemoryVersionStore,
+  OWNER_SLUG,
+  PermissionDeniedError,
 } from './index.ts';
 
 const root = mkdtempSync(join(tmpdir(), 'engine-change-'));
 afterAll(() => rmSync(root, { recursive: true, force: true }));
 
 const engine = createSqliteChangeEngine();
-const me = { id: 'owner' };
+// The default tenant of an AppHost opened without one.
+const me = enginePrincipal({
+  kind: 'user',
+  tenantId: DESKTOP_TENANT,
+  userId: 'owner',
+  permissions: [OWNER_SLUG],
+});
 const AUTHOR = { author: 'tester', approved: true };
 const sha = (p: string) =>
   createHash('sha256').update(readFileSync(p)).digest('hex');
@@ -33,6 +46,7 @@ async function world() {
   const liveDir = join(dir, 'user-app');
   const live = await AppHost.open(liveDir, { store: new MemoryVersionStore() });
   await live.execute(
+    hostOwner(live),
     {
       type: 'defineModel',
       name: 'Chore',
@@ -44,7 +58,11 @@ async function world() {
     },
     AUTHOR,
   );
-  await live.create('Chore', { title: 'Bins', notes: 'blue', points: 3 });
+  await live.create(hostOwner(live), 'Chore', {
+    title: 'Bins',
+    notes: 'blue',
+    points: 3,
+  });
   let k = 0;
   const rebuild = (commands: BatchCommand[], signal?: AbortSignal) =>
     engine.rebuild(me, live, {
@@ -228,7 +246,7 @@ describe('checkBatch', () => {
     const w = await world();
     const r = await w.rebuild([]);
     expect((await engine.checkBatch(me, w.live, r.draft)).ok).toBe(true);
-    await w.live.execute(defineTag, AUTHOR); // live structure moves on
+    await w.live.execute(hostOwner(w.live), defineTag, AUTHOR); // live structure moves on
     const moved = await engine.checkBatch(me, w.live, r.draft);
     expect(moved.blockers.map((b) => b.code)).toEqual(['base_moved']);
     await r.draft.close();
@@ -284,7 +302,10 @@ describe('undoBatch', () => {
       expect: check.engineDigest as string,
     });
     await r.draft.discard();
-    await w.live.create('Chore', { title: 'Added after', points: 9 });
+    await w.live.create(hostOwner(w.live), 'Chore', {
+      title: 'Added after',
+      points: 9,
+    });
     expect(w.live.def.models.Chore.fields.notes).toBeUndefined();
 
     await engine.undoBatch(me, w.live, {
@@ -293,7 +314,7 @@ describe('undoBatch', () => {
     });
     expect(w.live.def.models.Chore.fields.notes).toBeTruthy();
     expect(w.live.def.models.Chore.fields.size).toBeUndefined();
-    const rows = await w.live.list('Chore');
+    const rows = await w.live.list(hostOwner(w.live), 'Chore');
     expect(rows.map((x) => x.title).sort()).toEqual(['Added after', 'Bins']);
     expect(rows.find((x) => x.title === 'Bins')?.notes).toBe('blue');
     await w.live.close();
@@ -347,15 +368,66 @@ describe('checkBatch review digest and plain blockers', () => {
     const r = await w.rebuild([{ key: 'l', command: load }]);
     const first = await engine.checkBatch(me, w.live, r.draft);
     expect(first.reviewDigest).toBeTruthy();
-    await w.live.create('Chore', { title: 'unrelated' });
+    await w.live.create(hostOwner(w.live), 'Chore', { title: 'unrelated' });
     const second = await engine.checkBatch(me, w.live, r.draft);
     expect(second.reviewDigest).toBe(first.reviewDigest);
-    await w.live.create('Chore', { title: 'pin-me', points: 2 }); // the load would now overwrite it
+    await w.live.create(hostOwner(w.live), 'Chore', {
+      title: 'pin-me',
+      points: 2,
+    }); // the load would now overwrite it
     const third = await engine.checkBatch(me, w.live, r.draft);
     expect(third.overwrites.recordsUpdated).toBe(1);
     expect(third.ok).toBe(true); // shown, never blocking
     expect(third.reviewDigest).not.toBe(first.reviewDigest);
     await r.draft.close();
     await w.live.close();
+  });
+});
+
+describe('only the owner changes the app (#5609)', () => {
+  it('refuses a same-tenant member on every ChangeEngine method', async () => {
+    const w = await world();
+    const member = enginePrincipal({
+      kind: 'user',
+      tenantId: DESKTOP_TENANT,
+      userId: 'member',
+      permissions: appPermissionSlugs(w.live.def),
+    });
+    const r = await w.rebuild([]);
+    const refused = async (call: () => unknown) => {
+      // some methods refuse synchronously, others by rejection
+      await expect(async () => call()).rejects.toBeInstanceOf(
+        PermissionDeniedError,
+      );
+    };
+    await refused(() =>
+      engine.rebuild(member, w.live, {
+        draftDir: join(w.dir, 'member-draft'),
+        store: new MemoryVersionStore(),
+        commands: [],
+        author: 'tester',
+      }),
+    );
+    await refused(() =>
+      engine.forkDraft(member, w.live, join(w.dir, 'member-fork'), {
+        store: new MemoryVersionStore(),
+      }),
+    );
+    await refused(() =>
+      engine.undoBatch(member, w.live, { versions: [1], author: 'tester' }),
+    );
+    await refused(() => engine.checkBatch(member, w.live, r.draft));
+    await refused(() => engine.previewPublish(member, w.live, r.draft));
+    await refused(() =>
+      engine.publishDraft(member, w.live, r.draft, {
+        ...AUTHOR,
+        expect: 'digest',
+      }),
+    );
+    await refused(() =>
+      engine.undoTo(member, w.live, 1, { author: 'tester', from: 1 }),
+    );
+    expect(existsSync(join(w.dir, 'member-draft'))).toBe(false);
+    expect(existsSync(join(w.dir, 'member-fork'))).toBe(false);
   });
 });

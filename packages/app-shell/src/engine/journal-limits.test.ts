@@ -3,6 +3,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { DatabaseSync } from 'node:sqlite';
 import { expect, it } from 'vitest';
+import { hostOwner } from '../test/engine-principal.ts';
 import { assertJournalBounds, JOURNAL_LIMITS } from './data-migrations.ts';
 import { AppHost, type Command, MemoryVersionStore } from './index.ts';
 
@@ -39,15 +40,17 @@ it.each([
   const dir = mkdtempSync(join(tmpdir(), 'journal-limit-'));
   const host = await AppHost.open(dir, { store: new MemoryVersionStore() });
   const run = (cmd: Command) =>
-    host.execute(cmd, { author: 't', approved: true });
+    host.execute(hostOwner(host), cmd, { author: 't', approved: true });
   try {
     await run({
       type: 'defineModel',
       name: 'Vendor',
       fields: { name: { type: 'text' } },
     });
-    const keep = await host.create('Vendor', { name: 'keep' });
-    const other = await host.create('Vendor', { name: 'other' });
+    const keep = await host.create(hostOwner(host), 'Vendor', { name: 'keep' });
+    const other = await host.create(hostOwner(host), 'Vendor', {
+      name: 'other',
+    });
     await run({
       type: 'defineModel',
       name: 'Order',

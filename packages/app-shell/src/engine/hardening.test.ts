@@ -1,6 +1,7 @@
 // Review findings: undo that overwrites newer data is gated; the app's REST
 // surface is only its own collections; snapshots are pruned; an imported
 // template's code is shown in full.
+
 import {
   existsSync,
   mkdirSync,
@@ -14,6 +15,7 @@ import {
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
+import { hostOwner } from '../test/engine-principal.ts';
 import {
   AppHost,
   ApprovalRequiredError,
@@ -45,6 +47,7 @@ describe('undo that overwrites newer data', () => {
   beforeAll(async () => {
     host = await AppHost.open(tmp('undo'), { store: new MemoryVersionStore() });
     await host.execute(
+      hostOwner(host),
       {
         type: 'defineModel',
         name: 'Task',
@@ -53,8 +56,12 @@ describe('undo that overwrites newer data', () => {
       asked,
     );
     for (const p of ['1', '2', '3'])
-      ids.push((await host.create('Task', { points: p })).id as string);
+      ids.push(
+        (await host.create(hostOwner(host), 'Task', { points: p }))
+          .id as string,
+      );
     await host.execute(
+      hostOwner(host),
       {
         type: 'changeFieldType',
         model: 'Task',
@@ -66,9 +73,9 @@ describe('undo that overwrites newer data', () => {
   });
 
   it('plans a risky undo with the count of rows it would overwrite', async () => {
-    await host.update('Task', ids[0], { points: 90 }); // edited since
-    await host.update('Task', ids[1], { points: 2 }); // same value as converted original
-    await host.create('Task', { points: 7 }); // made since: not archived
+    await host.update(hostOwner(host), 'Task', ids[0], { points: 90 }); // edited since
+    await host.update(hostOwner(host), 'Task', ids[1], { points: 2 }); // same value as converted original
+    await host.create(hostOwner(host), 'Task', { points: 7 }); // made since: not archived
     const plan = await host.plan({ type: 'undo' });
     expect(plan.risky).toBe(true);
     expect(plan.preview).toMatchObject({
@@ -79,28 +86,33 @@ describe('undo that overwrites newer data', () => {
 
   it('refuses without approval and changes nothing; approving applies it', async () => {
     const version = host.version;
-    await expect(host.execute({ type: 'undo' }, asked)).rejects.toBeInstanceOf(
-      ApprovalRequiredError,
-    );
     await expect(
-      host.execute({ type: 'undo' }, { author: 't', approved: false }),
+      host.execute(hostOwner(host), { type: 'undo' }, asked),
+    ).rejects.toBeInstanceOf(ApprovalRequiredError);
+    await expect(
+      host.execute(
+        hostOwner(host),
+        { type: 'undo' },
+        { author: 't', approved: false },
+      ),
     ).rejects.toBeInstanceOf(ApprovalRequiredError);
     expect(host.version).toBe(version);
-    expect((await host.get('Task', ids[0])).points).toBe(90);
+    expect((await host.get(hostOwner(host), 'Task', ids[0])).points).toBe(90);
 
     // approved for a version the app has moved on from: refused
     await expect(
-      host.execute({ type: 'undo', version: version + 5 }, ok),
+      host.execute(hostOwner(host), { type: 'undo', version: version + 5 }, ok),
     ).rejects.toThrow(/changed since/);
     expect(host.version).toBe(version);
 
-    await host.execute({ type: 'undo', version }, ok);
+    await host.execute(hostOwner(host), { type: 'undo', version }, ok);
     expect(host.version).toBe(version - 1);
-    expect((await host.get('Task', ids[0])).points).toBe('1'); // original won
+    expect((await host.get(hostOwner(host), 'Task', ids[0])).points).toBe('1'); // original won
   });
 
   it('undo of a change without a conversion stays immediate', async () => {
     await host.execute(
+      hostOwner(host),
       {
         type: 'addField',
         model: 'Task',
@@ -110,7 +122,7 @@ describe('undo that overwrites newer data', () => {
       asked,
     );
     expect((await host.plan({ type: 'undo' })).risky).toBe(false);
-    await host.execute({ type: 'undo' }, asked);
+    await host.execute(hostOwner(host), { type: 'undo' }, asked);
   });
 });
 
@@ -121,6 +133,7 @@ describe('the app REST surface', () => {
   beforeAll(async () => {
     host = await AppHost.open(tmp('rest'), { store: new MemoryVersionStore() });
     await host.execute(
+      hostOwner(host),
       {
         type: 'defineModel',
         name: 'Chore',
@@ -128,7 +141,8 @@ describe('the app REST surface', () => {
       },
       asked,
     );
-    id = (await host.create('Chore', { title: 'keep me' })).id as string;
+    id = (await host.create(hostOwner(host), 'Chore', { title: 'keep me' }))
+      .id as string;
   });
 
   it('refuses sync/apply (its delete op bypasses the DELETE gate) and deletes nothing', async () => {
@@ -137,12 +151,15 @@ describe('the app REST surface', () => {
     });
     for (const approved of [false, true]) {
       const r = await host.rest(
+        hostOwner(host),
         { method: 'POST', url: '/api/sync/apply', body },
         { approved },
       );
       expect(r.status).toBe(404);
     }
-    expect((await host.get('Chore', id)).title).toBe('keep me');
+    expect((await host.get(hostOwner(host), 'Chore', id)).title).toBe(
+      'keep me',
+    );
   });
 
   it('refuses reserved endpoints, unknown collections and odd paths', async () => {
@@ -159,12 +176,13 @@ describe('the app REST surface', () => {
       '/other/chores',
       '/api',
     ]) {
-      const r = await host.rest({ method: 'GET', url });
+      const r = await host.rest(hostOwner(host), { method: 'GET', url });
       expect(r.status, url).toBe(404);
     }
     expect(
       (
         await host.rest(
+          hostOwner(host),
           { method: 'DELETE', url: '/api/profile_types/x' },
           { approved: true },
         )
@@ -172,25 +190,34 @@ describe('the app REST surface', () => {
     ).toBe(404);
     // a DELETE of a reserved path asks for no approval either
     await expect(
-      host.rest({ method: 'DELETE', url: '/api/sync/apply' }),
+      host.rest(hostOwner(host), { method: 'DELETE', url: '/api/sync/apply' }),
     ).resolves.toMatchObject({ status: 404 });
   });
 
   it('keeps normal CRUD and the DELETE gate', async () => {
-    expect((await host.rest({ method: 'GET', url: chores })).status).toBe(200);
     expect(
-      (await host.rest({ method: 'GET', url: `${chores}/${id}` })).status,
+      (await host.rest(hostOwner(host), { method: 'GET', url: chores })).status,
     ).toBe(200);
-    const made = await host.rest({
+    expect(
+      (
+        await host.rest(hostOwner(host), {
+          method: 'GET',
+          url: `${chores}/${id}`,
+        })
+      ).status,
+    ).toBe(200);
+    const made = await host.rest(hostOwner(host), {
       method: 'POST',
       url: chores,
       body: JSON.stringify({ title: 'via rest' }),
     });
     expect(made.status).toBeLessThan(300);
     await expect(
-      host.rest({ method: 'DELETE', url: `${chores}/${id}` }),
+      host.rest(hostOwner(host), { method: 'DELETE', url: `${chores}/${id}` }),
     ).rejects.toBeInstanceOf(ApprovalRequiredError);
-    expect((await host.get('Chore', id)).title).toBe('keep me');
+    expect((await host.get(hostOwner(host), 'Chore', id)).title).toBe(
+      'keep me',
+    );
   });
 });
 
@@ -250,6 +277,7 @@ describe('snapshot retention', () => {
     const host = await AppHost.open(dir, { store: new MemoryVersionStore() });
     try {
       await host.execute(
+        hostOwner(host),
         {
           type: 'defineModel',
           name: 'Chore',
@@ -258,6 +286,7 @@ describe('snapshot retention', () => {
         asked,
       );
       await host.execute(
+        hostOwner(host),
         {
           type: 'addMethod',
           model: 'Chore',
@@ -271,7 +300,7 @@ describe('snapshot retention', () => {
       );
       const snaps = join(dir, 'snapshots');
       for (let i = 0; i < METHOD_SNAPSHOTS_KEPT + 4; i++)
-        await host.runMethod('Chore', 'add');
+        await host.runMethod(hostOwner(host), 'Chore', 'add');
       const methodFiles = () =>
         readdirSync(snaps).filter((f) => /-method-/.test(f));
       expect(methodFiles()).toHaveLength(METHOD_SNAPSHOTS_KEPT);
@@ -282,7 +311,11 @@ describe('snapshot retention', () => {
       writeFileSync(old, 'x');
       writeFileSync(fresh, 'x');
       utimesSync(old, 1, 1);
-      const out = (await host.execute({ type: 'cleanUp', keep: 0 }, ok)) as {
+      const out = (await host.execute(
+        hostOwner(host),
+        { type: 'cleanUp', keep: 0 },
+        ok,
+      )) as {
         snapshots: number;
       };
       expect(out.snapshots).toBeGreaterThanOrEqual(1);
@@ -305,6 +338,7 @@ describe('importTemplate approval shows the code', () => {
     });
     try {
       await src.execute(
+        hostOwner(src),
         {
           type: 'defineModel',
           name: 'Chore',
@@ -313,6 +347,7 @@ describe('importTemplate approval shows the code', () => {
         asked,
       );
       await src.execute(
+        hostOwner(src),
         {
           type: 'addMethod',
           model: 'Chore',
@@ -326,6 +361,7 @@ describe('importTemplate approval shows the code', () => {
         ok,
       );
       const tpl = (await src.execute(
+        hostOwner(src),
         { type: 'exportTemplate' },
         asked,
       )) as Template;

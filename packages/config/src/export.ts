@@ -101,6 +101,16 @@ function isSecretKey(key: string): boolean {
   return SECRET_PATTERNS.some((pattern) => pattern.test(key));
 }
 
+/**
+ * Version of the value rules below ({@link redactValueSecrets}, exported as
+ * `redactSecretValues()`). Raise it with any change to what those rules
+ * mask: core stamps text it redacted with it and returns stored text as
+ * written only under the same version. `secret-value-rules-ledger.test.ts`
+ * pins the rules' source and output to each version. A safe integer, 1-999.
+ */
+export const SECRET_VALUE_RULES_VERSION = 1;
+
+// secret-value-rules:begin
 // Credentials embedded in the *value* of an otherwise-benign key — most
 // importantly DB connection strings like `postgres://user:pass@host:5432/db`
 // stored under keys such as `url` / `database.url` that the key-based
@@ -173,6 +183,7 @@ export function redactValueSecrets(value: string): string {
   }
   return out;
 }
+// secret-value-rules:end
 
 /**
  * Deep-clone a config object, removing every key that looks like a secret.

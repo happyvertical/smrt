@@ -116,6 +116,7 @@ export {
 export {
   SmrtOAuthAuthorizationService,
   type SmrtOAuthAuthorizationServiceOptions,
+  type SmrtOAuthConsentScopes,
   type SmrtOAuthGrantSummary,
 } from './OAuthAuthorizationService.js';
 export {
@@ -260,10 +261,12 @@ export {
 } from './PermissionResolver.js';
 export {
   applyPostgresPermissionPolicies,
+  applyScopedPostgresPermissionPolicies,
   type GeneratePostgresPermissionSqlResult,
   generatePostgresPermissionSql,
   type PostgresPermissionPolicyReportItem,
   type PostgresPermissionPolicyTarget,
+  type PostgresPolicyScope,
 } from './PostgresPermissionPolicies.js';
 export {
   type CreateResourceGrantOptions,

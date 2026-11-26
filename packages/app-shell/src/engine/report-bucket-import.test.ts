@@ -5,6 +5,7 @@ import { parseRuntimeReportSpec } from '@happyvertical/smrt-reports';
 import { runImport } from '@happyvertical/smrt-spreadsheets/import';
 import { createSheet, createWorkbook } from '@happyvertical/spreadsheets';
 import { afterEach, beforeEach, expect, it } from 'vitest';
+import { hostOwner } from '../test/engine-principal.ts';
 import { createEngineImportTarget } from './import-target.ts';
 import { AppHost, MemoryVersionStore } from './index.ts';
 import { ENGINE_TOOLS } from './tool-definitions.ts';
@@ -16,7 +17,7 @@ beforeEach(async () => {
   const live = await AppHost.open(join(dir, 'live'), {
     store: new MemoryVersionStore(),
   });
-  draft = await live.forkDraft(join(dir, 'draft'), {
+  draft = await live.forkDraft(hostOwner(live), join(dir, 'draft'), {
     store: new MemoryVersionStore(),
   });
   await live.close();
@@ -70,7 +71,7 @@ it('runs a month-bucket report with sort by/direction on an imported date field'
       },
     ],
   };
-  const target = createEngineImportTarget(draft);
+  const target = createEngineImportTarget(draft, () => hostOwner(draft));
   const imported = await runImport({
     workbook: createWorkbook([sheet]),
     plan,
@@ -92,6 +93,7 @@ it('runs a month-bucket report with sort by/direction on an imported date field'
   expect(description).toContain('"by":"month","direction":"asc"');
 
   const result = await draft.runReport(
+    hostOwner(draft),
     parseRuntimeReportSpec({
       title: 'Monthly sales',
       source,

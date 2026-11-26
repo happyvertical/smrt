@@ -95,6 +95,8 @@ export interface ManifestAdapterLike {
     options: {
       packageName?: string;
       packageVersion?: string;
+      /** Owner package per source file (#5655). */
+      packageNameForFile?: (filePath: string) => string | undefined;
       typeAliases: Record<string, string>;
       recipes?: RecipeDefinition[];
       uiSelectors?: Record<

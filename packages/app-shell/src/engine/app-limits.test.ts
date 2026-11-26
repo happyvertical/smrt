@@ -1,10 +1,12 @@
 // Per-app caps (#5198): the engine refuses what a plan's limits do not allow,
 // with a message naming the cap and the numbers. Same cases on SQLite and
 // PostgreSQL (PGlite). No limits injected: nothing changes.
+
 import { mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterAll, describe, expect, it } from 'vitest';
+import { hostOwner } from '../test/engine-principal.ts';
 import {
   AppCaps,
   type AppLimits,
@@ -38,8 +40,8 @@ async function open(
     database: pg ? pg.config : { kind: 'sqlite' },
   });
   hosts.push(host);
-  const run = (cmd: Parameters<AppHost['execute']>[0]) =>
-    host.execute(cmd, { author: 't', approved: true });
+  const run = (cmd: Parameters<AppHost['execute']>[1]) =>
+    host.execute(hostOwner(host), cmd, { author: 't', approved: true });
   return { host, run, dir, store };
 }
 
@@ -56,8 +58,9 @@ describe.each(['sqlite', 'postgres'] as const)('app caps on %s', (kind) => {
       name: 'B',
       fields: { t: { type: 'text' } },
     });
-    for (let i = 0; i < 12; i++) await host.create('A', { t: `r${i}` });
-    expect(await host.list('A')).toHaveLength(12);
+    for (let i = 0; i < 12; i++)
+      await host.create(hostOwner(host), 'A', { t: `r${i}` });
+    expect(await host.list(hostOwner(host), 'A')).toHaveLength(12);
   });
 
   it('refuses a create over the total row cap, naming the cap and numbers; a delete frees room', async () => {
@@ -72,15 +75,15 @@ describe.each(['sqlite', 'postgres'] as const)('app caps on %s', (kind) => {
       name: 'B',
       fields: { t: { type: 'text' } },
     });
-    await host.create('A', { t: '1' });
-    await host.create('A', { t: '2' });
-    const b = await host.create('B', { t: '3' });
-    await expect(host.create('B', { t: '4' })).rejects.toThrow(
+    await host.create(hostOwner(host), 'A', { t: '1' });
+    await host.create(hostOwner(host), 'A', { t: '2' });
+    const b = await host.create(hostOwner(host), 'B', { t: '3' });
+    await expect(host.create(hostOwner(host), 'B', { t: '4' })).rejects.toThrow(
       /app limit reached \(maxRows\): this app holds 3 records of the 3 allowed; adding 1 would pass the limit/,
     );
-    expect(await host.list('B')).toHaveLength(1);
-    await host.remove('B', String(b.id));
-    await host.create('B', { t: '5' });
+    expect(await host.list(hostOwner(host), 'B')).toHaveLength(1);
+    await host.remove(hostOwner(host), 'B', String(b.id));
+    await host.create(hostOwner(host), 'B', { t: '5' });
   });
 
   it('refuses over the per-model cap but lets another model add', async () => {
@@ -95,11 +98,11 @@ describe.each(['sqlite', 'postgres'] as const)('app caps on %s', (kind) => {
       name: 'B',
       fields: { t: { type: 'text' } },
     });
-    await host.create('A', { t: '1' });
-    await expect(host.create('A', { t: '2' })).rejects.toThrow(
+    await host.create(hostOwner(host), 'A', { t: '1' });
+    await expect(host.create(hostOwner(host), 'A', { t: '2' })).rejects.toThrow(
       /\(maxRowsPerModel\): A holds 1 record of the 1 allowed per model/,
     );
-    await host.create('B', { t: '1' });
+    await host.create(hostOwner(host), 'B', { t: '1' });
   });
 
   it('refuses generated REST and tool creates over the cap, and still counts them', async () => {
@@ -109,13 +112,13 @@ describe.each(['sqlite', 'postgres'] as const)('app caps on %s', (kind) => {
       name: 'A',
       fields: { t: { type: 'text' } },
     });
-    const ok = await host.rest({
+    const ok = await host.rest(hostOwner(host), {
       method: 'POST',
       url: '/api/as',
       body: JSON.stringify({ t: 'x' }),
     });
     expect(ok.status).toBeLessThan(300);
-    const refused = await host.rest({
+    const refused = await host.rest(hostOwner(host), {
       method: 'POST',
       url: '/api/as',
       body: JSON.stringify({ t: 'y' }),
@@ -127,10 +130,10 @@ describe.each(['sqlite', 'postgres'] as const)('app caps on %s', (kind) => {
       limit: 1,
       current: 1,
     });
-    await expect(host.callAppTool('a_create', { t: 'z' })).rejects.toThrow(
-      /app limit reached \(maxRows\)/,
-    );
-    expect(await host.list('A')).toHaveLength(1);
+    await expect(
+      host.callAppTool(hostOwner(host), 'a_create', { t: 'z' }),
+    ).rejects.toThrow(/app limit reached \(maxRows\)/);
+    expect(await host.list(hostOwner(host), 'A')).toHaveLength(1);
   });
 
   it('refuses a record load over the cap and loads nothing', async () => {
@@ -140,7 +143,7 @@ describe.each(['sqlite', 'postgres'] as const)('app caps on %s', (kind) => {
       name: 'A',
       fields: { t: { type: 'text' } },
     });
-    await host.create('A', { t: 'one' });
+    await host.create(hostOwner(host), 'A', { t: 'one' });
     await expect(
       run({
         type: 'loadRecords',
@@ -149,14 +152,14 @@ describe.each(['sqlite', 'postgres'] as const)('app caps on %s', (kind) => {
         rows: [{ t: 'a' }, { t: 'b' }, { t: 'c' }],
       }),
     ).rejects.toThrow(/app limit reached \(maxRows\).*would hold 4 records/);
-    expect(await host.list('A')).toHaveLength(1);
+    expect(await host.list(hostOwner(host), 'A')).toHaveLength(1);
     await run({
       type: 'loadRecords',
       model: 'A',
       mode: 'insert',
       rows: [{ t: 'a' }],
     });
-    expect(await host.list('A')).toHaveLength(2);
+    expect(await host.list(hostOwner(host), 'A')).toHaveLength(2);
   });
 
   it('refuses a model added past the model cap; an app already at the cap reopens', async () => {
@@ -182,14 +185,16 @@ describe.each(['sqlite', 'postgres'] as const)('app caps on %s', (kind) => {
         name,
         fields: { t: { type: 'text' } },
       });
-    await first.host.create('C', { t: 'keep' });
+    await first.host.create(hostOwner(first.host), 'C', { t: 'keep' });
     await first.host.close();
     const low = await open(kind, { maxModels: 1 }, dir, store);
     await low.run({ type: 'removeModel', model: 'C' });
     expect(Object.keys(low.host.describe().models ?? {})).toHaveLength(2);
     await low.run({ type: 'undo' });
     expect(Object.keys(low.host.describe().models ?? {})).toHaveLength(3);
-    expect((await low.host.list('C')).map((r) => r.t)).toEqual(['keep']);
+    expect(
+      (await low.host.list(hostOwner(low.host), 'C')).map((r) => r.t),
+    ).toEqual(['keep']);
     // A forward add past the cap is still refused.
     await expect(
       low.run({ type: 'defineModel', name: 'D', fields: {} }),
@@ -216,12 +221,12 @@ describe.each(['sqlite', 'postgres'] as const)('app caps on %s', (kind) => {
         code: `app.create('A', { t: 'm' }); return 1;`,
       },
     });
-    await host.runMethod('A', 'add');
-    await host.runMethod('A', 'add');
-    await expect(host.runMethod('A', 'add')).rejects.toThrow(
+    await host.runMethod(hostOwner(host), 'A', 'add');
+    await host.runMethod(hostOwner(host), 'A', 'add');
+    await expect(host.runMethod(hostOwner(host), 'A', 'add')).rejects.toThrow(
       /app limit reached \(maxMethodRuns\): 2 of the 2 method runs allowed/,
     );
-    expect(await host.list('A')).toHaveLength(2);
+    expect(await host.list(hostOwner(host), 'A')).toHaveLength(2);
   });
 
   it('a definition change (worker swap) does not renew the method-run period', async () => {
@@ -240,13 +245,13 @@ describe.each(['sqlite', 'postgres'] as const)('app caps on %s', (kind) => {
       name: 'noop',
       method: { description: 'noop', code: 'return 1;' },
     });
-    await host.runMethod('A', 'noop');
+    await host.runMethod(hostOwner(host), 'A', 'noop');
     await run({
       type: 'defineModel',
       name: 'B',
       fields: { t: { type: 'text' } },
     });
-    await expect(host.runMethod('A', 'noop')).rejects.toThrow(
+    await expect(host.runMethod(hostOwner(host), 'A', 'noop')).rejects.toThrow(
       /app limit reached \(maxMethodRuns\)/,
     );
   });
@@ -267,13 +272,14 @@ describe.each(['sqlite', 'postgres'] as const)('app caps on %s', (kind) => {
       name: 'noop',
       method: { description: 'noop', code: 'return 1;' },
     });
-    await host.runMethod('A', 'noop');
-    const draft = await host.forkDraft(`${dir}-draft`, {
+    await host.runMethod(hostOwner(host), 'A', 'noop');
+    const draft = await host.forkDraft(hostOwner(host), `${dir}-draft`, {
       store: new MemoryVersionStore(),
     });
     hosts.push(draft);
-    await draft.runMethod('A', 'noop'); // its own allowance, not live's used one
+    await draft.runMethod(hostOwner(draft), 'A', 'noop'); // its own allowance, not live's used one
     await draft.execute(
+      hostOwner(draft),
       {
         type: 'defineModel',
         name: 'B',
@@ -281,9 +287,9 @@ describe.each(['sqlite', 'postgres'] as const)('app caps on %s', (kind) => {
       },
       { author: 't', approved: true },
     );
-    await expect(draft.runMethod('A', 'noop')).rejects.toThrow(
-      /app limit reached \(maxMethodRuns\)/,
-    );
+    await expect(
+      draft.runMethod(hostOwner(draft), 'A', 'noop'),
+    ).rejects.toThrow(/app limit reached \(maxMethodRuns\)/);
   });
 
   it('a method adding rows over the row cap is refused as a limit, none applied', async () => {
@@ -302,10 +308,10 @@ describe.each(['sqlite', 'postgres'] as const)('app caps on %s', (kind) => {
         code: `app.create('A', { t: '1' }); app.create('A', { t: '2' }); return 1;`,
       },
     });
-    await expect(host.runMethod('A', 'two')).rejects.toThrow(
+    await expect(host.runMethod(hostOwner(host), 'A', 'two')).rejects.toThrow(
       /app limit reached \(maxRows\).*adding 2/,
     );
-    expect(await host.list('A')).toHaveLength(0);
+    expect(await host.list(hostOwner(host), 'A')).toHaveLength(0);
   });
 });
 
@@ -320,18 +326,18 @@ describe.each([
       name: 'A',
       fields: { t: { type: 'text' } },
     });
-    await host.create('A', { t: 'seed1' });
-    await host.create('A', { t: 'seed2' });
+    await host.create(hostOwner(host), 'A', { t: 'seed1' });
+    await host.create(hostOwner(host), 'A', { t: 'seed2' });
     const mixed = await Promise.allSettled([
-      host.create('A', { t: 'p1' }),
-      host.rest({
+      host.create(hostOwner(host), 'A', { t: 'p1' }),
+      host.rest(hostOwner(host), {
         method: 'POST',
         url: '/api/as',
         body: JSON.stringify({ t: 'p2' }),
       }),
-      host.callAppTool('a_create', { t: 'p3' }),
-      host.create('A', { t: 'p4' }),
-      host.rest({
+      host.callAppTool(hostOwner(host), 'a_create', { t: 'p3' }),
+      host.create(hostOwner(host), 'A', { t: 'p4' }),
+      host.rest(hostOwner(host), {
         method: 'POST',
         url: '/api/as',
         body: JSON.stringify({ t: 'p5' }),
@@ -349,7 +355,7 @@ describe.each([
         ),
     );
     expect(ok).toHaveLength(1);
-    expect(await host.list('A')).toHaveLength(3);
+    expect(await host.list(hostOwner(host), 'A')).toHaveLength(3);
   });
 
   it('parallel engine creates admit exactly the free slots', async () => {
@@ -360,10 +366,12 @@ describe.each([
       fields: { t: { type: 'text' } },
     });
     const out = await Promise.allSettled(
-      Array.from({ length: 10 }, (_, i) => host.create('A', { t: `${i}` })),
+      Array.from({ length: 10 }, (_, i) =>
+        host.create(hostOwner(host), 'A', { t: `${i}` }),
+      ),
     );
     expect(out.filter((o) => o.status === 'fulfilled')).toHaveLength(4);
-    expect(await host.list('A')).toHaveLength(4);
+    expect(await host.list(hostOwner(host), 'A')).toHaveLength(4);
   });
 
   it('a host-side caller reads the cap from error.details, not the message', async () => {
@@ -373,8 +381,10 @@ describe.each([
       name: 'A',
       fields: { t: { type: 'text' } },
     });
-    await host.create('A', { t: 'x' });
-    const err: any = await host.create('A', { t: 'y' }).catch((e) => e);
+    await host.create(hostOwner(host), 'A', { t: 'x' });
+    const err: any = await host
+      .create(hostOwner(host), 'A', { t: 'y' })
+      .catch((e) => e);
     expect(err).toBeInstanceOf(EngineError);
     expect(err.details).toEqual({
       code: 'app_limit',
@@ -398,16 +408,18 @@ describe.each([
       name: 'A',
       fields: { t: { type: 'text' } },
     });
-    const a = await host.create('A', { t: '1' });
-    await host.create('A', { t: '2' });
+    const a = await host.create(hostOwner(host), 'A', { t: '1' });
+    await host.create(hostOwner(host), 'A', { t: '2' });
     const out = await Promise.allSettled([
-      host.remove('A', String(a.id)),
-      host.remove('A', String(a.id)),
+      host.remove(hostOwner(host), 'A', String(a.id)),
+      host.remove(hostOwner(host), 'A', String(a.id)),
     ]);
     expect(out.filter((o) => o.status === 'fulfilled')).toHaveLength(1);
-    await host.create('A', { t: '3' });
-    await expect(host.create('A', { t: '4' })).rejects.toThrow(/maxRows/);
-    expect(await host.list('A')).toHaveLength(2);
+    await host.create(hostOwner(host), 'A', { t: '3' });
+    await expect(host.create(hostOwner(host), 'A', { t: '4' })).rejects.toThrow(
+      /maxRows/,
+    );
+    expect(await host.list(hostOwner(host), 'A')).toHaveLength(2);
   });
 
   it('the lock is released after a failed create', async () => {
@@ -417,9 +429,9 @@ describe.each([
       name: 'A',
       fields: { t: { type: 'text', required: true } },
     });
-    await expect(host.create('A', {})).rejects.toThrow();
-    await host.create('A', { t: 'ok' });
-    expect(await host.list('A')).toHaveLength(1);
+    await expect(host.create(hostOwner(host), 'A', {})).rejects.toThrow();
+    await host.create(hostOwner(host), 'A', { t: 'ok' });
+    expect(await host.list(hostOwner(host), 'A')).toHaveLength(1);
   });
 
   it('a method racing a create never takes the app past the cap', async () => {
@@ -438,12 +450,12 @@ describe.each([
         code: `app.create('A', { t: 'm' }); return 1;`,
       },
     });
-    await host.create('A', { t: 'seed' });
+    await host.create(hostOwner(host), 'A', { t: 'seed' });
     await Promise.allSettled([
-      host.runMethod('A', 'add'),
-      host.create('A', { t: 'racer' }),
+      host.runMethod(hostOwner(host), 'A', 'add'),
+      host.create(hostOwner(host), 'A', { t: 'racer' }),
     ]);
-    expect(await host.list('A')).toHaveLength(2);
+    expect(await host.list(hostOwner(host), 'A')).toHaveLength(2);
   });
 
   it('a POST with an extra path segment is held to the cap too', async () => {
@@ -453,15 +465,15 @@ describe.each([
       name: 'A',
       fields: { t: { type: 'text' } },
     });
-    await host.create('A', { t: 'x' });
-    const r = await host.rest({
+    await host.create(hostOwner(host), 'A', { t: 'x' });
+    const r = await host.rest(hostOwner(host), {
       method: 'POST',
       url: '/api/as/anything',
       body: JSON.stringify({ t: 'y' }),
     });
     expect(r.status).toBe(403);
     expect(JSON.parse(r.body).code).toBe('app_limit');
-    expect(await host.list('A')).toHaveLength(1);
+    expect(await host.list(hostOwner(host), 'A')).toHaveLength(1);
   });
 
   it('a method that deletes in one model and creates in another passes at the total cap', async () => {
@@ -485,11 +497,16 @@ describe.each([
         code: `app.delete('A', record.id); app.create('B', { t: 'n' }); return 1;`,
       },
     });
-    const first = await host.create('A', { t: '1' });
-    await host.create('A', { t: '2' });
-    const out = await host.runMethod('A', 'swap', String(first.id));
+    const first = await host.create(hostOwner(host), 'A', { t: '1' });
+    await host.create(hostOwner(host), 'A', { t: '2' });
+    const out = await host.runMethod(
+      hostOwner(host),
+      'A',
+      'swap',
+      String(first.id),
+    );
     expect(out.applied).toBe(2);
-    expect(await host.list('B')).toHaveLength(1);
+    expect(await host.list(hostOwner(host), 'B')).toHaveLength(1);
   });
 });
 
@@ -520,5 +537,127 @@ describe('limits object and period window', () => {
     expect(() => caps.checkMethodRun()).toThrow(/maxMethodRuns/);
     t += 100;
     caps.checkMethodRun();
+  });
+});
+
+describe('the caps write lock (#5188)', () => {
+  const model = { model: 'A', label: 'A', table: 'a' };
+
+  it("on PostgreSQL it is the transaction-held advisory lock, taken on the operation's own handle, and counts afresh", async () => {
+    const taken: unknown[] = [];
+    let counted = 0;
+    const caps = new AppCaps(
+      { maxRows: 5 },
+      () => [model],
+      async () => ++counted,
+      undefined,
+      async (h) => void taken.push(h),
+    );
+    const handle = { id: 'tx-1' };
+    await caps.counts(handle); // primes the cache
+    expect(counted).toBe(1);
+    const out = await caps.withWriteLock(async () => 'done', handle);
+    expect(out).toBe('done');
+    expect(taken).toEqual([handle]);
+    // Another connection may have written since: the next check recounts.
+    await caps.counts(handle);
+    expect(counted).toBe(2);
+  });
+
+  it('with no handle, or on SQLite, the in-process chain is the lock', async () => {
+    const taken: unknown[] = [];
+    const caps = new AppCaps(
+      { maxRows: 5 },
+      () => [model],
+      async () => 0,
+      undefined,
+      async (h) => void taken.push(h),
+    );
+    const order: string[] = [];
+    const slow = caps.withWriteLock(async () => {
+      await new Promise((r) => setTimeout(r, 20));
+      order.push('first');
+    });
+    const fast = caps.withWriteLock(async () => void order.push('second'));
+    await Promise.all([slow, fast]);
+    expect(order).toEqual(['first', 'second']);
+    expect(taken).toEqual([]);
+    const sqlite = new AppCaps(
+      { maxRows: 5 },
+      () => [model],
+      async () => 0,
+    );
+    expect(await sqlite.withWriteLock(async () => 7, {})).toBe(7);
+  });
+
+  it('a lock that cannot be taken fails the write and runs nothing', async () => {
+    const caps = new AppCaps(
+      { maxRows: 5 },
+      () => [model],
+      async () => 0,
+      undefined,
+      async () => {
+        throw new Error('lock timeout');
+      },
+    );
+    let ran = false;
+    await expect(
+      caps.withWriteLock(async () => {
+        ran = true;
+      }, {}),
+    ).rejects.toThrow('lock timeout');
+    expect(ran).toBe(false);
+  });
+
+  it('a capped create on PostgreSQL takes the lock in the operation, before its check and insert', async () => {
+    const dir = mkdtempSync(join(tmpdir(), 'caps-lock-'));
+    dirs.push(dir);
+    const pg = await harnessDatabase(dir);
+    released.push(() => pg.release?.());
+    const config = pg.config as Extract<typeof pg.config, { kind: 'pglite' }>;
+    const seen: string[] = [];
+    const real = config.client;
+    const record = (tx: any) => ({
+      query: (sql: string, params?: unknown[]) => {
+        seen.push(sql);
+        return tx.query(sql, params);
+      },
+      exec: (sql: string) => {
+        seen.push(sql);
+        return tx.exec(sql);
+      },
+      rollback: () => tx.rollback(),
+      get closed() {
+        return tx.closed;
+      },
+    });
+    const host = await AppHost.open(dir, {
+      store: new MemoryVersionStore(),
+      appLimits: { maxRows: 5 },
+      database: {
+        ...config,
+        client: {
+          query: (s, p) => real.query(s, p),
+          exec: (s) => real.exec(s),
+          transaction: (cb) => real.transaction((tx) => cb(record(tx))),
+          close: () => real.close(),
+        },
+      },
+    });
+    hosts.push(host);
+    await host.execute(
+      hostOwner(host),
+      { type: 'defineModel', name: 'A', fields: { t: { type: 'text' } } },
+      { author: 't', approved: true },
+    );
+    seen.length = 0;
+    await host.create(hostOwner(host), 'A', { t: 'x' });
+    const at = (needle: RegExp) => seen.findIndex((s) => needle.test(s));
+    const lock = at(/pg_advisory_xact_lock\(hashtext\('smrt-app-caps'\)/);
+    expect(lock).toBeGreaterThan(-1);
+    expect(lock).toBeLessThan(at(/INSERT INTO/i));
+    expect(lock).toBeLessThan(at(/COUNT\(/i));
+    // taken once per create, on the operation's own connection
+    expect(seen.filter((s) => /pg_advisory_xact_lock/.test(s))).toHaveLength(1);
   });
 });

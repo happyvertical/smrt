@@ -1,5 +1,6 @@
 // The JSON routes, called as functions with a fake SvelteKit event. The owner
 // session is the only way in; the verified principal comes from `locals`.
+
 import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
 import { EngineError } from '../engine/index.ts';
 import { App } from '../lib/objects/App.ts';
@@ -19,6 +20,7 @@ import {
   openShell,
   type ShellHarness,
 } from '../lib/server/test-support.ts';
+import { hostOwner } from '../test/engine-principal.ts';
 import * as appRoute from './api/app/[...path]/+server.ts';
 import * as eventsRoute from './api/events/+server.ts';
 import * as approvalsRoute from './api/shell/approvals/+server.ts';
@@ -172,7 +174,10 @@ describe('every route needs the owner session', () => {
       }),
     );
     expect(res.status).toBe(403);
-    expect((await (await getHost()).list('Chore')).length).toBe(0);
+    expect(
+      (await (await getHost()).list(hostOwner(await getHost()), 'Chore'))
+        .length,
+    ).toBe(0);
   });
 });
 
@@ -320,14 +325,18 @@ describe('owner flows', () => {
     expect(res.status).toBe(202);
     const pending = await res.json();
     expect(pending.status).toBe('pending_approval');
-    expect((await host.get('Chore', recordId)).id).toBe(recordId);
+    expect((await host.get(hostOwner(host), 'Chore', recordId)).id).toBe(
+      recordId,
+    );
     const viaRest = await appRoute.DELETE(
       event(h.owner, 'DELETE', `/api/app/chores/${recordId}`, {
         params: { path: `chores/${recordId}` },
       }),
     );
     expect(viaRest.status).toBe(202);
-    expect((await host.get('Chore', recordId)).id).toBe(recordId);
+    expect((await host.get(hostOwner(host), 'Chore', recordId)).id).toBe(
+      recordId,
+    );
 
     const listed = await (
       await approvalsRoute.GET(
@@ -346,7 +355,9 @@ describe('owner flows', () => {
       }),
     );
     expect((await denied.json()).status).toBe('denied');
-    expect((await host.get('Chore', recordId)).id).toBe(recordId);
+    expect((await host.get(hostOwner(host), 'Chore', recordId)).id).toBe(
+      recordId,
+    );
     const again = await approvalRoute.POST(
       event(h.owner, 'POST', `/api/shell/approvals/${pending.approvalId}`, {
         body: { approve: true },
@@ -363,7 +374,9 @@ describe('owner flows', () => {
       }),
     );
     expect((await approved.json()).status).toBe('approved');
-    await expect(host.get('Chore', recordId)).rejects.toThrow();
+    await expect(
+      host.get(hostOwner(host), 'Chore', recordId),
+    ).rejects.toThrow();
     off();
     expect(
       seen
@@ -375,7 +388,7 @@ describe('owner flows', () => {
 
   it('`approved` in a request body or query cannot bypass the gate', async () => {
     const host = await getHost();
-    const made = await host.create('Chore', { title: 'keep' });
+    const made = await host.create(hostOwner(host), 'Chore', { title: 'keep' });
     const res = await appRoute.DELETE(
       event(h.owner, 'DELETE', `/api/app/chores/${made.id}?approved=true`, {
         params: { path: `chores/${made.id}` },
@@ -384,7 +397,9 @@ describe('owner flows', () => {
       }),
     );
     expect(res.status).toBe(202);
-    expect((await host.get('Chore', made.id as string)).id).toBe(made.id);
+    expect(
+      (await host.get(hostOwner(host), 'Chore', made.id as string)).id,
+    ).toBe(made.id);
   });
 
   it('undo reverses the last change', async () => {
@@ -407,8 +422,9 @@ describe('owner flows', () => {
       App.defineModel('Gauge', { reading: { type: 'text' } }),
     );
     await applyWaiting(h.owner);
-    const row = await host.create('Gauge', { reading: '5' });
+    const row = await host.create(hostOwner(host), 'Gauge', { reading: '5' });
     await host.execute(
+      hostOwner(host),
       {
         type: 'changeFieldType',
         model: 'Gauge',
@@ -417,7 +433,9 @@ describe('owner flows', () => {
       },
       { author: 't', approved: true },
     );
-    await host.update('Gauge', row.id as string, { reading: 99 });
+    await host.update(hostOwner(host), 'Gauge', row.id as string, {
+      reading: 99,
+    });
     const version = host.version;
     const res = await undoRoute.POST(event(h.owner, 'POST', '/api/shell/undo'));
     expect(res.status).toBe(202);
@@ -429,7 +447,9 @@ describe('owner flows', () => {
     expect(body.approvalId).toBeTruthy();
     expect(body.summary).toBe('Undo: field type change in Gauge');
     expect(host.version).toBe(version);
-    expect((await host.get('Gauge', row.id as string)).reading).toBe(99);
+    expect(
+      (await host.get(hostOwner(host), 'Gauge', row.id as string)).reading,
+    ).toBe(99);
     // the card is stored against the version it was planned for
     const stored = (await listApprovalViews({ status: 'pending' })).find(
       (a) => a.id === body.approvalId,
@@ -452,7 +472,9 @@ describe('owner flows', () => {
     );
     expect(decided.status).toBe('approved');
     expect(host.version).toBe(version - 1);
-    expect((await host.get('Gauge', row.id as string)).reading).toBe('5');
+    expect(
+      (await host.get(hostOwner(host), 'Gauge', row.id as string)).reading,
+    ).toBe('5');
   });
 
   it('events: SSE streams ready and live changes', async () => {

@@ -20,7 +20,7 @@ import type { RecordRow } from '../ui/types.ts';
 import { runCommand } from './builder.ts';
 import { structureHost } from './changes.ts';
 import { hostFor } from './host.ts';
-import { assertOwner } from './owner.ts';
+import { assertOwner, principalFor } from './owner.ts';
 import { reportFailure } from './report-display.ts';
 import type { CallScope } from './target.ts';
 
@@ -129,6 +129,7 @@ export async function runEngineTool(
     const host = await hostFor(scope.records);
     const result = await host
       .runReport(
+        principalFor(owner, host.def),
         normalizeReportOps(args.report) as string | RuntimeReportSpec,
         {
           maxRows: args.maxRows as number | undefined,
@@ -195,7 +196,11 @@ export async function runEngineTool(
       break;
     }
     case 'app_mergerecords': {
-      const keep = await host.get(String(args.model), String(args.keep));
+      const keep = await host.get(
+        principalFor(owner, host.def),
+        String(args.model),
+        String(args.keep),
+      );
       const label = keep && model ? recordLabel(model, keep as RecordRow) : '';
       summary = `Merged ${Array.isArray(args.merge) ? args.merge.length : 0} ${model?.label ?? 'records'} into ${label && label !== String(args.keep) && !label.endsWith('…') ? label : 'the selected record'}`;
       break;
@@ -203,7 +208,7 @@ export async function runEngineTool(
   }
   const result = await runCommand(
     { ...args, type } as Command,
-    owner.id,
+    owner,
     'live',
     scope.source ?? 'api',
   );

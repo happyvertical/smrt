@@ -1135,6 +1135,12 @@
       "@happyvertical/smrt-users/playground": [
         "./packages/users/src/playground.ts"
       ],
+      "@happyvertical/smrt-users/postgres-policies": [
+        "./packages/users/src/postgres-policies.ts"
+      ],
+      "@happyvertical/smrt-users/postgres-settings": [
+        "./packages/users/src/postgres-settings.ts"
+      ],
       "@happyvertical/smrt-users/step-up": [
         "./packages/users/src/step-up.ts"
       ],

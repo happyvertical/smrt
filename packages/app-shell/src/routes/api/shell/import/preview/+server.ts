@@ -8,6 +8,7 @@
 import { getDraftSlot, hostFor } from '$lib/server/host';
 import { guarded, HttpError, json, ownerOf } from '$lib/server/http';
 import { shellImports } from '$lib/server/import-runtime';
+import { principalFor } from '$lib/server/owner';
 import { recordLabel } from '$lib/ui/fields';
 import { IMPORT_PREVIEW_MAX, IMPORT_PREVIEW_ROWS } from '$lib/ui/import';
 import type { RecordRow } from '$lib/ui/types';
@@ -57,7 +58,9 @@ export const GET: RequestHandler = guarded(async (event) => {
         definition?.fields[name] &&
         !definition.fields[name].hidden,
     );
+  const caller = principalFor(owner, host.def);
   const stored = await host.readStoredRows(
+    caller,
     names.model,
     ['id', ...fields],
     WORKBOOK_ROW,
@@ -99,6 +102,7 @@ export const GET: RequestHandler = guarded(async (event) => {
     const batch = [...needed];
     for (let start = 0; start < batch.length; start += 500)
       for (const row of await host.listByIds(
+        caller,
         model,
         batch.slice(start, start + 500),
       ))

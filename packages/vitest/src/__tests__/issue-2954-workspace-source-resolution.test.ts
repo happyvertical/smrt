@@ -34,6 +34,44 @@ import {
 const repoRoot = resolve(__dirname, '../../../..');
 const packagesDir = join(repoRoot, 'packages');
 
+interface NestedReport {
+  testResults?: Array<{
+    name?: string;
+    message?: string;
+    assertionResults?: Array<{
+      fullName?: string;
+      status?: string;
+      failureMessages?: string[];
+    }>;
+  }>;
+}
+
+function summarizeNestedReport(raw: string): string {
+  try {
+    const report: NestedReport = JSON.parse(raw);
+    const failures = (report.testResults ?? []).flatMap((file) => {
+      const assertions = (file.assertionResults ?? [])
+        .filter((assertion) => assertion.status === 'failed')
+        .slice(0, 3)
+        .map(
+          (assertion) =>
+            `${assertion.fullName}: ${assertion.failureMessages?.join('\n').slice(0, 1000)}`,
+        );
+      return file.message || assertions.length
+        ? [
+            `${file.name}:\n${file.message?.slice(0, 1000) ?? ''}\n${assertions.join('\n')}`,
+          ]
+        : [];
+    });
+    return (
+      failures.slice(0, 3).join('\n').slice(0, 5000) ||
+      'No nested failure details in report'
+    );
+  } catch {
+    return 'Nested JSON report could not be parsed';
+  }
+}
+
 function workspacePackages(): Array<{ name: string; root: string }> {
   return readdirSync(packagesDir, { withFileTypes: true })
     .filter((entry) => entry.isDirectory())
@@ -201,8 +239,11 @@ describe('issue #2954: workspace subpaths resolve to source', () => {
       );
     } catch (error) {
       const err = error as { stdout?: string; stderr?: string };
+      const details = existsSync(reportPath)
+        ? summarizeNestedReport(readFileSync(reportPath, 'utf8'))
+        : 'Nested JSON report was not written';
       throw new Error(
-        `nested vitest run failed:\nstdout:\n${err.stdout}\nstderr:\n${err.stderr}`,
+        `nested vitest run failed:\n${details}\nstdout:\n${err.stdout}\nstderr:\n${err.stderr}`,
       );
     } finally {
       rmSync(join(fixtureRoot, '.smrt'), { recursive: true, force: true });
@@ -213,4 +254,59 @@ describe('issue #2954: workspace subpaths resolve to source', () => {
     expect(report.numPassedTests).toBe(report.numTotalTests);
     expect(report.numTotalTests).toBeGreaterThan(0);
   }, 150_000);
+});
+
+describe('nested consumer failure diagnostics', () => {
+  it('includes hook failures even when all assertion bodies were skipped', () => {
+    expect(
+      summarizeNestedReport(
+        JSON.stringify({
+          testResults: [
+            {
+              name: 'consumer.spec.ts',
+              message: 'Hook timed out in 10000ms',
+              assertionResults: [
+                {
+                  fullName: 'consumer probe',
+                  status: 'skipped',
+                  failureMessages: [],
+                },
+              ],
+            },
+          ],
+        }),
+      ),
+    ).toContain('consumer.spec.ts:\nHook timed out in 10000ms');
+  });
+
+  it('includes failed assertion names and messages while bounding report output', () => {
+    const output = summarizeNestedReport(
+      JSON.stringify({
+        testResults: Array.from({ length: 20 }, () => ({
+          name: 'consumer.spec.ts',
+          message: 'Suite failed',
+          assertionResults: [
+            {
+              fullName: 'consumer resolves source',
+              status: 'failed',
+              failureMessages: ['Expected source module', 'x'.repeat(20000)],
+            },
+          ],
+        })),
+      }),
+    );
+    expect(output).toContain(
+      'consumer resolves source: Expected source module',
+    );
+    expect(output.length).toBeLessThanOrEqual(5000);
+  });
+
+  it('explains unavailable failure details for malformed or empty reports', () => {
+    expect(summarizeNestedReport('{')).toBe(
+      'Nested JSON report could not be parsed',
+    );
+    expect(summarizeNestedReport('{}')).toBe(
+      'No nested failure details in report',
+    );
+  });
 });

@@ -1,9 +1,11 @@
 // The 26 checks of the spike's migrate-demo, against the host API.
+
 import { mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { DatabaseSync } from 'node:sqlite';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
+import { hostOwner } from '../test/engine-principal.ts';
 import {
   AppHost,
   ApprovalRequiredError,
@@ -30,9 +32,9 @@ const cols = (table: string) =>
     `select group_concat(name, ',') from pragma_table_info('${table}')`,
   ).split(',');
 const run = (cmd: Command, approved = true) =>
-  host.execute(cmd, { author: 'test', approved });
+  host.execute(hostOwner(host), cmd, { author: 'test', approved });
 const toolProps = async (name: string) => {
-  const t = (await host.appTools()).find((x) => x.name === name);
+  const t = (await host.appTools(hostOwner(host))).find((x) => x.name === name);
   return Object.keys(
     ((t?.inputSchema as { properties?: object })?.properties ?? {}) as object,
   );
@@ -68,7 +70,8 @@ describe('migrations (sequential, one app)', () => {
       ['Lawn', null, null],
     ] as const)
       ids.push(
-        (await host.create('Chore', { title, points, notes })).id as string,
+        (await host.create(hostOwner(host), 'Chore', { title, points, notes }))
+          .id as string,
       );
     expect(ids).toHaveLength(4);
   });
@@ -95,8 +98,12 @@ describe('migrations (sequential, one app)', () => {
         `select group_concat(coalesce(points,'null'),',') from (select points from u_chores order by title)`,
       ),
     ).toBe('3,5,null,null');
-    late = (await host.create('Chore', { title: 'Windows', points: 7 }))
-      .id as string;
+    late = (
+      await host.create(hostOwner(host), 'Chore', {
+        title: 'Windows',
+        points: 7,
+      })
+    ).id as string;
   });
 
   it('4-5 renameField keeps data and renames the generated tool parameter', async () => {
@@ -134,7 +141,10 @@ describe('migrations (sequential, one app)', () => {
       field: 'nickname',
       definition: { type: 'text' },
     });
-    await host.create('Profile', { name: 'Sam', nickname: 'Sammy' });
+    await host.create(hostOwner(host), 'Profile', {
+      name: 'Sam',
+      nickname: 'Sammy',
+    });
     await run({
       type: 'renameField',
       model: 'Profile',
@@ -142,7 +152,9 @@ describe('migrations (sequential, one app)', () => {
       to: 'callMe',
     });
     expect(cols('profiles')).toContain('call_me');
-    expect((await host.list('Profile'))[0].callMe).toBe('Sammy');
+    expect((await host.list(hostOwner(host), 'Profile'))[0].callMe).toBe(
+      'Sammy',
+    );
   });
 
   it('11-12 removeModel moves the table aside and drops its tools', async () => {
@@ -151,7 +163,7 @@ describe('migrations (sequential, one app)', () => {
       name: 'Errand',
       fields: { what: { type: 'text' } },
     });
-    await host.create('Errand', { what: 'post office' });
+    await host.create(hostOwner(host), 'Errand', { what: 'post office' });
     const plan = await host.plan({ type: 'removeModel', model: 'Errand' });
     expect((plan.preview as { rows: number }).rows).toBe(1);
     await run({ type: 'removeModel', model: 'Errand' });
@@ -164,7 +176,9 @@ describe('migrations (sequential, one app)', () => {
       sql(`select count(*) from sqlite_master where name='u_errands'`),
     ).toBe('0');
     expect(
-      (await host.appTools()).some((t) => t.name.startsWith('errand_')),
+      (await host.appTools(hostOwner(host))).some((t) =>
+        t.name.startsWith('errand_'),
+      ),
     ).toBe(false);
   });
 
@@ -182,7 +196,7 @@ describe('migrations (sequential, one app)', () => {
     ).rejects.toBeInstanceOf(EngineError);
     expect(host.version).toBe(before);
     expect(await store.current()).toBe(before);
-    expect(await host.list('Chore')).toHaveLength(5);
+    expect(await host.list(hostOwner(host), 'Chore')).toHaveLength(5);
     expect(cols('u_chores')).toContain('name');
     expect(host.appAlive).toBe(true);
   });
@@ -190,16 +204,21 @@ describe('migrations (sequential, one app)', () => {
   it('17 restart: state is intact', async () => {
     await host.close();
     host = await AppHost.open(dir, { store });
-    expect((await host.get('Chore', ids[0])).name).toBe('Bins');
+    expect((await host.get(hostOwner(host), 'Chore', ids[0])).name).toBe(
+      'Bins',
+    );
   });
 
   it('18-24 undo walks back through every kind of step', async () => {
-    const undo = () => host.execute({ type: 'undo' }, { author: 'test' });
+    const undo = () =>
+      host.execute(hostOwner(host), { type: 'undo' }, { author: 'test' });
     await undo(); // remove model Errand
     expect(sql(`select what from u_errands`)).toBe('post office');
     await undo(); // define Errand
     await undo(); // rename nickname -> callMe
-    expect((await host.list('Profile'))[0].nickname).toBe('Sammy');
+    expect((await host.list(hostOwner(host), 'Profile'))[0].nickname).toBe(
+      'Sammy',
+    );
     await undo(); // add nickname
     await undo(); // enable profiles
     await undo(); // remove notes
@@ -220,7 +239,9 @@ describe('migrations (sequential, one app)', () => {
       sql(`select type from pragma_table_info('u_chores') where name='points'`),
     ).toBe('TEXT');
     expect(sql(`select points from u_chores where id='${late}'`)).toBe('7');
-    const t = (await host.appTools()).find((x) => x.name === 'chore_create');
+    const t = (await host.appTools(hostOwner(host))).find(
+      (x) => x.name === 'chore_create',
+    );
     const schema = t?.inputSchema as {
       properties?: Record<string, { $ref?: string }>;
       $defs?: Record<string, unknown>;
@@ -245,9 +266,9 @@ describe('migrations (sequential, one app)', () => {
     };
     expect(cu.purgedVersions.length).toBeGreaterThanOrEqual(1);
     expect(sql(`select count(*) from _archive where col='notes'`)).toBe('0');
-    await host.execute({ type: 'undo' }, { author: 'test' }); // room: additive, fine
+    await host.execute(hostOwner(host), { type: 'undo' }, { author: 'test' }); // room: additive, fine
     await expect(
-      host.execute({ type: 'undo' }, { author: 'test' }),
+      host.execute(hostOwner(host), { type: 'undo' }, { author: 'test' }),
     ).rejects.toThrow(/cleaned up/);
     const v = (await host.versions()).find((x) => x.purged);
     expect(v).toBeTruthy();

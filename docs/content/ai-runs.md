@@ -832,6 +832,16 @@ reconciliation abandoned while its process was in fact still alive is likewise
 charged once when that process settles it: it finds `abandoned` and takes the
 late-usage path.
 
+**Usage that arrives after the call.** A provider can report a call's usage
+after the call returned. The process that made the call still routes that
+usage to it for an hour (or until 10 000 newer calls): a released call is
+charged on the late-usage path, and a call settled from its response or
+fallback row is corrected to the measured counts, once. On another process,
+or later than that, a released call is still charged from its stored
+reservation, but a call settled from its response keeps those provisional
+counts: an estimate that a later reconciliation can find, never another
+call's usage. A durable cross-worker correction is tracked in #5516.
+
 **Actual amounts.** The tokens charged are the usage row's `total_tokens`, else
 `prompt_tokens + completion_tokens`. The cost charged is `estimated_cost`, or
 nothing (and one uncosted call) when it is NULL. A call that
@@ -996,7 +1006,9 @@ returned, and no handler ever saw the call. That is the same documented limit
 as a lost provider response.
 
 A call outside any run has no reservation; its usage row is written by the
-persistence handler, deduplicated on `id = call_id`.
+persistence handler under its own id. Only a tracked call's events keep the
+`aiCallId` tag as their row id; a call that carries the tag otherwise
+(copied from another call's options) still gets a row of its own.
 
 ### 6.5 Transactions and lock order
 
@@ -1433,14 +1445,20 @@ retries, and its `reason` is one typed code:
   kept after its trajectory is pruned, for as long as the failed run's row is
   kept, so the run can still be retried (section 7); it is deleted with the
   row.
-- **Payload size.** Each event payload is capped (head and tail kept, `truncated`
-  set). Full request and response text of a call is stored only when
-  transcripts are enabled.
+- **Payload size.** Each event payload is capped (default 16 KiB; a cap must
+  be a whole number of at least 256 bytes). A larger payload keeps its head
+  and tail, and the event is marked `truncated`. Full request and response
+  text of a call is stored only when transcripts are enabled.
 - **Privacy.** Trajectories hold user data. An event payload is redacted
   before it is stored, on the same path transcripts use, and the host
-  redactor sees the run's tenant. When a trajectory is read, the built-in
-  redactor runs again (never the host's), and the head and tail kept from a
-  truncated payload are masked as text.
+  redactor sees the run's tenant. The payload is turned into plain JSON once
+  before the built-in redactor runs, so what is redacted is exactly what is
+  stored. A cut payload records which version of the built-in rules
+  redacted it. When a trajectory is read, the built-in redactor runs again
+  on whole payloads (never the host's). A cut payload's head and tail are
+  returned as written only when they were stored under the current rules;
+  otherwise both come back empty and the payload says `withheld: ['head',
+  'tail']`.
 
 ### Run identity
 
@@ -1529,6 +1547,10 @@ table, and a migrate of a JSON database that still holds
 - **New columns** on existing tables are added by the system compatibility
   step, with a schema version bump, so a legacy database ends in the same shape
   as a fresh install.
+- **Cut event payloads stored before the rules stamp.** They are not
+  rewritten. They carry no stamp, so a read returns them with an empty head
+  and tail and `withheld: ['head', 'tail']`; their `originalBytes` is kept.
+  Whole payloads are unaffected.
 
 ## 10. What is deliberately not here
 

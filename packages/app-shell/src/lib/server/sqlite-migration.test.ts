@@ -2,11 +2,13 @@
 // cloud profile's refusal lifts only after it, the SQLite file stays, waiting
 // changes and working copies refuse it, and a neighbour is untouched. PGlite
 // stands in for the server; a real one is CI's `test:postgres` lane.
+
 import { existsSync, mkdirSync, rmSync } from 'node:fs';
 import { join } from 'node:path';
 import { importPGlite } from '@happyvertical/sql/pglite';
 import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
 import type { DatabaseConfig, PGliteClient } from '../../engine/db/index.ts';
+import { hostOwner } from '../../test/engine-principal.ts';
 import { App } from '../objects/App.ts';
 import { ApprovalCollection } from '../objects/Approval.ts';
 import { ownerTenantFor } from './accounts.ts';
@@ -98,7 +100,9 @@ describe('migrating a tenant app from SQLite to PostgreSQL', () => {
         App.defineModel(model, { title: { type: 'text' } }),
       );
       await applyWaiting(who);
-      await runAs(who, async () => (await getHost()).create(model, { title }));
+      await runAs(who, async () =>
+        (await getHost()).create(hostOwner(await getHost()), model, { title }),
+      );
     }
     const dir = (await runAs(cy, () => getHost())).dataDir;
     const file = join(dir, 'app.db');
@@ -131,7 +135,9 @@ describe('migrating a tenant app from SQLite to PostgreSQL', () => {
     expect(await schemas()).toEqual([cyApp]);
     await expect(runAs(di, () => getHost())).rejects.toThrow(/SQLite file/);
 
-    const rows = await runAs(cy, async () => (await getHost()).list('Chore'));
+    const rows = await runAs(cy, async () =>
+      (await getHost()).list(hostOwner(await getHost()), 'Chore'),
+    );
     expect(rows.map((r) => r.title)).toEqual(['cy-secret']);
 
     // Rerun: no duplicates.
@@ -139,7 +145,11 @@ describe('migrating a tenant app from SQLite to PostgreSQL', () => {
     const again = await runAs(cy, () => migrateOwnAppToPostgres());
     expect(again.status).toBe('already-migrated');
     expect(
-      (await runAs(cy, async () => (await getHost()).list('Chore'))).length,
+      (
+        await runAs(cy, async () =>
+          (await getHost()).list(hostOwner(await getHost()), 'Chore'),
+        )
+      ).length,
     ).toBe(1);
   });
 
@@ -164,7 +174,9 @@ describe('what refuses the move', () => {
     );
     await applyWaiting(who);
     await runAs(who, async () =>
-      (await getHost()).create('Note', { title: 'x' }),
+      (await getHost()).create(hostOwner(await getHost()), 'Note', {
+        title: 'x',
+      }),
     );
     const appId = await appIdOf(who);
     const { draft } = tenantAppDirs(h.dir, tenantId, appId);

@@ -8,6 +8,7 @@ import {
  */
 
 import type { Attachment, EmailClient } from '@happyvertical/email';
+import { isAttachmentStorageError } from '../attachment-storage.js';
 import type { Email } from '../models/Email';
 import type { EmailAccount } from '../models/EmailAccount';
 import { assertApprovedAttachments } from '../send-approval.js';
@@ -144,12 +145,21 @@ export class EmailSender implements MessageSenderInterface {
               : '.'),
         );
       }
-      const content = await attachment.readContent();
+      let content: Buffer | null;
+      try {
+        content = await attachment.readContent();
+      } catch (error) {
+        if (isAttachmentStorageError(error)) {
+          throw new Error(
+            `Attachment "${attachment.filename}" was not sent: ${error.message}`,
+          );
+        }
+        throw error;
+      }
       if (!content) {
         throw new Error(
-          `Attachment "${attachment.filename}" could not be read from "${attachment.filePath}": ` +
-            'the file is missing or unreadable, or the files SDK is not loaded ' +
-            '(see Attachment.readContent()).',
+          `Attachment "${attachment.filename}" could not be read: ` +
+            'the file is missing or unreadable (see Attachment.readContent()).',
         );
       }
       handed.push({ row: attachment, content });
