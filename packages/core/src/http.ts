@@ -520,10 +520,12 @@ export async function writeWebResponseToNode(
   res: ServerResponse,
   webResponse: Response,
 ): Promise<void> {
+  const isHead = res.req?.method?.toUpperCase() === 'HEAD';
   const body = statusForbidsBody(webResponse.status)
     ? null
     : Buffer.from(await webResponse.arrayBuffer());
   const isFetchDecodedResponse = webResponse.url !== '';
+  const declaredResponseLength = webResponse.headers.get('content-length');
 
   res.statusCode = webResponse.status;
   const setCookies =
@@ -543,12 +545,17 @@ export async function writeWebResponseToNode(
     if (STRIPPED_HOP_BY_HOP_HEADERS.has(lower)) {
       return;
     }
-    if (
-      lower === 'content-encoding' &&
-      isFetchDecodedResponse &&
-      UNDICI_DECODED_ENCODINGS.has(value.trim().toLowerCase())
-    ) {
-      return;
+    if (lower === 'content-encoding' && isFetchDecodedResponse) {
+      const codings = value
+        .split(',')
+        .map((c) => c.trim().toLowerCase())
+        .filter((c) => c.length > 0);
+      if (
+        codings.length > 0 &&
+        codings.every((c) => UNDICI_DECODED_ENCODINGS.has(c))
+      ) {
+        return;
+      }
     }
     res.setHeader(key, value);
   });
@@ -560,10 +567,17 @@ export async function writeWebResponseToNode(
     res.setHeader('connection', 'close');
   }
   if (body !== null) {
-    res.setHeader('content-length', String(body.byteLength));
+    if (
+      isHead &&
+      body.byteLength === 0 &&
+      declaredResponseLength !== null &&
+      !isFetchDecodedResponse
+    ) {
+      res.setHeader('content-length', declaredResponseLength);
+    } else {
+      res.setHeader('content-length', String(body.byteLength));
+    }
   }
-
-  const isHead = res.req?.method?.toUpperCase() === 'HEAD';
   await new Promise<void>((resolve) => {
     let settled = false;
     const done = () => {

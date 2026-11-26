@@ -1,6 +1,6 @@
 import { createServer, request as httpRequest, type Server } from 'node:http';
 import type { AddressInfo } from 'node:net';
-import { gzipSync } from 'node:zlib';
+import { brotliCompressSync, gzipSync } from 'node:zlib';
 import { afterEach, describe, expect, it } from 'vitest';
 import { normalizeTypedHttpError } from './generators/typed-http-error.js';
 import {
@@ -298,7 +298,18 @@ describe('@happyvertical/smrt-core/http helpers (#5674)', () => {
     process.on('unhandledRejection', onUnhandled);
 
     try {
-      const upstream = createServer((_req, res) => {
+      const upstream = createServer((req, res) => {
+        if (req.url === '/stacked') {
+          const raw = Buffer.from(JSON.stringify({ stacked: 'ok' }));
+          const stacked = brotliCompressSync(gzipSync(raw));
+          res.writeHead(200, {
+            'content-type': 'application/json',
+            'content-encoding': 'gzip, br',
+            'content-length': String(stacked.byteLength),
+          });
+          res.end(stacked);
+          return;
+        }
         const gz = gzipSync(Buffer.from(JSON.stringify({ upstream: 'ok' })));
         res.writeHead(200, {
           'content-type': 'application/json',
@@ -319,6 +330,18 @@ describe('@happyvertical/smrt-core/http helpers (#5674)', () => {
             const url = new URL(request.url);
             if (url.pathname === '/proxy') {
               return fetch(`http://127.0.0.1:${upstreamPort}/data`);
+            }
+            if (url.pathname === '/proxy-stacked') {
+              return fetch(`http://127.0.0.1:${upstreamPort}/stacked`);
+            }
+            if (url.pathname === '/head-meta' && request.method === 'HEAD') {
+              return new Response(null, {
+                status: 200,
+                headers: {
+                  'content-type': 'application/json',
+                  'content-length': '42',
+                },
+              });
             }
             if (url.pathname === '/precompressed') {
               const gz = gzipSync(
@@ -361,6 +384,17 @@ describe('@happyvertical/smrt-core/http helpers (#5674)', () => {
       expect(proxyRes.status).toBe(200);
       expect(proxyRes.headers.get('content-encoding')).toBeNull();
       expect(await proxyRes.json()).toEqual({ upstream: 'ok' });
+
+      const stackedRes = await fetch(`http://127.0.0.1:${port}/proxy-stacked`);
+      expect(stackedRes.status).toBe(200);
+      expect(stackedRes.headers.get('content-encoding')).toBeNull();
+      expect(await stackedRes.json()).toEqual({ stacked: 'ok' });
+
+      const headRes = await fetch(`http://127.0.0.1:${port}/head-meta`, {
+        method: 'HEAD',
+      });
+      expect(headRes.status).toBe(200);
+      expect(headRes.headers.get('content-length')).toBe('42');
 
       const precompRes = await fetch(`http://127.0.0.1:${port}/precompressed`);
       expect(precompRes.status).toBe(200);
