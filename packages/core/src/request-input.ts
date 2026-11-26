@@ -48,6 +48,24 @@ export function modelOfInstance(instance: object): string | undefined {
   return registered ? registered.qualifiedName || registered.name : undefined;
 }
 
+/**
+ * The registry key of the model a loaded row belongs to when that is a
+ * subtype of the model its route serves: an STI subtype read through its
+ * base. `undefined` for a row of the route's own model, and for a route model
+ * the registry does not know. The generated item routes decide a write under
+ * this model, as the runtime REST handler does (#5195).
+ */
+export function foreignRowModel(
+  row: object,
+  routeModel: string,
+): string | undefined {
+  const model = modelOfInstance(row);
+  if (!model || !ObjectRegistry.getClass(routeModel)) return undefined;
+  return ObjectRegistry.getDescendants(routeModel).includes(model)
+    ? model
+    : undefined;
+}
+
 function hasFieldMetadata(model: string): boolean {
   const registered = ObjectRegistry.getClass(model);
   if (!registered) return false;

@@ -124,7 +124,10 @@ export {
   restMethodForApiAction,
 } from './preflight-route';
 // The typed 403/401 a write refusal is thrown as (answered as a typed error).
-export { RequestPrincipalRefusal } from './request-principal';
+export {
+  modelRoutePolicy,
+  RequestPrincipalRefusal,
+} from './request-principal';
 export type {
   APIConfig,
   APIContext,

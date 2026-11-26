@@ -708,7 +708,7 @@ export {
   applyUpdateInput,
   assertCreateInput,
   assertUpdateInput,
-  modelOfInstance,
+  foreignRowModel,
   prepareWriteInput,
   updateInputRulesFor,
 } from './request-input';

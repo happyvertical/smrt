@@ -26,6 +26,8 @@ import { resolvePermissionCollection } from '../permission-collection.js';
 import { readonlySetOf } from '../readonly-collections';
 import { ObjectRegistry } from '../registry';
 import type { SettledRequestPrincipal } from '../request-actor';
+import { tenantOwnershipFields } from '../tenant-read-scope';
+import { getApiPublicAccess } from '../vite-plugin/route-policy';
 
 /**
  * Who one REST request acts for, as the host decided it. See
@@ -373,4 +375,30 @@ export function customActionPermission(
     resolveOperationPermissionAlias(ObjectRegistry.getConfig(model), actionName)
       ?.action ?? actionName
   );
+}
+
+/**
+ * What the shared decision (`route-authz.ts`) is told about `model`: its
+ * `api.public` posture, the `<collection>` of its permission slugs, the
+ * super-admin opt-in and the columns that record its tenant. Read from the
+ * live registry, so the runtime REST handler and the generated routes decide a
+ * write under the model it lands in (an STI subtype selected through its base,
+ * or the subtype a loaded row belongs to) by one rule (#5195).
+ */
+export function modelRoutePolicy(model: string): {
+  publicAccess: boolean | 'read';
+  permissionCollection: string;
+  allowSuperAdminBypass: boolean;
+  tenantColumns: ReadonlySet<string>;
+} {
+  return {
+    publicAccess: getApiPublicAccess(ObjectRegistry.getConfig(model)?.api),
+    // `<collection>.<action>` minus its action: the collection the generated
+    // routes and the permission catalog use.
+    permissionCollection: operationPermissionOf(model, '_').slice(0, -2),
+    allowSuperAdminBypass:
+      ObjectRegistry.getTenantScopedConfig(model)?.allowSuperAdminBypass ===
+      true,
+    tenantColumns: new Set(tenantOwnershipFields(model).values()),
+  };
 }
