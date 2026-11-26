@@ -1647,16 +1647,31 @@ export class APIGenerator {
     if (!principal.enforced || principal.authenticated) return undefined;
     // An unsigned caller is never refused a permission: the decision's only
     // answers are admit (public) or 401.
-    if (!objectName) {
-      return this.createErrorResponse(401, 'Authentication required');
-    }
+    if (!objectName) return this.signInRequired();
     const decision = this.decide(principal, objectName, 'sign-in', {
       mutating: method.toUpperCase() !== 'GET',
       signInOnly: true,
     });
-    return decision && !decision.allow
-      ? this.createErrorResponse(401, 'Authentication required')
-      : undefined;
+    return decision && !decision.allow ? this.signInRequired() : undefined;
+  }
+
+  /**
+   * The 401 of a host-resolved principal: the same typed body as its 403s
+   * (`{ error: { code, message, ok, status } }`) and the code the generated
+   * routes answer with, so a client reads one shape from either path.
+   */
+  private signInRequired(): Response {
+    return this.createJsonResponse(
+      {
+        error: {
+          code: 'AUTHENTICATION_REQUIRED',
+          message: 'Authentication required',
+          ok: false,
+          status: 401,
+        },
+      },
+      401,
+    );
   }
 
   /**
