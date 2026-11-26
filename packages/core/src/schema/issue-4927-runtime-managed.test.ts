@@ -186,4 +186,144 @@ describe('runtime-managed databases and the startup check (#4927)', () => {
       'function',
     );
   });
+
+  it('propagates declarations across pooled child transaction handles and nested savepoints without extra info logs', async () => {
+    const logs: string[] = [];
+    const spies = (['info', 'warn', 'log', 'debug', 'error'] as const).map(
+      (m) =>
+        vi.spyOn(console, m).mockImplementation((...a: unknown[]) => {
+          logs.push(a.map(String).join(' '));
+        }),
+    );
+    try {
+      const pool = { kind: 'pg-pool' };
+      const createSavepointTx = (parentClient: object): DatabaseInterface => {
+        const spClient = { kind: 'pg-savepoint', parentClient };
+        return {
+          url: 'postgres://localhost:5432/app',
+          client: spClient,
+          query: async () => ({ rows: [] }),
+          tableExists: async () => true,
+        } as unknown as DatabaseInterface;
+      };
+      const pooledDb = {
+        url: 'postgres://localhost:5432/app',
+        client: pool,
+        query: async () => ({ rows: [] }),
+        tableExists: async () => true,
+        async transaction<T>(
+          cb: (tx: DatabaseInterface) => Promise<T>,
+        ): Promise<T> {
+          // Simulate pg.Pool checking out a distinct PoolClient object per transaction.
+          const checkedOutPoolClient = { kind: 'pg-pool-client' };
+          const txHandle = {
+            url: 'postgres://localhost:5432/app',
+            client: checkedOutPoolClient,
+            query: async () => ({ rows: [] }),
+            tableExists: async () => true,
+            async transaction<U>(
+              nestedCb: (spTx: DatabaseInterface) => Promise<U>,
+            ): Promise<U> {
+              return nestedCb(createSavepointTx(checkedOutPoolClient));
+            },
+          } as unknown as DatabaseInterface;
+          return cb(txHandle);
+        },
+      } as unknown as DatabaseInterface;
+
+      declareRuntimeManagedDatabase(pooledDb, DECLARATION);
+      expect(logs.filter((l) => /runtime-managed/i.test(l))).toHaveLength(1);
+
+      let observedOuter: unknown;
+      let observedNested: unknown;
+      let checkedOutClientRef: object | undefined;
+      if (!pooledDb.transaction) {
+        throw new Error('pooledDb mock must define transaction');
+      }
+      await pooledDb.transaction(async (tx) => {
+        checkedOutClientRef = (tx as unknown as { client: object }).client;
+        expect(checkedOutClientRef).not.toBe(pool);
+        observedOuter = runtimeManagedDatabaseDeclaration(tx);
+        await assertDatabaseMigratedForBuild(tx);
+        if (!tx.transaction) {
+          throw new Error('tx mock must define savepoint transaction');
+        }
+        await tx.transaction(async (savepointTx) => {
+          observedNested = runtimeManagedDatabaseDeclaration(savepointTx);
+          await assertDatabaseMigratedForBuild(savepointTx);
+        });
+      });
+
+      expect(observedOuter).toEqual(DECLARATION);
+      expect(observedNested).toEqual(DECLARATION);
+      // Child transaction propagation must not re-log startup declaration lines.
+      expect(logs.filter((l) => /runtime-managed/i.test(l))).toHaveLength(1);
+    } finally {
+      for (const spy of spies) spy.mockRestore();
+    }
+  });
+
+  it('does not recurse when declared on a get-only Proxy wrapper around a raw handle (app-shell scopeDatabase)', async () => {
+    const rawClient = { kind: 'raw-pg-pool' };
+    const sharedScopedToken = { kind: 'scoped-client-token' };
+    const rawTxMethod = async <T>(
+      cb: (tx: DatabaseInterface) => Promise<T>,
+    ): Promise<T> => {
+      const innerTx = {
+        url: 'postgres://localhost:5432/boxbones',
+        client: { kind: 'checked-out' },
+        query: async () => ({ rows: [], rowCount: 0 }),
+      } as unknown as DatabaseInterface;
+      return cb(innerTx);
+    };
+    const raw = {
+      url: 'postgres://localhost:5432/boxbones',
+      client: rawClient,
+      transaction: rawTxMethod,
+    } as unknown as DatabaseInterface;
+
+    const members: Record<string, unknown> = {
+      client: sharedScopedToken,
+      transaction: <T>(cb: (tx: DatabaseInterface) => Promise<T>) => {
+        if (!raw.transaction) throw new Error('missing raw.transaction');
+        return raw.transaction(async (tx) => {
+          const guarded = new Proxy(tx, {
+            get(target, prop) {
+              if (prop === 'client') return sharedScopedToken;
+              const val = Reflect.get(target, prop, target);
+              return typeof val === 'function' ? val.bind(target) : val;
+            },
+          });
+          return cb(guarded);
+        });
+      },
+      query: () => {
+        if (!raw.transaction) throw new Error('missing raw.transaction');
+        return raw.transaction(async (tx) => tx.query('SELECT 1'));
+      },
+    };
+
+    const scopedProxy = new Proxy(raw, {
+      get(target, prop, receiver) {
+        if (typeof prop === 'string' && Object.hasOwn(members, prop)) {
+          return members[prop];
+        }
+        return Reflect.get(target, prop, receiver);
+      },
+    });
+
+    declareRuntimeManagedDatabase(scopedProxy, DECLARATION);
+    expect(raw.transaction).toBe(rawTxMethod);
+    await expect(scopedProxy.query('SELECT 1')).resolves.toEqual({
+      rows: [],
+      rowCount: 0,
+    });
+    if (!scopedProxy.transaction) {
+      throw new Error('scopedProxy must expose transaction');
+    }
+    await scopedProxy.transaction(async (tx) => {
+      expect(runtimeManagedDatabaseDeclaration(tx)).toEqual(DECLARATION);
+      await assertDatabaseMigratedForBuild(tx);
+    });
+  });
 });
