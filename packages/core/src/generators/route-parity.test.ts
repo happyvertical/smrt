@@ -388,9 +388,10 @@ const DIVERGENCES: Divergence[] = [
   },
 ];
 
-const mismatches = new Map<string, number>();
-
-async function compare(c: Case): Promise<string | undefined> {
+async function compare(
+  c: Case,
+  mismatches: Map<string, number>,
+): Promise<string | undefined> {
   const principal = principals()[c.principal];
   const rest = await fx.run('rest', principal, c.request);
   const kit = await fx.run('kit', principal, c.request);
@@ -424,7 +425,7 @@ async function compare(c: Case): Promise<string | undefined> {
 async function expectParity(cases: Case[]): Promise<void> {
   const failures: string[] = [];
   for (const c of cases) {
-    const failure = await compare(c);
+    const failure = await compare(c, new Map());
     if (failure) failures.push(failure);
   }
   expect(failures).toEqual([]);
@@ -1074,14 +1075,47 @@ describe('route parity: CORS', () => {
 });
 
 describe('route parity: the divergence list', () => {
-  it('every listed divergence was exercised and is still real', () => {
-    // Runs after the matrix above, in file order. A filtered run (`-t`) skips
-    // the matrix, so there is nothing to check.
-    if (mismatches.size === 0) return;
+  it('every listed divergence is exercised and is still real', async () => {
+    // Self-contained: it sends its own case for each divergence, so it does
+    // not depend on the matrix above having run (a filtered run skips that),
+    // and it fails when a divergence is never exercised.
+    const exercised = new Map<string, number>();
+    const notes = segment.note;
+    const sample: Case[] = [
+      ...crud('writer', 'note'),
+      {
+        op: 'cross-tenant-list',
+        label: 'note list filtered to another tenant',
+        principal: 'operator',
+        request: { method: 'GET', path: `${notes}?tenantId=${TENANT_B}` },
+      },
+      {
+        op: 'item-scope',
+        label: 'item-scope POST action',
+        principal: 'writer',
+        request: {
+          method: 'POST',
+          path: `${notes}/${SEED.note.own}/touch`,
+          body: {},
+        },
+      },
+      {
+        op: 'multi-segment',
+        label: 'multi-segment GET action path',
+        principal: 'writer',
+        request: { method: 'GET', path: `${notes}/reports/monthly` },
+      },
+    ];
+    const failures: string[] = [];
+    for (const c of sample) {
+      const failure = await compare(c, exercised);
+      if (failure) failures.push(failure);
+    }
+    expect(failures).toEqual([]);
     for (const divergence of DIVERGENCES) {
       expect(
-        mismatches.get(divergence.id) ?? 0,
-        `${divergence.id}: ${divergence.reason}`,
+        exercised.get(divergence.id) ?? 0,
+        `${divergence.id} was never exercised: ${divergence.reason}`,
       ).toBeGreaterThan(0);
     }
   });
