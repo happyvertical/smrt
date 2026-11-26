@@ -5,10 +5,10 @@ description: "A smrt app that builds and runs a person's own smrt app from defin
 status: "stable"
 generated:
   by: "smrt/scripts/generate-knowledge-okf.ts"
-  at: "2026-11-26T06:05:37Z"
+  at: "2026-11-26T07:25:34Z"
 audience: "internal"
 evidence_level: "source-inspected"
-source_revision: "sha256:8e4ef53b762fb6d2ffeb19ccd024ee975b929b96f526829e0326ce6fbf78df1e"
+source_revision: "sha256:2fc78d372cf32cd36a8fd7e8900b1cbc13c1df709ddc688bec43666b759626ff"
 sources:
   - id: "manifest"
     resource: "https://github.com/happyvertical/smrt/blob/main/packages/app-shell/package.json"
@@ -129,6 +129,8 @@ sources:
 - `ChangeBatchCollection` (collection `changebatches`, extends `SmrtCollection`)
 - `ChangeCard` (collection `changecards`, extends `SmrtObject`)
 - `ChangeCardCollection` (collection `changecards`, extends `SmrtCollection`)
+- `ReceiveLink` (collection `receivelinks`, extends `SmrtObject`)
+- `ReceiveLinkCollection` (collection `receivelinks`, extends `SmrtCollection`)
 
 ## MCP tools
 
