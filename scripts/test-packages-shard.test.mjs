@@ -3,7 +3,7 @@ import { spawnSync } from 'node:child_process';
 import test from 'node:test';
 
 const script = new URL('./test-packages-shard.mjs', import.meta.url).pathname;
-const DEDICATED = '--filter=@happyvertical/smrt-template-sveltekit';
+const DEDICATED = '@happyvertical/smrt-template-sveltekit#test';
 
 function shard(arg) {
   const result = spawnSync('node', [script, arg], { encoding: 'utf8' });
@@ -26,13 +26,29 @@ test('the shards cover every package exactly once and no other shard runs the de
 });
 
 test('the slowest measured packages land in different shards (#5045)', () => {
-  const home = (name) =>
+  const home = (unit) =>
     ['1/5', '2/5', '3/5', '4/5'].findIndex((arg) =>
-      shard(arg).filters.includes(`--filter=@happyvertical/smrt-${name}`),
+      shard(arg).filters.includes(`@happyvertical/smrt-${unit}`),
     );
-  const homes = ['ingestion', 'app-shell', 'app-runtime', 'education'].map(home);
+  const homes = [
+    'ingestion#test',
+    'app-runtime#test',
+    'app-shell#test:unit:1of2',
+    'app-shell#test:unit:2of2',
+  ].map(home);
   assert.ok(homes.every((index) => index >= 0));
   assert.equal(new Set(homes).size, 4);
+});
+
+test('app-shell is emitted as its split units, never as plain test (#5647)', () => {
+  const all = ['1/5', '2/5', '3/5', '4/5', '5/5'].flatMap((arg) => shard(arg).filters);
+  const units = all.filter((unit) => unit.startsWith('@happyvertical/smrt-app-shell#'));
+  assert.deepEqual(units.sort(), [
+    '@happyvertical/smrt-app-shell#test:configs',
+    '@happyvertical/smrt-app-shell#test:unit:1of2',
+    '@happyvertical/smrt-app-shell#test:unit:2of2',
+  ]);
+  assert.ok(all.every((unit) => unit.includes('#')));
 });
 
 test('a single shard still runs everything', () => {
