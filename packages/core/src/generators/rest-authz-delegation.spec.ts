@@ -222,15 +222,16 @@ describe('runtime REST decides through route-authz', () => {
 
     it('refuses by the module’s order: sign-in, permission, then tenant', async () => {
       const api = handler();
-      // Not signed in beats everything.
+      // Not signed in beats everything, with the code the generated routes
+      // answer with.
+      const unsigned = await send(api, 'guest', 'POST', note(), {
+        title: 'x',
+        tenantId: TENANT_B,
+      });
+      expect(unsigned.status).toBe(401);
       expect(
-        (
-          await send(api, 'guest', 'POST', note(), {
-            title: 'x',
-            tenantId: TENANT_B,
-          })
-        ).status,
-      ).toBe(401);
+        ((await unsigned.json()) as { error: { code: string } }).error.code,
+      ).toBe('AUTHENTICATION_REQUIRED');
       // Signed in without the permission: 403 PERMISSION_DENIED before the body
       // is looked at.
       const denied = await send(api, 'reader', 'POST', note(), {

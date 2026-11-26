@@ -544,6 +544,28 @@ describe('REST generator route map (#1500)', () => {
       expect(res.status).toBe(404);
     });
 
+    it('serves no path longer than /<collection>/<id|action>, and runs none as the shorter one', async () => {
+      const before = await collection.count({});
+      for (const [method, path] of [
+        ['POST', 'restroutewidgets/some-id/touch'],
+        ['DELETE', 'restroutewidgets/some-id/touch'],
+        ['GET', 'restroutewidgets/some-id/touch'],
+      ]) {
+        const res = await handler(
+          new Request(`http://local/api/v1/${path}`, {
+            method,
+            headers: { 'content-type': 'application/json' },
+            ...(method === 'POST'
+              ? { body: JSON.stringify({ name: 'x' }) }
+              : {}),
+          }),
+        );
+        expect(res.status, `${method} ${path}`).toBe(404);
+      }
+      // `POST /<collection>/<id>/touch` used to create a row.
+      expect(await collection.count({})).toBe(before);
+    });
+
     it('returns 405 for an unsupported HTTP method', async () => {
       const res = await handler(
         new Request('http://local/api/v1/restroutewidgets', {
