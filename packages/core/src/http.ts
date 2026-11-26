@@ -2,10 +2,10 @@
  * Bounded Web Standard Request / Node.js HTTP server helpers, trusted-proxy
  * client IP extraction, and LRU-bounded sliding-window rate limiting.
  *
- * Extracted from production SMRT HTTP services so applications and relays do
- * not need to hand-roll streaming body-size enforcement, JSON content-type
- * validation, right-to-left `X-Forwarded-For` parsing, or `node:http`
- * `IncomingMessage` <-> `Request`/`Response` adapters.
+ * Extracted from production SMRT HTTP services so JSON/RPC endpoints do not
+ * need to hand-roll streaming request body-size enforcement, JSON content-type
+ * validation, right-to-left `X-Forwarded-For` / `X-Forwarded-Proto` parsing, or
+ * buffered `node:http` `IncomingMessage` <-> `Request`/`Response` adapters.
  */
 
 import type { IncomingMessage, ServerResponse } from 'node:http';
@@ -124,7 +124,9 @@ export async function readBoundedBody(
     request.headers.get('content-length'),
   );
   if (declaredLength !== null && declaredLength > maxBytes) {
-    await request.body?.cancel().catch(() => undefined);
+    // Initiate stream cancellation without awaiting completion so cloned
+    // (`tee()`d) requests reject immediately even when a sibling branch is unread.
+    void request.body?.cancel().catch(() => undefined);
     throw new HttpPayloadTooLargeError(formatBodyLimitMessage(maxBytes));
   }
 
@@ -145,7 +147,7 @@ export async function readBoundedBody(
       if (value && value.byteLength > 0) {
         totalBytes += value.byteLength;
         if (totalBytes > maxBytes) {
-          await reader.cancel().catch(() => undefined);
+          void reader.cancel().catch(() => undefined);
           throw new HttpPayloadTooLargeError(formatBodyLimitMessage(maxBytes));
         }
         chunks.push(value);
@@ -334,19 +336,7 @@ export class BoundedSlidingWindowRateLimiter {
     return active;
   }
 
-  private evictIfFull(nowMs: number): void {
-    if (this.entries.size < this.maxEntries) {
-      return;
-    }
-    const cutoff = nowMs - this.windowMs;
-    for (const [key, timestamps] of this.entries) {
-      const active = timestamps.filter((ts) => ts > cutoff);
-      if (active.length === 0) {
-        this.entries.delete(key);
-      } else if (active.length !== timestamps.length) {
-        this.entries.set(key, active);
-      }
-    }
+  private evictIfFull(): void {
     while (this.entries.size >= this.maxEntries) {
       const oldestKey = this.entries.keys().next().value;
       if (oldestKey === undefined) {
@@ -376,7 +366,7 @@ export class BoundedSlidingWindowRateLimiter {
   record(key: string, nowMs: number = Date.now()): void {
     const active = this.pruneKey(key, nowMs) ?? [];
     if (!this.entries.has(key)) {
-      this.evictIfFull(nowMs);
+      this.evictIfFull();
     } else {
       this.entries.delete(key);
     }
@@ -507,10 +497,15 @@ const UNDICI_DECODED_ENCODINGS = new Set([
 ]);
 
 /**
- * Write a Web Standard `Response` onto a Node.js `ServerResponse`, preserving
- * multi-header `Set-Cookie` values, stripping hop-by-hop headers, and dropping
- * stale `content-encoding` when `webResponse` came directly from `fetch()`
- * (`response.url !== ''`) with an encoding `undici` decodes automatically.
+ * Write a buffered Web Standard `Response` onto a Node.js `ServerResponse`,
+ * preserving multi-header `Set-Cookie` values, stripping hop-by-hop headers,
+ * and dropping stale `content-encoding` when `webResponse` came directly from
+ * `fetch()` (`response.url !== ''`) with an encoding `undici` decodes
+ * automatically.
+ *
+ * Response payloads are buffered in memory to compute accurate `Content-Length`
+ * headers and preserve atomic header/error rollback before flushing to the
+ * socket. Do not use this adapter for SSE or unbounded response streams.
  *
  * Callers that re-wrap a `fetch()` response in `new Response(upstream.body, upstream)`
  * reset `response.url` to `''` and should delete `content-encoding` on the
@@ -521,7 +516,11 @@ export async function writeWebResponseToNode(
   webResponse: Response,
 ): Promise<void> {
   const isHead = res.req?.method?.toUpperCase() === 'HEAD';
-  const body = statusForbidsBody(webResponse.status)
+  const forbidsBody = statusForbidsBody(webResponse.status);
+  if (forbidsBody) {
+    void webResponse.body?.cancel().catch(() => undefined);
+  }
+  const body = forbidsBody
     ? null
     : Buffer.from(await webResponse.arrayBuffer());
   const isFetchDecodedResponse = webResponse.url !== '';
@@ -673,6 +672,11 @@ function scheduleUnreadBodyTeardown(req: IncomingMessage): void {
  * Adapt a Web Standard `(request: Request, remoteAddress?: string) => Response`
  * handler into a Node.js `http.createServer` listener with streaming byte-cap
  * enforcement prior to buffering request bodies in memory.
+ *
+ * Responses are buffered in memory via `writeWebResponseToNode` (not intended
+ * for SSE or unbounded response streams), and `X-Forwarded-Proto` is resolved
+ * right-to-left using `trustProxyHops` so client-prepended entries cannot spoof
+ * HTTPS.
  */
 export function createNodeHttpHandler(
   handle: (
@@ -711,10 +715,19 @@ export function createNodeHttpHandler(
         if (trustHops >= 1) {
           const forwardedProto = req.headers['x-forwarded-proto'];
           const rawProto = Array.isArray(forwardedProto)
-            ? forwardedProto[0]
+            ? forwardedProto.join(',')
             : forwardedProto;
-          if (rawProto?.split(',', 1)[0]?.trim().toLowerCase() === 'https') {
-            proto = 'https';
+          if (rawProto) {
+            const protoParts = rawProto
+              .split(',')
+              .map((entry) => entry.trim().toLowerCase())
+              .filter((entry) => entry.length > 0);
+            if (
+              protoParts.length >= trustHops &&
+              protoParts[protoParts.length - trustHops] === 'https'
+            ) {
+              proto = 'https';
+            }
           }
         }
         const host = req.headers.host || 'localhost';

@@ -141,6 +141,39 @@ describe('@happyvertical/smrt-core/http helpers (#5674)', () => {
       HttpPayloadTooLargeError,
     );
     expect(cancelled).toBe(true);
+
+    // Cloned (`tee()`d) oversized requests reject immediately even with unread sibling
+    const clonedDeclaredParent = new Request('http://localhost/test', {
+      method: 'POST',
+      headers: { 'content-length': '2048' },
+      body: new ReadableStream({
+        start(controller) {
+          controller.enqueue(new Uint8Array(64));
+        },
+      }),
+      duplex: 'half',
+    } as RequestInit);
+    const clonedDeclaredSibling = clonedDeclaredParent.clone();
+    await expect(
+      readBoundedBody(clonedDeclaredParent, 128),
+    ).rejects.toBeInstanceOf(HttpPayloadTooLargeError);
+    void clonedDeclaredSibling.body?.cancel();
+
+    const clonedStreamParent = new Request('http://localhost/test', {
+      method: 'POST',
+      body: new ReadableStream({
+        start(controller) {
+          controller.enqueue(new Uint8Array(80));
+          controller.enqueue(new Uint8Array(80));
+        },
+      }),
+      duplex: 'half',
+    } as RequestInit);
+    const clonedStreamSibling = clonedStreamParent.clone();
+    await expect(
+      readBoundedBody(clonedStreamParent, 100),
+    ).rejects.toBeInstanceOf(HttpPayloadTooLargeError);
+    void clonedStreamSibling.body?.cancel();
   });
 
   it('extracts client IPs safely from right-to-left X-Forwarded-For hops', () => {
@@ -247,6 +280,29 @@ describe('@happyvertical/smrt-core/http helpers (#5674)', () => {
       'b=2; Path=/; HttpOnly',
     ]);
     expect(await cookieRes.json()).toEqual({
+      proto: 'https:',
+      ip: '203.0.113.7',
+    });
+
+    // Client-prepended X-Forwarded-Proto cannot spoof HTTPS when proxy appends http
+    const spoofedProtoRes = await fetch(`http://127.0.0.1:${port}/cookies`, {
+      headers: {
+        'x-forwarded-proto': 'https, http',
+        'x-forwarded-for': '198.51.100.1, 203.0.113.7',
+      },
+    });
+    expect(await spoofedProtoRes.json()).toEqual({
+      proto: 'http:',
+      ip: '203.0.113.7',
+    });
+
+    const multiHopTlsRes = await fetch(`http://127.0.0.1:${port}/cookies`, {
+      headers: {
+        'x-forwarded-proto': 'http, https',
+        'x-forwarded-for': '198.51.100.1, 203.0.113.7',
+      },
+    });
+    expect(await multiHopTlsRes.json()).toEqual({
       proto: 'https:',
       ip: '203.0.113.7',
     });
