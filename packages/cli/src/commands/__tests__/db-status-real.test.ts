@@ -280,4 +280,44 @@ describe('db:status (real SQLite rendering)', () => {
     const parsed = JSON.parse(output());
     expect(parsed.error).toContain('boom reading schema');
   });
+  describe.each(['plain', 'closed-looking'])('stored %s failures', (shape) => {
+    it.each([
+      'json',
+      'verbose',
+    ])('withholds historical driver text in %s output without changing stored rows', async (mode) => {
+      await applyMigration();
+      const canary = 'historical_canary_5425';
+      const stored =
+        shape === 'plain'
+          ? `${canary}: driver echoed an authored literal`
+          : `migration legacy_failure statement 1 (other) failed in regular phase (SQLSTATE 22000; database message withheld): ${canary}`;
+      const db = await getDatabase({ type: 'sqlite', url: dbUrl });
+      try {
+        await db.query(
+          'UPDATE _smrt_schema_migrations SET status = ?, error_message = ? WHERE name = ?',
+          'failed',
+          stored,
+          'create_widgets',
+        );
+        const options =
+          mode === 'json'
+            ? { json: true }
+            : mode === 'verbose'
+              ? { verbose: true }
+              : {};
+        await requireCommandHandler(dbStatusCommand)([], options);
+        expect(output()).not.toContain(canary);
+        expect(output()).toContain('Stored migration failure details withheld');
+        const row = (
+          await db.query(
+            'SELECT error_message FROM _smrt_schema_migrations WHERE name = ?',
+            'create_widgets',
+          )
+        ).rows[0];
+        expect(row.error_message).toBe(stored);
+      } finally {
+        await db.close?.();
+      }
+    });
+  });
 });

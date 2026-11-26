@@ -1,6 +1,9 @@
 /** Package-private Node host primitives. Browser consumers select host.browser through the package browser map. */
 import { AsyncLocalStorage } from 'node:async_hooks';
 import { createHash } from 'node:crypto';
+import { realpathSync, statSync } from 'node:fs';
+import { readFile, realpath, stat } from 'node:fs/promises';
+import { isAbsolute, join, relative, sep } from 'node:path';
 import { ProfileCollection } from '@happyvertical/smrt-profiles';
 import type { DatabaseInterface } from '@happyvertical/sql';
 
@@ -55,4 +58,68 @@ export {
 export async function createAccountSecretService(db: DatabaseInterface) {
   const { SecretService } = await import('@happyvertical/smrt-secrets');
   return SecretService.create({ db });
+}
+
+/**
+ * Validate an attachment storage root and return its real path (symlinks
+ * resolved once, at configuration). Throws a plain Error naming the problem.
+ */
+export function resolveAttachmentStorageRoot(root: unknown): string {
+  if (typeof root !== 'string' || !root || !isAbsolute(root)) {
+    throw new Error('the storage root must be an absolute directory path');
+  }
+  let real: string;
+  try {
+    real = realpathSync(root);
+  } catch {
+    throw new Error('the storage root does not exist');
+  }
+  if (!statSync(real).isDirectory()) {
+    throw new Error('the storage root is not a directory');
+  }
+  return real;
+}
+
+export type AttachmentFileRead =
+  | { status: 'ok'; data: Buffer }
+  | { status: 'missing' }
+  | { status: 'outside' };
+
+function within(base: string, target: string): boolean {
+  const rel = relative(base, target);
+  return !(
+    rel === '' ||
+    rel === '..' ||
+    rel.startsWith(`..${sep}`) ||
+    isAbsolute(rel)
+  );
+}
+
+/**
+ * Read `segments` below `realRoot`. The first segment is the owner's
+ * directory: its real path must stay inside the root, and the target's real
+ * path (symlinks resolved) must stay inside that directory. The bytes are read
+ * from the resolved path.
+ */
+export async function readAttachmentFileUnderRoot(
+  realRoot: string,
+  segments: readonly string[],
+): Promise<AttachmentFileRead> {
+  let ownerDir: string;
+  let target: string;
+  try {
+    ownerDir = await realpath(join(realRoot, segments[0] ?? ''));
+    target = await realpath(join(realRoot, ...segments));
+  } catch {
+    return { status: 'missing' };
+  }
+  if (!within(realRoot, ownerDir) || !within(ownerDir, target)) {
+    return { status: 'outside' };
+  }
+  try {
+    if (!(await stat(target)).isFile()) return { status: 'missing' };
+    return { status: 'ok', data: await readFile(target) };
+  } catch {
+    return { status: 'missing' };
+  }
 }

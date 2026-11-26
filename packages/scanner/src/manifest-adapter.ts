@@ -522,6 +522,14 @@ export class ManifestAdapter {
       recipes?: RecipeDefinition[];
       /** Selector slots from {@link ScanResults.uiSelectors} (#3599). */
       uiSelectors?: Record<string, UiSelectorDeclaration>;
+      /**
+       * Per-class owner package (#5655). When it returns a name for a class's
+       * source file, that package, not `packageName`, qualifies the class, so
+       * a workspace package compiled from source keeps the identity its own
+       * build registers at runtime. `packageName` stays the fallback and the
+       * manifest-level name.
+       */
+      packageNameForFile?: (filePath: string) => string | undefined;
     } = {},
   ): SmartObjectManifest {
     this.typeAliases = options.typeAliases || {};
@@ -537,9 +545,20 @@ export class ManifestAdapter {
       objects[manifestKey] = definition;
     }
 
+    // A recipe names models by class name; a class compiled from another
+    // package's source is qualified by its owner (#5655). A name declared by
+    // several owners resolves to this package's own class first.
+    const ownerByClass = new Map<string, string>();
+    for (const definition of Object.values(objects)) {
+      if (!definition.packageName) continue;
+      const known = ownerByClass.get(definition.className);
+      if (known === undefined || definition.packageName === options.packageName)
+        ownerByClass.set(definition.className, definition.packageName);
+    }
     const recipes = this.qualifyRecipes(
       options.recipes ?? [],
       options.packageName,
+      ownerByClass,
     );
     // Selector bindings carry no source path: manifests must stay portable.
     const selectorEntries = Object.entries(options.uiSelectors ?? {}).sort(
@@ -580,9 +599,12 @@ export class ManifestAdapter {
   private qualifyRecipes(
     recipes: RecipeDefinition[],
     packageName: string | undefined,
+    ownerByClass: ReadonlyMap<string, string> = new Map(),
   ): RecipeDefinition[] {
-    const qualify = (className: string): string =>
-      packageName ? createQualifiedName(packageName, className) : className;
+    const qualify = (className: string): string => {
+      const owner = ownerByClass.get(className) ?? packageName;
+      return owner ? createQualifiedName(owner, className) : className;
+    };
     return recipes.map((recipe) => ({
       ...recipe,
       models: recipe.models.map(qualify),
@@ -625,7 +647,11 @@ export class ManifestAdapter {
    */
   toSmartObjectDefinition(
     classDef: ResolvedClassDefinition,
-    options: { packageName?: string; packageVersion?: string } = {},
+    options: {
+      packageName?: string;
+      packageVersion?: string;
+      packageNameForFile?: (filePath: string) => string | undefined;
+    } = {},
   ): SmartObjectDefinition {
     // Extract static properties (e.g., uiSlots, adminRoutes on Agent subclasses)
     // Use own fields (classDef.fields) not allFields — static properties use
@@ -704,7 +730,10 @@ export class ManifestAdapter {
         : defaultCollectionName(classDef.className);
 
     // Determine package name (prefer option, then classDef value)
-    const packageName = options.packageName || classDef.packageName;
+    const packageName =
+      options.packageNameForFile?.(classDef.filePath) ||
+      options.packageName ||
+      classDef.packageName;
 
     // Generate qualified name if packageName is available (Issue #713)
     // Format: @package/name:ClassName for namespace isolation

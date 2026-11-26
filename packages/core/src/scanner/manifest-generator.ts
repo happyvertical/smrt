@@ -805,6 +805,9 @@ export class ManifestGenerator {
 
     for (const obj of Object.values(manifest.objects)) {
       if (obj.importPath) continue;
+      // A class compiled from another workspace package's source is imported
+      // from that package, not through this package's export map (#5655).
+      if (obj.packageName && obj.packageName !== packageName) continue;
       obj.importPath = this.determineImportPath(packageJson, obj.filePath);
     }
   }
