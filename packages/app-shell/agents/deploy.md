@@ -11,6 +11,7 @@ registry instead of running from a checkout. Cloud-profile behaviour
 |---|---|
 | `smrt-app-shell` (`bin/smrt-app-shell.mjs`) | Starts the server. Same as `node build`. |
 | `smrt-app-shell migrate-to-postgres --tenant <id> --user <owner id>` | One operator command (`build/operator.js`, #5193): moves a tenant's SQLite app into its PostgreSQL schema as the verified owner, then exits (0 done, 1 refused or the shell did not start, 2 usage). Hosted profile only; [cloud profile](cloud-profile.md). |
+| `smrt-app-shell downgrade-to-sqlite --tenant <id> --user <owner id>` | The way back (`build/operator.js`, #5193): returns the app to its kept SQLite file as the verified owner, only while the hosted app has taken no writes since the migration (refused by name after any write). Same exit codes; [cloud profile](cloud-profile.md). |
 | `@happyvertical/smrt-app-shell/start` | `build/index.js`, importable as a start entry (importing it starts listening). |
 | `build/` | The SvelteKit adapter-node output (`build/index.js` raises `BODY_SIZE_LIMIT`, then imports `server-start.js`). Published in `files`; a `turbo.json` output and the release workspace archive carry it (without them the published 0.62.1 to 0.66.1 had `dist/` only: the release job archived `*/dist/*` and prepack reused it). |
 | `@happyvertical/smrt-app-shell/embed` | `build/embed.js`: `handler` (Node request listener, also Express/Connect middleware) and `drain`. Importing it initialises the shell and listens on nothing (below). |

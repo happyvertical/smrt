@@ -84,6 +84,7 @@ export {
   ClaimLostError,
   EngineError,
   type EngineErrorCode,
+  HostedWritesError,
   isUnknownOutcome,
   NoPrincipalError,
   PermissionDeniedError,
@@ -175,6 +176,9 @@ export {
   type Write,
 } from './sandbox.ts';
 export {
+  type DowngradeToSqliteOptions,
+  type DowngradeToSqliteResult,
+  downgradeUserAppToSqlite,
   isMigratedToPostgres,
   MIGRATION_COMPLETION_KEY,
   type MigrateToPostgresOptions,

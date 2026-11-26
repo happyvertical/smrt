@@ -29,6 +29,19 @@ export class EngineError extends Error {
   }
 }
 
+/**
+ * The hosted app has taken writes since it was migrated from the desktop, so it
+ * cannot go back to the desktop file without losing them (#5193). Nothing was changed.
+ */
+export class HostedWritesError extends EngineError {
+  constructor(
+    message = 'this app has taken writes on PostgreSQL since it was migrated from the desktop, so it cannot go back to the desktop file; nothing was changed',
+  ) {
+    super(message, 'refused', { reason: 'hosted-writes' });
+    this.name = 'HostedWritesError';
+  }
+}
+
 /** A call reached the engine with no valid principal, or one for another tenant (#5188). Nothing ran. */
 export class NoPrincipalError extends EngineError {
   constructor(message = 'this call carries no valid principal') {

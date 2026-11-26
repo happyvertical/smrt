@@ -10,6 +10,7 @@ import { hostOwner } from '../test/engine-principal.ts';
 import type { DatabaseConfig, PGliteClient } from './db/index.ts';
 import {
   AppHost,
+  downgradeUserAppToSqlite,
   exportUserApp,
   importUserApp,
   isMigratedToPostgres,
@@ -374,5 +375,157 @@ describe('migrateUserAppToPostgres', () => {
         versions: [],
       }),
     ).rejects.toThrow(/no SQLite user app/);
+  });
+});
+
+describe('downgradeUserAppToSqlite', () => {
+  const tableNames = async (schema: string) =>
+    (
+      (await pg.query(
+        `SELECT 1 FROM pg_namespace WHERE nspname = '${schema}'`,
+      )) as { rows: unknown[] }
+    ).rows.length;
+
+  it('goes back to the kept file while nothing was written, then migrates again', async () => {
+    const { store, dataDir, file } = await desktopApp();
+    const database = await schemaConfig();
+    await migrateUserAppToPostgres({
+      dataDir,
+      database,
+      versions: await store.list(),
+    });
+    const res = await downgradeUserAppToSqlite({
+      dataDir,
+      database,
+      versions: await store.list(),
+    });
+    expect(res.status).toBe('downgraded');
+    expect(await tableNames(database.schema)).toBe(0);
+    expect(existsSync(file)).toBe(true);
+    expect(readPostgresMigrationMarker(dataDir)).toBeNull();
+    expect(await isMigratedToPostgres(dataDir, database)).toBe(false);
+    await pg.exec(`CREATE SCHEMA "${database.schema}"`);
+    expect(
+      (
+        await migrateUserAppToPostgres({
+          dataDir,
+          database,
+          versions: await store.list(),
+        })
+      ).status,
+    ).toBe('migrated');
+  });
+
+  it('is refused by name after a row changed, was added or was removed, and changes nothing', async () => {
+    for (const write of [
+      (s: string) =>
+        `UPDATE "${s}"."u_chores" SET title = 'x' WHERE points = 1`,
+      (s: string) => `DELETE FROM "${s}"."u_chores" WHERE points = 2`,
+    ]) {
+      const { store, dataDir } = await desktopApp();
+      const database = await schemaConfig();
+      await migrateUserAppToPostgres({
+        dataDir,
+        database,
+        versions: await store.list(),
+      });
+      await pg.exec(write(database.schema));
+      await expect(
+        downgradeUserAppToSqlite({
+          dataDir,
+          database,
+          versions: await store.list(),
+        }),
+      ).rejects.toMatchObject({ name: 'HostedWritesError' });
+      expect(await tableNames(database.schema)).toBe(1);
+      expect(await isMigratedToPostgres(dataDir, database)).toBe(true);
+      expect(readPostgresMigrationMarker(dataDir)).not.toBeNull();
+    }
+  });
+
+  it('a version added on the hosted side is refused as a hosted write, not as a changed file', async () => {
+    const { store, dataDir } = await desktopApp();
+    const database = await schemaConfig();
+    await migrateUserAppToPostgres({
+      dataDir,
+      database,
+      versions: await store.list(),
+    });
+    const versions = await store.list();
+    const last = versions[versions.length - 1];
+    const published = [
+      ...versions,
+      { ...last, version: last.version + 1, parent: last.version },
+    ];
+    await expect(
+      downgradeUserAppToSqlite({ dataDir, database, versions: published }),
+    ).rejects.toMatchObject({
+      name: 'HostedWritesError',
+      details: { reason: 'hosted-writes' },
+    });
+    expect(await isMigratedToPostgres(dataDir, database)).toBe(true);
+  });
+
+  it('a marker with no completion record is finished only when the schema holds no rows', async () => {
+    const { store, dataDir } = await desktopApp();
+    const database = await schemaConfig();
+    await migrateUserAppToPostgres({
+      dataDir,
+      database,
+      versions: await store.list(),
+    });
+    // Out-of-band: the schema is recreated with a row and no completion record.
+    await pg.exec(`DROP SCHEMA "${database.schema}" CASCADE`);
+    await pg.exec(`CREATE SCHEMA "${database.schema}"`);
+    await pg.exec(
+      `CREATE TABLE "${database.schema}".u_chores (id text PRIMARY KEY, title text)`,
+    );
+    await pg.exec(
+      `INSERT INTO "${database.schema}".u_chores VALUES ('1', 'x')`,
+    );
+    await expect(
+      downgradeUserAppToSqlite({
+        dataDir,
+        database,
+        versions: await store.list(),
+      }),
+    ).rejects.toThrow(/still holds 1 rows/);
+    expect(readPostgresMigrationMarker(dataDir)).not.toBeNull();
+    await pg.exec(`DROP TABLE "${database.schema}".u_chores`);
+    expect(
+      (
+        await downgradeUserAppToSqlite({
+          dataDir,
+          database,
+          versions: await store.list(),
+        })
+      ).status,
+    ).toBe('downgraded');
+    expect(readPostgresMigrationMarker(dataDir)).toBeNull();
+  });
+
+  it('refuses an app that was never migrated, a SQLite source and a missing file', async () => {
+    const { store, dataDir } = await desktopApp();
+    await expect(
+      downgradeUserAppToSqlite({
+        dataDir,
+        database: await schemaConfig(),
+        versions: await store.list(),
+      }),
+    ).rejects.toThrow(/not migrated/);
+    await expect(
+      downgradeUserAppToSqlite({
+        dataDir,
+        database: { kind: 'sqlite' } as never,
+        versions: [],
+      }),
+    ).rejects.toThrow(/not a PostgreSQL/);
+    await expect(
+      downgradeUserAppToSqlite({
+        dataDir: dir(),
+        database: await schemaConfig(),
+        versions: [],
+      }),
+    ).rejects.toThrow(/app\.db is not there/);
   });
 });
