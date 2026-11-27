@@ -1522,7 +1522,7 @@ describe('SvelteKit Route Generator', () => {
       // Guest creates (#5196): the guest branch runs BEFORE the ordinary
       // guard, always returns from the guest pipeline (it never reaches
       // `collection.create`), and answers a failure without a typed message.
-      const post = content.slice(content.indexOf('export const POST'));
+      const post = content.slice(content.indexOf('const POSTMetered'));
       const guestBranch = post.indexOf('guestCreateAdmission(locals');
       expect(guestBranch).toBeGreaterThan(-1);
       expect(guestBranch).toBeLessThan(post.indexOf('requireRouteAccess('));
@@ -1538,8 +1538,8 @@ describe('SvelteKit Route Generator', () => {
       );
       // Reads charge a guest against the per-client and per-tenant limits.
       const get = content.slice(
-        content.indexOf('export const GET'),
-        content.indexOf('export const POST'),
+        content.indexOf('const GETMetered'),
+        content.indexOf('const POSTMetered'),
       );
       expect(get).toContain(
         'guestReadThrottle(locals, request, getClientAddress)',
@@ -1980,7 +1980,7 @@ describe('SvelteKit Route Generator', () => {
       const content = reviewProfileRoute?.[1] as string;
 
       expect(content).toContain(
-        'export const GET: RequestHandler = async ({ locals, getClientAddress, params, request }) => {',
+        'const GETMetered: RequestHandler = async ({ locals, getClientAddress, params, request }) => {',
       );
       // Fail-closed auth guard (#1540): reads do not require auth as a mutation.
       expect(content).toMatch(/requireRouteAccess\(locals, "\w+", false\);/);
@@ -2404,7 +2404,7 @@ describe('SvelteKit Route Generator', () => {
         'Invitation',
       );
       expect(content).toContain(
-        'export const POST: RequestHandler = async ({ locals, getClientAddress, params, request }) => {',
+        'const POSTMetered: RequestHandler = async ({ locals, getClientAddress, params, request }) => {',
       );
       // Fail-closed auth guard (#1540): POST is a mutating verb.
       expect(content).toMatch(

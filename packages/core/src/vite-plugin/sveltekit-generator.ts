@@ -75,6 +75,7 @@ import {
 } from './resources-route.js';
 import { applyRouteCors, type SvelteKitCorsOptions } from './route-cors.js';
 import { AUTO_GENERATED_ROUTE_HEADER } from './route-header.js';
+import { applyRouteMetering } from './route-metering.js';
 import {
   allowsSuperAdminBypass,
   generateRoutePrincipalHelper,
@@ -2667,7 +2668,10 @@ async function generateRoutesForObject(
       plan.emit({
         root: routesRoot,
         routeDir,
-        content: applyRouteCors(collectionRoute, options.cors),
+        content: applyRouteCors(
+          applyRouteMetering(collectionRoute),
+          options.cors,
+        ),
         label: `${className} collection`,
       }),
     );
@@ -2692,7 +2696,7 @@ async function generateRoutesForObject(
       plan.emit({
         root: routesRoot,
         routeDir: join(routeDir, '[id]'),
-        content: applyRouteCors(itemRoute, options.cors),
+        content: applyRouteCors(applyRouteMetering(itemRoute), options.cors),
         label: `${className} item`,
       }),
     );
@@ -2761,7 +2765,7 @@ async function generateRoutesForObject(
       plan.emit({
         root: join(projectRoot, options.routesDir),
         routeDir: actionRouteDir,
-        content: applyRouteCors(actionRoute, options.cors),
+        content: applyRouteCors(applyRouteMetering(actionRoute), options.cors),
         label: `${className} action ${routeSpecs.map(({ actionName }) => actionName).join(', ')}`,
       }),
     );
@@ -2855,7 +2859,7 @@ async function generateCollectionRoutesForObject(
       plan.emit({
         root: join(projectRoot, options.routesDir),
         routeDir: actionRouteDir,
-        content: applyRouteCors(actionRoute, options.cors),
+        content: applyRouteCors(applyRouteMetering(actionRoute), options.cors),
         label: `${className} action ${routeSpecs.map(({ actionName }) => actionName).join(', ')}`,
       }),
     );

@@ -233,9 +233,9 @@ export function getRouteLimiter(): RouteLimiter | undefined {
 
 /**
  * Admit one request or answer it with the 429. `limiter` defaults to the
- * process-wide one; with neither the request is admitted. Never throws into
- * the request: a limiter defect admits (the limit is a guard, not a gate on
- * the app being up).
+ * process-wide one; with none the request is admitted. Never throws into the
+ * request: a limiter defect admits (the limit is a guard, not a gate on the
+ * app being up). Metering (#5199) is separate and runs after the decision.
  */
 export function enforceRouteLimits(
   subject: RouteLimitSubject,

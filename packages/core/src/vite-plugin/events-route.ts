@@ -49,6 +49,7 @@ import {
 import type { RouteFilePlan } from './generated-route-files.js';
 import { applyRouteCors, type SvelteKitCorsOptions } from './route-cors.js';
 import { AUTO_GENERATED_ROUTE_HEADER } from './route-header.js';
+import { applyRouteMetering } from './route-metering.js';
 import { generateCollectionAccessImports } from './sveltekit-config-import.js';
 import type { SvelteKitOptions } from './sveltekit-generator.js';
 
@@ -100,7 +101,7 @@ export function generateEventsRoute(
   plan.emit({
     root: join(projectRoot, options.routesDir),
     routeDir,
-    content: applyRouteCors(content, eventsCors),
+    content: applyRouteCors(applyRouteMetering(content), eventsCors),
     label: '_events',
   });
   return true;
