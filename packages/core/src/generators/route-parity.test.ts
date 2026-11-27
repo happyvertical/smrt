@@ -15,7 +15,15 @@
  * stale entry), and a difference it does not cover fails the case.
  */
 
-import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
+import {
+  afterAll,
+  afterEach,
+  beforeAll,
+  describe,
+  expect,
+  it,
+  vi,
+} from 'vitest';
 import {
   type Outcome,
   PARITY_PACKAGE,
@@ -31,6 +39,7 @@ import {
   removeTestTenancySource,
 } from '../__tests__/fixtures/test-tenancy-source.js';
 import { setDispatchTenantResolver } from '../dispatch/index.js';
+import { configureRouteLimits } from './route-limits.js';
 
 // The routes import the app's own modules by names that are not packages
 // (`$lib/...`, the models' package). They are answered by the temporary
@@ -248,6 +257,7 @@ function project(outcome: Outcome): unknown {
     status: outcome.status,
     ...(refused ? { code: outcome.code ?? null } : {}),
     body: scrub(outcome.body),
+    ...(outcome.retryAfter ? { retryAfter: 'present' } : {}),
     cors: Object.fromEntries(
       Object.entries(outcome.cors).filter(([, header]) => header !== null),
     ),
@@ -1090,6 +1100,158 @@ describe('route parity: CORS', () => {
       headers: origin(OTHER_ORIGIN),
     });
     expect(refused.cors['access-control-allow-origin']).toBeNull();
+  });
+});
+
+describe('route parity: route limits (#5198)', () => {
+  afterEach(() => configureRouteLimits(undefined));
+
+  const LIST = (): ParityRequest => ({ method: 'GET', path: segment.note });
+  const limits = (maxEvents: number, tenantMaxEvents?: number) => ({
+    client: { maxEvents, windowMs: 60_000 },
+    ...(tenantMaxEvents
+      ? { tenant: { maxEvents: tenantMaxEvents, windowMs: 60_000 } }
+      : {}),
+  });
+
+  /** The answers of `n` requests, in order, over a fresh limiter. */
+  async function drive(
+    transport: 'rest' | 'kit',
+    who: ParityPrincipal[],
+    request: ParityRequest,
+    config: ReturnType<typeof limits>,
+  ): Promise<Outcome[]> {
+    configureRouteLimits(config);
+    const answers: Outcome[] = [];
+    for (const principal of who) {
+      answers.push(await fx.run(transport, principal, request));
+    }
+    return answers;
+  }
+
+  /** Both paths answer the same sequence the same way; returns it. */
+  async function expectSameSequence(
+    who: ParityPrincipal[],
+    request: ParityRequest,
+    config: ReturnType<typeof limits>,
+  ): Promise<Outcome[]> {
+    const rest = await drive('rest', who, request, config);
+    const kit = await drive('kit', who, request, config);
+    // A list answers in its own envelope; the limit's answer is the contract.
+    const limited = (answers: Outcome[]) =>
+      answers.map((answer) =>
+        answer.status === 429 ? project(answer) : answer.status,
+      );
+    expect(limited(kit)).toEqual(limited(rest));
+    return rest;
+  }
+
+  it('answers 429 with Retry-After once a caller is over its limit', async () => {
+    const writer = principals().writer;
+    const answers = await expectSameSequence(
+      [writer, writer, writer],
+      LIST(),
+      limits(2),
+    );
+    expect(answers.map((a) => a.status)).toEqual([200, 200, 429]);
+    expect(answers[2].code).toBe('too_many_requests');
+    expect(Number(answers[2].retryAfter)).toBeGreaterThanOrEqual(1);
+    expect(Number(answers[2].retryAfter)).toBeLessThanOrEqual(60);
+  });
+
+  it('refuses before authorization: an unsigned caller over its limit is 429, not 401', async () => {
+    const anonymous = principals().anonymous;
+    const answers = await expectSameSequence(
+      [anonymous, anonymous, anonymous],
+      { method: 'POST', path: segment.note, body: { name: 'x' } },
+      limits(2),
+    );
+    expect(answers.map((a) => a.status)).toEqual([401, 401, 429]);
+  });
+
+  it('counts per tenant and per caller', async () => {
+    const a1 = principals().writer;
+    const a2 = signedIn(
+      a1.rest.permissions as string[],
+      { user: { id: 'user-a2', tenantId: TENANT_A } },
+      { userId: 'user-a2' },
+    );
+    const b = signedIn(
+      a1.rest.permissions as string[],
+      { user: { id: 'user-b', tenantId: TENANT_B } },
+      { userId: 'user-b', tenantId: TENANT_B },
+    );
+    // Two callers of tenant A fill its tenant-wide limit of 3; tenant B has
+    // its own, and a caller's own limit (2) is counted apart from the tenant's.
+    const answers = await expectSameSequence(
+      [a1, a1, a2, a2, b],
+      LIST(),
+      limits(2, 3),
+    );
+    expect(answers.map((a) => a.status)).toEqual([200, 200, 200, 429, 200]);
+  });
+
+  it('accepts a guest caller kind by its table entry, not a branch', async () => {
+    const guest = (kind: string): ParityPrincipal => {
+      const w = principals().writer;
+      return {
+        rest: { ...w.rest, callerKind: kind },
+        locals: { ...w.locals, callerKind: kind },
+      };
+    };
+    // A guest gets a quarter of the base limit; an unlisted kind the whole.
+    const guests = await expectSameSequence(
+      [guest('guest'), guest('guest')],
+      LIST(),
+      limits(4),
+    );
+    expect(guests.map((a) => a.status)).toEqual([200, 429]);
+    const others = await expectSameSequence(
+      [guest('agent'), guest('agent')],
+      LIST(),
+      limits(4),
+    );
+    expect(others.map((a) => a.status)).toEqual([200, 200]);
+  });
+
+  it('buckets a resolveTenant host by its tenant, as the generated routes do', async () => {
+    const writer = principals().writer;
+    const config = limits(5, 1);
+    const kit = await drive('kit', [writer, writer], LIST(), config);
+    configureRouteLimits(config);
+    const restAnswers: Outcome[] = [];
+    for (let i = 0; i < 2; i++) {
+      restAnswers.push(
+        await fx.run('rest', writer, LIST(), {
+          restConfig: {
+            resolvePrincipal: undefined,
+            resolveTenant: () => ({
+              tenantId: TENANT_A,
+              authenticated: true,
+            }),
+          },
+        }),
+      );
+    }
+    // The tenant limit of 1 bites on the second request on both paths.
+    expect(kit.map((a) => a.status)).toEqual([200, 429]);
+    // REST serves this host unauthenticated (no principal), so only the
+    // limiter's answer is compared.
+    expect(restAnswers[0].status).not.toBe(429);
+    expect(restAnswers[1].status).toBe(429);
+    expect(restAnswers[1].code).toBe(kit[1].code);
+  });
+
+  it('limits the feed routes too', async () => {
+    const anonymous = principals().anonymous;
+    for (const path of ['_changes', '_events']) {
+      const answers = await expectSameSequence(
+        [anonymous, anonymous],
+        { method: 'GET', path },
+        limits(1),
+      );
+      expect(answers.map((a) => a.status)).toEqual([401, 429]);
+    }
   });
 });
 

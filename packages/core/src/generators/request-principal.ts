@@ -21,7 +21,6 @@
  * and none of these rules apply; `authMiddleware` decides alone.
  */
 
-import { GUEST_CALLER_KIND } from '../guest-request';
 import { resolveOperationPermissionAlias } from '../operation-permission.js';
 import { resolvePermissionCollection } from '../permission-collection.js';
 import { readonlySetOf } from '../readonly-collections';
@@ -274,22 +273,6 @@ export function normalizeRequestPrincipal(value: unknown): RequestPrincipal {
     readOwn(value, 'superAdminBypass'),
   );
   const permissions = permissionsField(readOwn(value, 'permissions'));
-  // A guest (#5196) is an unauthenticated caller of one tenant with no user:
-  // an inconsistent one (a user, a sign-in, a grant, a bypass, no tenant) is
-  // a host defect, never silently narrowed.
-  if (rawKind === GUEST_CALLER_KIND) {
-    if (
-      userId !== null ||
-      authenticated ||
-      allowCrossTenant ||
-      superAdminBypass ||
-      tenantId === null
-    ) {
-      throw new TypeError(
-        'a guest principal has a tenant and no user, sign-in, grant or bypass',
-      );
-    }
-  }
   return snapshotOf({
     tenantId,
     userId,

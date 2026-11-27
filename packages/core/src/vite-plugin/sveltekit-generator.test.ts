@@ -1980,7 +1980,7 @@ describe('SvelteKit Route Generator', () => {
       const content = reviewProfileRoute?.[1] as string;
 
       expect(content).toContain(
-        'export const GET: RequestHandler = async ({ locals, params, request }) => {',
+        'export const GET: RequestHandler = async ({ locals, getClientAddress, params, request }) => {',
       );
       // Fail-closed auth guard (#1540): reads do not require auth as a mutation.
       expect(content).toMatch(/requireRouteAccess\(locals, "\w+", false\);/);
@@ -2404,7 +2404,7 @@ describe('SvelteKit Route Generator', () => {
         'Invitation',
       );
       expect(content).toContain(
-        'export const POST: RequestHandler = async ({ locals, params, request }) => {',
+        'export const POST: RequestHandler = async ({ locals, getClientAddress, params, request }) => {',
       );
       // Fail-closed auth guard (#1540): POST is a mutating verb.
       expect(content).toMatch(

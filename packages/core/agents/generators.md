@@ -344,6 +344,30 @@ before any of it is applied (`auth_required` for a 401, the retryable
 `rate_limited` for a 429, else `forbidden`),
 and the batch goes on. A throw is a 500 (a sync item: `write_failed`).
 
+**Route limits** (`generators/route-limits.ts`, #5198). `APIConfig.routeLimits`
+(or the process-wide `configureRouteLimits()`, which the generated routes read)
+turns on a 429 with `Retry-After` and `code: 'too_many_requests'` for a caller
+over its limit. It runs before `onRequest`, authorization and any database
+access, in REST's `handleResolvedRequest` and as the first line of every
+generated handler (`routeRateLimit`, `_changes`, `_events`, `sync/apply`
+included): one `enforceRouteLimits()` answers both. A request is counted in a
+bounded sliding window (`BoundedSlidingWindowRateLimiter`) per
+`(tenant, callerKind, client)` against `client`, and per tenant against the
+optional `tenant`; a refused request is not counted. Tenant, user and
+`callerKind` are the decided principal's (`resolvePrincipal`, or `locals` via
+`apiPrincipalFromLocals`, which now carries a string `locals.callerKind`);
+the client is the user id, else the IP (`extractClientIp`, `X-Forwarded-For`
+trusted only to `trustProxyHops`). `callerKind` is an opaque string:
+`callerKindScale` multiplies `client.maxEvents` per kind (`guest` defaults to
+0.25, any other kind is a table entry, never a branch). A limiter defect admits
+the request. The REST tenant is the one the request is served in
+(`resolvePrincipal`, else `resolveTenant`, else the fixed context), resolved
+before the limiter runs; a `tenant` limit with none of them is refused at
+construction. A tenant-wide bucket can be drained by anonymous traffic
+addressed to that tenant, so the per-client limits are the primary defence.
+Unconfigured, nothing is limited. Parity is covered in
+`route-parity.test.ts`.
+
 Without `resolvePrincipal`, the tenant is `resolveTenant`'s answer or the
 fixed `APIContext` one, and the fixed principal applies to every request
 (`tenantId`, `allowCrossTenant`, `permissions`;

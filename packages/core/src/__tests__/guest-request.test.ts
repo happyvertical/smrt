@@ -1,5 +1,4 @@
 import { describe, expect, it } from 'vitest';
-import { normalizeRequestPrincipal } from '../generators/request-principal';
 import {
   createGuestRequestPrincipal,
   GUEST_MAX_LIST_LIMIT,
@@ -161,39 +160,5 @@ describe('guestPrincipalOf (#5196)', () => {
     expect(() =>
       createGuestRequestPrincipal({ tenantId: '', permissions: [] }),
     ).toThrow();
-  });
-});
-
-describe('normalizeRequestPrincipal with callerKind guest (#5196)', () => {
-  const guest = {
-    tenantId: 'tenant-a',
-    userId: null,
-    authenticated: false,
-    callerKind: 'guest',
-    permissions: ['gr5196_items.read'],
-  };
-
-  it('accepts a consistent guest: a tenant, no user, no sign-in', () => {
-    const principal = normalizeRequestPrincipal(guest);
-    expect(principal).toMatchObject({
-      callerKind: 'guest',
-      userId: null,
-      authenticated: false,
-      tenantId: 'tenant-a',
-      allowCrossTenant: false,
-      superAdminBypass: false,
-    });
-  });
-
-  it.each([
-    ['a user', { userId: 'u1' }],
-    ['a sign-in', { authenticated: true }],
-    ['a cross-tenant grant', { allowCrossTenant: true }],
-    ['a super-admin bypass', { superAdminBypass: true }],
-    ['no tenant', { tenantId: null }],
-  ])('rejects a guest that carries %s', (_name, override) => {
-    expect(() => normalizeRequestPrincipal({ ...guest, ...override })).toThrow(
-      TypeError,
-    );
   });
 });

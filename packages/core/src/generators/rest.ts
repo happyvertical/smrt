@@ -145,6 +145,13 @@ import {
   stripTenantFilters,
 } from './route-authz';
 import { reportUnexpectedHttpError } from './route-error';
+import {
+  createRouteLimiter,
+  enforceRouteLimits,
+  getRouteLimiter,
+  type RouteLimiter,
+  type RouteLimitsConfig,
+} from './route-limits';
 import { normalizeTypedHttpError } from './typed-http-error';
 
 export interface APIConfig {
@@ -336,6 +343,23 @@ export interface APIConfig {
     principal: RequestPrincipal,
     info: APIRequestInfo,
   ) => undefined | Response | Promise<undefined | Response>;
+  /**
+   * Route-level rate limits (#5198): a caller over its limit gets a 429 with
+   * `Retry-After` before `onRequest`, authorization or any database access.
+   * Counted per tenant and caller, and per tenant when `tenant` is set; the
+   * tenant, user and `callerKind` are the resolved principal's, the client
+   * IP only stands in for a caller with no user id. Without it the
+   * process-wide limits (`configureRouteLimits`) apply, the ones the
+   * generated SvelteKit routes read; with neither nothing is limited.
+   * The tenant is the one the request is served in (`resolvePrincipal`, else
+   * `resolveTenant`, else the fixed context); `tenant` limits need one of
+   * them and are refused at construction without. `resolveTenant` is host code
+   * and runs once more for the limiter, before `authMiddleware`; prefer
+   * `resolvePrincipal`. A tenant-wide bucket can be
+   * drained by anonymous traffic addressed to that tenant, so the per-client
+   * limits are the primary defence and `tenant` a backstop.
+   */
+  routeLimits?: RouteLimitsConfig;
 }
 
 export type {
@@ -607,6 +631,8 @@ export class APIGenerator {
   private manifestGeneration = -1;
   /** Models auto-discovery may serve; every registered model when unset. */
   private readonly modelScope: ReadonlySet<string> | undefined;
+  /** The limiter of `routeLimits` (#5198); the process-wide one stands in without it. */
+  private readonly routeLimiter: RouteLimiter | undefined;
   /** Per-request tenant answers; see `requestTenant()`. */
   private readonly requestTenants = new WeakMap<
     Request,
@@ -647,6 +673,21 @@ export class APIGenerator {
       ...config,
     };
     this.context = context;
+    // A tenant-wide limit needs a tenant to bucket by; refuse the
+    // configuration rather than silently skip the limit (#5198).
+    if (
+      this.config.routeLimits?.tenant &&
+      !this.config.resolvePrincipal &&
+      !this.config.resolveTenant &&
+      !this.context.tenantId
+    ) {
+      throw new Error(
+        'routeLimits.tenant needs a tenant to bucket by: configure resolvePrincipal, resolveTenant or a fixed context tenantId',
+      );
+    }
+    this.routeLimiter = this.config.routeLimits
+      ? createRouteLimiter(this.config.routeLimits)
+      : undefined;
     // A server that resolves principals needs a usable principal scope.
     if (this.config.resolvePrincipal) assertPrincipalScopeUsable();
     this.modelScope = (config as ScopedAPIConfig)[MODEL_SCOPE];
@@ -885,6 +926,8 @@ export class APIGenerator {
         req,
         url,
         principalFromSnapshot(outer.record.snapshot),
+        // The outer request was counted; a nested dispatch is not a second one.
+        true,
       );
     }
 
@@ -914,14 +957,60 @@ export class APIGenerator {
     }
   }
 
+  /**
+   * The tenant a request's limits are bucketed by (#5198): the principal's, or
+   * for a host with `resolveTenant` and no `resolvePrincipal`, its answer for
+   * this request (host code, called before `authMiddleware` and called again
+   * later for the admitted request), else the fixed or ambient tenant. A
+   * resolver that throws buckets by what the principal alone says: the typed
+   * error is still answered by the route.
+   */
+  private async limiterTenantOf(
+    req: Request,
+    principal: ResolvedRequestPrincipal,
+  ): Promise<string | null> {
+    if (principal.enforced || !this.config.resolveTenant) {
+      return principal.effectiveTenantId;
+    }
+    try {
+      const resolved = await this.config.resolveTenant(req);
+      return typeof resolved?.tenantId === 'string' && resolved.tenantId
+        ? resolved.tenantId
+        : principal.effectiveTenantId;
+    } catch {
+      return principal.effectiveTenantId;
+    }
+  }
+
   /** The rest of `handleRequest`, once the principal is resolved. */
   private async handleResolvedRequest(
     req: Request,
     url: URL,
     principal: ResolvedRequestPrincipal,
+    nested = false,
   ): Promise<Response> {
     try {
       this.requestPrincipals.set(req, principal);
+      // The route limits come first: a caller over its limit is refused before
+      // `onRequest`, authorization or the database see the request (#5198).
+      // Bucketed by the tenant the request is served in (the principal's,
+      // else `resolveTenant`'s, else the fixed context), looked up only when a
+      // limiter exists and never cached, so the host's own resolution later
+      // still sees the admitted request.
+      const limiter = this.routeLimiter ?? getRouteLimiter();
+      const limited =
+        nested || !limiter
+          ? undefined
+          : enforceRouteLimits(
+              {
+                request: req,
+                tenantId: await this.limiterTenantOf(req, principal),
+                userId: principal.userId,
+                callerKind: principal.principal.callerKind,
+              },
+              limiter,
+            );
+      if (limited) return this.addCorsHeaders(limited, req);
       const hooked = this.config.onRequest
         ? await this.config.onRequest(
             principal.principal,
