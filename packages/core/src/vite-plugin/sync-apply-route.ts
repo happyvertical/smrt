@@ -290,7 +290,7 @@ import {
   SyncApplyRejection,
   type SyncApplyTarget,
 } from '@happyvertical/smrt-core';
-import { apiPrincipalFromLocals, authorize, applyUpdateInput, assertCreateInput, assertUpdateInput, getRequestTenantContext as getCurrentTenant, isRuntimeModelEnabled, ObjectRegistry, runInRequestTenancy } from '@happyvertical/smrt-core';
+import { apiPrincipalFromLocals, authorize, enforceRouteLimits, applyUpdateInput, assertCreateInput, assertUpdateInput, getRequestTenantContext as getCurrentTenant, isRuntimeModelEnabled, ObjectRegistry, runInRequestTenancy } from '@happyvertical/smrt-core';
 import { error, json } from '@sveltejs/kit';
 import type { RequestHandler } from './$types';
 ${collectionAccessImports}
@@ -330,7 +330,23 @@ function decideItem(locals: unknown, target: SyncTargetConfig, op: SyncApplyOp, 
   });
 }
 
-export const POST: RequestHandler = async ({ locals, request }) => {
+// Route limits (#5198), as REST applies them before \`onRequest\`.
+function routeRateLimit(locals: unknown, request: Request, clientAddress: () => string): Response | undefined {
+  const principal = routePrincipal(locals);
+  let address: string | null = null;
+  try { address = clientAddress(); } catch { /* no peer address: the limiter falls back */ }
+  return enforceRouteLimits({
+    request,
+    clientAddress: address,
+    tenantId: principal.tenantId,
+    userId: principal.userId ?? null,
+    callerKind: principal.callerKind ?? null,
+  });
+}
+
+export const POST: RequestHandler = async ({ locals, request, getClientAddress }) => {
+  const limited = routeRateLimit(locals, request, getClientAddress);
+  if (limited) return limited;
 
   let body: unknown;
   try {

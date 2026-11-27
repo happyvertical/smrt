@@ -156,6 +156,20 @@ export {
   stripTenantFilters,
 } from './route-authz';
 export { reportUnexpectedHttpError } from './route-error';
+// Route-level 429 limits shared by REST and generated SvelteKit routes (#5198)
+export {
+  configureRouteLimits,
+  createRouteLimiter,
+  DEFAULT_CALLER_KIND_SCALE,
+  enforceRouteLimits,
+  getRouteLimiter,
+  type RouteLimit,
+  type RouteLimitDecision,
+  type RouteLimiter,
+  type RouteLimitSubject,
+  type RouteLimitsConfig,
+  rateLimitedResponse,
+} from './route-limits';
 export type { OpenAPIConfig } from './swagger';
 // Swagger/OpenAPI documentation utilities
 export {

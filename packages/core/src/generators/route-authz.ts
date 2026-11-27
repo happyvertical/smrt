@@ -248,5 +248,12 @@ export function apiPrincipalFromLocals(
     ...(fromLocals.userId ? { userId: fromLocals.userId } : {}),
     permissions,
     superAdminBypass: fromLocals.bypass,
+    // The host's own marker, as REST's `callerKind` from `resolvePrincipal`:
+    // an opaque string (a guest, an agent, a service), never client input.
+    ...(typeof l.callerKind === 'string' &&
+    l.callerKind.length > 0 &&
+    l.callerKind.length <= 64
+      ? { callerKind: l.callerKind }
+      : {}),
   };
 }

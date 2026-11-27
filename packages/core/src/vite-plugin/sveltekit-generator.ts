@@ -616,7 +616,7 @@ function generateAuthGuardHelper(
   return `
 // Fail-closed authorization (#1540): generated routes require an authenticated
 // principal on \`locals\` unless explicitly marked \`@smrt({ api: { public } })\`.
-import { apiPrincipalFromLocals, authorize, isRuntimeModelEnabled, stripTenantFilters, publicSerializerOf, toPublicJSONValue } from '@happyvertical/smrt-core';
+import { apiPrincipalFromLocals, authorize, enforceRouteLimits, isRuntimeModelEnabled, stripTenantFilters, publicSerializerOf, toPublicJSONValue } from '@happyvertical/smrt-core';
 const RUNTIME_MODEL = ${JSON.stringify({
     qualifiedName:
       permissionObjectDef.qualifiedName ??
@@ -662,6 +662,23 @@ function routeDecision(locals: unknown, op: string, mutating: boolean, permissio
     allowSuperAdminBypass: ALLOW_SUPER_ADMIN_BYPASS,
     tenantColumns: TENANT_COLUMNS,
     ...(body === undefined ? {} : { body }),
+  });
+}
+
+// Route limits (#5198), the ones REST applies before \`onRequest\`: a caller over
+// its limit is answered with the 429 and \`Retry-After\` before authorization
+// or a database read. Tenant, user and caller kind are the decided
+// principal's; nothing the client sent chooses them.
+function routeRateLimit(locals: unknown, request: Request, clientAddress: () => string): Response | undefined {
+  const principal = routePrincipal(locals);
+  let address: string | null = null;
+  try { address = clientAddress(); } catch { /* no peer address: the limiter falls back */ }
+  return enforceRouteLimits({
+    request,
+    clientAddress: address,
+    tenantId: principal.tenantId,
+    userId: principal.userId ?? null,
+    callerKind: principal.callerKind ?? null,
   });
 }
 
@@ -898,7 +915,11 @@ function routeGuardPreamble(
   permissionAction?: 'create' | 'update' | 'delete',
   readOperation: 'list' | 'get' = 'list',
 ): string {
-  const lines: string[] = [];
+  const lines: string[] = [
+    // Before any decision, as REST's \`onRequest\` position (#5198).
+    '  const limited = routeRateLimit(locals, request, getClientAddress);',
+    '  if (limited) return limited;',
+  ];
   if (mutating) {
     if (!permissionAction) {
       throw new Error('Mutating generated routes require a permission action');
@@ -925,7 +946,7 @@ function buildRouteHandlerArgs(
 ): string {
   // `locals` is always destructured so the fail-closed auth guard (#1540) can
   // inspect the authenticated principal.
-  const args: string[] = ['locals'];
+  const args: string[] = ['locals', 'getClientAddress'];
 
   if (includeParams) {
     args.push('params');
@@ -3471,7 +3492,7 @@ ${generateAuthGuardHelper(objectDef, semanticManifest)}${generateTenantContextHe
   const getHandler = hasGet
     ? `
 // List all ${className.toLowerCase()}s
-export const GET: RequestHandler = async ({ locals, url, request }) => {
+export const GET: RequestHandler = async ({ locals, url, request, getClientAddress }) => {
 ${routeGuardPreamble(objectDef, false, undefined, 'list')}
   const publicJsonOptions = getPublicJsonOptions(locals);
   const { limit, offset } = listBounds(url);
@@ -3511,7 +3532,7 @@ ${listAndCount}
   const postHandler = hasPost
     ? `
 // Create new ${className.toLowerCase()}
-export const POST: RequestHandler = async ({ locals, request }) => {
+export const POST: RequestHandler = async ({ locals, request, getClientAddress }) => {
 ${routeGuardPreamble(objectDef, true, 'create')}
   const publicJsonOptions = getPublicJsonOptions(locals);
   const body: unknown = await request.json();
@@ -3674,7 +3695,7 @@ ${generateAuthGuardHelper(objectDef, semanticManifest)}${generateTenantContextHe
   const getHandler = hasGet
     ? `
 // Get single ${simpleClassName.toLowerCase()}
-export const GET: RequestHandler = async ({ locals, params, request }) => {
+export const GET: RequestHandler = async ({ locals, params, request, getClientAddress }) => {
 ${routeGuardPreamble(objectDef, false, undefined, 'get')}
   const publicJsonOptions = getPublicJsonOptions(locals);
 ${generateCollectionLoad(className, { typeName: modelType.typeName })}
@@ -3709,7 +3730,7 @@ ${generateNotFoundError(className)}
   const putHandler = hasPut
     ? `
 // Update ${simpleClassName.toLowerCase()}
-export const PUT: RequestHandler = async ({ locals, params, request }) => {
+export const PUT: RequestHandler = async ({ locals, params, request, getClientAddress }) => {
 ${routeGuardPreamble(objectDef, true, 'update')}
   const publicJsonOptions = getPublicJsonOptions(locals);
 ${generateCollectionLoad(className, { typeName: modelType.typeName })}
@@ -3747,7 +3768,7 @@ ${
   const deleteHandler = hasDelete
     ? `
 // Delete ${simpleClassName.toLowerCase()}
-export const DELETE: RequestHandler = async ({ request, locals, params }) => {
+export const DELETE: RequestHandler = async ({ request, locals, params, getClientAddress }) => {
 ${routeGuardPreamble(objectDef, true, 'delete')}
 ${generateCollectionLoad(className, { typeName: modelType.typeName })}
   const item = await collection.get(params.id).catch(rejectRouteRead);
@@ -3942,6 +3963,8 @@ function generateActionRouteHandler(
   // Sign-in and, on a mutating action, `<collection>.<method>` (#2977) are one
   // shared decision (#5195).
   const guardLines = [
+    '  const limited = routeRateLimit(locals, request, getClientAddress);',
+    '  if (limited) return limited;',
     `  requireRouteAccess(locals, ${JSON.stringify(actionName)}, ${mutating}${mutating ? `, ${JSON.stringify(permissionAction ?? actionName)}` : ''});`,
   ];
   // The request's tenancy (#5375), decided for this action at request time:
