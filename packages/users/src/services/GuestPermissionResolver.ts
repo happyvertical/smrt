@@ -296,6 +296,9 @@ export class GuestPermissionResolver {
       granted = await this.grants.getGrantedSlugs(tenantId);
     } catch (error) {
       if (isMissingTable(error)) return empty;
+      // A tenant id that is not a valid uuid (PostgreSQL 22P02) names no
+      // tenant: no guests, not an error.
+      if (classifyDatabaseError(error).kind === 'invalid_input') return empty;
       throw error;
     }
     if (granted.length === 0) return empty;
