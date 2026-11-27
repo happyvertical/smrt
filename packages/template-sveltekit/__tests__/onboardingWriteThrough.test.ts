@@ -254,7 +254,7 @@ import {${name} as Base} from '@happyvertical/smrt-${pkg}';
     workflowBudget: { steps: 3 },
     app: {
       cookbook: {
-        $schema: 'https://s-m-r-t.dev/schemas/cookbook/v1.json',
+        $schema: 'https://smrt.happyvertical.com/schemas/cookbook/v1.json',
         version: 1,
         recipes: [],
         features: [],

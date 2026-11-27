@@ -25,7 +25,7 @@
         "taxRate": 0
       },
       "document": {
-        "$schema": "https://s-m-r-t.dev/schemas/cookbook/v1.json",
+        "$schema": "https://smrt.happyvertical.com/schemas/cookbook/v1.json",
         "version": 1,
         "theme": {
           "custom": {
@@ -240,7 +240,7 @@
         "taxRounding": "document"
       },
       "document": {
-        "$schema": "https://s-m-r-t.dev/schemas/cookbook/v1.json",
+        "$schema": "https://smrt.happyvertical.com/schemas/cookbook/v1.json",
         "version": 1,
         "theme": {
           "preset": "smrt"
@@ -473,7 +473,7 @@
         "paymentTerms": "50% deposit, balance on completion"
       },
       "document": {
-        "$schema": "https://s-m-r-t.dev/schemas/cookbook/v1.json",
+        "$schema": "https://smrt.happyvertical.com/schemas/cookbook/v1.json",
         "version": 1,
         "theme": {
           "preset": "studio"
@@ -679,7 +679,7 @@
         "paymentTerms": "Due on receipt"
       },
       "document": {
-        "$schema": "https://s-m-r-t.dev/schemas/cookbook/v1.json",
+        "$schema": "https://smrt.happyvertical.com/schemas/cookbook/v1.json",
         "version": 1,
         "theme": {
           "custom": {
@@ -891,7 +891,7 @@
         "custom:billing": "Invoices and the payments against them."
       },
       "document": {
-        "$schema": "https://s-m-r-t.dev/schemas/cookbook/v1.json",
+        "$schema": "https://smrt.happyvertical.com/schemas/cookbook/v1.json",
         "version": 1,
         "theme": {
           "custom": {
@@ -1138,7 +1138,7 @@
         "custom:shelf": "Retail, backbar stock and who you buy from."
       },
       "document": {
-        "$schema": "https://s-m-r-t.dev/schemas/cookbook/v1.json",
+        "$schema": "https://smrt.happyvertical.com/schemas/cookbook/v1.json",
         "version": 1,
         "theme": {
           "custom": {
@@ -1416,7 +1416,7 @@
         "custom:buying": "Suppliers and what you order from them."
       },
       "document": {
-        "$schema": "https://s-m-r-t.dev/schemas/cookbook/v1.json",
+        "$schema": "https://smrt.happyvertical.com/schemas/cookbook/v1.json",
         "version": 1,
         "theme": {
           "custom": {
@@ -1669,7 +1669,7 @@
         "custom:billing": "Invoices and the payments against them."
       },
       "document": {
-        "$schema": "https://s-m-r-t.dev/schemas/cookbook/v1.json",
+        "$schema": "https://smrt.happyvertical.com/schemas/cookbook/v1.json",
         "version": 1,
         "theme": {
           "custom": {
@@ -1912,7 +1912,7 @@
         "custom:giving": "Dues, pledges and the money that comes in."
       },
       "document": {
-        "$schema": "https://s-m-r-t.dev/schemas/cookbook/v1.json",
+        "$schema": "https://smrt.happyvertical.com/schemas/cookbook/v1.json",
         "version": 1,
         "theme": {
           "custom": {
@@ -2127,7 +2127,7 @@
         "custom:billing": "Invoices and the payments against them."
       },
       "document": {
-        "$schema": "https://s-m-r-t.dev/schemas/cookbook/v1.json",
+        "$schema": "https://smrt.happyvertical.com/schemas/cookbook/v1.json",
         "version": 1,
         "theme": {
           "custom": {
@@ -2370,7 +2370,7 @@
         "custom:billing": "Invoices and the payments against them."
       },
       "document": {
-        "$schema": "https://s-m-r-t.dev/schemas/cookbook/v1.json",
+        "$schema": "https://smrt.happyvertical.com/schemas/cookbook/v1.json",
         "version": 1,
         "theme": {
           "custom": {
@@ -2598,7 +2598,7 @@
         "custom:billing": "Invoices and the payments against them."
       },
       "document": {
-        "$schema": "https://s-m-r-t.dev/schemas/cookbook/v1.json",
+        "$schema": "https://smrt.happyvertical.com/schemas/cookbook/v1.json",
         "version": 1,
         "theme": {
           "custom": {
@@ -2825,7 +2825,7 @@
         "custom:billing": "Invoices and the payments against them."
       },
       "document": {
-        "$schema": "https://s-m-r-t.dev/schemas/cookbook/v1.json",
+        "$schema": "https://smrt.happyvertical.com/schemas/cookbook/v1.json",
         "version": 1,
         "theme": {
           "custom": {
@@ -3038,7 +3038,7 @@
         "custom:billing": "Invoices and the payments against them."
       },
       "document": {
-        "$schema": "https://s-m-r-t.dev/schemas/cookbook/v1.json",
+        "$schema": "https://smrt.happyvertical.com/schemas/cookbook/v1.json",
         "version": 1,
         "theme": {
           "custom": {
@@ -3261,7 +3261,7 @@
         "taxRate": 0
       },
       "document": {
-        "$schema": "https://s-m-r-t.dev/schemas/cookbook/v1.json",
+        "$schema": "https://smrt.happyvertical.com/schemas/cookbook/v1.json",
         "version": 1,
         "theme": {
           "custom": {
@@ -3504,7 +3504,7 @@
         "taxRate": 0
       },
       "document": {
-        "$schema": "https://s-m-r-t.dev/schemas/cookbook/v1.json",
+        "$schema": "https://smrt.happyvertical.com/schemas/cookbook/v1.json",
         "version": 1,
         "theme": {
           "custom": {

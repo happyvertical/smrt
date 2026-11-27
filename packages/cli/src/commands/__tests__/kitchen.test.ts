@@ -98,7 +98,7 @@ const stubAI = (
 };
 
 const COOKBOOK = {
-  $schema: 'https://s-m-r-t.dev/schemas/cookbook/v1.json',
+  $schema: 'https://smrt.happyvertical.com/schemas/cookbook/v1.json',
   version: 1,
   name: 'Corner Bakery',
   recipes: ['commerce.sales'],
