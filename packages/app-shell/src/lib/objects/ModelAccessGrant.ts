@@ -37,15 +37,15 @@ import { assertOwner } from '../server/owner.ts';
 })
 export class ModelAccessGrant extends SmrtObject {
   /** The model's name in the user app definition. */
-  @field({ type: 'text', required: true })
+  @field({ type: 'text', required: true, requiredFor: 'identity' })
   modelName: string = '';
 
   /** `modelStamp(def, modelName)` when granted; a grant whose stamp differs is ignored. */
-  @field({ type: 'text', required: true })
+  @field({ type: 'text', required: true, requiredFor: 'identity' })
   modelStamp: string = '';
 
   /** `read`, `create` or `update` (no CHECK: the code is the rule). */
-  @field({ type: 'text', required: true })
+  @field({ type: 'text', required: true, requiredFor: 'identity' })
   action: string = '';
 
   /** The owner who granted it. */
