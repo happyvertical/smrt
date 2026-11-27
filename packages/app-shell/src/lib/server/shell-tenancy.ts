@@ -45,6 +45,7 @@ export const SHELL_TENANT_MODELS = [
   'ChangeBatch',
   'ChangeCard',
   'ReceiveLink',
+  'ModelAccessGrant',
 ] as const;
 
 /** Qualified-name prefix of the shell's own classes (a same-named class elsewhere is not ours). */
@@ -390,7 +391,7 @@ const STAMP_PREFIX = 'smrt-app-shell:rls:';
  * expected policy digest to this number, so changing the text without bumping
  * it fails.
  */
-export const SHELL_RLS_POLICY_VERSION = 2;
+export const SHELL_RLS_POLICY_VERSION = 3;
 
 const STAMP_PATTERN =
   /^smrt-app-shell:rls:(?:v(\d+):)?([0-9a-f]{64}):([0-9a-f]{64})$/;

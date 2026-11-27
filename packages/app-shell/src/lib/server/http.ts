@@ -2,10 +2,12 @@
 // same-origin for writes, bounded JSON bodies, errors without internals.
 import { EngineError, METHOD_CODE_DENIED } from '../../engine/index.ts';
 import {
+  isOwner,
   PolicyError,
   type Principal,
   principalFromLocals,
   requireOwner,
+  staffRoleOf,
 } from './owner.ts';
 
 export const MAX_BODY_BYTES = 1_000_000;
@@ -54,6 +56,27 @@ export function assertSameOrigin(event: EventLike): void {
 export async function ownerOf(event: EventLike): Promise<Principal> {
   assertSameOrigin(event);
   return requireOwner(principalFromLocals(event.locals));
+}
+
+/** The verified caller of a record route (#5197): the owner, or a staff member. */
+export type Caller =
+  | { kind: 'owner'; principal: Principal }
+  | { kind: 'staff'; principal: Principal };
+
+/**
+ * The verified owner or staff member of the request, or a 401 (nobody) / 403
+ * (not the owner and not an ACTIVE member). Same-origin for writes, like
+ * `ownerOf`. Fails closed. Staff get an engine principal from
+ * `staffPrincipalFor`; this only says who they are.
+ */
+export async function callerOf(event: EventLike): Promise<Caller> {
+  assertSameOrigin(event);
+  const principal = principalFromLocals(event.locals);
+  if (!principal) throw new PolicyError(401, 'sign in first');
+  if (await isOwner(principal)) return { kind: 'owner', principal };
+  if ((await staffRoleOf(principal)) !== null)
+    return { kind: 'staff', principal };
+  throw new PolicyError(403, 'you are not a member of this app');
 }
 
 export async function readJson(

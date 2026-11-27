@@ -32,6 +32,7 @@ import {
   type AppVersion,
   AppVersionCollection,
 } from '../objects/AppVersion.ts';
+import { clearGrants } from './model-access.ts';
 import { bindAmbientShellScope, isPostgresHandle } from './shell-tenancy.ts';
 
 export const APP_SLUG = 'app';
@@ -193,6 +194,8 @@ export class ShellVersionStore implements VersionStore {
     const rec = await this.row(version, db);
     if (!rec) throw new Error(`version ${version} is not stored`);
     const app = await this.appRow(db);
+    // Staff grants of a model that leaves the definition go with it (#5197).
+    await clearGrants(db, this.tenantId, app.definition, rec.definition);
     app.currentVersion = version;
     app.definition = rec.definition;
     try {
@@ -299,6 +302,7 @@ export class ShellVersionStore implements VersionStore {
       } catch {
         /* keep the name */
       }
+      await clearGrants(txDb, this.tenantId, app.definition, rec.definition);
       const hit = await txDb.query(
         `UPDATE apps SET current_version = ?, definition = ?, name = ? WHERE id = ? AND current_version = ?${this.tenantClause} RETURNING id`,
         [
