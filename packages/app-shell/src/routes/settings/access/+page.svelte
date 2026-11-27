@@ -25,7 +25,17 @@ async function put(model: string, action: Action, allowed: boolean) {
   rows = body.models;
 }
 
-async function toggle(model: string, action: Action, allowed: boolean) {
+async function reload() {
+  const response = await fetch('/api/shell/access');
+  if (response.ok) rows = (await response.json()).models;
+}
+
+async function toggle(
+  box: HTMLInputElement,
+  model: string,
+  action: Action,
+  allowed: boolean,
+) {
   busy = true;
   message = '';
   try {
@@ -37,6 +47,9 @@ async function toggle(model: string, action: Action, allowed: boolean) {
     message = 'Saved.';
   } catch (e) {
     message = e instanceof Error ? e.message : 'The change was not saved.';
+    // The box must show what the server holds, not what was clicked.
+    box.checked = !allowed;
+    await reload().catch(() => {});
   } finally {
     busy = false;
   }
@@ -73,7 +86,7 @@ async function toggle(model: string, action: Action, allowed: boolean) {
                       aria-label="{col.label} {row.label.toLowerCase()}"
                       checked={row[col.action]}
                       disabled={busy}
-                      onchange={(e) => toggle(row.model, col.action, e.currentTarget.checked)}
+                      onchange={(e) => toggle(e.currentTarget, row.model, col.action, e.currentTarget.checked)}
                     />
                   </td>
                 {/each}

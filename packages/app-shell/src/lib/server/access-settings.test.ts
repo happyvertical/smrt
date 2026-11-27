@@ -181,6 +181,33 @@ describe('owner control of staff access', () => {
     expect(await row('Secret')).toMatchObject({ read: false });
   });
 
+  it('a write from a foreign origin is refused and changes nothing', async () => {
+    const url = new URL('http://localhost/api/shell/access');
+    const foreign = {
+      url,
+      params: {},
+      request: new Request(url, {
+        method: 'PUT',
+        headers: {
+          origin: 'http://evil.example',
+          'content-type': 'application/json',
+        },
+        body: JSON.stringify({
+          model: 'Secret',
+          action: 'read',
+          allowed: true,
+        }),
+      }),
+      locals: {
+        user: { id: h.owner.id },
+        tenantId: h.owner.tenantId,
+        permissions: [],
+      },
+    } as never;
+    expect((await accessPUT(foreign)).status).toBe(403);
+    expect(await row('Secret')).toMatchObject({ read: false });
+  });
+
   it('staff see only their own allowed actions, and the UI helper follows them', async () => {
     await put(h.owner, { model: 'Chore', action: 'read', allowed: true });
     await put(h.owner, { model: 'Chore', action: 'create', allowed: true });
