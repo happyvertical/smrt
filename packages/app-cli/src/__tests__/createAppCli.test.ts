@@ -65,6 +65,63 @@ afterEach(async () => {
   process.env.APPCLI_CLI_CONFIG = cfgBackup;
 });
 
+describe('schema hint for resource commands without a schema', () => {
+  const discovery = {
+    user: { authenticated: true },
+    warnings: [],
+    resources: [
+      {
+        slug: 'items',
+        apiPath: 'items',
+        commands: [
+          {
+            methodName: 'searchItems',
+            commandName: 'search-items',
+            kind: 'custom',
+            scope: 'collection',
+            httpMethod: 'GET',
+            pathSegments: ['searchItems'],
+          },
+        ],
+      },
+    ],
+  };
+
+  async function runSearch(args: string[]) {
+    const realFetch = global.fetch;
+    global.fetch = vi.fn(async (url: string) => {
+      const body = String(url).includes('/_resources')
+        ? discovery
+        : { ok: true };
+      return new Response(JSON.stringify(body), {
+        status: 200,
+        headers: { 'content-type': 'application/json' },
+      });
+    }) as any;
+    try {
+      const cli = createAppCli({
+        name: 'appcli',
+        defaultServerUrl: 'https://srv.example',
+      });
+      await cli.run(['items', 'search-items', ...args]);
+    } finally {
+      global.fetch = realFetch;
+    }
+  }
+
+  it('hints at a JSON payload when none was given', async () => {
+    await runSearch([]);
+    expect(stderr.contents()).toMatch(
+      /schema unavailable for `items search-items`/,
+    );
+  });
+
+  it('stays quiet when the caller already passed a JSON payload', async () => {
+    await runSearch(['{"limit":3}']);
+    expect(stderr.contents()).not.toMatch(/schema unavailable/);
+  });
+});
+
 describe('createAppCli', () => {
   it('prints usage on no args / help', async () => {
     const cli = createAppCli({ name: 'appcli' });

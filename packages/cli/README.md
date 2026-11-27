@@ -230,7 +230,7 @@ knowledge index; documentation snapshots use lightweight package discovery.
 | `smrt cookbook validate <file\|url>` | Check a cookbook against cookbook/v1 and the recipe manifests |
 | `smrt cookbook apply <file\|url> [dir]` | Create a project from a cookbook and the smrt-start template, its smrt packages pinned to this CLI's release (`--into`, `--template`, `--dry-run`, `--no-install`) |
 | `smrt kitchen [dir]` | Serve the planner on localhost, chat to a cookbook, **Send to kitchen** applies it into `dir` (`--planner`, `--template`, `--no-open`, `--no-install`) |
-| `smrt kitchen apply <url\|file> [dir]` | `cookbook apply` that also takes a plan URL |
+| `smrt kitchen apply <url\|file> [dir]` | same as `cookbook apply`: takes a cookbook file or cookbook URL |
 | `smrt desktop bundle --out <dir>` | Bundle a built app with its pinned Node sidecar for a desktop target: `--app`, `--target`, `--bridge`, `--features`, `--max-size`, `--measure`, `--offline`, `--json`. Exit codes: 0 ok, 2 usage, 3 invalid input, 4 provenance, 5 verification, 6 size budget, 7 child failed, 8 io. See the `@happyvertical/smrt-desktop` README |
 | `smrt desktop build --bundle <dir> --out <dir>` | Build an UNSIGNED installer from a `smrt desktop bundle` output with the Tauri wrapper shipped in `@happyvertical/smrt-desktop`: `--app`, `--target`, `--smoke`, `--json`. Needs the pinned Tauri CLI and Rust. Exit codes: 0 ok, 2 usage, 3 invalid input, 5 verification, 7 child failed, 8 io. See "Building an installer" in the `@happyvertical/smrt-desktop` README |
 

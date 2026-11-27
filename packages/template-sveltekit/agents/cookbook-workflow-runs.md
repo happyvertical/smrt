@@ -93,7 +93,7 @@ with claim fencing, scripted step): admission before execution, owner
 isolation, three checked steps on the registered prompt with the pinned
 schema, repair, an unready final proposal, cooperative stop and resume, a
 changed live schema, registration after runner start.
-`__tests__/cookbookHost.test.ts` covers the routes: run status by thread,
+`__tests__/cookbookHost.part*.test.ts` covers the routes: run status by thread,
 native approval holds (preview on/off, destructive, denied, several holds of
 one proposal), approval while stopped then Resume, budget stop and resume,
 schema repair without effects, and crash recovery with a second real runner

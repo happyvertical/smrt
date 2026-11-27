@@ -18,8 +18,9 @@ import { TenantScoped, tenantId } from '@happyvertical/smrt-tenancy/decorators';
 import {
   assertHydratedMailAccess,
   assertMailDraftWrite,
+  assertMailScopeOn,
   inMailSystemAccess,
-  isUnsentDraft,
+  isMailWriteGated,
   learnMailAccessOptions,
 } from '../access.js';
 import {
@@ -94,9 +95,11 @@ export class Attachment extends SmrtObject {
   }
 
   /**
-   * An attachment is part of what its message will send, so writing one on an
-   * unsent email draft of an owned account needs the same `draft` scope as
-   * writing the draft (see `Message.save()`), whichever route the write takes.
+   * An attachment is part of what its message will send, so writing one on
+   * a message of an owned account that is not `sent` needs the same `draft`
+   * scope as writing the message (see `Message.save()`), whichever route the
+   * write takes. Deleting one on received mail stays open.
+   *
    * Both the parent it is saved onto and the parent it is stored on count, so
    * an attachment cannot be moved on or off a draft without the scope.
    */
@@ -110,14 +113,14 @@ export class Attachment extends SmrtObject {
         await this.currentAccountId(),
       );
     }
-    await this.assertDraftParentWrite();
+    await this.assertDraftParentWrite('save');
     return super.save(options);
   }
 
   override async delete(
     options: { expectedUpdatedAt?: Date | string } = {},
   ): Promise<void> {
-    await this.assertDraftParentWrite();
+    await this.assertDraftParentWrite('delete');
     return super.delete(options);
   }
 
@@ -148,7 +151,9 @@ export class Attachment extends SmrtObject {
    * inside a transaction those would register the transaction's handle as a
    * policy database.
    */
-  private async assertDraftParentWrite(): Promise<void> {
+  private async assertDraftParentWrite(
+    write: 'save' | 'delete',
+  ): Promise<void> {
     learnMailAccessOptions(this.options);
     if (inMailSystemAccess()) return;
     const parentIds = new Set<string>();
@@ -183,16 +188,21 @@ export class Attachment extends SmrtObject {
     );
     const messages = await MessageCollection.create(this.options as never);
     const accountIds: Array<string | null> = [];
+    // Attachments of sent mail are part of that record: `send` decides.
+    const sentAccountIds: Array<string | null> = [];
     for (const id of parentIds) {
       const parent = (await this.db.get(messages.tableName, { id })) as Record<
         string,
         unknown
       > | null;
-      if (parent && isUnsentDraft(parent.send_status, parent.is_draft)) {
+      if (parent && isMailWriteGated(parent, write)) {
         accountIds.push((parent.account_id as string | null) ?? null);
+      } else if (parent?.send_status === 'sent') {
+        sentAccountIds.push((parent.account_id as string | null) ?? null);
       }
     }
     await assertMailDraftWrite(accountIds, this.options);
+    await assertMailScopeOn(sentAccountIds, 'send', this.options);
   }
 
   /**

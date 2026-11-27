@@ -238,9 +238,15 @@ export class EmailCollection extends MessageCollection {
     const emails = (await this.getUnread()) as Email[];
     const folderEmails = emails.filter((e) => e.folderId === folderId);
 
+    let failure: unknown;
     for (const email of folderEmails) {
-      await email.markRead();
+      try {
+        await email.markRead();
+      } catch (error) {
+        failure ??= error;
+      }
     }
+    if (failure) throw failure;
   }
 
   /**

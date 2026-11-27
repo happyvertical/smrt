@@ -1,8 +1,11 @@
 /**
  * No-generated-field compatibility contract for #4915/#4972.
- * Byte digests and SQLite deployment SQL were captured by executing this test
- * with the production sources of the data-shape release branch (#4920) just
- * before #4972 was merged into it, 0f16192e1b3b5d64b639cce688aaa35075a71464.
+ * Digests of everything but the emitted SvelteKit routes were captured from the
+ * production sources of the data-shape release branch (#4920) just before
+ * #4972 was merged into it (0f16192e1b3b5d64b639cce688aaa35075a71464) and have
+ * not moved. The digests of the emitted routes were re-baselined by hand for
+ * the #5195 route templates against the production sources of
+ * 45e9002f44c2e6207b59e6efd8c9f33310462cc2 (see the fixture notes).
  * No output normalization is applied. Fixture provenance lives beside the JSON.
  */
 import { execFileSync } from 'node:child_process';
@@ -29,7 +32,7 @@ import { snapshotObjectRegistryState } from '../test-utils.js';
 import { getTestDatabase } from '../testing/database.js';
 import { generateSvelteKitRoutes } from '../vite-plugin/sveltekit-generator.js';
 
-const BASELINE = '0f16192e1b3b5d64b639cce688aaa35075a71464';
+const BASELINE = '45e9002f44c2e6207b59e6efd8c9f33310462cc2';
 const fixturePath = join(
   import.meta.dirname,
   'fixtures/generated-fields-origin-main.json',
@@ -42,8 +45,8 @@ interface Fixture {
   sourceRevision: string;
   cases: Record<string, Expectation>;
 }
-function captureRequested(): boolean {
-  if (process.env.SMRT_CAPTURE_ORIGIN_MAIN !== BASELINE) return false;
+function captureRequested(revision: string = BASELINE): boolean {
+  if (process.env.SMRT_CAPTURE_ORIGIN_MAIN !== revision) return false;
   // Check the worktree against the actual source commit, including new/deleted
   // production files. A matching env string alone is never provenance.
   try {
@@ -52,7 +55,7 @@ function captureRequested(): boolean {
       [
         'diff',
         '--quiet',
-        BASELINE,
+        revision,
         '--',
         'packages/core/src',
         ':(exclude)packages/core/src/__tests__/**',
@@ -66,7 +69,7 @@ function captureRequested(): boolean {
     );
   } catch (cause) {
     throw new Error(
-      `Capture requires baseline sources from ${BASELINE}; restore production sources from that commit before recapturing`,
+      `Capture requires baseline sources from ${revision}; restore production sources from that commit before recapturing`,
       { cause },
     );
   }
@@ -90,7 +93,7 @@ async function sources(
   return files;
 }
 
-describe('plain-model byte compatibility with origin/main #4972 round2', () => {
+describe('plain-model byte compatibility with the #4972 baseline, routes re-baselined for #5195', () => {
   let restore: () => void;
   beforeEach(() => {
     restore = snapshotObjectRegistryState();
@@ -99,7 +102,7 @@ describe('plain-model byte compatibility with origin/main #4972 round2', () => {
   afterEach(() => restore());
 
   for (const kind of ['plain', 'sti'] as const) {
-    it(`${kind}: manifest, DDL, migration diff, OpenAPI and generated source match pre-PR bytes`, async () => {
+    it(`${kind}: manifest, DDL, migration diff, OpenAPI and generated source match the baseline bytes`, async () => {
       const updating = captureRequested();
       const entries: SmartObjectDefinition[] = [];
       const pkg = '@test/generated-compat';
@@ -276,17 +279,22 @@ describe('plain-model byte compatibility with origin/main #4972 round2', () => {
 });
 
 describe('compatibility fixture capture provenance #4972 round3', () => {
+  // The #4972 baseline: its production sources are not this tree's, so a
+  // capture naming it is refused. (The current BASELINE is the re-baseline of
+  // the emitted routes for #5195 and equals this tree's production sources.)
+  const OLDER = '0f16192e1b3b5d64b639cce688aaa35075a71464';
+
   it('permits capture only from verified baseline production sources', () => {
     // The explicit capture lane also executes this positive check against the
-    // real baseline tree. Ordinary validation exercises feature-tree refusal.
+    // real baseline tree.
     if (process.env.SMRT_CAPTURE_ORIGIN_MAIN === BASELINE) {
       expect(captureRequested()).toBe(true);
       return;
     }
     const previous = process.env.SMRT_CAPTURE_ORIGIN_MAIN;
-    process.env.SMRT_CAPTURE_ORIGIN_MAIN = BASELINE;
+    process.env.SMRT_CAPTURE_ORIGIN_MAIN = OLDER;
     try {
-      expect(() => captureRequested()).toThrow(/baseline sources/i);
+      expect(() => captureRequested(OLDER)).toThrow(/baseline sources/i);
     } finally {
       if (previous === undefined) delete process.env.SMRT_CAPTURE_ORIGIN_MAIN;
       else process.env.SMRT_CAPTURE_ORIGIN_MAIN = previous;

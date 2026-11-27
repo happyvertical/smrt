@@ -189,8 +189,11 @@ export function describeProtectedFieldWrites(
         dbUrl: opened.dbUrl,
       });
 
+      // The caller's own tenant: a create body naming any other tenant is
+      // refused (403 TENANT_MISMATCH, #5195), so the "server-managed keys are
+      // left out" control below names the caller's tenant, not a foreign one.
       const principal = (model: Model) => ({
-        user: { id: 'user-1' },
+        user: { id: 'user-1', tenantId: 'other-tenant' },
         permissions: [`${segment[model]}.create`, `${segment[model]}.update`],
       });
       const fromHttp = (status: number, body: unknown): Outcome => {

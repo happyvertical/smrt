@@ -4,7 +4,7 @@ contact_links:
     url: https://github.com/happyvertical/smrt/discussions
     about: Ask questions, share ideas, and discuss the SMRT framework with the community
   - name: 📚 Documentation
-    url: https://s-m-r-t.dev
+    url: https://smrt.happyvertical.com
     about: Guides, tutorials and API reference for the SMRT framework
   - name: 🔒 Security Vulnerability
     url: https://github.com/happyvertical/smrt/security/advisories/new

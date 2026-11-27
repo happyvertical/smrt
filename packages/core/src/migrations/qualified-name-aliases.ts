@@ -123,10 +123,26 @@ function compareText(left: string, right: string): number {
   return left < right ? -1 : left > right ? 1 : 0;
 }
 
+/**
+ * Every stored name that is not a class's current name, paired with that
+ * current name: declared `previousQualifiedNames` and the upstream names a
+ * same-name app subclass replaced (the registry's one equivalence set).
+ */
 function aliasPairs(): AliasPair[] {
-  return [...ObjectRegistry.getQualifiedNameAliases()].map(
-    ([alias, current]) => ({ alias, current }),
+  const pairs = new Map<string, string>(
+    ObjectRegistry.getQualifiedNameAliases(),
   );
+  for (const name of ObjectRegistry.getQualifiedClassNames()) {
+    const [current, ...aliases] =
+      ObjectRegistry.getEquivalentQualifiedNames(name);
+    if (!current) continue;
+    for (const alias of aliases) {
+      if (!pairs.has(alias)) pairs.set(alias, current);
+    }
+  }
+  return [...pairs]
+    .map(([alias, current]) => ({ alias, current }))
+    .sort((left, right) => compareText(left.alias, right.alias));
 }
 
 function quoteIdentifier(name: string): string {

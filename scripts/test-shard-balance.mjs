@@ -8,9 +8,11 @@
  *
  * The tables hold measured seconds for packages that take 30 s or more;
  * everything else counts as DEFAULT_SECONDS. They only steer balance: a stale
- * or missing entry makes shards uneven, never drops a package. Refresh them
- * from the `Duration` lines each package's Vitest runs print in a merge-group
- * `test-packages` or PostgreSQL job log, summed per package.
+ * or missing entry makes shards uneven, never drops a package. Refresh the
+ * `test` table with `scripts/measure-test-seconds.mjs` over merge-group
+ * `test-packages` job logs; refresh the PostgreSQL table from the `Duration`
+ * lines each package's Vitest runs print in a PostgreSQL job log, summed per
+ * package.
  *
  * Read those logs with `gh api repos/{owner}/{repo}/actions/jobs/{id}/logs`.
  * `gh run view --job {id} --log` cuts a large job log short without saying so:
@@ -18,66 +20,78 @@
  * second and fourth slowest (#5074).
  */
 
-/** `test` task seconds at two Vitest workers, merge-group run 44026049881. */
+/**
+ * `test` task seconds at two Vitest workers: the median of five full-mode
+ * merge-group runs, 45826454208, 45845580152, 45876975431, 45890569809 and
+ * 45891849139 (2026-11-26, after #5667's weights). Each is the wall time of the
+ * unit's turbo task, from Vitest's `Start at` to the task's log block, so it
+ * includes the sibling task on the other `--concurrency=2` lane (#5706;
+ * `scripts/measure-test-seconds.mjs` reproduces it). Packages under 30 s are
+ * not listed. smrt-template-sveltekit is not listed either: it always has a
+ * shard to itself (DEDICATED_PACKAGES), so its weight steers nothing.
+ *
+ * app-shell: see SPLIT_TEST_UNITS. Its three units were 1196 s as one unit
+ * (merge-group run 44699654477), the long pole of `test-packages (2/5)`.
+ */
 export const TEST_SECONDS = {
-  '@happyvertical/smrt-agents': 96,
-  '@happyvertical/smrt-analytics': 57,
-  '@happyvertical/smrt-app-mcp': 31,
-  '@happyvertical/smrt-app-runtime': 546,
-  // app-shell: see SPLIT_TEST_UNITS. 1196 s measured as one unit (118 files,
-  // merge-group run 44699654477), the long pole of `test-packages (2/5)`
-  // (29.7 min against 14-16 in its neighbours). The unit weights split that
-  // time by a local run at two workers (default config 649 s over two
-  // shards, pglite+dom+packed 175 s), scaled by 1200/824 to CI speed.
-  // Refresh them from a merge-group log, as for every other entry.
-  '@happyvertical/smrt-app-shell#test:configs': 255,
-  '@happyvertical/smrt-app-shell#test:unit:1of2': 470,
-  '@happyvertical/smrt-app-shell#test:unit:2of2': 470,
-  '@happyvertical/smrt-assets': 49,
-  '@happyvertical/smrt-bundle-gate': 82,
-  '@happyvertical/smrt-chat': 392,
-  '@happyvertical/smrt-cli': 315,
+  '@happyvertical/smrt-agents': 77,
+  '@happyvertical/smrt-analytics': 52,
+  '@happyvertical/smrt-app-runtime': 504,
+  '@happyvertical/smrt-app-shell#test:configs': 540,
+  '@happyvertical/smrt-app-shell#test:unit:1of2': 951,
+  '@happyvertical/smrt-app-shell#test:unit:2of2': 785,
+  '@happyvertical/smrt-assets': 48,
+  '@happyvertical/smrt-bundle-gate': 68,
+  '@happyvertical/smrt-chat': 387,
+  '@happyvertical/smrt-cli': 331,
   '@happyvertical/smrt-comments': 35,
-  '@happyvertical/smrt-commerce': 400,
-  '@happyvertical/smrt-content': 189,
-  '@happyvertical/smrt-desktop': 34,
-  '@happyvertical/smrt-dev-mcp': 51,
-  '@happyvertical/smrt-education': 466,
-  '@happyvertical/smrt-expenses': 90,
-  '@happyvertical/smrt-facts': 42,
-  '@happyvertical/smrt-fields': 52,
-  '@happyvertical/smrt-human-resources': 32,
-  '@happyvertical/smrt-images': 42,
-  '@happyvertical/smrt-inference': 53,
-  '@happyvertical/smrt-ingestion': 692,
-  '@happyvertical/smrt-jobs': 99,
-  '@happyvertical/smrt-manufacturing': 59,
-  '@happyvertical/smrt-messages': 82,
-  '@happyvertical/smrt-planner': 147,
-  '@happyvertical/smrt-profiles': 41,
-  '@happyvertical/smrt-projects': 79,
-  '@happyvertical/smrt-reports': 46,
-  '@happyvertical/smrt-sales': 104,
-  '@happyvertical/smrt-subscriptions': 51,
-  '@happyvertical/smrt-support': 61,
-  '@happyvertical/smrt-svelte': 401,
+  '@happyvertical/smrt-commerce': 426,
+  '@happyvertical/smrt-content': 155,
+  '@happyvertical/smrt-desktop': 33,
+  '@happyvertical/smrt-dev-mcp': 41,
+  '@happyvertical/smrt-education': 321,
+  '@happyvertical/smrt-expenses': 99,
+  '@happyvertical/smrt-facts': 40,
+  '@happyvertical/smrt-fields': 39,
+  '@happyvertical/smrt-images': 33,
+  '@happyvertical/smrt-inference': 46,
+  '@happyvertical/smrt-ingestion': 621,
+  '@happyvertical/smrt-jobs': 86,
+  '@happyvertical/smrt-manufacturing': 50,
+  '@happyvertical/smrt-messages': 560,
+  '@happyvertical/smrt-planner': 91,
+  '@happyvertical/smrt-profiles': 37,
+  '@happyvertical/smrt-projects': 60,
+  '@happyvertical/smrt-reports': 40,
+  '@happyvertical/smrt-sales': 93,
+  '@happyvertical/smrt-subscriptions': 38,
+  '@happyvertical/smrt-support': 67,
+  '@happyvertical/smrt-svelte': 403,
+  '@happyvertical/smrt-tenancy': 43,
   '@happyvertical/smrt-timesheets': 55,
-  '@happyvertical/smrt-ui': 199,
-  '@happyvertical/smrt-users': 336,
-  '@happyvertical/smrt-vitest': 42,
-  '@happyvertical/smrt-workflows': 37,
+  '@happyvertical/smrt-ui': 169,
+  '@happyvertical/smrt-users': 284,
+  '@happyvertical/smrt-vitest': 38,
+  '@happyvertical/smrt-workflows': 35,
 };
 
 /**
  * `test:postgres` task seconds, PostgreSQL merge-group run of 2026-11-16, with
- * the #5649 additions from merge-group run 45076013203 (app-shell, core).
+ * the #5649 additions from merge-group run 45076013203 (core), and #5664's
+ * app-shell units.
  * Keys are package names, or `<package>#<task>` ids for a package listed in
  * SPLIT_POSTGRES_UNITS.
  */
 export const POSTGRES_TEST_SECONDS = {
   '@happyvertical/smrt-analytics': 40,
-  // 7 files, 1172 s; it was missing and weighed DEFAULT_SECONDS (12 s).
-  '@happyvertical/smrt-app-shell': 1172,
+  // app-shell: see SPLIT_POSTGRES_UNITS. 1386 s measured as one unit (12
+  // files, one process), the long pole of `remaining:1/3` (30.9 min). The
+  // unit weights split that by each file's test time in PostgreSQL run
+  // 45718543710 (1of3 postgres-drafts 393 s; 2of3 store-in-swap and six small
+  // files 227 s; 3of3 four files 201 s), scaled by 1386/822 to the measured total.
+  '@happyvertical/smrt-app-shell#test:postgres:1of3': 664,
+  '@happyvertical/smrt-app-shell#test:postgres:2of3': 383,
+  '@happyvertical/smrt-app-shell#test:postgres:3of3': 339,
   '@happyvertical/smrt-app-runtime': 41,
   '@happyvertical/smrt-cli': 33,
   '@happyvertical/smrt-commerce': 285,
@@ -123,8 +137,19 @@ export const SPLIT_TEST_UNITS = {
  * is its own package script and `turbo.json` task so the two can run on
  * different runners. The `test:postgres` script stays the local aggregate and
  * is never scheduled in CI for a package listed here, so no file runs twice.
+ *
+ * `app-shell` (#5664) is three file-list units. Its 12 files each build their
+ * own schemas and roles, so they need no shared database; each unit runs in
+ * its own process on its own disposable database, and
+ * `scripts/app-shell-postgres-units.test.mjs` pins that the units' files are
+ * exactly `POSTGRES_SUITES`, each once.
  */
 export const SPLIT_POSTGRES_UNITS = {
+  '@happyvertical/smrt-app-shell': [
+    'test:postgres:1of3',
+    'test:postgres:2of3',
+    'test:postgres:3of3',
+  ],
   '@happyvertical/smrt-core': ['test:postgres:real', 'test:postgres:pglite'],
 };
 

@@ -8,7 +8,7 @@
  * marker are executed for real.
  */
 
-import { chmodSync, mkdtempSync, rmSync } from 'node:fs';
+import { chmodSync, mkdtempSync, realpathSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import type { DatabaseInterface } from '@happyvertical/sql';
@@ -922,7 +922,9 @@ describe('money minor-units rescale on a secure-file SQLite database', () => {
   let db: DatabaseInterface;
 
   beforeEach(async () => {
-    directory = mkdtempSync(join(tmpdir(), 'smrt-minor-units-secure-'));
+    directory = realpathSync(
+      mkdtempSync(join(tmpdir(), 'smrt-minor-units-secure-')),
+    );
     chmodSync(directory, 0o700);
     db = (await getDatabase({
       type: 'sqlite',

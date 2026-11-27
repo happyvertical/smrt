@@ -561,6 +561,16 @@
   },
   {
     "kind": "entry-point",
+    "name": "@happyvertical/smrt-app-cli#./mcp-bridge",
+    "issue": 4965,
+    "nearest": [
+      "@happyvertical/smrt-app-cli#.",
+      "@happyvertical/smrt-desktop#./bundler"
+    ],
+    "reason": "`smrt desktop bundle` needs a single-file MCP bridge that imports only Node built-ins. The root export and the smrt-mcp-bridge bin import @modelcontextprotocol packages and smrt-users, and the desktop bundler does not bundle JavaScript, so a consuming app had to run its own bundler over this package. This publishes the pre-bundled file of the same bin entry."
+  },
+  {
+    "kind": "entry-point",
     "name": "@happyvertical/smrt-app-mcp#.",
     "grandfathered": true
   },
@@ -1078,6 +1088,16 @@
     "kind": "entry-point",
     "name": "@happyvertical/smrt-core#./generators/swagger",
     "grandfathered": true
+  },
+  {
+    "kind": "entry-point",
+    "name": "@happyvertical/smrt-core#./http",
+    "issue": 5674,
+    "nearest": [
+      "@happyvertical/smrt-core#./generators/rest",
+      "@happyvertical/smrt-core#./smrt-error"
+    ],
+    "reason": "Downstream SMRT HTTP services and relays need standalone Web Request / Node IncomingMessage body bounds, JSON content-type guards, right-to-left X-Forwarded-For client IP extraction, and sliding-window rate limiting without pulling in the full REST code generator (./generators/rest) or browser-safe ./smrt-error."
   },
   {
     "kind": "entry-point",

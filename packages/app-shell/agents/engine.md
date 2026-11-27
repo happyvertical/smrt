@@ -356,12 +356,23 @@ for the one operation on the host thread; a PGlite uses the host's client).
   claim transactions on the lent claim, and `discardOrphanDraft` takes the live
   host's claim too (`discardStaleDraft(dir, live)`), so a host that lost its
   claim bumps and drops nothing.
+  **Remaining writes (#5630).** A failed `forkDraft` writes the draft marker
+  BEFORE the schema copy and drops the schema through the live claim; when that
+  drop is refused (the claim is lost) it keeps the directory and marker, so the
+  next start or discard finds the orphan (`discardStaleDraft`, through the new
+  host's claim) instead of stranding a `__d` schema nothing lists.
+  `cleanUp`'s `markPurged` is one claim transaction (`markPurgedIn`, with the
+  generation proof) on a fenced host. Portable import's rows (`populate`, with
+  the verify and completion fact) and `discardUnfilledImport`'s drop run on the
+  import's own claim (`inDatabase(..., claim)`); the import's claim lifts the
+  per-statement and idle-in-transaction bounds, since one import is one long
+  transaction.
   **Still unfenced** (hosted PostgreSQL):
   - Fork and restore schema creation on admin connections (at worst a leaked
     side schema, removed by the sweep).
-  - The publish journal file (local data directory).
-  - `markPurged`; snapshot and rehearsal files.
-  - Portable import's `populate` (claim never proven; unchanged from today).
+  - The publish journal file (local data directory), snapshots and rehearsal
+    files: a claim transaction cannot fence a file; it needs a
+    journal-in-database design.
 - **Fork** (a draft, a publish rehearsal): a live schema beside the app's, in one transaction (a
   failure leaves none). `forkDraft` writes the name in the draft marker
   (`schema`, `liveSchema`); `AppHost.open` on that directory takes the live app's database
@@ -626,6 +637,10 @@ one bundle (`format: 2`), so a desktop app moves to a hosted one and back.
   migration and not a live fallback, until an operator removes it (never
   automatic); opening it lets the engine add its bookkeeping rows
   (`_smrt_changes`/`_smrt_migrations`), user rows are untouched.
+- **Downgrade** (`downgradeUserAppToSqlite`): drops the schema and the marker, only
+  when the schema's export and the kept `app.db` both digest to the completion
+  fact's digest, checked and dropped under the app's claim (`dropAppSchemaChecked`);
+  otherwise `HostedWritesError`, nothing changed.
 - **Approvals and drafts in a move.** Not carried: the caller (the CLI) refuses an
   export while changes wait (a working copy open, or a batch with an active card)
   and drops approvals still waiting (`pending`/`accepted`/`executing`), reporting

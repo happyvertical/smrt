@@ -5,10 +5,10 @@ description: "Reusable CLI factory for SMRT apps — branded `<name> <resource> 
 status: "stable"
 generated:
   by: "smrt/scripts/generate-knowledge-okf.ts"
-  at: "2026-11-05T15:48:19Z"
+  at: "2026-11-27T00:30:11Z"
 audience: "internal"
 evidence_level: "manifest-described"
-source_revision: "sha256:09b7a00ccc91378d821bc4d1b9cffb36d5498448f1c1df950fccad6ddcc5eac8"
+source_revision: "sha256:87981e3a49ec07bc71de75d6caccc347f706d4f072865c9966e6a8bd73af2d7f"
 sources:
   - id: "manifest"
     resource: "https://github.com/happyvertical/smrt/blob/main/packages/app-cli/package.json"
@@ -39,3 +39,4 @@ sources:
 ## Exports
 
 - `.`
+- `./mcp-bridge`

@@ -10,7 +10,7 @@ const errors=[];page.on('pageerror',e=>errors.push(e.message));
 await page.addInitScript(() => {
   localStorage.setItem('smrt-theme', JSON.stringify({preset:'studio',colorScheme:'dark'}));
   const listeners=[];
-  const empty={ $schema:'https://s-m-r-t.dev/schemas/cookbook/v1.json',version:1,name:'Kitchen QA',recipes:[],features:[],policies:[] };
+  const empty={ $schema:'https://smrt.happyvertical.com/schemas/cookbook/v1.json',version:1,name:'Kitchen QA',recipes:[],features:[],policies:[] };
   const result=(revision,cookbook)=>({planId:'plan-12345678',state:{snapshot:{revision},cookbook}});
   let current=result(1,empty);
   window.__emitKitchen=(revision,name)=>{current=result(revision,{...empty,name});for(const listener of listeners)listener(current);};
@@ -53,7 +53,7 @@ if(!second.includes('#713f12'))throw Error('a second rejected draft was not pres
 const recovering = await browser.newPage();
 recovering.on('pageerror',e=>errors.push(e.message));
 await recovering.addInitScript(() => {
-  const empty={ $schema:'https://s-m-r-t.dev/schemas/cookbook/v1.json',version:1,name:'Recovered',recipes:[],features:[],policies:[] };
+  const empty={ $schema:'https://smrt.happyvertical.com/schemas/cookbook/v1.json',version:1,name:'Recovered',recipes:[],features:[],policies:[] };
   const invalid={planId:'plan-12345678',state:{snapshot:{revision:1},cookbook:{...empty,theme:{preset:'unknown'}}}};
   const valid={planId:'plan-12345678',state:{snapshot:{revision:2},cookbook:empty}};
   window.smrtKitchen={subscribe(listener){setTimeout(()=>listener(invalid),0);return()=>{};},async callTool(name){if(name==='get_plan')return valid;throw Error('Unexpected tool '+name);}};
@@ -65,7 +65,7 @@ const themed = await browser.newPage();
 themed.on('pageerror',e=>errors.push(e.message));
 await themed.addInitScript(() => {
   localStorage.setItem('smrt-theme', JSON.stringify({preset:'studio',colorScheme:'dark'}));
-  const empty={ $schema:'https://s-m-r-t.dev/schemas/cookbook/v1.json',version:1,name:'Themed',recipes:[],features:[],policies:[] };
+  const empty={ $schema:'https://smrt.happyvertical.com/schemas/cookbook/v1.json',version:1,name:'Themed',recipes:[],features:[],policies:[] };
   let current={planId:'plan-12345678',state:{snapshot:{revision:1},cookbook:empty}};
   window.__calls=[];
   window.smrtKitchen={subscribe(listener){setTimeout(()=>listener(current),0);return()=>{};},async callTool(name,args){
@@ -90,7 +90,7 @@ styled.on('request',r=>{if(r.url().includes('evil.example'))external.push(r.url(
 await styled.addInitScript(() => {
   const css='@import url(https://evil.example/a.css);\nbody { display: none !important; }\n.smrt-admin-shell { outline: 3px solid rgb(255, 0, 0); }\n.smrt-admin-shell a { background: url(https://evil.example/leak); color: rgb(1, 2, 3); }\n@media (min-width: 1px) { .smrt-admin-shell { --probe: 1; background-image: url(https://evil.example/m); } }\n.smrt-admin-shell { --x: \\75 rl(https://evil.example/esc); background-image: var(--x); }\n.smrt-admin-shell { background: var(--nope, url(https://evil.example/sh)); }\n.smrt-admin-shell a { background-image: var(--nope, \\75 rl(https://evil.example/fb)); }\n@media all { @property --host-color { syntax: \"<color>\"; inherits: true; initial-value: rgb(255, 0, 255); } }\n@font-face { font-family: Hijack; src: url(https://evil.example/font.woff2); }\n} body { display: none } .x {';
   addEventListener('DOMContentLoaded',()=>{const host=document.createElement('div');host.className='smrt-admin-shell';host.id='host-shell';host.textContent='host';host.style.color='var(--host-color, rgb(0, 0, 255))';document.body.prepend(host);});
-  const cookbook={ $schema:'https://s-m-r-t.dev/schemas/cookbook/v1.json',version:1,name:'Styled',recipes:[],features:[],policies:[],theme:{customCss:css} };
+  const cookbook={ $schema:'https://smrt.happyvertical.com/schemas/cookbook/v1.json',version:1,name:'Styled',recipes:[],features:[],policies:[],theme:{customCss:css} };
   const current={planId:'plan-12345678',state:{snapshot:{revision:1},cookbook}};
   window.smrtKitchen={subscribe(l){setTimeout(()=>l(current),0);return()=>{};},async callTool(name){if(name==='get_plan')return current;throw Error('Unexpected tool '+name);}};
 });
@@ -115,7 +115,7 @@ if(external.length)throw Error('custom CSS loaded '+external.join(', '));
 const off = await browser.newPage();
 off.on('pageerror',e=>errors.push(e.message));
 await off.addInitScript(() => {
-  const cookbook={ $schema:'https://s-m-r-t.dev/schemas/cookbook/v1.json',version:1,name:'Off',recipes:[],features:[],policies:[] };
+  const cookbook={ $schema:'https://smrt.happyvertical.com/schemas/cookbook/v1.json',version:1,name:'Off',recipes:[],features:[],policies:[] };
   const current={planId:'plan-12345678',state:{snapshot:{revision:1},cookbook}};
   window.smrtKitchen={subscribe(l){setTimeout(()=>l(current),0);return()=>{};},async callTool(name,args){if(name==='get_plan')return current;return {ok:true,planId:'plan-12345678',state:{snapshot:{revision:2},cookbook:args.commands[0].input.document}};}};
 });

@@ -1,4 +1,5 @@
 import type { DatabaseInterface } from '@happyvertical/sql';
+import { classifyDatabaseError } from './db-errors.js';
 import {
   isPostgresDatabase,
   usesPostgresDialect,
@@ -343,7 +344,31 @@ export async function nullSyncReference(
   didUpdate: (count: number) => void,
 ): Promise<void> {
   if (isJsonAdapterHandle(db)) {
-    const result = await db.update(tableName, filter, { [column]: null });
+    // Same invariant as the SQL path below: clearing the reference is a write,
+    // so `updated_at` strictly advances on every affected row and a copy loaded
+    // before the cascade conflicts on save. One timestamp later than every
+    // matched row's current value keeps this a single update. Only a table
+    // this database never created is passed over here, so the update below
+    // reports it exactly as before; any other read failure propagates, since
+    // the update would otherwise run without the timestamp floor.
+    const matched = (await db.list(tableName, filter).catch((error) => {
+      if (classifyDatabaseError(error).kind === 'undefined_object') return [];
+      throw error;
+    })) as Array<{ updated_at?: unknown }>;
+    let next = Date.now();
+    for (const row of matched) {
+      // Millisecond precision: a Date's string form drops milliseconds, which
+      // could leave the new timestamp equal to the stored one.
+      const current =
+        row.updated_at instanceof Date
+          ? row.updated_at.getTime()
+          : new Date(String(row.updated_at ?? '')).getTime();
+      if (Number.isFinite(current) && current >= next) next = current + 1;
+    }
+    const result = await db.update(tableName, filter, {
+      [column]: null,
+      updated_at: new Date(next).toISOString(),
+    });
     didUpdate(result.affected);
     return;
   }
@@ -360,7 +385,7 @@ export async function nullSyncReference(
   const result = await db.query(
     `UPDATE ${quote(tableName)}
         SET ${quote(column)} = NULL,
-            updated_at = CASE WHEN ${tracked} THEN ${nextTimestamp} ELSE updated_at END,
+            updated_at = ${nextTimestamp},
             _sync_origin_device_id = CASE WHEN ${tracked} THEN COALESCE(${parameter(2)}, _sync_origin_device_id) ELSE NULL END,
             _sync_revision = CASE WHEN ${tracked} THEN _sync_revision + 1 ELSE _sync_revision END
       ${sql} RETURNING _sync_origin_device_id, _sync_revision`,

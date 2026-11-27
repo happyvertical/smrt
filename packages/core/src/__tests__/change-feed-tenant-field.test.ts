@@ -1058,8 +1058,7 @@ describe('change-feed entries carry the row owner from its real tenant field', (
     ).toBe(true);
   }
 
-  it('records no entry, and warns, for a primary-key upsert whose saved row omits the ownership column', async () => {
-    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+  it('refuses, and records no entry for, a primary-key upsert whose saved row omits the ownership column', async () => {
     const qualified =
       ObjectRegistry.getClassByConstructor(TenantFieldIdKeyed)?.qualifiedName ??
       'TenantFieldIdKeyed';
@@ -1073,9 +1072,13 @@ describe('change-feed entries carry the row owner from its real tenant field', (
     await fresh.initialize();
     fresh.id = created.id;
     fresh.name = 'renamed';
+    // An explicit-id create updates a stored row only for the same owner; a
+    // save that leaves the owner unset counts as NULL and is refused.
     dropOwnerColumn = true;
     try {
-      await fresh.save();
+      await expect(fresh.save()).rejects.toMatchObject({
+        code: 'TENANT_ISOLATION_VIOLATION',
+      });
     } finally {
       dropOwnerColumn = false;
     }
@@ -1085,13 +1088,11 @@ describe('change-feed entries carry the row owner from its real tenant field', (
       created.id,
     );
     expect(stored.rows[0]).toMatchObject({
-      name: 'renamed',
+      name: 'kept',
       workspace_id: 'ws-a',
     });
     const { changes } = await getChangesSince(db, { since: before });
     expect(changes.some((change) => change.rowId === created.id)).toBe(false);
-    expectUnresolvedWarning(warn);
-    warn.mockRestore();
   });
 
   it('records no entry, and warns, when the saved row omits a declared ownership column outside the conflict target', async () => {

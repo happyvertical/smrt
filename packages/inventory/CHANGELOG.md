@@ -1,5 +1,35 @@
 # @happyvertical/smrt-inventory
 
+## 0.73.1
+
+### Patch Changes
+
+- Updated dependencies
+  - @happyvertical/smrt-core@0.73.1
+  - @happyvertical/smrt-products@0.73.1
+  - @happyvertical/smrt-tenancy@0.73.1
+  - @happyvertical/smrt-ui@0.73.1
+
+## 0.73.0
+
+### Patch Changes
+
+- Updated dependencies
+  - @happyvertical/smrt-core@0.73.0
+  - @happyvertical/smrt-products@0.73.0
+  - @happyvertical/smrt-tenancy@0.73.0
+  - @happyvertical/smrt-ui@0.73.0
+
+## 0.72.0
+
+### Patch Changes
+
+- Updated dependencies
+  - @happyvertical/smrt-core@0.72.0
+  - @happyvertical/smrt-products@0.72.0
+  - @happyvertical/smrt-tenancy@0.72.0
+  - @happyvertical/smrt-ui@0.72.0
+
 ## 0.71.0
 
 ### Patch Changes

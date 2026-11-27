@@ -52,7 +52,7 @@ errors: metering never fails a request. `resetStorageMeter()` stops the timer.
 `readTenantUsage(window)` (`monthWindow()` for the calendar month) returns, for
 the SESSION's tenant (no tenant parameter; it refuses with no context):
 `storage { bytes (latest sample), peakBytes, sampledAt (measured), bucketStart, samples, backend }` and
-`requests { count, metered }`.
+`requests { count, metered }`, `worker { wakes, awakeMs }`.
 
 ## Seam for #5195 (request counts and caller kind)
 
@@ -62,16 +62,28 @@ already sums `REQUEST_COUNT_METRIC` (`'api.requests'`) rows and reports
 `metered: false` until some exist, so the writer only has to record that key
 (a counter: summing is right) with the kind in `dimensions`.
 
-## Follow-up: true wake / idle-close sampling
+## Wake and idle-close samples (host.ts)
 
-A sample at app wake and at idle close needs a call inside host.ts's private
-lifecycle: after `evict` closes the host (`host.ts` L903-910, between `live?.close()` and
-`holders.delete`) and after the wake in `getHost`. Not done: host.ts lifecycle
-code belongs to another change. Until then the request hook plus the timer
-cover it (an app idle-closed stays within one interval of its last sample).
+`host.ts` calls the meter at two points of the live app's life, on the HOST's
+tenant (`holder.tenantId`, never input), cloud only (the desktop holder has no
+tenant and never loads the writer; the writer re-checks the profile):
+
+- end of `openLive` (every wake, first open included): `onWake(tenant, wakeMs)`
+  writes one `app.wakes` counter row (`quantity` 1, `dimensions.wakeMs`).
+- `evict` after the host is closed (idle or capacity): `onClose(tenant,
+  awakeMs, why)` writes one `app.awake_ms` counter row (open to close, window =
+  that span, `dimensions.why`).
+
+Both rows are `source: 'app-shell.worker'` with a random `sourceId` (counters:
+summing is right; `readTenantUsage().worker` = `{ wakes, awakeMs }`, closed
+spans only) and each then takes a storage sample through `sample()` (still one
+gauge row per bucket, so a wake right after a close adds none). The calls are
+`void`ed behind a lazy import (no import cycle) and swallow every error: a
+wake or close never waits on, or fails from, metering. A lost-claim drop and
+`closeOwnApp` are not samples. Request counts and caller kind remain #5195's.
 
 ## Tests
 
-`storage-metering.test.ts` (SQLite shell db, fake probe). The catalog query is
+`storage-metering.test.ts` (SQLite shell db, fake probe); `storage-metering-lifecycle.test.ts` (wake, idle close, desktop inert, failing writer; real workers). The catalog query is
 in `storage-metering-postgres.test.ts` (registered `test:postgres` suite:
 PGlite, and a real server with `SMRT_TEST_POSTGRES_URL`).

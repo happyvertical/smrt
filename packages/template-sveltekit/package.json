@@ -1,6 +1,6 @@
 {
   "name": "@happyvertical/smrt-template-sveltekit",
-  "version": "0.71.0",
+  "version": "0.73.1",
   "description": "Minimal SvelteKit project template with s-m-r-t framework integration",
   "type": "module",
   "main": "index.js",
@@ -111,6 +111,8 @@
     "test": "vitest run",
     "test:e2e": "pnpm exec playwright test --config playwright.config.ts",
     "test:m5": "node ../../scripts/run-with-ci-postgres.mjs -- node e2e/support/gate.mjs",
+    "test:m5:part": "node e2e/support/gate.mjs part",
+    "test:m5:part:postgres": "node ../../scripts/run-with-ci-postgres.mjs -- node e2e/support/gate.mjs part postgres",
     "test:postgres": "node ../../scripts/run-with-ci-postgres.mjs -- pnpm exec vitest run --no-file-parallelism __tests__/*.postgres.optional.test.ts",
     "test:watch": "vitest",
     "typecheck": "node ../../scripts/write-source-typecheck-config.mjs tsconfig.fixture.json .smrt/tsconfig.fixture-typecheck.json && tsc -p .smrt/tsconfig.fixture-typecheck.json && tsc -p tsconfig.host-typecheck.json"

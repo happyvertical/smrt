@@ -28,6 +28,7 @@ import { existsSync, mkdirSync, renameSync, rmSync } from 'node:fs';
 import { join } from 'node:path';
 import { openAppDatabase } from './app-runtime.ts';
 import {
+  type AppClaim,
   assertDatabaseConfig,
   claimAppDatabase,
   type DatabaseConfig,
@@ -43,7 +44,11 @@ import {
   type PortableColumn,
   type PortableDb,
 } from './db/portable.ts';
-import { DEFAULT_LOCK_TIMEOUT_MS, dropSchema } from './db/postgres-copy.ts';
+import {
+  DEFAULT_LOCK_TIMEOUT_MS,
+  dropSchema,
+  type SqlDatabase,
+} from './db/postgres-copy.ts';
 import {
   lockSchemaForRead,
   postgresPortable,
@@ -388,6 +393,12 @@ async function inDatabase<T>(
   fn: (db: PortableDb) => Promise<T>,
   /** PostgreSQL: the tenant new rows are stamped with (default: the engine's local tenant). */
   tenantId?: string,
+  /**
+   * PostgreSQL server: the app's claim. The transaction then is a claim
+   * transaction (proof first), so a write under a claim that was lost commits
+   * nothing (#5630).
+   */
+  claim?: AppClaim,
 ): Promise<T> {
   if (database.kind === 'sqlite') {
     const h = await openAppDatabase(dataDir);
@@ -400,13 +411,13 @@ async function inDatabase<T>(
     }
   }
   assertDatabaseConfig(database);
-  return withSchemaAdmin(database, (admin) =>
-    admin.transaction(async (tx) => {
-      await scopeForPortable(tx, database.schema);
-      if (mode === 'read') await lockSchemaForRead(tx, database.schema);
-      return fn(postgresPortable(tx, tenantFor(tenantId, database.kind)));
-    }),
-  );
+  const work = async (tx: any) => {
+    await scopeForPortable(tx, database.schema);
+    if (mode === 'read') await lockSchemaForRead(tx, database.schema);
+    return fn(postgresPortable(tx, tenantFor(tenantId, database.kind)));
+  };
+  if (claim) return claim.transaction(work);
+  return withSchemaAdmin(database, (admin) => admin.transaction(work));
 }
 
 /**
@@ -477,10 +488,57 @@ export async function discardUnfilledImport(options: {
       },
     );
     if (fact !== null || rows > 0) return false;
-    await withSchemaAdmin(database, (db) =>
-      dropSchema(db, database.schema, DEFAULT_LOCK_TIMEOUT_MS),
-    );
+    // The drop is a claim transaction too: a claim lost since the check drops nothing.
+    const drop = (db: SqlDatabase) =>
+      dropSchema(db, database.schema, DEFAULT_LOCK_TIMEOUT_MS);
+    if (claim) await drop(claim.admin as unknown as SqlDatabase);
+    else await withSchemaAdmin(database, drop);
     return true;
+  } finally {
+    await claim?.release();
+  }
+}
+
+/**
+ * The number of user rows an app's PostgreSQL schema holds (0 for a schema that
+ * does not exist or has no table). PostgreSQL only; a database that cannot be
+ * read throws.
+ */
+export async function countUserRows(options: {
+  dataDir: string;
+  database: DatabaseConfig;
+}): Promise<number> {
+  const { database } = options;
+  if (database.kind === 'sqlite')
+    throw new EngineError('this reads a PostgreSQL app', 'refused');
+  return inDatabase(options.dataDir, database, 'read', async (db) => {
+    let n = 0;
+    for (const name of await db.tables()) n += await db.count(name);
+    return n;
+  });
+}
+
+/**
+ * Drop an app's PostgreSQL schema after `check` passes, both under the app's
+ * claim (#5193 downgrade): while the claim is held no host can open the app, so
+ * what `check` saw is what is dropped. `check` throws to refuse; nothing is
+ * dropped then. PostgreSQL only. The drop is a claim transaction: a claim lost
+ * since the check drops nothing.
+ */
+export async function dropAppSchemaChecked(options: {
+  database: DatabaseConfig;
+  check: () => Promise<void>;
+}): Promise<void> {
+  const { database } = options;
+  if (database.kind === 'sqlite')
+    throw new EngineError('this drops a PostgreSQL app', 'refused');
+  const claim = await claimAppDatabase(database);
+  try {
+    await options.check();
+    const drop = (db: SqlDatabase) =>
+      dropSchema(db, database.schema, DEFAULT_LOCK_TIMEOUT_MS);
+    if (claim) await drop(claim.admin as unknown as SqlDatabase);
+    else await withSchemaAdmin(database, drop);
   } finally {
     await claim?.release();
   }
@@ -982,7 +1040,14 @@ async function importPostgres(
   await startEngine(dataDir, database, bundle, options.tenantId);
   await options.onPhase?.('staged');
   // One host per app while the rows go in; the engine's own start released its claim.
-  const claim = await claimAppDatabase(database);
+  // The rows go in as one claim transaction (#5630). The claim's per-statement
+  // and idle-in-transaction bounds are sized for small store writes; an import
+  // is one long transaction, so they are off (as they were on the admin
+  // connection this ran on).
+  const claim = await claimAppDatabase(database, {
+    statementTimeoutMs: 0,
+    idleInTransactionMs: 0,
+  });
   try {
     await inDatabase(
       dataDir,
@@ -999,6 +1064,7 @@ async function importPostgres(
         await options.onPhase?.('verified');
       },
       options.tenantId,
+      claim,
     );
   } finally {
     await claim?.release();

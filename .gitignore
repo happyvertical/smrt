@@ -199,3 +199,4 @@ bin/
 
 # M5 browser gate (#2579): Playwright output root, never committed.
 packages/template-sveltekit/m5-gate-summary.json
+packages/template-sveltekit/m5-part-*.json

@@ -100,7 +100,16 @@ describe('generateChangesRoute (#1758)', () => {
     expect(content.startsWith(AUTO_GENERATED_ROUTE_HEADER)).toBe(true);
     // Fail-closed auth: guard is present and there is no public bypass.
     expect(content).toContain('requireRouteAuth(locals)');
-    expect(content).toContain("throw error(401, 'Authentication required')");
+    // The shared sign-in decision REST makes for the feed (#5195): 401
+    // AUTHENTICATION_REQUIRED, never public, no feed-specific copy of the rule.
+    expect(content).toContain('authorize({');
+    expect(content).toContain('apiPrincipalFromLocals(locals)');
+    expect(content).toContain("permissionCollection: '_feed'");
+    expect(content).toContain('publicAccess: false');
+    expect(content).toContain('throw error(decision.status, body);');
+    // Never an object literal carrying `code`: `error()` rejects it (App.Error).
+    expect(content).not.toMatch(/error\(\s*[^,()]+,\s*\{[^}]*code/);
+    expect(content).not.toContain('hasAuthenticatedPrincipal');
     expect(content).not.toContain('PUBLIC_ACCESS');
     // Reads through the tenant-scoped, authorization-aware cursor API (#3020).
     expect(content).toContain(

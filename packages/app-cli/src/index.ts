@@ -157,6 +157,13 @@ export interface CreateAppCliOptions {
    */
   mcpPath?: string;
   /**
+   * Same-server path that introspects a durable agent credential, for example
+   * `/api/tracker/agent-credentials/self`. Agent tokens are rejected by the
+   * session endpoint, so `auth status` falls back to this path when set and
+   * reports the credential's metadata instead of `authenticated: false`.
+   */
+  agentStatusPath?: string;
+  /**
    * App-specific commands. Dispatched BEFORE built-ins (`auth`,
    * `resources`, `mcp`) and before the resource-slug dispatcher, so an
    * `extraCommands` entry takes precedence over anything with the same
@@ -284,7 +291,14 @@ async function dispatchCli(
   // Built-ins.
   if (command === 'auth') {
     const sub = rest[0];
-    const opts = { context, stdout, stderr };
+    const opts = {
+      context,
+      stdout,
+      stderr,
+      ...(options.agentStatusPath === undefined
+        ? {}
+        : { agentStatusPath: options.agentStatusPath }),
+    };
     if (sub === 'login') return runAuthLogin(opts, rest.slice(1));
     if (sub === 'status') return runAuthStatus(opts);
     if (sub === 'logout') return runAuthLogout(opts);
@@ -373,12 +387,17 @@ async function runResourceCommand(
   }
 
   const parser = buildFlagParser(command.parameters);
-  if (parser.status.kind === 'unsupported') {
+  // The hint tells the caller to pass a JSON payload; a caller who already
+  // did has nothing to act on, so it is only printed when none was given.
+  const payloadGiven = positional.some((arg) =>
+    arg.trimStart().startsWith('{'),
+  );
+  if (!payloadGiven && parser.status.kind === 'unsupported') {
     stderr.write(
       `[smrt-app-cli] complex schema for \`${slug} ${commandName}\`; ` +
         `pass JSON payload directly\n`,
     );
-  } else if (parser.status.kind === 'missing') {
+  } else if (!payloadGiven && parser.status.kind === 'missing') {
     stderr.write(
       `[smrt-app-cli] schema unavailable for \`${slug} ${commandName}\`; ` +
         `pass JSON payload directly: $ <cli> ${slug} ${commandName}` +

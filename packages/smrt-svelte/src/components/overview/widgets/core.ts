@@ -18,8 +18,10 @@ import type {
   WidgetLoad,
   WidgetOptionField,
 } from '../types.js';
+import ActivityWidget from './ActivityWidget.svelte';
 import ChartWidget from './ChartWidget.svelte';
 import type {
+  ActivityWidgetData,
   ChartWidgetData,
   MetricWidgetData,
   RecordListWidgetData,
@@ -289,17 +291,49 @@ export function createNoteWidget(): WidgetDefinition {
   };
 }
 
+/**
+ * Activity: recent authorized workspace activity rendered with `ActivityList`.
+ * `load` is optional so hosts that supply client-seeded `LoadedOverview` data
+ * (including interactive dismissal callbacks) can register the type directly or
+ * pass `activity: true` in `registerCoreWidgets`.
+ */
+export function createActivityWidget(
+  load?: WidgetLoad<ActivityWidgetData>,
+): WidgetDefinition<ActivityWidgetData> {
+  return {
+    type: 'activity',
+    title: 'ui.overview.widget.activity.title',
+    description: 'ui.overview.widget.activity.description',
+    icon: 'layers',
+    options: [
+      titleField,
+      {
+        key: 'limit',
+        type: 'integer',
+        label: 'ui.overview.opt.limit',
+        min: 1,
+        max: 50,
+      },
+    ],
+    component: ActivityWidget,
+    ...(load ? { load } : {}),
+    defaultSpan: 4,
+  };
+}
+
 /** The loaders an app supplies; a widget without one is not registered. */
 export interface CoreWidgetLoaders {
   metric?: WidgetLoad<MetricWidgetData>;
   chart?: WidgetLoad<ChartWidgetData>;
   records?: WidgetLoad<RecordListWidgetData>;
   shortcuts?: WidgetLoad<ShortcutsWidgetData>;
+  activity?: WidgetLoad<ActivityWidgetData> | boolean;
 }
 
 /**
  * Register the core widgets on `registry`: `note` always, each data-backed
- * widget only when its loader is given. Returns a disposer for all of them.
+ * widget only when its loader is given (`activity` also accepts `true` for
+ * client-seeded overviews). Returns a disposer for all of them.
  */
 export function registerCoreWidgets(
   registry: WidgetRegistry = defaultWidgetRegistry,
@@ -325,6 +359,16 @@ export function registerCoreWidgets(
   if (loaders.shortcuts) {
     disposers.push(
       registry.register(createShortcutsWidget(loaders.shortcuts), options),
+    );
+  }
+  if (loaders.activity) {
+    disposers.push(
+      registry.register(
+        createActivityWidget(
+          typeof loaders.activity === 'function' ? loaders.activity : undefined,
+        ),
+        options,
+      ),
     );
   }
   return () => {

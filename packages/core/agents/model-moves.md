@@ -48,7 +48,7 @@ qualified names. Keep `tableName` explicit so the moved class keeps its table.
   rewrites an aliased `metaType`; a legacy row that is loaded and saved again
   is upgraded. Readers that filter on stored names use
   `ObjectRegistry.getEquivalentQualifiedNamesAsync(name)`, which returns the
-  current name followed by the aliases, as `AssetAssociationCollection`'s
+  current name followed by the aliases and replaced names, as `AssetAssociationCollection`'s
   `byLeft()`, `detach()` and `setLinks()` do.
 - **Writes and filters cover unregistered classes.** Both of those call sites
   use the async helpers. When a qualified name misses, they lazily load the
@@ -99,9 +99,16 @@ on the STI table of an aliased STI class.
   `@happyvertical/smrt-core:qualified-name-aliases:v1:<digest>[:tenant:<id>]`.
   The digest covers the alias set, so a later move runs again.
 
-Known gap: STI child-collection reads filter `_meta_type` by the current name
-only. Run the backfill before relying on subclass collections of a moved STI
-class.
+STI child-collection reads (implicit and explicit `stiScope`) filter
+`_meta_type` by every equivalent name, so subclass collections of a moved STI
+class still read rows stored under the old name before any backfill.
+
+`getEquivalentQualifiedNames()` is the one equivalence set for stored names:
+the current name, its `previousQualifiedNames`, and the upstream names a
+same-name app subclass replaced (with their own previous names, see
+[app-subclasses](app-subclasses.md)). STI reads, delete cascades
+(`meta_type`, `_smrt_contexts.owner_class`, `_smrt_embeddings.object_class`),
+doctor counts and the backfill all use it.
 
 ## Same-named subclasses and aliases
 

@@ -1,5 +1,90 @@
 # @happyvertical/smrt-core
 
+## 0.73.1
+
+### Patch Changes
+
+- ### Features
+  
+  - ship activity overview widget and enriched triage list (#5725) (smrt-svelte)
+- @happyvertical/smrt-config@0.73.1
+  - @happyvertical/smrt-scanner@0.73.1
+  - @happyvertical/smrt-types@0.73.1
+
+## 0.73.0
+
+### Minor Changes
+
+- ### Breaking Changes
+  
+  - one authorization contract for REST and generated routes (#5195) (#5700) (core)
+  
+  ### Features
+  
+  - ship the MCP bridge and fix consumer desktop build gaps (#5708) (smrt-desktop)
+  - sample storage and worker activity at app wake and idle close (#5698) (app-shell)
+  - provision hosted keys for joining members and repair on a timer (#5701) (app-shell)
+  - downgrade a migrated app to its desktop file until it takes writes (#5193) (#5692) (app-shell)
+  
+  ### Bug Fixes
+  
+  - tighten the remaining mail write checks (#5695) (messages)
+  
+  ### Other Changes
+  
+  - test: build the draft-scope fixture once per file from a template db (#5724) (messages)
+  - ci: regenerate generated pages after merge, not in PRs (#5711) (knowledge)
+  - perf: rebalance test-packages shards from measured unit durations (#5709) (ci)
+  - perf: run the M5 gate as parallel part jobs behind one verdict (#5702) (ci)
+
+### Patch Changes
+
+- @happyvertical/smrt-config@0.73.0
+  - @happyvertical/smrt-scanner@0.73.0
+  - @happyvertical/smrt-types@0.73.0
+
+## 0.72.0
+
+### Minor Changes
+
+- ### Breaking Changes
+  
+  - rows stored under a replaced qualified name stay reachable (#5670) (core)
+  - an explicit-id create updates a stored row only for the same owner (#5666) (core)
+  - a cascade tolerates only a missing table, under a savepoint (#5594) (#5671) (core)
+  - SET NULL cascade advances updated_at on untracked rows (#5593) (#5665) (core)
+  - close SQL-bearing failure diagnostics (#5612) (migrations)
+  
+  ### Features
+  
+  - add bounded HTTP request, client-IP, and sliding-window rate-limit helpers (#5677) (core)
+  - CLI receive transport with an owner-minted scoped link token (#5638) (#5662) (app-shell)
+  - authenticated PDF windows and native save (#5606) (desktop)
+  - ordered version stamp for shell RLS policies (#5635) (#5661) (app-shell)
+  
+  ### Bug Fixes
+  
+  - agent-credential auth status and quieter schema hint (#5688) (app-cli)
+  - check the draft scope on writes to unsent outgoing mail (#5672) (messages)
+  - fence markPurged, portable import rows and a failed draft start (#5630) (#5663) (app-shell)
+  - propagate declareRuntimeManagedDatabase across child tx handles (#5676) (core)
+  - a cascade never deletes a child that moved to another parent (#5592) (#5668) (core)
+  - fail closed on registry errors, verify packument integrity (#5660) (release)
+  - verify Node 26.12.1 and honor optional peer metadata (#5599) (desktop)
+  
+  ### Other Changes
+  
+  - test: stop two heavy tests timing out in CI (#5682) (#5683)
+  - test: drop floor test databases without FORCE (#5625) (#5678) (core)
+  - perf: split app-shell's PostgreSQL suite into lane units (#5667) (ci)
+  - perf: cut CI wall-clock poles (shards, coverage gate, PostgreSQL lane) (#5658) (ci)
+
+### Patch Changes
+
+- @happyvertical/smrt-config@0.72.0
+  - @happyvertical/smrt-scanner@0.72.0
+  - @happyvertical/smrt-types@0.72.0
+
 ## 0.71.0
 
 ### Minor Changes

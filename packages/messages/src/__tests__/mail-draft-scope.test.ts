@@ -50,18 +50,23 @@ import {
 } from '../send-approval.js';
 import { prepareMessageParents } from './fk-fixtures.js';
 
-const ALL_MAIL_SLUGS = [
-  'messages.read',
-  'messages.triage',
-  'messages.draft',
-  'messages.send',
-];
-
-interface Person {
-  id: string;
-}
+import {
+  type Person,
+  useMailDraftScopeFixture,
+} from './helpers/mail-draft-scope-fixture.js';
 
 describe('draft scope on message writes (#5616)', () => {
+  const f = useMailDraftScopeFixture();
+  const {
+    principal,
+    as,
+    newDraft,
+    seedDraft,
+    seedReceived,
+    countBySubject,
+    load,
+    exists,
+  } = f;
   let db: DatabaseInterface;
   let options: { db: DatabaseInterface };
   let tenantId: string;
@@ -69,214 +74,20 @@ describe('draft scope on message writes (#5616)', () => {
   let drafter: Person;
   let sender: Person;
   let stranger: Person;
-  let current: MailPrincipal | null = null;
   let ownedId: string;
   let openId: string;
   let providerSend: ReturnType<typeof vi.fn>;
-
-  const principal = (
-    p: Person,
-    overrides: Partial<MailPrincipal> = {},
-  ): MailPrincipal => ({
-    id: `principal-${p.id}`,
-    tenantId,
-    userId: p.id,
-    kind: 'person',
-    ...overrides,
-  });
-
-  const as = <T>(who: MailPrincipal | null, fn: () => Promise<T>) => {
-    current = who;
-    return withTenant({ tenantId }, fn);
-  };
-
-  async function newPerson(label: string): Promise<Person> {
-    const users = await UserCollection.create(options);
-    const user = await users.create({
-      email: `${label}-${randomUUID()}@example.com`,
-    });
-    await user.save();
-    const roles = await RoleCollection.create(options);
-    const role = await roles.create({
-      name: `role ${randomUUID()}`,
-      slug: `role-${randomUUID()}`,
-    });
-    await role.save();
-    const permissions = await PermissionCollection.create(options);
-    const rolePermissions = await RolePermissionCollection.create(options);
-    for (const slug of ALL_MAIL_SLUGS) {
-      const permission = await permissions.findBySlug(slug);
-      if (!permission?.id) throw new Error(`missing permission ${slug}`);
-      await rolePermissions.addPermission(role.id as string, permission.id);
-    }
-    const memberships = await MembershipCollection.create(options);
-    const membership = await memberships.create({
-      roleId: role.id as string,
-      tenantId,
-      userId: user.id as string,
-    });
-    await membership.save();
-    return { id: user.id as string };
-  }
-
-  async function grant(userId: string, scope: MailScope) {
-    await withTenant({ tenantId }, async () => {
-      const grants = await ResourceGrantCollection.create(options);
-      const row = await grants.create({
-        tenantId,
-        userId,
-        resourceType: 'messages:account',
-        resourceId: ownedId,
-        permission: `messages.${scope}`,
-      });
-      await row.save();
-    });
-  }
-
-  async function seedAccount(
-    name: string,
-    ownerUserId: string | null,
-  ): Promise<string> {
-    return withTenant({ tenantId }, async () => {
-      const account = new EmailAccount({
-        ...options,
-        tenantId,
-        name,
-        email: `${name}@example.com`,
-        providerType: 'smtp',
-        ownerUserId,
-      });
-      await account.initialize();
-      await account.save();
-      return account.id as string;
-    });
-  }
-
-  const newDraft = async (accountId: string, subject = 'draft') => {
-    const draft = new Email({
-      ...options,
-      tenantId,
-      accountId,
-      subject,
-      isDraft: true,
-      sendStatus: 'draft',
-    });
-    await draft.initialize();
-    return draft;
-  };
-
-  /** A stored draft written by trusted code, as a fixture. */
-  async function seedDraft(accountId: string, subject = 'seeded') {
-    return withTenant({ tenantId }, () =>
-      runWithMailSystemAccess(async () => {
-        const draft = await newDraft(accountId, subject);
-        await draft.save();
-        return draft.id as string;
-      }),
-    );
-  }
-
-  /** A stored received email (isDraft false), written by trusted code. */
-  async function seedReceived(accountId: string) {
-    return withTenant({ tenantId }, () =>
-      runWithMailSystemAccess(async () => {
-        const email = new Email({
-          ...options,
-          tenantId,
-          accountId,
-          subject: `received-${randomUUID()}`,
-        });
-        await email.initialize();
-        await email.save();
-        return email.id as string;
-      }),
-    );
-  }
-
-  const countBySubject = async (subject: string) =>
-    withTenant({ tenantId }, () =>
-      runWithMailSystemAccess(async () => {
-        const { EmailCollection } = await import(
-          '../collections/EmailCollection.js'
-        );
-        return (
-          await (
-            await EmailCollection.create(options)
-          ).list({
-            where: { subject },
-          })
-        ).length;
-      }),
-    );
-
-  const load = async (id: string) =>
-    withTenant({ tenantId }, () =>
-      runWithMailSystemAccess(async () => {
-        const email = new Email({ ...options, id });
-        await email.initialize();
-        return email;
-      }),
-    );
-
-  const exists = async (id: string) =>
-    withTenant({ tenantId }, () =>
-      runWithMailSystemAccess(async () => {
-        const { EmailCollection } = await import(
-          '../collections/EmailCollection.js'
-        );
-        return Boolean(
-          await (await EmailCollection.create(options)).get({ id }),
-        );
-      }),
-    );
-
-  beforeEach(async () => {
-    db = await getTestDatabase({ type: 'sqlite', url: ':memory:' });
-    options = { db };
-    await prepareMessageParents(db);
-    enableTenancy();
-    await withSystemContext(async () => {
-      await syncPermissionCatalog(options);
-      const tenants = await TenantCollection.create(options);
-      const t = await tenants.create({ name: 'Tenant' });
-      await t.save();
-      tenantId = t.id as string;
-      owner = await newPerson('owner');
-      drafter = await newPerson('drafter');
-      sender = await newPerson('sender');
-      stranger = await newPerson('stranger');
-    });
-    ownedId = await seedAccount('owned', owner.id);
-    openId = await seedAccount('open', null);
-    await grant(drafter.id, 'read');
-    await grant(drafter.id, 'draft');
-    await grant(sender.id, 'read');
-    await grant(sender.id, 'send');
-    current = null;
-    configureMailAccess({ options, resolvePrincipal: () => current });
-    configureMailSendApprovals({
-      gate: createApprovalMailSendGate({
-        service: new ApprovalService({ db }),
-      }),
-    });
-    providerSend = vi.fn(async () => ({
-      success: true,
-      providerMessageId: `sent-${randomUUID()}`,
-      sentAt: new Date(),
-    }));
-    vi.spyOn(EmailAccount.prototype, 'createSender').mockResolvedValue({
-      providerType: 'smtp',
-      isReady: () => true,
-      send: providerSend,
-    } as never);
-  });
-
-  afterEach(async () => {
-    vi.restoreAllMocks();
-    resetMailSendApprovals();
-    resetMailAccess();
-    disableTenancy();
-    await db.close?.();
+  beforeEach(() => {
+    db = f.db;
+    options = f.options;
+    tenantId = f.tenantId;
+    owner = f.owner;
+    drafter = f.drafter;
+    sender = f.sender;
+    stranger = f.stranger;
+    ownedId = f.ownedId;
+    openId = f.openId;
+    providerSend = f.providerSend;
   });
 
   describe('without the draft scope', () => {
@@ -643,12 +454,12 @@ describe('draft scope on message writes (#5616)', () => {
       ).rejects.toBeInstanceOf(MailAccessError);
       // The same ceiling already closes the other scopes on that account.
       const account = { id: openId, tenantId, ownerUserId: null };
-      current = capped;
+      f.setCurrent(capped);
       const { decideMailAccess } = await import('../access.js');
       expect((await decideMailAccess(account, 'read')).allowed).toBe(true);
       expect((await decideMailAccess(account, 'draft')).reason).toBe('ceiling');
       const noRead = principal(stranger, { scopes: ['send'] });
-      current = noRead;
+      f.setCurrent(noRead);
       expect((await decideMailAccess(account, 'read')).reason).toBe('ceiling');
       // Within the ceiling it stays open.
       const id = await as(
@@ -665,35 +476,39 @@ describe('draft scope on message writes (#5616)', () => {
     it('does not treat received mail or non-draft writes as draft writes', async () => {
       const id = await withTenant({ tenantId }, () =>
         runWithMailSystemAccess(async () => {
-          // Received mail carries the default `draft` status, isDraft false.
+          // Received mail carries the default `draft` status, isDraft false,
+          // and the provider's message id.
           const email = new Email({
             ...options,
             tenantId,
             accountId: ownedId,
             subject: 'received',
+            messageId: '<received@example.com>',
           });
           await email.initialize();
           await email.save();
           return email.id as string;
         }),
       );
-      await as(principal(stranger), async () => {
+      await as(principal(owner), async () => {
         const email = await load(id);
         email.isRead = true;
         await email.save();
-        const sent = new Email({
-          ...options,
-          tenantId,
-          accountId: ownedId,
-          subject: 'queued',
-          sendStatus: 'pending',
-        });
-        await sent.initialize();
-        await sent.save();
-        sent.subject = 'queued again';
-        await sent.save();
-        await sent.delete();
       });
+      // Queued outgoing mail needs the draft scope from its first write (#5657).
+      await expect(
+        as(principal(stranger), async () => {
+          const queued = new Email({
+            ...options,
+            tenantId,
+            accountId: ownedId,
+            subject: 'queued',
+            sendStatus: 'pending',
+          });
+          await queued.initialize();
+          return queued.save();
+        }),
+      ).rejects.toBeInstanceOf(MailAccessError);
     });
   });
 
@@ -837,8 +652,10 @@ describe('draft scope on message writes (#5616)', () => {
       expect((await load(id)).subject).toBe('edited');
     });
 
-    it('leaves sent mail and unflagged queued mail alone', async () => {
+    it('lets a triage grantee mark sent mail read (#5696)', async () => {
       const sent = await seedFlagged('sent');
+      await f.grant(stranger.id, 'read');
+      await f.grant(stranger.id, 'triage');
       await as(principal(stranger), async () => {
         const email = await load(sent);
         email.isRead = true;
@@ -1174,9 +991,8 @@ describe('draft scope on message writes (#5616)', () => {
     });
 
     describe('unchanged behaviour', () => {
-      it('leaves attachments of unowned drafts, sent and received mail alone', async () => {
+      it('leaves attachments of unowned drafts alone and gates those of sent mail (#5696)', async () => {
         const openDraft = await seedDraft(openId);
-        const received = await seedReceived(ownedId);
         const sent = await withTenant({ tenantId }, () =>
           runWithMailSystemAccess(async () => {
             const email = await newDraft(ownedId, 'sent');
@@ -1186,11 +1002,12 @@ describe('draft scope on message writes (#5616)', () => {
           }),
         );
         await as(principal(stranger), async () => {
-          for (const messageId of [openDraft, received, sent]) {
-            const row = await addAttachment(messageId);
-            await row.delete();
-          }
+          const row = await addAttachment(openDraft);
+          await row.delete();
         });
+        await expect(
+          as(principal(stranger), async () => addAttachment(sent)),
+        ).rejects.toBeInstanceOf(MailAccessError);
       });
 
       it('lets trusted sync and ingest write attachments with no principal', async () => {
@@ -1259,12 +1076,38 @@ describe('draft scope on message writes (#5616)', () => {
     });
   });
 
-  it('leaves messages of classes without a draft flag alone', async () => {
+  it('treats a class without a draft flag by its status and provider id', async () => {
     const { Tweet } = await import('../models/Tweet');
-    await as(principal(stranger), async () => {
-      const tweet = new Tweet({ ...options, tenantId, accountId: ownedId });
-      await tweet.initialize();
-      await tweet.save();
+    // Unsent, so a later send would transmit it: the scope applies.
+    await expect(
+      as(principal(stranger), async () => {
+        const tweet = new Tweet({ ...options, tenantId, accountId: ownedId });
+        await tweet.initialize();
+        return tweet.save();
+      }),
+    ).rejects.toBeInstanceOf(MailAccessError);
+    // A received tweet (provider id set) is a record; triage fields pass.
+    const id = await withTenant({ tenantId }, () =>
+      runWithMailSystemAccess(async () => {
+        const tweet = new Tweet({
+          ...options,
+          tenantId,
+          accountId: ownedId,
+          tweetId: '1234',
+        });
+        await tweet.initialize();
+        await tweet.save();
+        return tweet.id as string;
+      }),
+    );
+    const tweet = await withTenant({ tenantId }, () =>
+      runWithMailSystemAccess(async () => {
+        const row = new Tweet({ ...options, id });
+        await row.initialize();
+        return row;
+      }),
+    );
+    await as(principal(owner), async () => {
       tweet.isRead = true;
       await tweet.save();
       await tweet.delete();

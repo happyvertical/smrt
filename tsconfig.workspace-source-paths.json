@@ -49,6 +49,9 @@
       "@happyvertical/smrt-app-cli": [
         "./packages/app-cli/src/index.ts"
       ],
+      "@happyvertical/smrt-app-cli/mcp-bridge": [
+        "./packages/app-cli/src/bin/smrt-mcp-bridge.ts"
+      ],
       "@happyvertical/smrt-app-mcp": [
         "./packages/smrt-app-mcp/src/index.ts"
       ],
@@ -294,6 +297,9 @@
       ],
       "@happyvertical/smrt-core/generators/swagger": [
         "./packages/core/src/generators/swagger.ts"
+      ],
+      "@happyvertical/smrt-core/http": [
+        "./packages/core/src/http.ts"
       ],
       "@happyvertical/smrt-core/inference-availability": [
         "./packages/core/src/inference-availability.ts"

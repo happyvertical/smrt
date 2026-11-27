@@ -17,7 +17,8 @@
  *
  * Packages that publish no `dist/` (private packages, the two scaffold
  * templates) ship no page. A public package with a `dist/` but no committed
- * page is an error: run `pnpm knowledge:okf`.
+ * page ships none and warns: pages are regenerated after merge to main (#5705),
+ * so a package added in a PR has no page until the regeneration PR lands.
  *
  * Contract constants mirror `packages/smrt-dev-mcp/src/knowledge/okf-bundle.ts`.
  */
@@ -62,14 +63,19 @@ export function shipPackageKnowledge(packageDir, rootDir = defaultRoot) {
     'components',
     `${unscoped}.md`,
   );
-  if (!existsSync(source)) {
-    throw new Error(
-      `${pkg.name} has no committed knowledge page at docs/knowledge/components/${unscoped}.md; run \`pnpm knowledge:okf\`.`,
+  const written = [];
+  if (existsSync(source)) {
+    copyFileSync(source, join(packageDir, 'dist', SHIPPED_COMPONENT_PAGE));
+    written.push(join('dist', SHIPPED_COMPONENT_PAGE));
+  } else {
+    // Not an error (#5705): the post-merge workflow generates the page. Drop a
+    // copy left by an earlier build so dist never ships a page for a source
+    // that has none.
+    rmSync(join(packageDir, 'dist', SHIPPED_COMPONENT_PAGE), { force: true });
+    console.warn(
+      `[knowledge:ship] ${pkg.name} has no knowledge page yet (docs/knowledge/components/${unscoped}.md); the post-merge regeneration PR adds it.`,
     );
   }
-  const written = [];
-  copyFileSync(source, join(packageDir, 'dist', SHIPPED_COMPONENT_PAGE));
-  written.push(join('dist', SHIPPED_COMPONENT_PAGE));
 
   if (INTENT_HOME_PACKAGES.includes(pkg.name)) {
     const intentsSource = join(rootDir, 'docs', 'knowledge', 'intents');

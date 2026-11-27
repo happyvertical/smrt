@@ -8,7 +8,11 @@
  * @packageDocumentation
  */
 
-import { assertSecureServerUrl, resolveMcpPath } from './config.js';
+import {
+  assertSecureServerUrl,
+  resolveAgentStatusPath,
+  resolveMcpPath,
+} from './config.js';
 import {
   type AppCli,
   type CreateAppCliOptions,
@@ -24,6 +28,7 @@ export interface AppCliExecutableConfig {
     | 'defaultServerUrl'
     | 'requireSecureServerUrl'
     | 'mcpPath'
+    | 'agentStatusPath'
   >;
   argv: string[];
   mcp?: {
@@ -47,6 +52,7 @@ const CONFIG_KEYS = [
   'mcp-server-name',
   'mcp-server-version',
   'mcp-path',
+  'agent-status-path',
 ] as const;
 
 type ConfigKey = (typeof CONFIG_KEYS)[number];
@@ -59,6 +65,7 @@ const ENV_BY_KEY: Record<ConfigKey, string> = {
   'mcp-server-name': 'SMRT_APP_MCP_SERVER_NAME',
   'mcp-server-version': 'SMRT_APP_MCP_SERVER_VERSION',
   'mcp-path': 'SMRT_APP_MCP_PATH',
+  'agent-status-path': 'SMRT_APP_AGENT_STATUS_PATH',
 };
 
 const APP_NAME_RE = /^[A-Za-z][A-Za-z0-9_-]*$/u;
@@ -144,6 +151,15 @@ export function parseAppCliExecutableConfig(
     }
   }
 
+  const agentStatusPath = values.get('agent-status-path');
+  if (agentStatusPath !== undefined) {
+    try {
+      resolveAgentStatusPath(agentStatusPath);
+    } catch {
+      throw new Error('Invalid agent status path configuration.');
+    }
+  }
+
   const commandArgv = argv.slice(cursor);
   if (stdioMcp && commandArgv.length > 0) {
     throw new Error('MCP stdio mode does not accept command arguments.');
@@ -157,6 +173,7 @@ export function parseAppCliExecutableConfig(
       defaultServerUrl,
       requireSecureServerUrl: true,
       ...(mcpPath === undefined ? {} : { mcpPath }),
+      ...(agentStatusPath === undefined ? {} : { agentStatusPath }),
     },
     argv: commandArgv,
     mcp:

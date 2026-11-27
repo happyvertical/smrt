@@ -1,6 +1,6 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "$id": "https://s-m-r-t.dev/schemas/cookbook/v1.json",
+  "$id": "https://smrt.happyvertical.com/schemas/cookbook/v1.json",
   "title": "SMRT cookbook v1",
   "description": "What an app is made of: recipes, features, field policies, exposure, shell layout, theme and overview pages. New optional fields are added within v1; readers ignore unknown keys.",
   "type": "object",
@@ -45,6 +45,7 @@
     },
     "$schema": {
       "enum": [
+        "https://smrt.happyvertical.com/schemas/cookbook/v1.json",
         "https://s-m-r-t.dev/schemas/cookbook/v1.json",
         "https://s-m-r-t.dev/schemas/blueprint/v1.json"
       ]

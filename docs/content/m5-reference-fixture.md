@@ -10,10 +10,15 @@ the same generated surface, the same policy, and the same agent-addressable
 behaviour when it moves between runtime profiles — and does a real browser
 actually see that surface?**
 
-The gate is a single CI job, `M5 Reference Fixture Gate`, in
+The gate is one required CI result, `M5 Reference Fixture Gate`, in
 [`test-suite.yml`](https://github.com/happyvertical/smrt/blob/main/.github/workflows/test-suite.yml).
 It runs the completed M5 scenarios together so they cannot drift apart, and it
-fails when a case is *missing* as loudly as when a case fails.
+fails when a case is *missing* as loudly as when a case fails. Since #5694 the
+work runs as five parallel part jobs (`m5-template` x3, `m5-postgres`,
+`m5-browser`) and `M5 Reference Fixture Gate` is the aggregator that reads
+their results through `e2e/support/gate.mjs verdict`; a skipped, failed,
+missing, duplicated or empty part fails it. `pnpm test:m5` still runs every
+part serially in one checkout and applies the same verdict.
 
 Tracking: [#2547][m5] (milestone), [#2542][m5-parent] (programme),
 [#2574][m5-context] (context), and [#2533][pr2533] (browser lifecycle,
@@ -207,9 +212,10 @@ case is exactly the failure mode the extraction would inherit.
 
 ## Artifact policy
 
-The gate uploads one file: `packages/template-sveltekit/m5-gate-summary.json`,
-a sanitized JSON summary of case ids and booleans, written by
-`e2e/support/gate.mjs` itself. Vitest and Playwright reporters go to stderr, so
+The gate uploads sanitized JSON written by `e2e/support/gate.mjs` itself: one
+`packages/template-sveltekit/m5-part-<id>.json` per part job (case ids, test
+counts and relative test file names) and the aggregator's
+`m5-gate-summary.json` (case ids and booleans). Vitest and Playwright reporters go to stderr, so
 their assertion text, absolute paths, and stack frames never reach the
 summary, and the script refuses to write a summary containing any value
 outside its fixed vocabulary.
@@ -227,14 +233,14 @@ and raw traces are never uploaded, and every temporary root is removed when
 its worker finishes. Retention is seven days.
 
 Playwright's own output root lives outside the checkout too, at
-`$TMPDIR/smrt-m5-artifacts`, and the gate's `globalTeardown` empties it when a
-run ends. The served application's Vite cache stays in its own temporary root
+`$TMPDIR/smrt-m5-artifacts-<part>` (`smrt-m5-artifacts` outside the gate), and
+the gate's `globalTeardown` empties it when a run ends. The served application's Vite cache stays in its own temporary root
 as well: the harness gives the copied app a real `node_modules` directory whose
 entries are individually symlinked, rather than one symlink to the workspace
 package's, so `node_modules/.vite` cannot land in the checkout.
 
-The gate writes exactly one file inside the repository —
-`packages/template-sveltekit/m5-gate-summary.json`, the sanitized summary
-described above, which is gitignored and overwritten on every run and is the
-file CI uploads. Everything else it generates lives in a test-owned temporary
+The gate writes only sanitized files inside the repository —
+`packages/template-sveltekit/m5-part-<id>.json` and
+`m5-gate-summary.json`, described above, which are gitignored, overwritten on
+every run and are the files CI uploads. Everything else it generates lives in a test-owned temporary
 root.

@@ -8,7 +8,9 @@ watcher, and secure SQLite custody tests.
 Run package checks first, then the root gates:
 
 - `pnpm test`, `pnpm typecheck`, `pnpm lint`, `pnpm format-check`.
-- `pnpm knowledge:check --strict --format markdown` (freshness; see
+- `pnpm knowledge:check --strict --format markdown` (freshness of hand-written
+  pages and generation inputs; generated pages are regenerated after merge, so
+  never run `pnpm knowledge:okf` in a PR; see
   [knowledge-artifacts.md](knowledge-artifacts.md)).
 - `pnpm audit:policy` (dependency advisories). Dependency overrides target the
   advisory range; an ignored GHSA also needs an `audit-policy.json` record.

@@ -35,7 +35,9 @@ import {
   AppHost,
   type AppLimits,
   bundledWorkerUrl,
+  type DowngradeToSqliteResult,
   discardOrphanDraft,
+  downgradeUserAppToSqlite,
   EngineError,
   isMigratedToPostgres,
   type MethodCodeGate,
@@ -191,6 +193,8 @@ interface Holder {
   reserved: boolean;
   /** Lifecycle: set while the app is being closed; a wake waits for it. */
   evicting: Promise<void> | null;
+  /** Cloud: when the live host finished opening (ms, lifecycle clock); null while closed. Metering only. */
+  openedAt: number | null;
 }
 
 let context: ShellContext | null = null;
@@ -392,6 +396,7 @@ function holderOf(key: string, tenantId: string | null): Holder {
       leasedRef: null,
       reserved: false,
       evicting: null,
+      openedAt: null,
     };
     holders.set(key, holder);
   }
@@ -758,7 +763,7 @@ export async function assertNothingPending(
   db: DatabaseInterface,
   tenant: string,
   draft: string,
-  moving: 'migrating' | 'receiving an app',
+  moving: 'migrating' | 'receiving an app' | 'going back to the desktop',
 ): Promise<void> {
   if (existsSync(draft))
     throw new EngineError(
@@ -820,6 +825,41 @@ export async function migrateOwnAppToPostgres(): Promise<MigrateToPostgresResult
     database: provider.config(schema),
     versions: await store.list(),
     provision: () => provider.provision(schema),
+  });
+}
+
+/**
+ * Take the signed-in owner's migrated app back to its kept `app.db` (#5193),
+ * only while it has taken no writes on PostgreSQL since the migration
+ * (`HostedWritesError` otherwise, nothing changed). The same refusals as the
+ * move (an open draft, waiting changes, an unsettled approval) apply, and a host
+ * holding the app refuses it. Run by the operator command inside the verified
+ * owner's scope; the tenant is that owner's, never an argument.
+ */
+export async function downgradeOwnAppToSqlite(): Promise<DowngradeToSqliteResult> {
+  const provider = requireContext().appDatabase;
+  if (!provider)
+    throw new EngineError(
+      'there is no PostgreSQL database for apps configured',
+      'refused',
+    );
+  const tenant = safeId((await assertOwner()).tenantId, 'the tenant');
+  const db = await getShellDb();
+  const store = new ShellVersionStore(db, tenant);
+  const app = await store.appRow();
+  const { live, draft } = tenantAppDirs(
+    await dataRoot(),
+    tenant,
+    app.id as string,
+  );
+  await assertNothingPending(db, tenant, draft, 'going back to the desktop');
+  // The tenant's open app in this process goes first (refused while a call is
+  // inside it); another process holding it is refused by the engine's claim.
+  await closeOwnApp();
+  return downgradeUserAppToSqlite({
+    dataDir: live,
+    database: provider.config(appSchemaName(tenant, app.id as string)),
+    versions: await store.list(),
   });
 }
 
@@ -936,6 +976,7 @@ function methodCodeOf(holder: Holder): MethodCodeGate | undefined {
 
 /** Open one holder's live host: the app, its draft, the freeze. */
 async function openLive(holder: Holder): Promise<AppHost> {
+  const openStarted = lifecycle.now();
   const db = await getShellDb();
   holder.pin ??= await soleTenantId(db);
   const store = new ShellVersionStore(db, holder.pin);
@@ -1000,8 +1041,34 @@ async function openLive(holder: Holder): Promise<AppHost> {
   holder.database = database;
   holder.storeRef = store;
   holder.hostRef = host;
+  holder.openedAt = lifecycle.now();
+  meterWake(holder, holder.openedAt - openStarted);
   if (host.lostClaim) void dropLostHost(holder, host);
   return host;
+}
+
+/**
+ * Wake/idle-close usage samples (#5199): cloud only, on the HOST's tenant,
+ * after the fact and never awaited. The desktop has no tenant here, so it
+ * never loads the writer. A failure is swallowed: it must not touch the app.
+ */
+function meterWake(holder: Holder, wakeMs: number): void {
+  const tenantId = holder.tenantId;
+  if (!tenantId) return;
+  void import('./storage-metering.ts')
+    .then((m) => m.storageMeter().onWake(tenantId, Math.max(0, wakeMs)))
+    .catch(() => {});
+}
+
+function meterClose(holder: Holder, why: 'idle' | 'capacity'): void {
+  const tenantId = holder.tenantId;
+  const openedAt = holder.openedAt;
+  holder.openedAt = null;
+  if (!tenantId || openedAt === null) return;
+  const awakeMs = lifecycle.now() - openedAt;
+  void import('./storage-metering.ts')
+    .then((m) => m.storageMeter().onClose(tenantId, awakeMs, why))
+    .catch(() => {});
 }
 
 /** The LIVE host of the request's app, opened on first use. It is never the draft. */
@@ -1285,6 +1352,7 @@ function evict(holder: Holder, why: 'idle' | 'capacity'): Promise<void> {
     await live?.close().catch(() => {});
     if (holders.get(holder.key) === holder) holders.delete(holder.key);
     lifecycle.evictions[why]++;
+    meterClose(holder, why);
   })();
   holder.evicting = done;
   void done.finally(() => lifecycle.changed());

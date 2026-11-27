@@ -42,7 +42,7 @@ outside system access. For an agent under `require_approval` it:
    both return `pendingApproval` and send nothing. The agent never sends a
    held draft itself; it goes out once, as the approving person.
 
-A held message is set to `draft` (a persona route creates it `pending`), so
+A held message is set to `draft` and flagged `isDraft` (a persona route creates it `pending`), so
 it leaves every pending/scheduled outbox and a person can decide it. A
 persona message is held even under system access, so a system drain never
 sends it around its approval. Send-time attachment bytes (for example
@@ -102,20 +102,51 @@ same authority as sending directly from it.
 
 ## Draft writes
 
+Writing a row into `sent` (new, moved into `sent`, or onto another account)
+needs `send` on its account; a sent record comes from the send path or trusted
+sync. The stored-row comparison behind the triage-only and send-path allowances
+covers meta and write-through fields of a host subclass like any column, and
+counts a registered field it cannot read back as changed. Triage write-back
+never changes `isDraft`; only a full sync does.
+
+A stored `sent` row is a record that replies and forwards quote. Outside
+system access its read and flag marks need `triage`; any other change, a move
+onto or off an owned account, and a delete need `send` (the scope that creates
+the record) on each account involved. Unowned accounts are unaffected.
+
 The `draft` scope is needed: `Message.save()` and `Message.delete()`
-check it (`assertMailScopeOn`, `access.ts`) for an email that is draft
-content now or was when stored, by id or by the slug a new object would take
-over (its own or the one derived from its id), and for both accounts when a
-draft moves. Draft content is an email flagged `isDraft` (any stored form:
-`true`, `1`, `'1'`, `'true'`) whose `sendStatus` is not `sent`, so `failed`,
-`pending`, `scheduled` and `sending` rows are covered too. The stored row
-decides, whatever class the handle is. Received mail is not flagged. The
+check it (`assertMailScopeOn`, `access.ts`) for unsent outgoing mail (below)
+now or when stored, by id or by the slug a new object would take over (its own
+or the one derived from its id), and for both accounts when a row moves. A
+draft flag is `isDraft` in any stored form (`true`, `1`, `'1'`, `'true'`). The
+stored row decides, whatever class the handle is. The
 grants and account owner are read before the write (a single-connection
 engine cannot serve the policy handle inside a transaction); the write then
 re-reads the stored row and refuses a save that now needs more.
 `Attachment.save()`/`delete()` need the same scope when the message they
-belong to (or are moved from) is draft content on an owned account; that
-check runs just before the write, not inside it.
+belong to (or are moved from) is gated (`isMailWriteGated`). A write is gated
+for every row that is not `sent`, because a later send would transmit it. That
+includes received mail when it is saved, so content cannot be written without
+the scope and then flipped into a draft; deleting received mail (and its
+attachments) stays open. Received mail is a provider-tagged row (`messageId`,
+`providerMessageId`, `folderId`, `tweetId` or `slackTs` set) that is unflagged
+and still `draft`; `Message.send()` refuses it, stored row included. A `draft`
+row with no provider id, a flagged draft, and `pending`, `scheduled`,
+`sending`, `failed` or an unknown status are gated like any other.
+`Message.save()`/`delete()` apply the same test to the stored row and to the
+state a row is moved into, so a row cannot be relabelled or stripped of its
+provider id around the check. A stored `sent` row cannot be moved out of
+`sent` by a principal (sent mail is a record); an instance loaded before the
+row was sent is refused the same way, so a stale save cannot make it sendable
+again. A fresh row needs `draft` too, except a row the send path itself creates
+(an unsaved message being sent) or the persona route queues, which needs
+`send` (the route saves through a module-private helper, `saveQueuedForSend`,
+valid only for a fresh row). A save that changes only `isRead` and `isFlagged`
+of a stored row needs the `triage` scope instead of `draft`, so triage marks work on queued rows, and
+`markAllRead` / `markFolderRead` try every row before raising the first error.
+Sync stores received mail under `runWithMailSystemAccess`; a host that stores received mail itself does the same. A held
+send's binding hash still covers its attachment rows. The attachment check
+runs just before the write, not inside it.
 That covers generated routes, collection `delete`/`getOrUpsert`,
 `createReply`/`createForward` + `save()` and `MailDraftService`. Trusted work
 (`runWithMailSystemAccess`: sync, outbox, triage write-back, approval edits)
@@ -124,6 +155,7 @@ need `send` instead, and only while every stored field outside the lifecycle
 fields (`sendStatus`, `sentAt`, `sendError`, `retryCount`, handled-by,
 `updatedAt`) is unchanged, tenant, slug, context and subclass fields included.
 A row the send path itself creates (an unsaved message being sent) needs
-`send` too. As for read, triage and send, a principal's scope and account
-ceilings apply to unowned accounts too; with no principal an owned account is
+`send` too (a queued row whose account no longer exists is marked `failed`
+with nothing else changed, without a scope). As for read, triage and send, a
+principal's scope and account ceilings apply to unowned accounts too; with no principal an owned account is
 closed and an unowned one is open.

@@ -13,7 +13,17 @@ import {
   recordHistoricalSalesMoney,
 } from '../../historical-sales-money.js';
 
-export async function proveHistoricalSourceChildren(db: DatabaseInterface) {
+/**
+ * `lineCount` defaults to 1110, past the 1000-row page limit, which is the
+ * scale this suite proves. Callers that only need every construction site
+ * exercised (the #4931 constructor sweep) pass a small count: 1110 inserts
+ * twice, under a stack-capturing spy, took about 7 s and timed out at 60 s
+ * on a loaded CI runner (#5682).
+ */
+export async function proveHistoricalSourceChildren(
+  db: DatabaseInterface,
+  lineCount = 1110,
+) {
   const tenantId = randomUUID();
   await withTenant({ tenantId }, async () => {
     const customer = await (await CustomerCollection.create({ db })).create({
@@ -25,7 +35,7 @@ export async function proveHistoricalSourceChildren(db: DatabaseInterface) {
       currency: 'CAD',
       invoiceNumber: 'LARGE-SOURCE',
     });
-    const lines = Array.from({ length: 1110 }, (_, index) => ({
+    const lines = Array.from({ length: lineCount }, (_, index) => ({
       creditedLineId: null,
       sourceKey: `source-line-${index}`,
       description: 'Actual retained source child',
@@ -59,20 +69,22 @@ export async function proveHistoricalSourceChildren(db: DatabaseInterface) {
         kind: 'invoice' as const,
         currency: 'CAD',
         polarity: 'magnitudes' as const,
-        netMinor: 1110,
+        netMinor: lineCount,
         taxMinor: 0,
-        grossMinor: 1110,
+        grossMinor: lineCount,
         taxComponents: null,
         detail: { kind: 'lines' as const, lines },
       },
     };
     const recorded = await recordHistoricalSalesMoney(input);
-    expect(recorded.lines).toHaveLength(1110);
-    expect(new Set(recorded.lines.map((line) => line.lineId)).size).toBe(1110);
+    expect(recorded.lines).toHaveLength(lineCount);
+    expect(new Set(recorded.lines.map((line) => line.lineId)).size).toBe(
+      lineCount,
+    );
     const loaded = await invoices.get({ id: draft.id }, { cache: false });
     if (!loaded) throw new Error('Missing source invoice');
     const children = await readHistoricalSalesLines(db, loaded);
-    expect(children).toHaveLength(1110);
+    expect(children).toHaveLength(lineCount);
     expect(
       children.every(
         (line) =>
