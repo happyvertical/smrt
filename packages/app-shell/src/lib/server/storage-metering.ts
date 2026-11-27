@@ -189,12 +189,14 @@ export interface TenantUsage {
     backend: string | null;
   };
   requests: {
-    /** Sum of recorded `api.requests` rows (limited ones included). */
+    /** Requests served: the sum of `api.requests` rows that were not refused. */
     count: number;
     /** False until a request has been recorded. */
     metered: boolean;
-    /** Of `count`, the requests the route limits refused with a 429. */
+    /** Requests refused with a 429 by the route limits (not in `count`). */
     limited: number;
+    /** Requests refused before they were served, by reason (not in `count`). */
+    refused: Record<string, number>;
     /** `count` split by the kind of caller (`unknown` when none); guests apart from staff. */
     byCallerKind: Record<string, number>;
   };
@@ -363,7 +365,13 @@ export class StorageMeter {
         samples: 0,
         backend: null,
       },
-      requests: { count: 0, metered: false, limited: 0, byCallerKind: {} },
+      requests: {
+        count: 0,
+        metered: false,
+        limited: 0,
+        refused: {},
+        byCallerKind: {},
+      },
       worker: { wakes: 0, awakeMs: 0 },
     };
     if (!(await db.tableExists(USAGE_TABLE))) return result;
@@ -399,20 +407,32 @@ export class StorageMeter {
       limit: 100_000,
     });
     const byCallerKind: Record<string, number> = Object.create(null);
-    let limited = 0;
+    const refused: Record<string, number> = Object.create(null);
+    let served = 0;
     for (const m of requests) {
       const dims = m.getDimensions();
+      const why =
+        typeof dims.refused === 'string' && dims.refused
+          ? dims.refused
+          : dims.limited === true
+            ? 'rate_limited'
+            : null;
+      if (why) {
+        refused[why] = (refused[why] ?? 0) + m.quantity;
+        continue;
+      }
       const kind =
         typeof dims.callerKind === 'string' && dims.callerKind
           ? dims.callerKind
           : 'unknown';
       byCallerKind[kind] = (byCallerKind[kind] ?? 0) + m.quantity;
-      if (dims.limited === true) limited += m.quantity;
+      served += m.quantity;
     }
     result.requests = {
-      count: requests.reduce((sum, m) => sum + m.quantity, 0),
+      count: served,
       metered: requests.length > 0,
-      limited,
+      limited: refused.rate_limited ?? 0,
+      refused: { ...refused },
       byCallerKind: { ...byCallerKind },
     };
     const worker = await metrics.list({

@@ -1073,6 +1073,7 @@ function requestCounter(
   tenantId: string | null;
   callerKind: string | null;
   limited: boolean;
+  refused: string | null;
 }) => void {
   return (request) => {
     void import('./request-metering.ts')

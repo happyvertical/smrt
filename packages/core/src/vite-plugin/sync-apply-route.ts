@@ -26,6 +26,7 @@ import type {
 import type { RouteFilePlan } from './generated-route-files.js';
 import { applyRouteCors } from './route-cors.js';
 import { AUTO_GENERATED_ROUTE_HEADER } from './route-header.js';
+import { applyRouteMetering } from './route-metering.js';
 import {
   allowsSuperAdminBypass,
   generateRoutePrincipalHelper,
@@ -333,7 +334,6 @@ function decideItem(locals: unknown, target: SyncTargetConfig, op: SyncApplyOp, 
 // Route limits (#5198), as REST applies them before \`onRequest\`.
 function routeRateLimit(locals: unknown, request: Request, clientAddress: () => string): Response | undefined {
   const principal = routePrincipal(locals);
-  const { authenticated: signedIn } = principal;
   let address: string | null = null;
   try { address = clientAddress(); } catch { /* no peer address: the limiter falls back */ }
   return enforceRouteLimits({
@@ -342,7 +342,6 @@ function routeRateLimit(locals: unknown, request: Request, clientAddress: () => 
     tenantId: principal.tenantId,
     userId: principal.userId ?? null,
     callerKind: principal.callerKind ?? null,
-    authenticated: signedIn,
   });
 }
 
@@ -453,12 +452,14 @@ export function generateSyncApplyRoute(
     root: join(projectRoot, options.routesDir),
     routeDir,
     content: applyRouteCors(
-      generateSyncApplyRouteTemplate(
-        targets,
-        generateCollectionAccessImports(projectRoot, routeDir, options, [
-          'getCollection',
-        ]),
-        syncModelScope(manifest),
+      applyRouteMetering(
+        generateSyncApplyRouteTemplate(
+          targets,
+          generateCollectionAccessImports(projectRoot, routeDir, options, [
+            'getCollection',
+          ]),
+          syncModelScope(manifest),
+        ),
       ),
       options.cors,
     ),

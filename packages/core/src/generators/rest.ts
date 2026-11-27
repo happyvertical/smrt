@@ -126,7 +126,12 @@ import {
   PLAYBOOK_PREFLIGHT_ROUTE_SEGMENT,
   type PlaybookPreflightProvider,
 } from './preflight-route';
-import { getRequestMeterSink, type RequestMeterSink } from './request-metering';
+import {
+  getRequestMeterSink,
+  meterRequest,
+  type RequestMeterSink,
+  refusalOfStatus,
+} from './request-metering';
 import {
   type APIRequestInfo,
   type APIRequestPrincipal,
@@ -991,8 +996,54 @@ export class APIGenerator {
     }
   }
 
-  /** The rest of `handleRequest`, once the principal is resolved. */
+  /**
+   * The rest of `handleRequest`, once the principal is resolved, then the
+   * request meter (#5199): reported AFTER the authorization and limit
+   * decision, with the response status. A served request counts under the
+   * tenant it was served under (the decided principal's, or for a
+   * `resolveTenant` host its answer); a refused one (401, 403, 429) under no
+   * tenant, so a caller that merely names a tenant cannot inflate its count.
+   * A nested dispatch is part of its outer request. Never throws.
+   */
   private async handleResolvedRequest(
+    req: Request,
+    url: URL,
+    principal: ResolvedRequestPrincipal,
+    nested = false,
+  ): Promise<Response> {
+    const response = await this.routeResolvedRequest(
+      req,
+      url,
+      principal,
+      nested,
+    );
+    if (!nested) {
+      const sink = this.config.requestMeter ?? getRequestMeterSink();
+      if (sink) {
+        try {
+          const refused = refusalOfStatus(response.status);
+          meterRequest(
+            {
+              tenantId: refused
+                ? null
+                : await this.limiterTenantOf(req, principal),
+              callerKind: principal.principal.callerKind,
+              authenticated: principal.authenticated,
+              limited: refused === 'rate_limited',
+              refused,
+              transport: 'rest',
+            },
+            sink,
+          );
+        } catch {
+          // Metering never fails a request.
+        }
+      }
+    }
+    return response;
+  }
+
+  private async routeResolvedRequest(
     req: Request,
     url: URL,
     principal: ResolvedRequestPrincipal,
@@ -1008,27 +1059,18 @@ export class APIGenerator {
       // still sees the admitted request. The same call reports the request to
       // the meter (#5199) with the decided principal.
       const limiter = this.routeLimiter ?? getRouteLimiter();
-      const meter = this.config.requestMeter ?? getRequestMeterSink();
-      const limited = nested
-        ? undefined
-        : enforceRouteLimits(
-            {
-              request: req,
-              // The same tenant attributes the request whether or not a
-              // limiter is set; with neither limiter nor meter nothing looks
-              // it up.
-              tenantId:
-                limiter || meter
-                  ? await this.limiterTenantOf(req, principal)
-                  : principal.effectiveTenantId,
-              userId: principal.userId,
-              callerKind: principal.principal.callerKind,
-              authenticated: principal.authenticated,
-              transport: 'rest',
-            },
-            limiter,
-            meter,
-          );
+      const limited =
+        nested || !limiter
+          ? undefined
+          : enforceRouteLimits(
+              {
+                request: req,
+                tenantId: await this.limiterTenantOf(req, principal),
+                userId: principal.userId,
+                callerKind: principal.principal.callerKind,
+              },
+              limiter,
+            );
       if (limited) return this.addCorsHeaders(limited, req);
       const hooked = this.config.onRequest
         ? await this.config.onRequest(

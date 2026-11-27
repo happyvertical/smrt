@@ -75,6 +75,7 @@ import {
 } from './resources-route.js';
 import { applyRouteCors, type SvelteKitCorsOptions } from './route-cors.js';
 import { AUTO_GENERATED_ROUTE_HEADER } from './route-header.js';
+import { applyRouteMetering } from './route-metering.js';
 import {
   allowsSuperAdminBypass,
   generateRoutePrincipalHelper,
@@ -671,7 +672,6 @@ function routeDecision(locals: unknown, op: string, mutating: boolean, permissio
 // principal's; nothing the client sent chooses them.
 function routeRateLimit(locals: unknown, request: Request, clientAddress: () => string): Response | undefined {
   const principal = routePrincipal(locals);
-  const { authenticated: signedIn } = principal;
   let address: string | null = null;
   try { address = clientAddress(); } catch { /* no peer address: the limiter falls back */ }
   return enforceRouteLimits({
@@ -680,7 +680,6 @@ function routeRateLimit(locals: unknown, request: Request, clientAddress: () => 
     tenantId: principal.tenantId,
     userId: principal.userId ?? null,
     callerKind: principal.callerKind ?? null,
-    authenticated: signedIn,
   });
 }
 
@@ -2600,7 +2599,10 @@ async function generateRoutesForObject(
       plan.emit({
         root: routesRoot,
         routeDir,
-        content: applyRouteCors(collectionRoute, options.cors),
+        content: applyRouteCors(
+          applyRouteMetering(collectionRoute),
+          options.cors,
+        ),
         label: `${className} collection`,
       }),
     );
@@ -2625,7 +2627,7 @@ async function generateRoutesForObject(
       plan.emit({
         root: routesRoot,
         routeDir: join(routeDir, '[id]'),
-        content: applyRouteCors(itemRoute, options.cors),
+        content: applyRouteCors(applyRouteMetering(itemRoute), options.cors),
         label: `${className} item`,
       }),
     );
@@ -2694,7 +2696,7 @@ async function generateRoutesForObject(
       plan.emit({
         root: join(projectRoot, options.routesDir),
         routeDir: actionRouteDir,
-        content: applyRouteCors(actionRoute, options.cors),
+        content: applyRouteCors(applyRouteMetering(actionRoute), options.cors),
         label: `${className} action ${routeSpecs.map(({ actionName }) => actionName).join(', ')}`,
       }),
     );
@@ -2788,7 +2790,7 @@ async function generateCollectionRoutesForObject(
       plan.emit({
         root: join(projectRoot, options.routesDir),
         routeDir: actionRouteDir,
-        content: applyRouteCors(actionRoute, options.cors),
+        content: applyRouteCors(applyRouteMetering(actionRoute), options.cors),
         label: `${className} action ${routeSpecs.map(({ actionName }) => actionName).join(', ')}`,
       }),
     );

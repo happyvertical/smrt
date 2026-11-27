@@ -45,18 +45,45 @@ describe('request metering', () => {
   it('batches counts per tenant and caller kind, and reads them apart', async () => {
     const m = meter();
     for (let i = 0; i < 5; i++)
-      m.note({ tenantId: h.a.tenantId, callerKind: 'guest', limited: false });
+      m.note({
+        tenantId: h.a.tenantId,
+        callerKind: 'guest',
+        limited: false,
+        refused: null,
+      });
     for (let i = 0; i < 3; i++)
-      m.note({ tenantId: h.a.tenantId, callerKind: 'staff', limited: false });
-    m.note({ tenantId: h.a.tenantId, callerKind: 'guest', limited: true });
-    m.note({ tenantId: h.a.tenantId, callerKind: null, limited: false });
-    m.note({ tenantId: h.b.tenantId, callerKind: 'guest', limited: false });
+      m.note({
+        tenantId: h.a.tenantId,
+        callerKind: 'staff',
+        limited: false,
+        refused: null,
+      });
+    m.note({
+      tenantId: h.a.tenantId,
+      callerKind: 'guest',
+      limited: true,
+      refused: 'rate_limited',
+    });
+    m.note({
+      tenantId: h.a.tenantId,
+      callerKind: null,
+      limited: false,
+      refused: null,
+    });
+    m.note({
+      tenantId: h.b.tenantId,
+      callerKind: 'guest',
+      limited: false,
+      refused: null,
+    });
     await m.flush();
     const a = (await read(h.a)).requests;
-    expect(a.count).toBe(10);
+    // Refused requests are not served requests: kept apart from `count`.
+    expect(a.count).toBe(9);
     expect(a.limited).toBe(1);
+    expect(a.refused).toEqual({ rate_limited: 1 });
     expect(a.byCallerKind).toEqual({
-      guest: 6,
+      guest: 5,
       staff: 3,
       [UNKNOWN_CALLER_KIND]: 1,
     });
@@ -75,10 +102,20 @@ describe('request metering', () => {
   it('writes nothing on the desktop profile and ignores a request with no tenant', async () => {
     const before = (await read(h.a)).requests.count;
     const m = meter('desktop');
-    m.note({ tenantId: h.a.tenantId, callerKind: 'user', limited: false });
+    m.note({
+      tenantId: h.a.tenantId,
+      callerKind: 'user',
+      limited: false,
+      refused: null,
+    });
     await m.flush();
     const n = meter();
-    n.note({ tenantId: null, callerKind: 'user', limited: false });
+    n.note({
+      tenantId: null,
+      callerKind: 'user',
+      limited: false,
+      refused: null,
+    });
     await n.flush();
     expect((await read(h.a)).requests.count).toBe(before);
   });
@@ -92,7 +129,12 @@ describe('request metering', () => {
     });
     meters.push(m);
     expect(() =>
-      m.note({ tenantId: h.a.tenantId, callerKind: 'user', limited: false }),
+      m.note({
+        tenantId: h.a.tenantId,
+        callerKind: 'user',
+        limited: false,
+        refused: null,
+      }),
     ).not.toThrow();
     await expect(m.flush()).resolves.toBeUndefined();
   });

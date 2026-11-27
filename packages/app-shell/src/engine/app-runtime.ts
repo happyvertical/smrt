@@ -1188,7 +1188,12 @@ export class AppRuntime {
     const caller = currentOpPrincipal();
     // Core reports the request with the principal it decided (#5199).
     let meter:
-      | { tenantId: string | null; callerKind: string | null; limited: boolean }
+      | {
+          tenantId: string | null;
+          callerKind: string | null;
+          limited: boolean;
+          refused: string | null;
+        }
       | undefined;
     const api = new APIGenerator(
       {
@@ -1197,11 +1202,13 @@ export class AppRuntime {
           tenantId: string | null;
           callerKind: string | null;
           limited: boolean;
+          refused: string | null;
         }) => {
           meter = {
             tenantId: e.tenantId,
             callerKind: e.callerKind,
             limited: e.limited,
+            refused: e.refused,
           };
         },
         resolvePrincipal: () => ({

@@ -49,6 +49,7 @@ import {
 import type { RouteFilePlan } from './generated-route-files.js';
 import { applyRouteCors, type SvelteKitCorsOptions } from './route-cors.js';
 import { AUTO_GENERATED_ROUTE_HEADER } from './route-header.js';
+import { applyRouteMetering } from './route-metering.js';
 import { generateCollectionAccessImports } from './sveltekit-config-import.js';
 import type { SvelteKitOptions } from './sveltekit-generator.js';
 
@@ -100,7 +101,7 @@ export function generateEventsRoute(
   plan.emit({
     root: join(projectRoot, options.routesDir),
     routeDir,
-    content: applyRouteCors(content, eventsCors),
+    content: applyRouteCors(applyRouteMetering(content), eventsCors),
     label: '_events',
   });
   return true;
@@ -213,7 +214,6 @@ ${tenantHelper}
 function routeRateLimit(locals: unknown, request: Request, clientAddress: () => string): Response | undefined {
   const active = (getRequestTenantContext() as { tenantId?: unknown } | undefined)?.tenantId;
   const principal = apiPrincipalFromLocals(locals, typeof active === 'string' && active ? active : null);
-  const { authenticated: signedIn } = principal;
   let address: string | null = null;
   try { address = clientAddress(); } catch { /* no peer address: the limiter falls back */ }
   return enforceRouteLimits({
@@ -222,7 +222,6 @@ function routeRateLimit(locals: unknown, request: Request, clientAddress: () => 
     tenantId: principal.tenantId,
     userId: principal.userId ?? null,
     callerKind: principal.callerKind ?? null,
-    authenticated: signedIn,
   });
 }
 

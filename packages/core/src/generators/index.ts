@@ -129,6 +129,8 @@ export {
   meterRequest,
   type RequestMeterEvent,
   type RequestMeterSink,
+  type RequestRefusal,
+  refusalOfStatus,
   setRequestMeterSink,
 } from './request-metering';
 // The typed 403/401 a write refusal is thrown as (answered as a typed error).

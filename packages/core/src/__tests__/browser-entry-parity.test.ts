@@ -275,6 +275,7 @@ const NODE_ONLY_GROUPS: ReadonlyArray<{
       'enforceRouteLimits',
       'getRequestMeterSink',
       'meterRequest',
+      'refusalOfStatus',
       'setRequestMeterSink',
       'getRouteLimiter',
       'rateLimitedResponse',

@@ -1,109 +1,64 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { meterRequest, setRequestMeterSink } from './request-metering';
-import { APIGenerator } from './rest';
 import {
-  configureRouteLimits,
-  enforceRouteLimits,
-  type RouteLimitSubject,
-} from './route-limits';
-
-const subject = (over: Partial<RouteLimitSubject> = {}): RouteLimitSubject => ({
-  request: new Request('http://local/api/things'),
-  tenantId: 't1',
-  userId: 'u1',
-  authenticated: true,
-  ...over,
-});
+  meterRequest,
+  refusalOfStatus,
+  setRequestMeterSink,
+} from './request-metering';
+import { APIGenerator } from './rest';
+import { configureRouteLimits } from './route-limits';
 
 afterEach(() => {
   setRequestMeterSink(undefined);
   configureRouteLimits(undefined);
 });
 
+const WINDOW = { windowMs: 60_000 };
+const db = () => ({ db: { query: vi.fn() } as never });
+const ping = { '/ping': async () => new Response('pong') };
+
+/** A REST handler that resolves principals; `kind` 'none' is an anonymous caller. */
+function restHandler(
+  principal: 'user' | 'anonymous',
+  extra: Record<string, unknown> = {},
+) {
+  const sink = vi.fn();
+  const handler = new APIGenerator(
+    {
+      basePath: '/api',
+      requestMeter: sink,
+      customRoutes: ping,
+      resolvePrincipal: () =>
+        principal === 'user'
+          ? {
+              tenantId: 't1',
+              allowCrossTenant: false,
+              authenticated: true,
+              userId: 'u1',
+              callerKind: 'agent',
+            }
+          : { tenantId: null, allowCrossTenant: false, authenticated: false },
+      ...extra,
+    },
+    db(),
+  ).generateHandler();
+  return { handler, sink };
+}
+
 describe('request metering (#5199)', () => {
-  it('reports the decided principal, with no limiter configured', () => {
-    const sink = vi.fn();
-    setRequestMeterSink(sink);
-    expect(
-      enforceRouteLimits(subject({ callerKind: 'guest' })),
-    ).toBeUndefined();
-    expect(sink).toHaveBeenCalledWith({
-      tenantId: 't1',
-      callerKind: 'guest',
-      authenticated: true,
-      limited: false,
-      transport: 'sveltekit',
-    });
+  it('maps refusal statuses', () => {
+    expect([200, 404, 401, 403, 429].map(refusalOfStatus)).toEqual([
+      null,
+      null,
+      'unauthenticated',
+      'forbidden',
+      'rate_limited',
+    ]);
   });
 
-  it('flags a request the limits refused', () => {
-    const sink = vi.fn();
-    setRequestMeterSink(sink);
-    configureRouteLimits({ client: { maxEvents: 1, windowMs: 60_000 } });
-    enforceRouteLimits(subject());
-    expect(enforceRouteLimits(subject())?.status).toBe(429);
-    expect(sink.mock.calls.map(([e]) => e.limited)).toEqual([false, true]);
-  });
-
-  it('reports a caller with no tenant or kind as null', () => {
-    const sink = vi.fn();
-    enforceRouteLimits(
-      subject({ tenantId: undefined, userId: null, authenticated: false }),
-      undefined,
-      sink,
-    );
-    expect(sink).toHaveBeenCalledWith({
-      tenantId: null,
-      callerKind: null,
-      authenticated: false,
-      limited: false,
-      transport: 'sveltekit',
-    });
-  });
-
-  it('never throws into the request: a throwing or rejecting sink is swallowed', async () => {
-    const unhandled = vi.fn();
-    process.on('unhandledRejection', unhandled);
-    expect(() =>
-      meterRequest(
-        {
-          tenantId: null,
-          callerKind: null,
-          authenticated: false,
-          limited: false,
-          transport: 'rest',
-        },
-        () => {
-          throw new Error('boom');
-        },
-      ),
-    ).not.toThrow();
-    enforceRouteLimits(subject(), undefined, async () => {
-      throw new Error('async boom');
-    });
-    await new Promise((resolve) => setTimeout(resolve, 10));
-    process.off('unhandledRejection', unhandled);
-    expect(unhandled).not.toHaveBeenCalled();
-  });
-
-  it('counts a REST request once under the resolved tenant, not a header', async () => {
-    const sink = vi.fn();
-    const handler = new APIGenerator(
-      {
-        basePath: '/api',
-        requestMeter: sink,
-        resolvePrincipal: () => ({
-          tenantId: 't1',
-          allowCrossTenant: false,
-          authenticated: true,
-          userId: 'u1',
-          callerKind: 'agent',
-        }),
-      },
-      { db: { query: vi.fn() } as never },
-    ).generateHandler();
+  it('counts a served request under its tenant with the limiter off', async () => {
+    const { handler, sink } = restHandler('user');
     await handler(
-      new Request('http://local/api/nothing?tenantId=evil', {
+      new Request('http://local/api/ping?tenantId=evil', {
         headers: { 'x-tenant-id': 'evil', 'x-caller-kind': 'owner' },
       }),
     );
@@ -113,34 +68,148 @@ describe('request metering (#5199)', () => {
       callerKind: 'agent',
       authenticated: true,
       limited: false,
+      refused: null,
       transport: 'rest',
     });
   });
 
-  it('attributes a resolveTenant host to its tenant with no limiter, and does not resolve with no meter', async () => {
-    const sink = vi.fn();
-    const resolveTenant = vi.fn(() => ({
-      tenantId: 't9',
-      authenticated: true,
-    }));
-    const config = {
-      basePath: '/api',
-      resolveTenant,
-      customRoutes: { '/ping': async () => new Response('pong') },
-    };
-    const metered = new APIGenerator(
-      { ...config, requestMeter: sink },
-      { db: { query: vi.fn() } as never },
-    ).generateHandler();
-    await metered(new Request('http://local/api/ping'));
+  it('counts a served request under its tenant with the limiter on', async () => {
+    const { handler, sink } = restHandler('user', {
+      routeLimits: { client: { maxEvents: 5, ...WINDOW } },
+    });
+    await handler(new Request('http://local/api/ping'));
     expect(sink).toHaveBeenCalledWith(
-      expect.objectContaining({ tenantId: 't9', limited: false }),
+      expect.objectContaining({ tenantId: 't1', refused: null }),
     );
-    resolveTenant.mockClear();
-    const bare = new APIGenerator(config, {
-      db: { query: vi.fn() } as never,
-    }).generateHandler();
-    await bare(new Request('http://local/api/ping'));
+  });
+
+  it('counts a refused 429 under no tenant, with its reason', async () => {
+    const { handler, sink } = restHandler('user', {
+      routeLimits: { client: { maxEvents: 1, ...WINDOW } },
+    });
+    await handler(new Request('http://local/api/ping'));
+    const second = await handler(new Request('http://local/api/ping'));
+    expect(second.status).toBe(429);
+    expect(sink.mock.calls.map(([e]) => [e.tenantId, e.refused])).toEqual([
+      ['t1', null],
+      [null, 'rate_limited'],
+    ]);
+    expect(sink.mock.calls[1][0].limited).toBe(true);
+  });
+
+  it('an anonymous request naming tenant B, refused, does not count against B', async () => {
+    const { handler, sink } = restHandler('anonymous', {
+      customRoutes: undefined,
+      authMiddleware: undefined,
+    });
+    // A non-public model route refuses an unsigned caller (401); the request
+    // names tenant B in every place a client can.
+    const answer = await handler(
+      new Request('http://local/api/anything?tenantId=B&tenant_id=B', {
+        headers: { 'x-tenant-id': 'B' },
+      }),
+    );
+    expect([401, 403, 404]).toContain(answer.status);
+    const events = sink.mock.calls.map(([e]) => e);
+    expect(events).toHaveLength(1);
+    expect(events.some((e) => e.tenantId === 'B')).toBe(false);
+    if (answer.status !== 404) {
+      expect(events[0].tenantId).toBeNull();
+      expect(events[0].refused).not.toBeNull();
+    }
+  });
+
+  it('attributes a resolveTenant host to its tenant, limiter on or off', async () => {
+    for (const routeLimits of [
+      undefined,
+      { client: { maxEvents: 5, ...WINDOW } },
+    ]) {
+      const sink = vi.fn();
+      const handler = new APIGenerator(
+        {
+          basePath: '/api',
+          requestMeter: sink,
+          customRoutes: ping,
+          resolveTenant: () => ({ tenantId: 't9', authenticated: true }),
+          ...(routeLimits ? { routeLimits } : {}),
+        },
+        db(),
+      ).generateHandler();
+      await handler(new Request('http://local/api/ping'));
+      expect(sink).toHaveBeenCalledWith(
+        expect.objectContaining({ tenantId: 't9', refused: null }),
+      );
+    }
+  });
+
+  it('does not look up resolveTenant with no limiter and no meter', async () => {
+    const resolveTenant = vi.fn(() => ({ tenantId: 't9' }));
+    const handler = new APIGenerator(
+      { basePath: '/api', customRoutes: ping, resolveTenant },
+      db(),
+    ).generateHandler();
+    await handler(new Request('http://local/api/ping'));
     expect(resolveTenant).not.toHaveBeenCalled();
+  });
+
+  it('never throws into the request: a throwing or rejecting sink is swallowed', async () => {
+    const unhandled = vi.fn();
+    process.on('unhandledRejection', unhandled);
+    const event = {
+      tenantId: null,
+      callerKind: null,
+      authenticated: false,
+      limited: false,
+      refused: null,
+      transport: 'rest' as const,
+    };
+    expect(() =>
+      meterRequest(event, () => {
+        throw new Error('boom');
+      }),
+    ).not.toThrow();
+    meterRequest(event, async () => {
+      throw new Error('async boom');
+    });
+    for (const requestMeter of [
+      () => {
+        throw new Error('boom');
+      },
+      async () => {
+        throw new Error('async boom');
+      },
+    ]) {
+      const { handler } = restHandler('user', { requestMeter });
+      expect((await handler(new Request('http://local/api/ping'))).status).toBe(
+        200,
+      );
+    }
+    await new Promise((resolve) => setTimeout(resolve, 10));
+    process.off('unhandledRejection', unhandled);
+    expect(unhandled).not.toHaveBeenCalled();
+  });
+
+  it('counts a nested dispatch once, with the outer request', async () => {
+    const sink = vi.fn();
+    const handler: (req: Request) => Promise<Response> = new APIGenerator(
+      {
+        basePath: '/api',
+        requestMeter: sink,
+        resolvePrincipal: () => ({
+          tenantId: 't1',
+          allowCrossTenant: false,
+          authenticated: true,
+          userId: 'u1',
+        }),
+        customRoutes: {
+          '/outer': async (req: Request) =>
+            handler(new Request(new URL('/api/ping', req.url))),
+          ...ping,
+        },
+      },
+      db(),
+    ).generateHandler();
+    await handler(new Request('http://local/api/outer'));
+    expect(sink).toHaveBeenCalledTimes(1);
   });
 });

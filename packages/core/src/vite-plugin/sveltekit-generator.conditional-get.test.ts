@@ -151,7 +151,7 @@ describe('SvelteKit generated routes: conditional GET (#1757)', () => {
     // List handler wraps its query in the version-first helper (the query
     // thunk runs only on a cache miss) and returns the payload from the thunk.
     expect(collectionRoute).toContain(
-      'export const GET: RequestHandler = async ({ locals, url, request, getClientAddress })',
+      'const GETMetered: RequestHandler = async ({ locals, url, request, getClientAddress })',
     );
     expect(collectionRoute).toContain(
       'return conditionalVersionedRead(request, collection.db, collection.tableName, async () => {',
@@ -162,7 +162,7 @@ describe('SvelteKit generated routes: conditional GET (#1757)', () => {
 
     // Item GET handler too.
     expect(itemRoute).toContain(
-      'export const GET: RequestHandler = async ({ locals, params, request, getClientAddress })',
+      'const GETMetered: RequestHandler = async ({ locals, params, request, getClientAddress })',
     );
     expect(itemRoute).toContain(
       'return conditionalVersionedRead(request, collection.db, collection.tableName, async () => {',

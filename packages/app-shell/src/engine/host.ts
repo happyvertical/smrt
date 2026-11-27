@@ -402,6 +402,8 @@ export interface RestMeter {
   tenantId: string | null;
   callerKind: string | null;
   limited: boolean;
+  /** Why core refused it (`unauthenticated`, `forbidden`, `rate_limited`), else null; a refused request names no tenant. */
+  refused: string | null;
 }
 
 export interface VersionSummary {

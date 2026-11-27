@@ -28,11 +28,6 @@ import {
   extractClientIp,
   HttpTooManyRequestsError,
 } from '../http';
-import {
-  getRequestMeterSink,
-  meterRequest,
-  type RequestMeterSink,
-} from './request-metering';
 
 /** One window: at most `maxEvents` requests in `windowMs`. */
 export interface RouteLimit {
@@ -56,10 +51,6 @@ export interface RouteLimitSubject {
    * callers with no user id share one `local` bucket per tenant and kind.
    */
   clientAddress?: string | null;
-  /** The decided principal is signed in (for metering, #5199). */
-  authenticated?: boolean;
-  /** The transport serving the request (for metering, #5199). */
-  transport?: 'rest' | 'sveltekit';
 }
 
 export interface RouteLimitsConfig {
@@ -241,35 +232,20 @@ export function getRouteLimiter(): RouteLimiter | undefined {
 }
 
 /**
- * Admit one request or answer it with the 429, and report it to the request
- * meter (#5199). `limiter` defaults to the process-wide one and `sink` to the
- * process-wide meter; with neither the request is admitted and unmetered.
- * Never throws into the request: a limiter defect admits (the limit is a
- * guard, not a gate on the app being up) and a metering defect is swallowed.
+ * Admit one request or answer it with the 429. `limiter` defaults to the
+ * process-wide one; with none the request is admitted. Never throws into the
+ * request: a limiter defect admits (the limit is a guard, not a gate on the
+ * app being up). Metering (#5199) is separate and runs after the decision.
  */
 export function enforceRouteLimits(
   subject: RouteLimitSubject,
   limiter: RouteLimiter | undefined = activeLimiter,
-  sink: RequestMeterSink | undefined = getRequestMeterSink(),
 ): Response | undefined {
-  let response: Response | undefined;
-  if (limiter) {
-    try {
-      const decision = limiter.admit(subject);
-      response = decision ? rateLimitedResponse(decision) : undefined;
-    } catch {
-      response = undefined;
-    }
+  if (!limiter) return undefined;
+  try {
+    const decision = limiter.admit(subject);
+    return decision ? rateLimitedResponse(decision) : undefined;
+  } catch {
+    return undefined;
   }
-  meterRequest(
-    {
-      tenantId: subject.tenantId ? subject.tenantId : null,
-      callerKind: subject.callerKind ? subject.callerKind : null,
-      authenticated: subject.authenticated === true,
-      limited: response !== undefined,
-      transport: subject.transport ?? 'sveltekit',
-    },
-    sink,
-  );
-  return response;
 }

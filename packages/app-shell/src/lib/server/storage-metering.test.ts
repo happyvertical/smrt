@@ -210,6 +210,7 @@ describe('the one read', () => {
       count: 0,
       metered: false,
       limited: 0,
+      refused: {},
       byCallerKind: {},
     });
     await runAs(h.a, async () => {
@@ -230,6 +231,7 @@ describe('the one read', () => {
       count: 42,
       metered: true,
       limited: 0,
+      refused: {},
       byCallerKind: { unknown: 42 },
     });
     // tenant B sees none of A's

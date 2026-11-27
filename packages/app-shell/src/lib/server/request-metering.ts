@@ -6,7 +6,7 @@
 // desktop host is built without the option and never loads this file.
 //
 // Cost: a request is one map increment. Counts are batched per
-// (tenant, callerKind, limited) and written as `api.requests` COUNTER rows
+// (tenant, callerKind, refused) and written as `api.requests` COUNTER rows
 // (`TenantUsageMetric`; summing is right for a counter) by an unref'd timer or
 // once a batch holds enough distinct keys. A write that fails drops that batch
 // (best effort: metering never retries into a storm and never fails a
@@ -37,12 +37,15 @@ export interface RequestCount {
   tenantId: string | null;
   callerKind: string | null;
   limited: boolean;
+  /** Why core refused it, or null when it was served. */
+  refused: string | null;
 }
 
 interface Batch {
   tenantId: string;
   callerKind: string;
   limited: boolean;
+  refused: string | null;
   count: number;
   /** When the first request of this batch was seen (ms). */
   since: number;
@@ -79,7 +82,7 @@ export class RequestMeter {
       // A request with no tenant has nowhere to be counted.
       if (!request.tenantId) return;
       const callerKind = request.callerKind || UNKNOWN_CALLER_KIND;
-      const key = `${request.tenantId}\u0000${callerKind}\u0000${request.limited ? 1 : 0}`;
+      const key = `${request.tenantId}\u0000${callerKind}\u0000${request.refused ?? ''}`;
       const held = this.batches.get(key);
       if (held) held.count += 1;
       else
@@ -87,6 +90,7 @@ export class RequestMeter {
           tenantId: request.tenantId,
           callerKind,
           limited: request.limited,
+          refused: request.refused,
           count: 1,
           since: this.now(),
         });
@@ -131,6 +135,7 @@ export class RequestMeter {
               dimensions: {
                 callerKind: batch.callerKind,
                 limited: batch.limited,
+                refused: batch.refused,
               },
             });
           },

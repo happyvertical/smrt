@@ -1265,17 +1265,17 @@ describe('route parity: request metering (#5199)', () => {
     configureRouteLimits(undefined);
   });
 
-  /** The metered events of one request sent to one transport. */
+  /** The metered events of requests sent to one transport, in order. */
   async function metered(
     transport: 'rest' | 'kit',
-    principal: ParityPrincipal,
+    who: ParityPrincipal[],
     request: ParityRequest,
   ): Promise<Array<Omit<RequestMeterEvent, 'transport'>>> {
     const events: RequestMeterEvent[] = [];
     setRequestMeterSink((event) => {
       events.push(event);
     });
-    await fx.run(transport, principal, request);
+    for (const principal of who) await fx.run(transport, principal, request);
     setRequestMeterSink(undefined);
     expect(
       events.every(
@@ -1293,51 +1293,81 @@ describe('route parity: request metering (#5199)', () => {
     };
   };
 
+  // A client names another tenant and kind in every place it can; none counts.
+  const hostile = (): ParityRequest => ({
+    method: 'GET',
+    path: `${segment.note}?tenantId=${TENANT_B}&callerKind=owner`,
+    headers: { 'x-tenant-id': TENANT_B, 'x-caller-kind': 'owner' },
+  });
+
   it.each([
-    'writer',
-    'anonymous',
-  ])('both paths report one event from the decided principal: %s', async (name) => {
-    const principal = principals()[name];
-    // A client names another tenant and kind in every place it can; none counts.
-    const request: ParityRequest = {
-      method: 'GET',
-      path: `${segment.note}?tenantId=${TENANT_B}&callerKind=owner`,
-      headers: { 'x-tenant-id': TENANT_B, 'x-caller-kind': 'owner' },
-    };
-    const rest = await metered('rest', principal, request);
-    const kit = await metered('kit', principal, request);
+    false,
+    true,
+  ])('a served request counts under its decided tenant, limiter on: %s', async (limiterOn) => {
+    const writer = principals().writer;
+    if (limiterOn) {
+      configureRouteLimits({ client: { maxEvents: 50, windowMs: 60_000 } });
+    }
+    const rest = await metered('rest', [writer], hostile());
+    const kit = await metered('kit', [writer], hostile());
     expect(rest).toHaveLength(1);
     expect(kit).toEqual(rest);
-    expect(rest[0].tenantId).toBe(principal.rest.tenantId);
-    expect(rest[0].callerKind).toBeNull();
+    expect(rest[0]).toMatchObject({
+      tenantId: TENANT_A,
+      refused: null,
+      limited: false,
+    });
+  });
+
+  it('an anonymous request naming tenant B, refused, does not count against B', async () => {
+    const anonymous = principals().anonymous;
+    const rest = await metered('rest', [anonymous], hostile());
+    const kit = await metered('kit', [anonymous], hostile());
+    expect(rest).toHaveLength(1);
+    expect(kit).toEqual(rest);
+    expect(rest[0]).toMatchObject({
+      tenantId: null,
+      refused: 'unauthenticated',
+    });
+  });
+
+  it('a permission-refused request counts under no tenant, on both paths', async () => {
+    const denied = principals().signedInNoPermissions;
+    const create: ParityRequest = {
+      method: 'POST',
+      path: segment.note,
+      body: { name: 'x' },
+    };
+    const rest = await metered('rest', [denied], create);
+    const kit = await metered('kit', [denied], create);
+    expect(kit).toEqual(rest);
+    expect(rest[0]).toMatchObject({ tenantId: null, refused: 'forbidden' });
   });
 
   it('tags a guest, or any other kind, from the principal alone', async () => {
     for (const kind of ['guest', 'job']) {
       const request: ParityRequest = { method: 'GET', path: segment.note };
-      const rest = await metered('rest', withKind(kind), request);
-      const kit = await metered('kit', withKind(kind), request);
+      const rest = await metered('rest', [withKind(kind)], request);
+      const kit = await metered('kit', [withKind(kind)], request);
       expect(rest).toEqual(kit);
       expect(rest[0].callerKind).toBe(kind);
     }
   });
 
-  it('marks a request the limits refused, on both paths', async () => {
-    configureRouteLimits({ client: { maxEvents: 1, windowMs: 60_000 } });
+  it('marks a request the limits refused, under no tenant, on both paths', async () => {
     const request: ParityRequest = { method: 'GET', path: segment.note };
-    const seen: Record<string, boolean[]> = {};
+    const seen: Record<string, unknown[]> = {};
     for (const transport of ['rest', 'kit'] as const) {
       configureRouteLimits({ client: { maxEvents: 1, windowMs: 60_000 } });
-      const events: RequestMeterEvent[] = [];
-      setRequestMeterSink((event) => {
-        events.push(event);
-      });
-      for (let i = 0; i < 2; i++) {
-        await fx.run(transport, principals().writer, request);
-      }
-      seen[transport] = events.map((e) => e.limited);
+      const writer = principals().writer;
+      seen[transport] = (
+        await metered(transport, [writer, writer], request)
+      ).map((e) => [e.tenantId, e.refused, e.limited]);
     }
-    expect(seen.rest).toEqual([false, true]);
+    expect(seen.rest).toEqual([
+      [TENANT_A, null, false],
+      [null, 'rate_limited', true],
+    ]);
     expect(seen.kit).toEqual(seen.rest);
   });
 });

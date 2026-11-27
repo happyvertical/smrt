@@ -57,7 +57,8 @@ the SESSION's tenant (no tenant parameter; it refuses with no context):
 ## Request counts and caller kind (`request-metering.ts`)
 
 Core reports each request of the app's generated REST routes to a sink with the
-DECIDED principal's tenant and `callerKind` (`APIConfig.requestMeter`,
+DECIDED principal's tenant and `callerKind`, after its authorization and limit
+decision (`APIConfig.requestMeter`,
 `generators/request-metering.ts`; the generated SvelteKit routes use the same
 call through `setRequestMeterSink`). The app worker captures that event into
 `RestResult.meter`; `AppHost.rest` hands it to `HostOptions.onRequest` and
@@ -70,11 +71,14 @@ Drafts are not counted.
 map increment per request) and an unref'd timer (60 s, or 1,000 distinct keys)
 writes one `api.requests` COUNTER row per key (`source: 'app-shell.requests'`,
 random `sourceId`, window = first request to flush, `dimensions {callerKind,
-limited}`; summing is right). Tenant and kind are never request input; a caller
+limited, refused}`; summing is right). A refused request (`unauthenticated`,
+`forbidden`, `rate_limited`) is core's event with no tenant; the host files it
+under its OWN tenant (never one the caller named) with `refused` set, and the
+reader keeps it out of `count`. Tenant and kind are never request input; a caller
 with no kind is `unknown`, and a kind (owner, staff, guest, job, service) is a
 dimension value, not a branch. A failed flush drops that batch (best effort, no
 retry storm) and nothing throws into a request. `readTenantUsage().requests` =
-`{ count, metered, limited, byCallerKind }`, so guest traffic reads apart from
+`{ count (served), metered, limited, refused {reason: n}, byCallerKind }`, so guest traffic reads apart from
 staff traffic.
 
 ## Wake and idle-close samples (host.ts)

@@ -366,12 +366,16 @@ before the limiter runs; a `tenant` limit with none of them is refused at
 construction. A tenant-wide bucket can be drained by anonymous traffic
 addressed to that tenant, so the per-client limits are the primary defence.
 Unconfigured, nothing is limited. Request metering (#5199,
-`generators/request-metering.ts`) rides the same call: `enforceRouteLimits`
-reports `{ tenantId, callerKind, authenticated, limited, transport }` of the
-decided principal to `APIConfig.requestMeter` (REST) or `setRequestMeterSink`
-(generated routes), after the limits decide and before `onRequest`; a throwing
-or rejecting sink is swallowed, and nothing the client sent chooses the tenant
-or kind. Parity is covered in
+`generators/request-metering.ts`) runs AFTER the decision, with the response
+status: REST reports from `handleResolvedRequest` to `APIConfig.requestMeter`,
+and every emitted route's handlers sit behind `withRouteMetering`
+(`vite-plugin/route-metering.ts`, inside the CORS wrapper) which reports to
+`setRequestMeterSink`. A served request counts under the tenant it was served
+under (the decided principal's, or a `resolveTenant` host's answer); a refused
+one (401, 403, 429; `refused` names which) counts under `tenantId: null`, so a
+caller that merely names a tenant cannot inflate its count. A nested dispatch
+is part of its outer request. A throwing or rejecting sink is swallowed, and
+nothing the client sent chooses the tenant or kind. Parity is covered in
 `route-parity.test.ts`.
 
 Without `resolvePrincipal`, the tenant is `resolveTenant`'s answer or the
