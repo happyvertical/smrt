@@ -2,7 +2,10 @@ import type { DatabaseInterface } from '@happyvertical/smrt-core/migrations';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 const state = vi.hoisted(() => ({ get: vi.fn() }));
-vi.mock('@happyvertical/smrt-core', () => ({ getTestDatabase: state.get }));
+vi.mock('@happyvertical/smrt-core', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('@happyvertical/smrt-core')>()),
+  getTestDatabase: state.get,
+}));
 
 import { withScratchDatabase } from './helpers/postgres-scratch.js';
 
