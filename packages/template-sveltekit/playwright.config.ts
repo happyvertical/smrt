@@ -17,8 +17,16 @@ import { defineConfig } from '@playwright/test';
  * them, leaving empty strays behind. Playwright empties this directory at the
  * start of each run, `globalTeardown` removes it at the end, and specs read it
  * back as `testInfo.project.outputDir` rather than restating the path.
+ *
+ * `SMRT_M5_PART` (set by `e2e/support/gate.mjs`) gives each gate part its own
+ * root, so two parts on one machine never empty each other's directory.
  */
-const artifactRoot = join(realpathSync(tmpdir()), 'smrt-m5-artifacts');
+const artifactRoot = join(
+  realpathSync(tmpdir()),
+  process.env.SMRT_M5_PART
+    ? `smrt-m5-artifacts-${process.env.SMRT_M5_PART}`
+    : 'smrt-m5-artifacts',
+);
 
 /**
  * M5 fresh-browser gate (#2579).

@@ -26,8 +26,8 @@ never prevent the tests from running.
 - Every Linux `runs-on` declaration is the literal `ubuntu-latest`. Do not use
   ARC labels, `self-hosted`, or a conditional fallback selector. The inventory
   test in `scripts/ci-runner-inventory.test.mjs` protects this invariant.
-- `postgres-tests.yml` and `test-suite.yml`'s `m5-reference-gate` retain their
-  PostgreSQL `services:` containers and their preflight and unprivileged-role
+- `postgres-tests.yml` and `test-suite.yml`'s `m5-postgres` (one of the M5
+  gate's parts, see below) retain their PostgreSQL `services:` containers and their preflight and unprivileged-role
   behavior; GitHub-hosted Ubuntu supports those service containers.
 - `mobile.yml`'s `gradle-macos` and `xcode-ios` remain on `macos-latest`
   because Kotlin/Native iOS compilation and Xcode require macOS.
@@ -311,10 +311,11 @@ reason recorded next to the setting or here:
   track observed runtime. The last two came down from the 90-minute heavy-suite
   ceiling when they were pinned to hosted (#2236); at 6 s and 18 s measured, ten
   minutes is a hang guard rather than a capacity budget.
-- `test-suite.yml`'s `m5-reference-gate` at 60. Its work is bounded — one
-  application build plus one browser pass — and the gate sets its own
-  30-minute Playwright `globalTimeout`, so a run still going at 60 is stuck
-  rather than slow. The value keeps a wedged docker-lane job from holding a
+- `test-suite.yml`'s M5 part jobs (`m5-template`, `m5-postgres`, `m5-browser`)
+  at 60 and its `m5-reference-gate` aggregator at 15. Each part's work is
+  bounded — one application build plus one vitest shard or one browser pass —
+  and the gate sets its own 30-minute Playwright `globalTimeout`, so a run
+  still going at 60 is stuck rather than slow. The value keeps a wedged docker-lane job from holding a
   merge-group entry for the full 90.
 - The planner lanes (#4056): `planner-scope` at 10 (a checkout and a paths
   filter), `planner-browser` at 45 (one filtered build plus two short browser
@@ -368,8 +369,11 @@ reversal lever.
   Turbo's dry-run task list, log selected/total package counts, and emit each
   selected non-core test task exactly once, so wide core closures use the full
   suite's parallel shape without silently changing coverage. The core and
-  package matrices run concurrently. Every PR also runs affected knowledge
-  freshness: it has no paths filter, because the merge group always runs the
+  package matrices run concurrently. Generated knowledge pages are not committed in PRs: a push to main runs
+  `knowledge-regenerate.yml`, which maintains one rolling
+  `chore/knowledge-regenerate` PR, and `check-standards` fails a PR that edits
+  them (#5705). Every PR also runs affected knowledge
+  freshness (hand-written pages and generation inputs only): it has no paths filter, because the merge group always runs the
   check and a PR that skipped it was ejected there (#5045).
 - Merge groups (#5364): `validation-scope` runs `scripts/merge-group-scope.mjs`,
   which wraps `scripts/ci-impact.mjs` against `merge_group.base_sha`. The
@@ -527,15 +531,28 @@ PRs again. Publish Dry Run tests the lever explicitly — without it, a rollback
 would leave packaging unvalidated all the way into `publish.yml`, since
 `on-merge-main.yml` runs test and build but never a pack validation.
 
-`test-suite.yml`'s `m5-reference-gate` runs PostgreSQL in both modes. It
+`test-suite.yml`'s M5 gate (#5694) is five parallel part jobs — `m5-template`
+(a three-shard matrix), `m5-postgres` and `m5-browser` — and an aggregator,
+`m5-reference-gate` (`M5 Reference Fixture Gate`, the one result the rest of
+the workflow knows). Each part builds the reference application closure itself
+and uploads one sanitized `m5-part-*` result; the aggregator downloads them
+without `merge-multiple`, needs only a checkout and node, and passes each job
+group's `needs.<job>.result` to `gate.mjs verdict`, so a skipped, cancelled,
+missing, duplicated or empty part fails it. Its `if` is `!cancelled()` alone
+so it is never skipped with a part. `m5-postgres` is the only M5 job with a
+`services:` block and runs PostgreSQL in both modes; the vitest shards and the
+browser part run without it. Splitting the gate adds five hosted jobs to every
+run that reaches it (affected PRs, merge groups and `fork-pr-validation.yml`,
+which calls `mode: full`). The gate
 carries no paths filter: the gate serves a real generated application, so its
 blast radius is template-sveltekit's whole workspace closure, and a
 hand-maintained list of that closure is a silent-skip generator. It therefore
 runs in `affected` mode as well as in `full`, which is every merge group.
-The gate runs template-sveltekit's whole Vitest suite in two passes: files
+The gate runs template-sveltekit's whole Vitest suite across the parts: files
 named `*.postgres.optional.test.ts` share one disposable database and run one
-at a time; every other file opens its own SQLite database and runs two at a
-time, the shape its dedicated `test` shard already uses (#5045).
+at a time in `m5-postgres`; every other file opens its own SQLite database and
+runs two at a time inside its shard, the shape its dedicated `test` shard
+already uses (#5045).
 Every other lane in `on-pull-request.yml` and `test-suite.yml` is
 PostgreSQL-free; the registered PostgreSQL suites live in
 `postgres-tests.yml`, described under PostgreSQL isolation below.

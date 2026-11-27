@@ -17,7 +17,7 @@ Hosted inference (gate at startup, entitlement, caps): [hosted inference](agents
 
 Method code (QuickJS) in the cloud profile runs only with the `app.methods` entitlement, checked on the host, per call: [method code](agents/method-code.md).
 
-Per-tenant storage metering (`storage.bytes` gauge, one read, request-count seam for #5195): [storage metering](agents/storage-metering.md).
+Per-tenant storage metering (`storage.bytes` gauge, wake/idle-close samples, one read, request-count seam for #5195): [storage metering](agents/storage-metering.md).
 
 Workbook workflow ownership, upload limits, proof and recovery: [imports](agents/imports.md).
 

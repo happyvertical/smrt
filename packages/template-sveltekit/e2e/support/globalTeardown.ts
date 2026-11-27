@@ -22,6 +22,6 @@ export default function globalTeardown(config: FullConfig): void {
   const root = config.projects[0]?.outputDir;
   // Only ever a directory this config made: guard on the name it chose so a
   // misconfiguration can never turn this into a broader delete.
-  if (!root || !/[\\/]smrt-m5-artifacts$/.test(root)) return;
+  if (!root || !/[\\/]smrt-m5-artifacts(?:-[a-z0-9-]+)?$/.test(root)) return;
   rmSync(root, { recursive: true, force: true });
 }
