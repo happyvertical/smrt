@@ -63,6 +63,7 @@ export {
   applyGuestCeiling,
   assertGuestRuntimeActive,
   collectionPassesGuestCeiling,
+  type GuestCeilingTable,
   type GuestPermissionConfig,
   type GuestPermissionKind,
   GuestPermissionResolver,
@@ -70,6 +71,7 @@ export {
   type GuestRuntimeDenyReason,
   type GuestRuntimeResult,
   type GuestRuntimeState,
+  guestCeilingTables,
   guestOperationKind,
   isGuestOperationAllowed,
 } from './GuestPermissionResolver.js';
@@ -304,6 +306,7 @@ export {
   type ServicePrincipalServiceOptions,
 } from './ServicePrincipalService.js';
 export {
+  type GuestPrincipalPermissionRuntimeOptions,
   getCurrentSessionPermissionContext,
   getRequestScopedDatabase,
   type PrincipalPermissionRuntimeOptions,

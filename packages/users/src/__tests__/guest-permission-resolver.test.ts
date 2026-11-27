@@ -16,6 +16,7 @@ import {
   applyGuestCeiling,
   assertGuestRuntimeActive,
   GuestPermissionResolver,
+  guestCeilingTables,
   guestOperationKind,
   isGuestOperationAllowed,
 } from '../services/GuestPermissionResolver.js';
@@ -363,6 +364,58 @@ describe('GuestPermissionResolver (#5196)', () => {
         .size,
     ).toBe(1);
     registered.runtimeModel = true;
+  });
+
+  it('guestCeilingTables lists only listed collections that pass the ceiling', async () => {
+    const targets = generatePostgresPermissionSql({ db }).targets;
+    const tables = guestCeilingTables(
+      {
+        collections: [
+          'gp5196_products',
+          'gp5196_secrets',
+          'gp5196_flagged',
+          'gp5196_owned',
+          'gp5196_optional',
+          'gp5196_inpackage',
+          'gp5196_events',
+        ],
+      },
+      targets,
+    );
+    const tableOf = (collection: string) =>
+      targets.find((target) => target.collection === collection)?.tableName;
+    const names = tables.map((table) => table.tableName).sort();
+    expect(names).toContain(tableOf('gp5196_products'));
+    expect(names).toContain(tableOf('gp5196_events'));
+    for (const refused of [
+      'gp5196_secrets',
+      'gp5196_flagged',
+      'gp5196_owned',
+      'gp5196_optional',
+      'gp5196_inpackage',
+    ]) {
+      const table = tableOf(refused);
+      if (table) expect(names).not.toContain(table);
+    }
+    // An unlisted collection never contributes a table.
+    expect(
+      guestCeilingTables({ collections: ['gp5196_products'] }, targets).map(
+        (table) => table.tableName,
+      ),
+    ).toEqual([tableOf('gp5196_products')]);
+    // Create-only listing needs the createCollections opt-in.
+    expect(
+      guestCeilingTables({ collections: ['gp5196_noread'] }, targets),
+    ).toEqual([]);
+    expect(
+      guestCeilingTables(
+        {
+          collections: ['gp5196_noread'],
+          createCollections: ['gp5196_noread'],
+        },
+        targets,
+      ).map((table) => table.tableName),
+    ).toEqual([tableOf('gp5196_noread')]);
   });
 
   it('a read grant resolves, but never authorizes an aliased method', async () => {
