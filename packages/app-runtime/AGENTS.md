@@ -54,8 +54,9 @@ Application infrastructure composition for the validated runtime profiles in
   bootstrap table): framework step and `prepareDatabase` share ONE
   transaction; failure rolls back and removes a database file the attempt
   created (secret and root marker stay). Later starts: the framework batch is
-  one atomic DDL transaction on the database (a transaction handle has no
-  `getTableSchema`), then `prepareDatabase` in its own transaction.
+  one atomic DDL transaction on the database, then `prepareDatabase` in its own
+  transaction. SQLite rebuilds need the database handle; see
+  [first-start guidance](README.md#first-start-the-app-sets-up-its-own-database).
 - `prepareDatabase(db, context)` is the app hook the desktop shell builds on;
   keep name and shape. It runs on EVERY start after the framework step
   (idempotent). `context`: `db`, `profile`, `paths` (null deployed), `firstRun`,

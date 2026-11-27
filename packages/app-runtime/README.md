@@ -55,8 +55,12 @@ first run, the transaction handle), `context.profile`, `context.paths` (the
 resolved local paths, `null` on a deployed profile), `context.firstRun` (true
 only on the start that found no framework schema and no earlier runtime
 initialization) and `context.migrateSchemas()` (the framework runner bound to
-`db`; creates missing tables, and reshaping an existing table remains
-`smrt db:migrate`). A hook that only needs the database may take `(db)`.
+`db`; inside the step's transaction it creates missing tables and adds what
+existing ones lack, and refuses a change that needs a table rebuild. The framework step
+applies that rebuild on the next start only for objects registered before it
+runs; it runs before the hook on every start, so for objects the hook registers
+itself, run the migrate on the database handle with the model loaded). A hook that only needs the database
+may take `(db)`.
 
 **Atomicity.** On a first run the framework step and `prepareDatabase` run in
 ONE transaction. If either fails the transaction rolls back and, because this

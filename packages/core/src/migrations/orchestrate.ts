@@ -95,8 +95,17 @@ export interface MigrateSmrtSchemasOptions {
   db: DatabaseInterface;
   /**
    * Accepted for callers written before #4927. Every run is one atomic batch
-   * (tracked DDL and its marker together, safe inside a caller-owned
-   * transaction); `false` does not turn that off.
+   * (tracked DDL and its marker together); `false` does not turn that off.
+   *
+   * `db` may be a caller-owned transaction handle on SQLite and PostgreSQL:
+   * existing tables are read through the handle, so the run sees the
+   * transaction's own uncommitted DDL. Core reads PostgreSQL and
+   * SQLite through the handle itself; on any other engine the adapter must
+   * provide `getTableSchema`. A handle that cannot describe an existing table
+   * (or answers nothing for a listed one) is refused with
+   * `TableSchemaUnreadableError` before anything is applied or recorded; run
+   * those on the database handle. A SQLite table rebuild also needs the database handle, because it suspends
+   * foreign keys outside any transaction.
    */
   atomic?: boolean;
   /** Stored on the migration record so the audit log shows which app applied it. */
