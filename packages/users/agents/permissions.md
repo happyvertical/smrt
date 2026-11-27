@@ -437,3 +437,20 @@ PostgreSQL via `test:postgres`) and `sveltekit-guest-audit-posture.postgres.test
   `permissions.guest`; admission refuses guests until the audit table has the
   forced RLS and guest policy, and the guest audit insert fails (so does the
   create) against an unmigrated table.
+
+#### Run-time models (hosted user apps)
+
+Run-time models (`registerRuntimeModel`, stamped `runtimeModel: true`) are
+excluded from the guest ceiling by default. The app opts a model in with
+`permissions.guest.runtimeModels: ['<package>:<Class>']`, a list of QUALIFIED
+model names (a collection name, whitespace, a wildcard or any non-string
+refuses the whole guest block, as every other malformed value does). Being
+exposed, or being named in `collections`, is not an opt-in. An opted-in
+run-time model must still pass everything else: listed in `collections` (and
+`createCollections` for creates, with a `createFields` list), not effectively
+sensitive (inherited fields included), a required-mode tenant model that has a
+generated policy target (a model with no target at admission is refused, never
+assumed), no owner-scoped or extra binding, the per-model rule (a shared
+collection name drops the slug), relation-free allowed fields. The opt-in
+changes only the run-time exclusion. `guestCeilingTables` includes an opted-in
+run-time table so its RLS posture is verified like any other.

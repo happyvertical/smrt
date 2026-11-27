@@ -19,6 +19,11 @@
  *           createFields: {
  *             contact_messages: { allowedFields: ['name', 'email', 'message'] },
  *           },
+ *           // Run-time models (hosted user-app models) are excluded unless
+ *           // named here by qualified name (`package:Class`). Listing one
+ *           // opens nothing else: it must still be in `collections`, pass
+ *           // every other ceiling rule and have a generated policy target.
+ *           runtimeModels: ['app_1:ContactMessage'],
  *           // Reverse-proxy hops to trust for the client address (default 0).
  *           trustedProxyHops: 1,
  *         },
@@ -47,7 +52,20 @@ const KNOWN_KEYS = new Set([
   'createFields',
   'trustedProxyHops',
   'rateLimits',
+  'runtimeModels',
 ]);
+/** A qualified model name: `package:Class`, no whitespace, bounded. */
+const QUALIFIED_MODEL = /^[^\s:]{1,200}:[^\s:]{1,200}$/;
+
+function parseRuntimeModels(raw: unknown): string[] | null {
+  if (!Array.isArray(raw)) return null;
+  const out: string[] = [];
+  for (const entry of raw) {
+    if (typeof entry !== 'string' || !QUALIFIED_MODEL.test(entry)) return null;
+    out.push(entry);
+  }
+  return [...new Set(out)];
+}
 const FIELD_KEYS = new Set([
   'allowedFields',
   'maxBodyBytes',
@@ -185,9 +203,16 @@ export function parseGuestPermissionConfig(
     if (!parsed) return null;
     rateLimits = parsed;
   }
+  let runtimeModels: string[] | undefined;
+  if (record.runtimeModels !== undefined) {
+    const parsed = parseRuntimeModels(record.runtimeModels);
+    if (!parsed) return null;
+    runtimeModels = parsed;
+  }
   return {
     collections: [...new Set(collections)],
     createCollections: [...new Set(createCollections)],
+    ...(runtimeModels ? { runtimeModels } : {}),
     ...(createFields ? { createFields } : {}),
     ...(trustedProxyHops === undefined ? {} : { trustedProxyHops }),
     ...(rateLimits ? { rateLimits } : {}),

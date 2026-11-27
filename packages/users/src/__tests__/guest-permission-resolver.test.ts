@@ -367,6 +367,167 @@ describe('GuestPermissionResolver (#5196)', () => {
     registered.runtimeModel = true;
   });
 
+  describe('run-time models need an explicit opt-in (#5196, #5197)', () => {
+    const define = (name: string, extra: Record<string, unknown> = {}) => {
+      registerRuntimeModel({
+        name,
+        packageName: '@test/gp5196rt',
+        collection: undefined,
+        tenantScoped: true,
+        fields: { title: { type: 'text' } },
+        ...extra,
+      } as never);
+      const targets = generatePostgresPermissionSql({ db }).targets;
+      const target = targets.find((x) => x.className === name);
+      expect(target).toBeDefined();
+      return { targets, target: target!, qualified: target!.qualifiedName! };
+    };
+    const slugs = (collection: string) => [
+      `${collection}.read`,
+      `${collection}.create`,
+    ];
+
+    it('is excluded without the opt-in, for read and create, whatever else is listed', () => {
+      const { targets, target } = define('RtOptOut5196');
+      const guest = {
+        collections: [target.collection!],
+        createCollections: [target.collection!],
+      };
+      expect(
+        applyGuestCeiling(slugs(target.collection!), guest, targets).size,
+      ).toBe(0);
+      // Naming another run-time model, or the collection name, is not the opt-in.
+      expect(
+        applyGuestCeiling(
+          slugs(target.collection!),
+          {
+            ...guest,
+            runtimeModels: ['@test/gp5196rt:Other', target.collection!],
+          },
+          targets,
+        ).size,
+      ).toBe(0);
+    });
+
+    it('admits an opted-in model for the slugs the app lists, and says which model', () => {
+      const { targets, target, qualified } = define('RtOptIn5196');
+      const collection = target.collection!;
+      const admitted = guestSlugTargets(
+        slugs(collection),
+        {
+          collections: [collection],
+          createCollections: [collection],
+          runtimeModels: [qualified],
+        },
+        targets,
+      );
+      expect([...admitted.keys()].sort()).toEqual(slugs(collection).sort());
+      expect(admitted.get(`${collection}.read`)?.qualifiedName).toBe(qualified);
+      // The opt-in does not widen what the app listed: create needs createCollections.
+      const readOnly = applyGuestCeiling(
+        slugs(collection),
+        { collections: [collection], runtimeModels: [qualified] },
+        targets,
+      );
+      expect([...readOnly]).toEqual([`${collection}.read`]);
+      // Nor does it replace listing the collection.
+      expect(
+        applyGuestCeiling(
+          slugs(collection),
+          { collections: [], runtimeModels: [qualified] },
+          targets,
+        ).size,
+      ).toBe(0);
+    });
+
+    it('still refuses an opted-in model that is sensitive', () => {
+      const { targets, target, qualified } = define('RtSensitive5196', {
+        fields: {
+          title: { type: 'text' },
+          token: { type: 'text', sensitive: true },
+        },
+      });
+      expect(
+        applyGuestCeiling(
+          slugs(target.collection!),
+          {
+            collections: [target.collection!],
+            createCollections: [target.collection!],
+            runtimeModels: [qualified],
+          },
+          targets,
+        ).size,
+      ).toBe(0);
+    });
+
+    it('still refuses an opted-in model with no generated policy target', () => {
+      const { target, qualified } = define('RtNoTarget5196');
+      const guest = {
+        collections: [target.collection!],
+        createCollections: [target.collection!],
+        runtimeModels: [qualified],
+      };
+      // The target is absent at admission: refused, never assumed.
+      expect(applyGuestCeiling(slugs(target.collection!), guest, []).size).toBe(
+        0,
+      );
+      // A model that is not required-mode tenant-scoped gets no policy target
+      // at all, so there is nothing to admit.
+      registerRuntimeModel({
+        name: 'RtOptional5196',
+        packageName: '@test/gp5196rt',
+        collection: undefined,
+        tenantScoped: { mode: 'optional' },
+        fields: { title: { type: 'text' } },
+      } as never);
+      const targets = generatePostgresPermissionSql({ db }).targets;
+      expect(
+        targets.find((x) => x.className === 'RtOptional5196'),
+      ).toBeUndefined();
+      const optional = ObjectRegistry.findClassesByName('RtOptional5196')[0];
+      expect(optional?.collection).toBeTruthy();
+      expect(
+        applyGuestCeiling(
+          slugs(optional.collection!),
+          {
+            collections: [optional.collection!],
+            createCollections: [optional.collection!],
+            runtimeModels: [optional.qualifiedName!],
+          },
+          targets,
+        ).size,
+      ).toBe(0);
+    });
+
+    it('still applies the per-model rule when the collection name is shared', () => {
+      const { targets, target, qualified } = define('RtShared5196');
+      const twin = {
+        ...target,
+        qualifiedName: '@test/gp5196rt:Twin',
+        tableName: 'rt_twin',
+      };
+      expect(
+        applyGuestCeiling(
+          [`${target.collection}.read`],
+          { collections: [target.collection!], runtimeModels: [qualified] },
+          [...targets, twin],
+        ).size,
+      ).toBe(0);
+    });
+
+    it('guestCeilingTables includes an opted-in run-time table and only then', () => {
+      const { targets, target, qualified } = define('RtTables5196');
+      const base = { collections: [target.collection!] };
+      expect(guestCeilingTables(base, targets)).toEqual([]);
+      expect(
+        guestCeilingTables(
+          { ...base, runtimeModels: [qualified] },
+          targets,
+        ).map((t) => t.tableName),
+      ).toEqual([target.tableName]);
+    });
+  });
+
   describe('a slug is admitted per model, not per collection name', () => {
     type Target = ReturnType<
       typeof generatePostgresPermissionSql

@@ -32,6 +32,18 @@ describe('parseGuestPermissionConfig (#5196)', () => {
     });
   });
 
+  it('parses runtimeModels as qualified names, deduplicated', () => {
+    expect(
+      parseGuestPermissionConfig({
+        collections: ['a'],
+        runtimeModels: ['app_1:Contact', 'app_1:Contact', '@x/y:Z'],
+      })?.runtimeModels,
+    ).toEqual(['app_1:Contact', '@x/y:Z']);
+    expect(
+      parseGuestPermissionConfig({ collections: ['a'] })?.runtimeModels,
+    ).toBeUndefined();
+  });
+
   it.each([
     ['absent', undefined],
     ['null', null],
@@ -105,6 +117,23 @@ describe('parseGuestPermissionConfig (#5196)', () => {
       'a negative trusted hop count',
       { collections: ['a'], trustedProxyHops: -1 },
     ],
+    [
+      'runtime models not an array',
+      { collections: ['a'], runtimeModels: 'p:M' },
+    ],
+    [
+      'a collection name as a runtime model',
+      { collections: ['a'], runtimeModels: ['items'] },
+    ],
+    [
+      'a runtime model with whitespace',
+      { collections: ['a'], runtimeModels: ['p: M'] },
+    ],
+    [
+      'a non-string runtime model',
+      { collections: ['a'], runtimeModels: ['p:M', 3] },
+    ],
+    ['a wildcard runtime model', { collections: ['a'], runtimeModels: ['*'] }],
     ['an unknown rate limit', { collections: ['a'], rateLimits: { x: 1 } }],
     ['a zero rate limit', { collections: ['a'], rateLimits: { windowMs: 0 } }],
   ])('refuses the whole block when %s', (_name, raw) => {
