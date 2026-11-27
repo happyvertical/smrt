@@ -28,12 +28,13 @@ import {
 import { ModelAccessGrantCollection } from '../objects/ModelAccessGrant.ts';
 import { getShellDb } from './host.ts';
 import {
-  ACCESS_ACTIONS,
   type AccessAction,
+  finalStaffSlugs,
   isAccessAction,
-  modelStamp,
+  sharedTableModels,
   slugsFor,
 } from './model-access.ts';
+import { ShellVersionStore } from './version-store.ts';
 
 export interface Principal {
   id: string;
@@ -242,20 +243,27 @@ export async function staffPrincipalFor(
   const role = user.tenantId === tenant ? await staffRoleOf(user) : null;
   if (role !== null) {
     try {
-      const rows = await runAs(user, async () =>
-        (
-          await ModelAccessGrantCollection.create({ db: await getShellDb() })
-        ).list({ limit: 10000 }),
-      );
+      const { rows, stamps } = await runAs(user, async () => {
+        const db = await getShellDb();
+        return {
+          rows: await (await ModelAccessGrantCollection.create({ db })).list({
+            limit: 10000,
+          }),
+          stamps: (await new ShellVersionStore(db, tenant).modelStamps())
+            .stamps,
+        };
+      });
+      const shared = sharedTableModels(def);
       const byModel = new Map<string, Set<AccessAction>>();
       for (const row of rows) {
         const model = row.modelName;
         const action = row.action;
         if (
+          row.tenantId !== tenant ||
           !isAccessAction(action) ||
-          !(ACCESS_ACTIONS as readonly string[]).includes(action) ||
           !Object.hasOwn(def.models, model) ||
-          row.modelStamp !== modelStamp(def, model) ||
+          shared.has(model) ||
+          row.modelStamp !== stamps.get(model) ||
           (role === 'viewer' && action !== 'read')
         )
           continue;
@@ -273,6 +281,6 @@ export async function staffPrincipalFor(
     kind: 'user',
     tenantId: tenant,
     userId: user.id,
-    permissions,
+    permissions: finalStaffSlugs(def, permissions),
   });
 }

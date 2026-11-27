@@ -64,13 +64,75 @@ export function slugsFor(
   return [...out];
 }
 
-/** A short stable identity of a model: name, table and the shipped model it extends. */
-export function modelStamp(def: AppDefinition, model: string): string {
-  const md = def.models[model];
-  return createHash('sha256')
-    .update(`${model}\0${md ? tableFor(model, md) : ''}\0${md?.extends ?? ''}`)
-    .digest('hex')
-    .slice(0, 16);
+/**
+ * Models whose table is also another model's (`Chore` and `Chores` both map to
+ * `u_chores`). Slugs are per table, so a grant on one would open the other:
+ * such models are never grantable and never given slugs.
+ */
+export function sharedTableModels(def: AppDefinition): Set<string> {
+  const byTable = new Map<string, string[]>();
+  for (const [m, md] of Object.entries(def.models)) {
+    const t = tableFor(m, md);
+    byTable.set(t, [...(byTable.get(t) ?? []), m]);
+  }
+  const out = new Set<string>();
+  for (const names of byTable.values())
+    if (names.length > 1) for (const n of names) out.add(n);
+  return out;
+}
+
+/**
+ * The last filter before a staff principal is built: only `<table>.<action>`
+ * slugs of the fixed action map for models of `def` (never `_engine.owner`,
+ * delete or a method slug, whatever came before).
+ */
+export function finalStaffSlugs(
+  def: AppDefinition,
+  slugs: Iterable<string>,
+): string[] {
+  const allowed = new Set<string>();
+  const shared = sharedTableModels(def);
+  for (const [m, md] of Object.entries(def.models)) {
+    if (shared.has(m)) continue;
+    for (const list of Object.values(ACTION_SLUG_ACTIONS))
+      for (const a of list) allowed.add(`${tableFor(m, md)}.${a}`);
+  }
+  return [...new Set(slugs)].filter(
+    (s) => s !== '_engine.owner' && allowed.has(s),
+  );
+}
+
+/**
+ * Per-model creation identities from the version chain: a model's stamp is the
+ * number of the version that created it in the chain leading to `current`
+ * (parent links; an undone branch is not in it). Removing and adding a model
+ * of the same name makes a later version, so the stamp differs.
+ */
+export function creationStamps(
+  versions: {
+    version: number;
+    parent: number | null;
+    definition: AppDefinition;
+  }[],
+  current: number,
+): Map<string, string> {
+  const byNumber = new Map(versions.map((v) => [v.version, v]));
+  const chain: typeof versions = [];
+  for (
+    let v = byNumber.get(current);
+    v && chain.length <= versions.length;
+    v = v.parent === null ? undefined : byNumber.get(v.parent)
+  )
+    chain.unshift(v);
+  const stamps = new Map<string, string>();
+  let present = new Set<string>();
+  for (const v of chain) {
+    const now = new Set(Object.keys(v.definition.models ?? {}));
+    for (const m of now) if (!present.has(m)) stamps.set(m, String(v.version));
+    for (const m of present) if (!now.has(m)) stamps.delete(m);
+    present = now;
+  }
+  return stamps;
 }
 
 /** The one row id of a tenant + model + action: a second insert is a key clash. */
@@ -109,12 +171,13 @@ export async function clearGrants(
   tenantId: string | null,
   previous: string,
   next: string,
+  all = false,
 ): Promise<void> {
   const before = modelsOf(previous);
   const after = modelsOf(next);
   const tenant = tenantId ? ' AND tenant_id = ?' : '';
   const params = tenantId ? [tenantId] : [];
-  if (!before || !after || before.size === 0) {
+  if (all || !before || !after || before.size === 0) {
     await db.query(
       `DELETE FROM model_access_grants WHERE 1 = 1${tenant}`,
       params,

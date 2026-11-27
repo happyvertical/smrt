@@ -18,7 +18,7 @@ import {
   ModelAccessGrantCollection,
 } from '../objects/ModelAccessGrant.ts';
 import { callerOf } from './http.ts';
-import { clearGrants } from './model-access.ts';
+import { finalStaffSlugs } from './model-access.ts';
 import { type Principal, runAs, staffPrincipalFor } from './owner.ts';
 import { openShell, type ShellHarness } from './test-support.ts';
 import { ShellVersionStore } from './version-store.ts';
@@ -59,6 +59,32 @@ const staffAs = async (slug: string, status = MembershipStatus.ACTIVE) => {
   return { id: user.id as string, tenantId: h.owner.tenantId } as Principal;
 };
 
+const store = () => new ShellVersionStore(h.db, h.owner.tenantId);
+let nextVersion = 100;
+/** Make `d` the stored current definition (a new version on the current one). */
+const setDef = async (d: AppDefinition): Promise<AppDefinition> => {
+  const s = store();
+  const parent = await runAs(h.owner, () => s.current());
+  const version = nextVersion++;
+  await runAs(h.owner, () =>
+    s.commit(
+      [
+        {
+          version,
+          parent,
+          author: 'test',
+          summary: `v${version}`,
+          definition: d,
+          migration: null,
+          createdAt: new Date().toISOString(),
+        },
+      ],
+      version,
+    ),
+  );
+  return d;
+};
+
 const asOwner = <T>(fn: () => Promise<T>) => runAs(h.owner, fn);
 const rows = () =>
   asOwner(async () =>
@@ -71,16 +97,16 @@ const wipe = () => h.db.query('DELETE FROM model_access_grants');
 describe('ModelAccessGrant', () => {
   it('is owner only and idempotent per tenant + model + action', async () => {
     await wipe();
-    const d = def('Chore');
+    const d = await setDef(def('Chore'));
     await expect(
-      runAs(h.member, () => ModelAccessGrant.grant(d, 'Chore', 'read')),
+      runAs(h.member, () => ModelAccessGrant.grant('Chore', 'read')),
     ).rejects.toMatchObject({ status: 403 });
     await expect(
       runAs(h.member, () => ModelAccessGrant.list()),
     ).rejects.toMatchObject({ status: 403 });
-    await asOwner(() => ModelAccessGrant.grant(d, 'Chore', 'read'));
-    await asOwner(() => ModelAccessGrant.grant(d, 'Chore', 'read'));
-    await asOwner(() => ModelAccessGrant.grant(d, 'Chore', 'create'));
+    await asOwner(() => ModelAccessGrant.grant('Chore', 'read'));
+    await asOwner(() => ModelAccessGrant.grant('Chore', 'read'));
+    await asOwner(() => ModelAccessGrant.grant('Chore', 'create'));
     expect(await rows()).toHaveLength(2);
     expect(await asOwner(() => ModelAccessGrant.list())).toEqual(
       expect.arrayContaining([
@@ -101,7 +127,7 @@ describe('ModelAccessGrant', () => {
 
   it('refuses delete, method slugs and unknown models or actions', async () => {
     await wipe();
-    const d = def('Chore');
+    const d = await setDef(def('Chore'));
     for (const action of [
       'delete',
       'list',
@@ -111,10 +137,10 @@ describe('ModelAccessGrant', () => {
       '',
     ])
       await expect(
-        asOwner(() => ModelAccessGrant.grant(d, 'Chore', action)),
+        asOwner(() => ModelAccessGrant.grant('Chore', action)),
       ).rejects.toThrow(/cannot be granted/);
     await expect(
-      asOwner(() => ModelAccessGrant.grant(d, 'Nope', 'read')),
+      asOwner(() => ModelAccessGrant.grant('Nope', 'read')),
     ).rejects.toThrow(/no model/);
     await expect(
       asOwner(() => ModelAccessGrant.revoke('Chore', 'delete')),
@@ -136,11 +162,11 @@ describe('staffPrincipalFor', () => {
 
   it('maps granted actions to slugs, never the owner slug, delete or methods', async () => {
     await wipe();
-    const d = def('Chore', 'Note');
+    const d = await setDef(def('Chore', 'Note'));
     await asOwner(async () => {
-      await ModelAccessGrant.grant(d, 'Chore', 'read');
-      await ModelAccessGrant.grant(d, 'Chore', 'update');
-      await ModelAccessGrant.grant(d, 'Note', 'create');
+      await ModelAccessGrant.grant('Chore', 'read');
+      await ModelAccessGrant.grant('Chore', 'update');
+      await ModelAccessGrant.grant('Note', 'create');
     });
     for (const role of [DEFAULT_ROLE_SLUGS.ADMIN, DEFAULT_ROLE_SLUGS.MEMBER]) {
       const staff = await staffAs(role);
@@ -161,11 +187,11 @@ describe('staffPrincipalFor', () => {
 
   it('caps a viewer at read whatever the grant says', async () => {
     await wipe();
-    const d = def('Chore');
+    const d = await setDef(def('Chore'));
     await asOwner(async () => {
-      await ModelAccessGrant.grant(d, 'Chore', 'read');
-      await ModelAccessGrant.grant(d, 'Chore', 'create');
-      await ModelAccessGrant.grant(d, 'Chore', 'update');
+      await ModelAccessGrant.grant('Chore', 'read');
+      await ModelAccessGrant.grant('Chore', 'create');
+      await ModelAccessGrant.grant('Chore', 'update');
     });
     const viewer = await staffAs(DEFAULT_ROLE_SLUGS.VIEWER);
     const p = await staffPrincipalFor(viewer, viewer.tenantId, d);
@@ -178,8 +204,8 @@ describe('staffPrincipalFor', () => {
 
   it('is empty for the owner, an inactive member, a stranger and another tenant', async () => {
     await wipe();
-    const d = def('Chore');
-    await asOwner(() => ModelAccessGrant.grant(d, 'Chore', 'read'));
+    const d = await setDef(def('Chore'));
+    await asOwner(() => ModelAccessGrant.grant('Chore', 'read'));
     expect(
       (await staffPrincipalFor(h.owner, h.owner.tenantId, d)).permissions,
     ).toEqual([]);
@@ -203,19 +229,12 @@ describe('staffPrincipalFor', () => {
 
   it('ignores a grant whose model is gone or is a different model of the same name', async () => {
     await wipe();
-    const d = def('Chore');
-    await asOwner(() => ModelAccessGrant.grant(d, 'Chore', 'read'));
+    const d = await setDef(def('Chore'));
+    await asOwner(() => ModelAccessGrant.grant('Chore', 'read'));
     const staff = await staffAs(DEFAULT_ROLE_SLUGS.MEMBER);
     expect(
       (await staffPrincipalFor(staff, staff.tenantId, def('Other')))
         .permissions,
-    ).toEqual([]);
-    const reborn = {
-      ...d,
-      models: { Chore: { extends: 'x:Y', fields: {} } },
-    } as unknown as AppDefinition;
-    expect(
-      (await staffPrincipalFor(staff, staff.tenantId, reborn)).permissions,
     ).toEqual([]);
   });
 });
@@ -268,61 +287,115 @@ describe('callerOf', () => {
 });
 
 describe('grants leave with their model', () => {
-  const record = (version: number, d: AppDefinition): VersionRecord => ({
+  const models = async () => (await rows()).map((r) => r.modelName).sort();
+  const record = (
+    version: number,
+    parent: number | null,
+    d: AppDefinition,
+    summary = `v${version}`,
+  ): VersionRecord => ({
     version,
-    parent: version === 0 ? null : version - 1,
+    parent,
     author: 'test',
-    summary: `v${version}`,
+    summary,
     definition: d,
     migration: null,
     createdAt: new Date().toISOString(),
   });
-  const models = async () => (await rows()).map((r) => r.modelName).sort();
 
-  it('clears on removal, on undo past the model, and on import into an empty app', async () => {
+  it('clears on removal and on undo past the model, but only that model', async () => {
     await wipe();
-    const store = new ShellVersionStore(h.db);
-    const v0 = def('Chore');
+    const s = store();
+    const v0 = await setDef(def('Chore'));
+    const base = nextVersion - 1;
     const v1 = def('Chore', 'Note');
-    const v2 = def('Chore');
-    await runAs(h.owner, async () => {
-      await store.commit([record(0, v0)], 0);
-      await store.commit([record(1, v1)], 1);
-    });
+    await runAs(h.owner, () =>
+      s.commit([record(nextVersion, base, v1)], nextVersion),
+    );
+    const added = nextVersion++;
     await asOwner(async () => {
-      await ModelAccessGrant.grant(v1, 'Chore', 'read');
-      await ModelAccessGrant.grant(v1, 'Note', 'read');
+      await ModelAccessGrant.grant('Chore', 'read');
+      await ModelAccessGrant.grant('Note', 'read');
     });
-    // remove Note: only its grants go
-    await runAs(h.owner, () => store.commit([record(2, v2)], 2));
+    // remove Note
+    await runAs(h.owner, () =>
+      s.commit([record(nextVersion, added, v0)], nextVersion),
+    );
+    nextVersion++;
     expect(await models()).toEqual(['Chore']);
-    // undo to v1 puts Note back, closed
-    await runAs(h.owner, () => store.setCurrent(1));
+    // undo to the version that had Note: it is back, and closed
+    await runAs(h.owner, () => s.setCurrent(added));
     expect(await models()).toEqual(['Chore']);
-    await asOwner(() => ModelAccessGrant.grant(v1, 'Note', 'update'));
+    await asOwner(() => ModelAccessGrant.grant('Note', 'update'));
     expect(await models()).toEqual(['Chore', 'Note']);
-    // undo-to v0 (before Note existed) clears it again
-    await runAs(h.owner, () => store.setCurrent(0));
+    // undo-to before Note existed clears it again
+    await runAs(h.owner, () => s.setCurrent(base));
     expect(await models()).toEqual(['Chore']);
-    // a first commit into an empty app (import) starts everything closed
-    await clearGrants(h.db, null, '', JSON.stringify(v0));
-    expect(await models()).toEqual([]);
   });
 
   it('a new model of an old name starts closed for staff', async () => {
     await wipe();
-    const store = new ShellVersionStore(h.db);
-    const withChore = def('Chore');
-    await runAs(h.owner, () => store.commit([record(10, withChore)], 10));
-    await asOwner(() => ModelAccessGrant.grant(withChore, 'Chore', 'read'));
+    const d = await setDef(def('Chore'));
+    await asOwner(() => ModelAccessGrant.grant('Chore', 'read'));
+    const staff = await staffAs(DEFAULT_ROLE_SLUGS.MEMBER);
+    const slugs = async () =>
+      (await staffPrincipalFor(staff, staff.tenantId, d)).permissions;
+    expect(await slugs()).not.toEqual([]);
+    await setDef(def());
+    await setDef(d);
+    expect(await slugs()).toEqual([]);
+    // and a grant that survived by some other path still does not match the new stamp
+    await asOwner(() => ModelAccessGrant.grant('Chore', 'read'));
+    await h.db.query("UPDATE model_access_grants SET model_stamp = 'old'");
+    expect(await slugs()).toEqual([]);
+  });
+
+  it('an import commit clears every grant, even a same-named model', async () => {
+    await wipe();
+    const d = await setDef(def('Chore'));
+    await asOwner(() => ModelAccessGrant.grant('Chore', 'read'));
+    const s = store();
+    const parent = nextVersion - 1;
+    await runAs(h.owner, () =>
+      s.commit(
+        [record(nextVersion, parent, d, 'import template')],
+        nextVersion,
+      ),
+    );
+    nextVersion++;
+    expect(await models()).toEqual([]);
+  });
+});
+
+describe('slug safety', () => {
+  it('refuses a grant on a model that shares its table, and never emits its slugs', async () => {
+    await wipe();
+    const d = await setDef(def('Chore', 'Chores'));
+    await expect(
+      asOwner(() => ModelAccessGrant.grant('Chore', 'read')),
+    ).rejects.toThrow(/shares its table/);
+    // a row that got in by another path opens neither model
+    await h.db.query(
+      "INSERT INTO model_access_grants (id, slug, tenant_id, model_name, model_stamp, action, granted_by) VALUES ('11111111-1111-4111-8111-111111111111', 'x', ?, 'Chore', 'x', 'read', 'o')",
+      h.owner.tenantId,
+    );
     const staff = await staffAs(DEFAULT_ROLE_SLUGS.MEMBER);
     expect(
-      (await staffPrincipalFor(staff, staff.tenantId, withChore)).permissions,
-    ).not.toEqual([]);
-    await runAs(h.owner, () => store.commit([record(11, def())], 11));
-    await runAs(h.owner, () => store.commit([record(12, withChore)], 12));
-    expect(
-      (await staffPrincipalFor(staff, staff.tenantId, withChore)).permissions,
+      (await staffPrincipalFor(staff, staff.tenantId, d)).permissions,
     ).toEqual([]);
+  });
+
+  it('the final filter strips the owner slug and anything outside the action map', () => {
+    const d = def('Chore');
+    expect(
+      finalStaffSlugs(d, [
+        OWNER_SLUG,
+        'u_chores.list',
+        'u_chores.delete',
+        'u_chores.markDone',
+        'u_other.get',
+        '*',
+      ]),
+    ).toEqual(['u_chores.list']);
   });
 });

@@ -4,16 +4,17 @@ import {
   SmrtObject,
   smrt,
 } from '@happyvertical/smrt-core';
-import type { AppDefinition } from '../../engine/index.ts';
+import { EngineError } from '../../engine/index.ts';
 import { getShellDb } from '../server/host.ts';
 import {
   ACCESS_ACTIONS,
   type AccessAction,
   accessGrantId,
   assertGrantable,
-  modelStamp,
+  sharedTableModels,
 } from '../server/model-access.ts';
 import { assertOwner } from '../server/owner.ts';
+import { ShellVersionStore } from '../server/version-store.ts';
 
 /**
  * One thing the tenant's staff may do with one model of the user app (#5197):
@@ -36,6 +37,9 @@ import { assertOwner } from '../server/owner.ts';
   tenantScoped: { mode: 'optional' },
 })
 export class ModelAccessGrant extends SmrtObject {
+  /** The tenant column the tenancy layer owns (typing only: no field of its own). */
+  declare tenantId?: string | null;
+
   /** The model's name in the user app definition. */
   @field({ type: 'text', required: true, requiredFor: 'identity' })
   modelName: string = '';
@@ -52,20 +56,31 @@ export class ModelAccessGrant extends SmrtObject {
   @field({ type: 'text' })
   grantedBy: string = '';
 
-  /** Owner only: allow staff `action` on `model` of `def` (idempotent). */
+  /**
+   * Owner only: allow staff `action` on `model` of the STORED current
+   * definition (read here, never taken from the caller). Idempotent. A model
+   * whose table another model shares is refused (slugs are per table).
+   */
   static async grant(
-    def: AppDefinition,
     model: string,
     action: string,
   ): Promise<{ model: string; action: AccessAction }> {
     const owner = await assertOwner();
     const act = assertGrantable(action);
-    if (!Object.hasOwn(def.models, model))
+    const db = await getShellDb();
+    const { def, stamps } = await new ShellVersionStore(
+      db,
+      owner.tenantId,
+    ).modelStamps();
+    const stamp = stamps.get(model);
+    if (!def || !stamp || !Object.hasOwn(def.models, model))
       throw new Error(`there is no model '${model}'`);
-    const stamp = modelStamp(def, model);
-    const grants = await ModelAccessGrantCollection.create({
-      db: await getShellDb(),
-    });
+    if (sharedTableModels(def).has(model))
+      throw new EngineError(
+        `'${model}' shares its table with another model, so it cannot be granted`,
+        'refused',
+      );
+    const grants = await ModelAccessGrantCollection.create({ db });
     const id = accessGrantId(owner.tenantId, model, act);
     const write = async (): Promise<boolean> => {
       const [row] = await grants.list({ where: { id }, limit: 1 });
@@ -79,6 +94,7 @@ export class ModelAccessGrant extends SmrtObject {
       try {
         const row = await grants.create({
           id,
+          tenantId: owner.tenantId,
           modelName: model,
           modelStamp: stamp,
           action: act,
@@ -113,12 +129,13 @@ export class ModelAccessGrant extends SmrtObject {
   static async list(): Promise<
     { model: string; action: AccessAction; grantedBy: string }[]
   > {
-    await assertOwner();
+    const owner = await assertOwner();
     const grants = await ModelAccessGrantCollection.create({
       db: await getShellDb(),
     });
     const rows = await grants.list({ limit: 10000 });
     return rows
+      .filter((r) => r.tenantId === owner.tenantId)
       .filter((r) => (ACCESS_ACTIONS as readonly string[]).includes(r.action))
       .map((r) => ({
         model: r.modelName,

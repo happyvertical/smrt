@@ -18,6 +18,7 @@
 import { getCurrentTenant, withTenant } from '@happyvertical/smrt-tenancy';
 import type { DatabaseInterface } from '@happyvertical/sql';
 import {
+  type AppDefinition,
   StaleStoreError,
   type VersionRecord,
   type VersionStore,
@@ -32,10 +33,15 @@ import {
   type AppVersion,
   AppVersionCollection,
 } from '../objects/AppVersion.ts';
-import { clearGrants } from './model-access.ts';
+import { clearGrants, creationStamps } from './model-access.ts';
 import { bindAmbientShellScope, isPostgresHandle } from './shell-tenancy.ts';
 
 export const APP_SLUG = 'app';
+
+const stampCache = new Map<
+  string,
+  { def: AppDefinition | null; stamps: Map<string, string> }
+>();
 
 type VersionRow = AppVersion | AppDraftVersion;
 
@@ -75,6 +81,9 @@ async function bindClaimTx(
 ): Promise<void> {
   if (tenantId && isPostgresHandle(db)) await bindAmbientShellScope(tx);
 }
+
+/** A version made by a template import: every model in it starts closed. */
+const isImport = (r: VersionRecord): boolean => /^import/i.test(r.summary);
 
 function toRecord(row: VersionRow): VersionRecord {
   const migration = row.migration
@@ -190,12 +199,51 @@ export class ShellVersionStore implements VersionStore {
     return v < 0 ? null : v;
   }
 
-  private async point(version: number, db: DatabaseInterface): Promise<void> {
+  /**
+   * The current definition and each model's creation stamp (#5197). Cached per
+   * current version row (versions are immutable; the row id changes if a
+   * number is ever re-used).
+   */
+  modelStamps(): Promise<{
+    def: AppDefinition | null;
+    stamps: Map<string, string>;
+  }> {
+    return this.scoped(async () => {
+      const app = await this.appRow();
+      const current = Number(app.currentVersion);
+      const row = current < 0 ? null : await this.row(current);
+      if (!row) return { def: null, stamps: new Map() };
+      const key = `${this.tenantId ?? ''}:${current}:${row.id}`;
+      let hit = stampCache.get(key);
+      if (!hit) {
+        const all = await this.list();
+        hit = {
+          def: JSON.parse(row.definition) as AppDefinition,
+          stamps: creationStamps(all, current),
+        };
+        if (stampCache.size > 200) stampCache.clear();
+        stampCache.set(key, hit);
+      }
+      return hit;
+    });
+  }
+
+  private async point(
+    version: number,
+    db: DatabaseInterface,
+    importing = false,
+  ): Promise<void> {
     const rec = await this.row(version, db);
     if (!rec) throw new Error(`version ${version} is not stored`);
     const app = await this.appRow(db);
     // Staff grants of a model that leaves the definition go with it (#5197).
-    await clearGrants(db, this.tenantId, app.definition, rec.definition);
+    await clearGrants(
+      db,
+      this.tenantId,
+      app.definition,
+      rec.definition,
+      importing,
+    );
     app.currentVersion = version;
     app.definition = rec.definition;
     try {
@@ -260,7 +308,7 @@ export class ShellVersionStore implements VersionStore {
     await db.transaction(async (tx) => {
       const txDb = tx as unknown as DatabaseInterface;
       for (const r of records) await this.insert(r, txDb);
-      await this.point(current, txDb);
+      await this.point(current, txDb, records.some(isImport));
       if (mark) {
         const draft = await (await AppDraftCollection.create({ db: txDb })).get(
           mark.draftId,
@@ -302,7 +350,13 @@ export class ShellVersionStore implements VersionStore {
       } catch {
         /* keep the name */
       }
-      await clearGrants(txDb, this.tenantId, app.definition, rec.definition);
+      await clearGrants(
+        txDb,
+        this.tenantId,
+        app.definition,
+        rec.definition,
+        records.some(isImport),
+      );
       const hit = await txDb.query(
         `UPDATE apps SET current_version = ?, definition = ?, name = ? WHERE id = ? AND current_version = ?${this.tenantClause} RETURNING id`,
         [
