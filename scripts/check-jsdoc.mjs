@@ -7,8 +7,8 @@
  * `svelte-package` preserves JSDoc written on a prop into the published
  * `.d.ts`, so one comment next to the prop reaches consumer editors, the
  * knowledge tooling, agent context, and the public component reference on
- * s-m-r-t.dev — which reads exactly these comments to fill its prop tables
- * (happyvertical/s-m-r-t.dev#224). A prop with no JSDoc is published as a name
+ * the docs site (smrt.happyvertical.com) — which reads exactly these comments
+ * to fill its prop tables (happyvertical/s-m-r-t.dev#224). A prop with no JSDoc is published as a name
  * and a type with nothing that says what it means.
  *
  * Roughly half the exported props in this repository already carry JSDoc, very

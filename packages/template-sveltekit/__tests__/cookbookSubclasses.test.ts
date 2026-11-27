@@ -57,7 +57,7 @@ beforeEach(async () => {
   await writeFile(
     join(root, 'smrt.cookbook.json'),
     JSON.stringify({
-      $schema: 'https://s-m-r-t.dev/schemas/cookbook/v1.json',
+      $schema: 'https://smrt.happyvertical.com/schemas/cookbook/v1.json',
       version: 1,
       recipes: [],
       features: ['@happyvertical/smrt-profiles:Profile'],

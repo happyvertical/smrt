@@ -57,7 +57,7 @@ describe('cookbook-driven hosting of consumed package models (#3749)', () => {
     writeFileSync(
       join(root, 'smrt.cookbook.json'),
       JSON.stringify({
-        $schema: 'https://s-m-r-t.dev/schemas/cookbook/v1.json',
+        $schema: 'https://smrt.happyvertical.com/schemas/cookbook/v1.json',
         version: 1,
         recipes: ['commerce.sales'],
         features: [],
