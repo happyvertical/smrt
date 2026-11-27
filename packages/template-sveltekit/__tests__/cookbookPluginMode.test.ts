@@ -257,7 +257,7 @@ it.each([
     packageName: '@fixture/plugin-app',
     app: {
       cookbook: {
-        $schema: 'https://s-m-r-t.dev/schemas/cookbook/v1.json',
+        $schema: 'https://smrt.happyvertical.com/schemas/cookbook/v1.json',
         version: 1,
         recipes: ['plugin.members'],
         features: [],
@@ -269,7 +269,8 @@ it.each([
             id: 'empty',
             name: 'Empty',
             document: {
-              $schema: 'https://s-m-r-t.dev/schemas/cookbook/v1.json',
+              $schema:
+                'https://smrt.happyvertical.com/schemas/cookbook/v1.json',
               version: 1,
               recipes: [],
               features: [],

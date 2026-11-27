@@ -1,6 +1,6 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "$id": "https://s-m-r-t.dev/schemas/smrt-package/v1.json",
+  "$id": "https://smrt.happyvertical.com/schemas/smrt-package/v1.json",
   "title": "s-m-r-t package descriptor (smrt-package.json), version 1",
   "description": "Proposed in docs/adr/0003-smrt-add-declarative-package-install.md. Authored by a package, published at its root, exported as ./smrt-package.json, and read by `smrt add` without executing package code.",
   "type": "object",

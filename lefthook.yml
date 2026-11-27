@@ -256,7 +256,7 @@ pre-push:
 
     jsdoc:
       # Requires JSDoc on exported Svelte component props, which svelte-package
-      # publishes into the .d.ts that editors and s-m-r-t.dev read. Report-only
+      # publishes into the .d.ts that editors and the docs site read. Report-only
       # until a package sets "smrtJsdoc": "strict" in its own package.json.
       run: node scripts/check-jsdoc.mjs
       fail_text: |

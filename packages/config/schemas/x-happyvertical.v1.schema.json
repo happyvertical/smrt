@@ -1,6 +1,6 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "$id": "https://s-m-r-t.dev/schemas/x-happyvertical/v1.schema.json",
+  "$id": "https://smrt.happyvertical.com/schemas/x-happyvertical/v1.schema.json",
   "title": "x-happyvertical compose deployment contract, version 1",
   "description": "Extension fields that turn a Compose file into an application deployment declaration. The root schema checks the annotations of a whole Compose document and leaves every Compose key alone. Use #/$defs/application for the top-level block and #/$defs/service for a service block on their own. Rules that span several services (one web service, one ingress port, the supported platform subset) are checked by validateComposeDeployment() in @happyvertical/smrt-config/deployment, not by this schema.",
   "type": "object",

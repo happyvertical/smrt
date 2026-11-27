@@ -47,7 +47,7 @@ Part of the [planner guidance](../AGENTS.md). Paths are relative to `packages/pl
   `app/` (kept at the package root: released `smrt kitchen` CLIs resolve `<package>/app/index.html`)
   and the MCP widget `app/mcp.html`. `tsconfig.package.json` sets `declarationMap` (it does not
   extend the shared package chain that sets it for other packages), so every `dist/**/*.d.ts` has a
-  `.d.ts.map` whose `sources` name its `src/lib` file; consumers such as s-m-r-t.dev resolve
+  `.d.ts.map` whose `sources` name its `src/lib` file; consumers such as the docs site (smrt.happyvertical.com) resolve
   component source links through them. Code in `src/lib` imports relatively,
   never through `$lib` (svelte-package does not resolve kit aliases here). The components that import
   `$app/*` (section and model pages, the palette) are app-only: packaged but not reachable from

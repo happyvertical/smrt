@@ -3,7 +3,7 @@
   "description": "SMRT plugins for agent hosts that read the Agent Plugins layout.",
   "owner": {
     "name": "HappyVertical",
-    "url": "https://s-m-r-t.dev"
+    "url": "https://smrt.happyvertical.com"
   },
   "plugins": [
     {
