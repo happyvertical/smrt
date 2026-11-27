@@ -121,6 +121,7 @@ it('explains an unsafe seeded total consistently across the worker, page, CSV an
       expect(await response.json()).toMatchObject({ error: message });
     }
     const page = await load({
+      ...(event as object),
       parent: async () => ({
         description: { ...host.describe(), mode: 'live' },
       }),

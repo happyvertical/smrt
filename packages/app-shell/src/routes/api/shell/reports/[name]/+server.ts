@@ -1,25 +1,29 @@
 import { runCommand } from '$lib/server/builder';
 import { hostFor } from '$lib/server/host';
 import {
+  callerOf,
   guarded,
   HttpError,
   ident,
   json,
   ownerOf,
+  principalOfCaller,
   readJson,
 } from '$lib/server/http';
-import { principalFor, runAs } from '$lib/server/owner';
+import { runAs } from '$lib/server/owner';
 import { reportFailure } from '$lib/server/report-display';
 import type { RequestHandler } from './$types';
 
 export const GET: RequestHandler = guarded(async (event) => {
-  const owner = await ownerOf(event);
+  const who = await callerOf(event);
   const host = await hostFor('live');
   const name = ident(event.params.name, 'report');
   if (!Object.hasOwn(host.describe().reports ?? {}, name))
     throw new HttpError(404, 'This report is no longer available.');
   try {
-    return json(await host.runReport(principalFor(owner, host.def), name));
+    return json(
+      await host.runReport(await principalOfCaller(who, host.def), name),
+    );
   } catch (error) {
     throw reportFailure(error, host.def, host.def.reports?.[name]);
   }

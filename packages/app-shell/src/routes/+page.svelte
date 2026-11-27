@@ -62,7 +62,13 @@ const hello = $derived(greeting(data.session.user));
       {/if}
     </header>
 
-    {#if models.length === 0}
+    {#if models.length === 0 && description.staff}
+      <div class="smrt-app-shell__empty" data-smrt-part="empty">
+        <p class="smrt-app-shell__muted" data-smrt-part="description">
+          Nothing has been shared with you yet.
+        </p>
+      </div>
+    {:else if models.length === 0}
       <div class="smrt-app-shell__empty" data-smrt-part="empty">
         <p><strong>Your app is empty</strong></p>
         <a class="smrt-app-shell__btn smrt-app-shell__btn-primary" href="/import" data-smrt-part="trigger">Import a workbook</a>

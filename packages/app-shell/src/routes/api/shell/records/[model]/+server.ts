@@ -1,5 +1,7 @@
 /**
- * Records of one model of the user app (owner session required). The copy is
+ * Records of one model of the user app (the owner, or staff within the models
+ * the owner granted them: #5197; every operation passes the engine's
+ * `authorize.ts` with the caller's own principal). The copy is
  * named by `?target=live|draft` (default `live`): live records keep working
  * while a draft is open, and a draft's records are separate test data.
  *
@@ -17,20 +19,26 @@
  */
 
 import { hostFor } from '$lib/server/host';
-import { guarded, ident, json, ownerOf, readJson } from '$lib/server/http';
-import { principalFor } from '$lib/server/owner';
+import {
+  callerOf,
+  guarded,
+  ident,
+  json,
+  principalOfCaller,
+  readJson,
+} from '$lib/server/http';
 import { orderRows } from '$lib/ui/columns';
 import { FILTER_SCAN_LIMIT, matchLink } from '$lib/ui/related';
 import type { RequestHandler } from './$types';
 
 export const GET: RequestHandler = guarded(async (event) => {
-  const owner = await ownerOf(event);
+  const who = await callerOf(event);
   const limit = Math.min(
     1000,
     Math.max(1, Number(event.url.searchParams.get('limit') ?? 200) || 200),
   );
   const host = await hostFor('live');
-  const caller = principalFor(owner, host.def);
+  const caller = await principalOfCaller(who, host.def);
   const model = ident(event.params.model, 'model');
   const field = event.url.searchParams.get('field');
   if (field !== null) {
@@ -54,12 +62,12 @@ export const GET: RequestHandler = guarded(async (event) => {
 });
 
 export const POST: RequestHandler = guarded(async (event) => {
-  const owner = await ownerOf(event);
+  const who = await callerOf(event);
   const data = await readJson(event.request);
   const host = await hostFor('live');
   return json(
     await host.create(
-      principalFor(owner, host.def),
+      await principalOfCaller(who, host.def),
       ident(event.params.model, 'model'),
       data,
     ),
