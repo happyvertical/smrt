@@ -1,5 +1,11 @@
 # @happyvertical/smrt-ui
 
+## 0.73.1
+
+### Patch Changes
+
+- @happyvertical/smrt-types@0.73.1
+
 ## 0.73.0
 
 ### Patch Changes
