@@ -15,6 +15,7 @@ import {
   validateWrites,
 } from './index.ts';
 import { onPglite } from './pglite-env.ts';
+import { runAsPrincipal } from './principal.ts';
 
 const input = { record: null, params: {}, data: {} };
 const run = (code: string, limits = {}) => runMethod(code, input, limits);
@@ -352,6 +353,9 @@ describe('sandbox through the host', () => {
 describe('method atomicity (#5185)', () => {
   const dir = mkdtempSync(join(tmpdir(), 'engine-atomic-'));
   let rt: import('./app-runtime.ts').AppRuntime;
+  // Methods run only inside an operation's principal; these tests act as the owner.
+  const asOwner = <T>(fn: () => Promise<T>) =>
+    runAsPrincipal(hostOwner({ def: def as never, tenantId: 'test' }), fn);
   const def = {
     ...EMPTY_APP,
     models: {
@@ -394,7 +398,7 @@ describe('method atomicity (#5185)', () => {
       throw new Error('injected');
     });
     await expect(
-      rt.runMethod('Stock', 'two', row.id as string),
+      asOwner(() => rt.runMethod('Stock', 'two', row.id as string)),
     ).rejects.toThrow(/none of its 2 writes were applied: injected/);
     spy.mockRestore();
     expect((await rt.get('Stock', row.id as string)).qty).toBe(5);
@@ -404,8 +408,8 @@ describe('method atomicity (#5185)', () => {
   it('two concurrent decrements of the last unit do not oversell', async () => {
     const row = await rt.create('Stock', { name: 'last', qty: 1 });
     const results = await Promise.allSettled([
-      rt.runMethod('Stock', 'take', row.id as string),
-      rt.runMethod('Stock', 'take', row.id as string),
+      asOwner(() => rt.runMethod('Stock', 'take', row.id as string)),
+      asOwner(() => rt.runMethod('Stock', 'take', row.id as string)),
     ]);
     expect(results.map((r) => r.status).sort()).toEqual([
       'fulfilled',
@@ -424,7 +428,7 @@ describe('method atomicity (#5185)', () => {
       );
     const work: Promise<unknown>[] = [];
     for (let i = 0; i < 10; i++) {
-      work.push(rt.runMethod('Stock', 'take', id));
+      work.push(asOwner(() => rt.runMethod('Stock', 'take', id)));
       work.push(rt.create('Stock', { name: `side${i}`, qty: 1 }));
       work.push(rt.update('Stock', others[i], { name: `edited${i}` }));
     }
@@ -436,8 +440,8 @@ describe('method atomicity (#5185)', () => {
   it('a model over the row limit fails with an error naming it', async () => {
     for (let i = 0; i < 1001; i++)
       await rt.create('Stock', { name: `b${i}`, qty: 1 });
-    await expect(rt.runMethod('Stock', 'readAll', null)).rejects.toThrow(
-      /Stock has more than 1000 records/,
-    );
+    await expect(
+      asOwner(() => rt.runMethod('Stock', 'readAll', null)),
+    ).rejects.toThrow(/Stock has more than 1000 records/);
   });
 });
