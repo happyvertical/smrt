@@ -530,42 +530,60 @@ for (const type of ['sqlite', 'postgres'] as const) {
       });
     });
 
-    it('a permission check without a live record refuses', async () => {
-      const { requirePermission } = await import(
-        '../generators/request-principal.js'
+    it('a permission decided outside the live request is refused', async () => {
+      // The decision REST makes for every write (`APIGenerator.decide`) runs
+      // for the live request it belongs to, never for work that escaped it
+      // or outlived it.
+      const api = new APIGenerator(
+        {
+          basePath: '/api',
+          resolvePrincipal: (req) =>
+            known[req.headers.get('x-principal') ?? ''] ?? null,
+        },
+        { db },
       );
-      let captured: (() => void) | undefined;
-      const { status } = await inspect(handler(), 'writer', () => {
-        const resolved = {
-          enforced: true,
-          principal: getRequestPrincipal() as RequestPrincipal,
-          tenantId: TENANT_A,
-          userId: 'user-a',
-          allowCrossTenant: false,
-          authenticated: true,
-          effectiveTenantId: TENANT_A,
-          permissions: getRequestPrincipal()?.permissions,
-          superAdminBypass: false,
-        };
-        // In the request: the snapshot decides.
-        requirePermission(
-          resolved,
-          ObjectRegistry.getClass('ScopeRecordNote')?.qualifiedName ||
-            'ScopeRecordNote',
-          'create',
-        );
-        captured = () =>
-          requirePermission(
-            resolved,
-            ObjectRegistry.getClass('ScopeRecordNote')?.qualifiedName ||
-              'ScopeRecordNote',
-            'create',
-          );
-        return undefined;
-      });
+      type Decision = { allow: boolean; status?: number; code?: string };
+      const decide = (
+        api as unknown as {
+          decide(
+            principal: unknown,
+            model: string,
+            op: string,
+          ): Decision | undefined;
+        }
+      ).decide.bind(api);
+      const model =
+        ObjectRegistry.getClass('ScopeRecordNote')?.qualifiedName ||
+        'ScopeRecordNote';
+      let escaped: (() => Decision | undefined) | undefined;
+      const { status, seen } = await inspect(
+        api.generateHandler(),
+        'writer',
+        () => {
+          const resolved = {
+            enforced: true,
+            principal: getRequestPrincipal() as RequestPrincipal,
+            tenantId: TENANT_A,
+            userId: 'user-a',
+            allowCrossTenant: false,
+            authenticated: true,
+            effectiveTenantId: TENANT_A,
+            permissions: getRequestPrincipal()?.permissions,
+            superAdminBypass: false,
+          };
+          escaped = () => decide(resolved, model, 'create');
+          // In the request: the snapshot is live, and the writer holds it.
+          return decide(resolved, model, 'create');
+        },
+      );
       expect(status).toBe(200);
-      // After the request ended, the same check refuses.
-      expect(() => captured?.()).toThrow();
+      expect(seen).toMatchObject({ allow: true });
+      // After the request ended, the same decision refuses.
+      expect(escaped?.()).toMatchObject({
+        allow: false,
+        status: 403,
+        code: 'PERMISSION_DENIED',
+      });
     });
 
     it('nothing exported enters or rebinds a scope', async () => {

@@ -313,3 +313,28 @@ describe('persisted write-through selection and clearing', () => {
     });
   }
 });
+
+describe('pending write-through edits', () => {
+  it('reports the inline fields set on an instance and clears them after a save', async () => {
+    const db = await getTestDatabase({
+      type: 'sqlite',
+      url: ':memory:',
+      classes: ['InlineRequiredContact', 'InlineRequiredRecord'],
+    });
+    try {
+      const records = await InlineRequiredRecords.create({ db });
+      const record = await records.create({
+        name: 'Pending person',
+        _skipLoad: true,
+      });
+      expect(record.getPendingWriteThroughFields()).toEqual([]);
+      const own = record as unknown as Record<string, unknown>;
+      own.email = 'pending@example.test';
+      expect(record.getPendingWriteThroughFields()).toEqual(['email']);
+      await record.save();
+      expect(record.getPendingWriteThroughFields()).toEqual([]);
+    } finally {
+      await db.close?.();
+    }
+  });
+});

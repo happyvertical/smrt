@@ -507,12 +507,16 @@ export async function triageMailMessages(
             const folderId = folderPath
               ? await folderIdFor(ctx, folderPath)
               : '';
+            // Triage owns read, flag and folder state. Whether the row is a
+            // draft is the row's class, which only a full sync may change.
+            const wasDraft = row.isDraft;
             applyServerMessage(
               row,
               withMailboxLabels(fresh),
               { folderId, folderPath },
               { keepBodies: true, deriveState: true },
             );
+            row.isDraft = wasDraft;
             stampHandledBy(row, actor);
             await row.save();
             if (actor)

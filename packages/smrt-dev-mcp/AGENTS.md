@@ -115,11 +115,11 @@ member package owns, mirroring the member-excluded scan.
 
 ### OKF component pages (#4686)
 
-`pnpm knowledge:okf` (after `pnpm build`) writes `docs/knowledge/components/<unscoped-name>.md` per
+`pnpm knowledge:okf` (after `pnpm build`; post-merge CI only, never in a PR, #5705) writes `docs/knowledge/components/<unscoped-name>.md` per
 workspace package from this index; never hand-edit them. `source_revision` is a `sha256` of the page's
 inputs (manifest slice, package AGENTS/module-doc hashes, models, MCP tools, `agentSurface`), not a commit.
-`knowledge:check --strict` fails on stale, edited, missing or extra pages and on dangling `/…md` links in
-hand-authored pages. Details: header of `scripts/knowledge-okf.ts`.
+`knowledge:check --strict --generated` fails on stale/edited/missing/extra pages; plain `--strict` (CI) checks
+only generation and dangling `/…md` links. Details: header of `scripts/knowledge-okf.ts`.
 
 Consumer bundle (#4689): `okf-bundle.ts` defines the `.agents/smrt-knowledge/` contract `smrt docs:agents` writes;
 `check-knowledge-freshness` reports its age (`okf-bundle-age` info, `okf-bundle-aged` past 90 days) and flags

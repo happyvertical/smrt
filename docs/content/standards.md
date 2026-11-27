@@ -618,7 +618,18 @@ files. The same hook suite also runs deterministic SMRT knowledge freshness
 checks:
 
 - pre-commit: `pnpm knowledge:check --changed --strict --format markdown`
-- pre-push: `pnpm knowledge:check --strict --format markdown`
+- pre-push: `pnpm knowledge:check --strict --format markdown`, plus
+  `scripts/check-generated-knowledge-untouched.mjs` against `origin/main`
+
+The generated OKF pages (`docs/knowledge/components/**`, `docs/knowledge/index.md`)
+are regenerated after merge to main by the "Regenerate Knowledge Pages"
+workflow through one rolling `chore/knowledge-regenerate` PR (#5705), so they
+are not committed in PRs: do not run `pnpm knowledge:okf` before pushing, and a
+PR that edits them fails CI. `knowledge:check --strict` verifies hand-authored
+pages, links and that generation succeeds; add `--generated` to also compare the
+generated pages with the generator locally. The per-package
+`smrt-knowledge.json` artifacts and the root graph are build outputs and are
+unaffected.
 
 Knowledge hooks are deterministic and local. They must not call Codex, Claude,
 or any other model provider; model-assisted audits stay manual and must be

@@ -600,7 +600,7 @@ CLI generation does not live here. `@happyvertical/smrt-core` shipped an in-proc
 
 ### REST API Generation
 
-`APIGenerator` serves REST for whatever `@smrt()` objects are registered; `createRestServer(objects)` / `startRestServer(objects)` serve only `objects`. `APIConfig` is `{ basePath?, enableCors?, allowedOrigins?, allowCredentials?, customRoutes?, authMiddleware?, resolvePrincipal?, onRequest?, port?, hostname?, eventsRoute?, manifestHash?, playbookPreflight? }` — there is no `collections`, `outputDir`, `includeSwagger`, or `middleware` option, and no `generate()` method.
+`APIGenerator` serves REST for whatever `@smrt()` objects are registered; `createRestServer(objects)` / `startRestServer(objects)` serve only `objects`. `APIConfig` is `{ basePath?, enableCors?, allowedOrigins?, allowCredentials?, customRoutes?, authMiddleware?, resolvePrincipal?, onRequest?, port?, hostname?, eventsRoute?, manifestHash?, playbookPreflight? }` — there is no `collections`, `outputDir`, `includeSwagger`, or `middleware` option, and no `generate()` method. CORS is an explicit allow-list: `enableCors` with a non-empty `allowedOrigins` echoes only a listed `Origin` (never `*`) with `Vary: Origin`, and `allowCredentials: true` adds credentials for that origin only. Generated SvelteKit routes take the same list as `sveltekit.cors: { allowedOrigins, allowCredentials }` (off by default) and answer through the same policy (`generators/cors.ts`), including an `OPTIONS` preflight on CRUD, custom action, `sync/apply` and `_changes` routes. The two paths are held to the same answers by a parity test (`packages/core/src/generators/route-parity.test.ts`): the same requests from the same callers, over the same models, must give the same status, error code, body and CORS headers, except for the differences it lists with their reasons (list and delete envelopes, item-scope and multi-segment actions, `allowCrossTenant` principals).
 
 ```typescript
 import { APIGenerator, startRestServer } from '@happyvertical/smrt-core/generators';
@@ -684,7 +684,13 @@ request admitted under a cross-tenant read grant, which writes no
 tenant-scoped row whatever context its code enters.
 
 With `resolvePrincipal` configured the server also enforces, from that
-principal and from nothing in the request:
+principal and from nothing in the request. Sign-in, `api.public`, the
+operation permission and the write-body tenant are one decision
+(`generators/route-authz.ts`, the module the generated SvelteKit routes call
+too), made at every site: each CRUD route, custom action, `sync/apply` item
+(per item, with the item's own reason), `_changes` and `_events`. `authMiddleware`,
+when also set, is an extra check that may still refuse; it never replaces the
+decision, and it cannot admit what the decision refuses:
 
 - **Sign-in.** A route that is not `@smrt({ api: { public } })` needs
   `authenticated` (`401`); `public: 'read'` opens reads only. `_changes` and

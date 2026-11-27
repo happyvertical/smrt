@@ -861,6 +861,16 @@ export class SmrtObject extends SmrtClass {
     }
   }
 
+  /**
+   * Names of write-through fields with an edit pending: set on this instance
+   * and not yet saved to the linked record. Empty when there are none. Lets an
+   * owning package tell whether a save would write a linked record without
+   * reading framework state.
+   */
+  public getPendingWriteThroughFields(): string[] {
+    return Object.keys(this._writeThroughDraft);
+  }
+
   /** Populate inline edits only for an explicitly requested web/display read. */
   public async hydrateWriteThrough(): Promise<void> {
     const config = ObjectRegistry.getConfig(

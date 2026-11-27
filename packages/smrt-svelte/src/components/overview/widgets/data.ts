@@ -5,9 +5,18 @@
  * source without this package depending on any of them.
  */
 
+import type {
+  ActivityListControls,
+  ActivityListEntry,
+} from '../../activity/types.js';
 import type { FieldRole } from '../../screens/roles.js';
 import type { WidgetValueFormat } from '../format.js';
 import { safeHref } from '../markdown.js';
+
+/** `activity`: authorized workspace activity entries with optional interactive triage controls. */
+export interface ActivityWidgetData extends ActivityListControls {
+  entries: ActivityListEntry[];
+}
 
 /** `metric`: one number. `money` values are integer minor units. */
 export interface MetricWidgetData {

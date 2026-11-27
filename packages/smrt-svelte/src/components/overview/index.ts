@@ -6,6 +6,14 @@
  * editor. The Svelte-free model, registry and server load contract are also
  * published on `@happyvertical/smrt-svelte/overview/server`.
  */
+
+export type {
+  ActivityContextBadge,
+  ActivityListControls,
+  ActivityListEntry,
+  ActivityStatusBadge,
+  ActivityStatusTone,
+} from '../activity/types.js';
 export {
   createOverviewAssistant,
   OverviewAssistant,
@@ -45,9 +53,11 @@ export { spanFromKey, spanFromPointer } from './resize.js';
 export * from './server.js';
 export type { WidgetOptionsEditorProps } from './types.js';
 export { default as WidgetOptionsForm } from './WidgetOptionsForm.svelte';
+export { default as ActivityWidget } from './widgets/ActivityWidget.svelte';
 export { default as ChartWidget } from './widgets/ChartWidget.svelte';
 export {
   type CoreWidgetLoaders,
+  createActivityWidget,
   createChartWidget,
   createMetricWidget,
   createNoteWidget,
@@ -56,6 +66,7 @@ export {
   registerCoreWidgets,
 } from './widgets/core.js';
 export {
+  type ActivityWidgetData,
   type ChartWidgetData,
   type LineItemsWidgetData,
   type MetricWidgetData,

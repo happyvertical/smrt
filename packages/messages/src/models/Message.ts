@@ -27,6 +27,7 @@ import {
   ObjectRegistry,
   SmrtObject,
   smrt,
+  toSnakeCase,
   usesEmbeddedRevisionFallback,
   withEmbeddedWriteQueue,
 } from '@happyvertical/smrt-core';
@@ -536,6 +537,9 @@ export class Message extends SmrtObject {
     const row = this as unknown as Record<string, unknown>;
     const write = save ? 'save' : 'delete';
     const priorAccountIds: string[] = [];
+    // Accounts of stored `sent` rows this write changes, moves or deletes.
+    const sentAccountIds: string[] = [];
+    let storedSent = false;
     let stored: Record<string, unknown> | null = null;
     let unchanged = false;
     let triageOnly = false;
@@ -545,6 +549,8 @@ export class Message extends SmrtObject {
         if (isMailWriteGated(stored, write)) {
           priorAccountIds.push(String(stored.account_id ?? ''));
         }
+        storedSent = stored.send_status === 'sent';
+        if (storedSent) sentAccountIds.push(String(stored.account_id ?? ''));
         if (
           save &&
           stored.send_status === 'sent' &&
@@ -590,6 +596,9 @@ export class Message extends SmrtObject {
             if (isMailWriteGated(keyed, write)) {
               priorAccountIds.push(String(keyed.account_id ?? ''));
             }
+            if (keyed.send_status === 'sent') {
+              sentAccountIds.push(String(keyed.account_id ?? ''));
+            }
           }
         }
       }
@@ -599,10 +608,35 @@ export class Message extends SmrtObject {
       // Read and flag marks are not content, but they are triage: the stored
       // row's account decides, under the triage scope instead of draft.
       for (const id of priorAccountIds) if (id) result.keys.add(`triage:${id}`);
+      if (storedSent) {
+        for (const id of sentAccountIds)
+          if (id) result.keys.add(`triage:${id}`);
+      }
       return result;
+    }
+    // Sent mail is a record that replies and forwards quote. Outside the
+    // triage fields, changing, moving or deleting a stored `sent` row needs
+    // `send` on the account it is on and on the one it moves to.
+    for (const id of sentAccountIds) if (id) result.keys.add(`send:${id}`);
+    if (storedSent && save && this.accountId) {
+      result.keys.add(`send:${this.accountId}`);
     }
     const fresh = !stored && !takesOver;
     const outgoingNow = isMailWriteGated(row, write);
+    // A sent record comes into being through the send path or trusted sync.
+    // Replies and forwards quote it, so writing a row into `sent` needs the
+    // `send` scope on its account, whatever it was before.
+    if (
+      save &&
+      row.sendStatus === 'sent' &&
+      (fresh ||
+        takesOver ||
+        stored?.send_status !== 'sent' ||
+        String(stored.account_id ?? '') !== this.accountId) &&
+      this.accountId
+    ) {
+      result.keys.add(`send:${this.accountId}`);
+    }
     if (!outgoingNow && !priorAccountIds.length) return result;
     const sanctioned =
       (lifecycle && ((stored && unchanged) || fresh)) ||
@@ -625,12 +659,73 @@ export class Message extends SmrtObject {
     held: boolean,
   ): boolean {
     const row = this as unknown as Record<string, unknown>;
+    const qualified = this.getResolvedQualifiedName();
     const names = new Set([
       ...this.draftFieldNames(),
       'tenantId',
       'slug',
       'context',
     ]);
+    let registered: ReadonlyMap<
+      string,
+      {
+        type?: string;
+        transient?: boolean;
+        _meta?: { transient?: boolean };
+      }
+    >;
+    try {
+      registered = ObjectRegistry.getFields(qualified);
+    } catch {
+      registered = new Map();
+    }
+    // Fields kept in the `_meta_data` bag of an STI row.
+    let storedMeta: Record<string, unknown> | null | undefined;
+    const metaOf = (): Record<string, unknown> | null => {
+      if (storedMeta !== undefined) return storedMeta;
+      const raw = stored._meta_data;
+      storedMeta = null;
+      if (raw === undefined || raw === null || raw === '') {
+        storedMeta = {};
+      } else if (typeof raw === 'object') {
+        storedMeta = raw as Record<string, unknown>;
+      } else if (typeof raw === 'string') {
+        try {
+          const parsed: unknown = JSON.parse(raw);
+          if (parsed && typeof parsed === 'object') {
+            storedMeta = parsed as Record<string, unknown>;
+          }
+        } catch {
+          // Unreadable: nothing can be compared, so the row counts as changed.
+        }
+      }
+      return storedMeta;
+    };
+    // Write-through fields live on a linked record: any pending edit is a
+    // change, and so is a draft the instance does not expose.
+    const writeThrough: string[] = [];
+    try {
+      // Names come from the declaration itself, as core persists them; the
+      // linked target is not resolved, so a lookup failure cannot refuse a
+      // save that carries no pending edit.
+      for (const link of Object.values(
+        ObjectRegistry.getConfig(qualified).writeThrough ?? {},
+      )) {
+        writeThrough.push(
+          ...link.fields,
+          ...Object.keys(link.virtualFields ?? {}),
+        );
+      }
+    } catch {
+      return false;
+    }
+    if (writeThrough.length) {
+      const pending = new Set(this.getPendingWriteThroughFields());
+      for (const name of writeThrough) {
+        if (allowed.has(name)) continue;
+        if (pending.has(name)) return false;
+      }
+    }
     for (const name of names) {
       if (allowed.has(name)) continue;
       // A held send flags the message as a draft; it may raise the flag only.
@@ -644,14 +739,34 @@ export class Message extends SmrtObject {
       }
       // A class without the property cannot carry a value for it.
       if (!(name in this)) continue;
-      const column = name.replace(/[A-Z]/g, (c) => `_${c.toLowerCase()}`);
-      // A property with no column cannot be stored, so it cannot carry an edit.
-      if (!(column in stored)) continue;
+      if (writeThrough.includes(name)) continue;
+      const definition = registered.get(name);
+      const column = toSnakeCase(name);
+      let storedValue: unknown;
+      if (definition?.type === 'meta') {
+        const bag = metaOf();
+        if (!bag) return false;
+        storedValue = bag[name];
+      } else if (column in stored) {
+        storedValue = stored[column];
+      } else if (
+        definition &&
+        !definition.transient &&
+        !definition._meta?.transient &&
+        definition.type !== 'oneToMany' &&
+        definition.type !== 'manyToMany'
+      ) {
+        // A registered field this comparison cannot read back counts as
+        // changed: it cannot be shown to equal the stored row.
+        return false;
+      } else {
+        continue;
+      }
       const mine = row[name];
       const same =
         typeof mine === 'boolean'
-          ? mine === mailFlag(stored[column])
-          : canonValue(mine) === canonValue(stored[column]);
+          ? mine === mailFlag(storedValue)
+          : canonValue(mine) === canonValue(storedValue);
       if (!same) return false;
     }
     return true;
