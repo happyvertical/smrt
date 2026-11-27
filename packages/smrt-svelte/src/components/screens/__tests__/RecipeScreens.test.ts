@@ -597,7 +597,7 @@ describe('installed recipe end-to-end fixture', () => {
       catalog: engineCatalog,
       cookbook: {
         ...cookbook,
-        $schema: 'https://s-m-r-t.dev/schemas/cookbook/v1.json',
+        $schema: 'https://smrt.happyvertical.com/schemas/cookbook/v1.json',
       },
     });
     const originalCookbook = engine.cookbook();

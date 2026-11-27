@@ -213,6 +213,7 @@ ${tenantHelper}
 function routeRateLimit(locals: unknown, request: Request, clientAddress: () => string): Response | undefined {
   const active = (getRequestTenantContext() as { tenantId?: unknown } | undefined)?.tenantId;
   const principal = apiPrincipalFromLocals(locals, typeof active === 'string' && active ? active : null);
+  const { authenticated: signedIn } = principal;
   let address: string | null = null;
   try { address = clientAddress(); } catch { /* no peer address: the limiter falls back */ }
   return enforceRouteLimits({
@@ -221,7 +222,7 @@ function routeRateLimit(locals: unknown, request: Request, clientAddress: () => 
     tenantId: principal.tenantId,
     userId: principal.userId ?? null,
     callerKind: principal.callerKind ?? null,
-    authenticated: principal.authenticated,
+    authenticated: signedIn,
   });
 }
 

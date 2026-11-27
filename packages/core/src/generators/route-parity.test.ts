@@ -1218,6 +1218,34 @@ describe('route parity: route limits (#5198)', () => {
     expect(others.map((a) => a.status)).toEqual([200, 200]);
   });
 
+  it('buckets a resolveTenant host by its tenant, as the generated routes do', async () => {
+    const writer = principals().writer;
+    const config = limits(5, 1);
+    const kit = await drive('kit', [writer, writer], LIST(), config);
+    configureRouteLimits(config);
+    const restAnswers: Outcome[] = [];
+    for (let i = 0; i < 2; i++) {
+      restAnswers.push(
+        await fx.run('rest', writer, LIST(), {
+          restConfig: {
+            resolvePrincipal: undefined,
+            resolveTenant: () => ({
+              tenantId: TENANT_A,
+              authenticated: true,
+            }),
+          },
+        }),
+      );
+    }
+    // The tenant limit of 1 bites on the second request on both paths.
+    expect(kit.map((a) => a.status)).toEqual([200, 429]);
+    // REST serves this host unauthenticated (no principal), so only the
+    // limiter's answer is compared.
+    expect(restAnswers[0].status).not.toBe(429);
+    expect(restAnswers[1].status).toBe(429);
+    expect(restAnswers[1].code).toBe(kit[1].code);
+  });
+
   it('limits the feed routes too', async () => {
     const anonymous = principals().anonymous;
     for (const path of ['_changes', '_events']) {

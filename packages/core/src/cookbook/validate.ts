@@ -14,10 +14,17 @@ export type { Cookbook } from '@happyvertical/smrt-types';
 
 /** What a v1 document carries in `$schema`. */
 export const COOKBOOK_SCHEMA_URL =
-  'https://s-m-r-t.dev/schemas/cookbook/v1.json';
+  'https://smrt.happyvertical.com/schemas/cookbook/v1.json';
 /** Accepted on read (the document used to be called a blueprint); never written. */
 export const COOKBOOK_LEGACY_SCHEMA_URL =
   'https://s-m-r-t.dev/schemas/blueprint/v1.json';
+/**
+ * Accepted on read (the docs site moved hosts); never written. A cookbook
+ * saved before the move keeps validating and is rewritten to
+ * {@link COOKBOOK_SCHEMA_URL}.
+ */
+export const COOKBOOK_PREVIOUS_HOST_SCHEMA_URL =
+  'https://s-m-r-t.dev/schemas/cookbook/v1.json';
 export const COOKBOOK_VERSION = 1;
 
 export interface CookbookValidateOptions {
@@ -611,7 +618,8 @@ export function validateCookbook(
   if (
     $schema !== undefined &&
     $schema !== COOKBOOK_SCHEMA_URL &&
-    $schema !== COOKBOOK_LEGACY_SCHEMA_URL
+    $schema !== COOKBOOK_LEGACY_SCHEMA_URL &&
+    $schema !== COOKBOOK_PREVIOUS_HOST_SCHEMA_URL
   ) {
     error(
       diagnostics,
@@ -650,6 +658,13 @@ export function validateCookbook(
       'migrated_schema',
       '$schema',
       '$schema uses the legacy blueprint URL; migrated',
+    );
+  } else if ($schema === COOKBOOK_PREVIOUS_HOST_SCHEMA_URL) {
+    warning(
+      diagnostics,
+      'migrated_schema',
+      '$schema',
+      "$schema names the docs site's previous host; migrated",
     );
   }
 

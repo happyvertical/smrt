@@ -4,6 +4,7 @@ import Ajv2020 from 'ajv/dist/2020.js';
 import { describe, expect, it } from 'vitest';
 import {
   COOKBOOK_LEGACY_SCHEMA_URL,
+  COOKBOOK_PREVIOUS_HOST_SCHEMA_URL,
   COOKBOOK_SCHEMA_URL,
   parseCookbookText,
   validateCookbook,
@@ -43,6 +44,27 @@ describe('cookbook v1', () => {
       features: [],
       recipes: ['a', 'b'],
     });
+  });
+
+  it('migrates the cookbook $schema from the docs site previous host', () => {
+    const result = validateCookbook({
+      $schema: COOKBOOK_PREVIOUS_HOST_SCHEMA_URL,
+      version: 1,
+      recipes: [],
+      policies: [],
+    });
+    expect(result.ok && result.cookbook.$schema).toBe(COOKBOOK_SCHEMA_URL);
+    expect(result.ok && result.diagnostics.map((d) => d.code)).toContain(
+      'migrated_schema',
+    );
+    expect(
+      matches({
+        $schema: COOKBOOK_PREVIOUS_HOST_SCHEMA_URL,
+        version: 1,
+        recipes: [],
+        policies: [],
+      }),
+    ).toBe(true);
   });
 
   it('keeps unknown top-level keys (additive fields)', () => {

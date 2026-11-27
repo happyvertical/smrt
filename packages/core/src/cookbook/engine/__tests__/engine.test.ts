@@ -39,7 +39,7 @@ type Step =
   | ((s: PlanSnapshot) => { name: string; input?: unknown; revision?: number });
 
 const IMPORTED = {
-  $schema: 'https://s-m-r-t.dev/schemas/cookbook/v1.json',
+  $schema: 'https://smrt.happyvertical.com/schemas/cookbook/v1.json',
   version: 1,
   recipes: ['commerce.sales', 'nope.unknown'],
   features: [],

@@ -352,6 +352,13 @@ export interface APIConfig {
    * IP only stands in for a caller with no user id. Without it the
    * process-wide limits (`configureRouteLimits`) apply, the ones the
    * generated SvelteKit routes read; with neither nothing is limited.
+   * The tenant is the one the request is served in (`resolvePrincipal`, else
+   * `resolveTenant`, else the fixed context); `tenant` limits need one of
+   * them and are refused at construction without. `resolveTenant` is host code
+   * and runs once more for the limiter, before `authMiddleware`; prefer
+   * `resolvePrincipal`. A tenant-wide bucket can be
+   * drained by anonymous traffic addressed to that tenant, so the per-client
+   * limits are the primary defence and `tenant` a backstop.
    */
   routeLimits?: RouteLimitsConfig;
   /**
@@ -675,6 +682,18 @@ export class APIGenerator {
       ...config,
     };
     this.context = context;
+    // A tenant-wide limit needs a tenant to bucket by; refuse the
+    // configuration rather than silently skip the limit (#5198).
+    if (
+      this.config.routeLimits?.tenant &&
+      !this.config.resolvePrincipal &&
+      !this.config.resolveTenant &&
+      !this.context.tenantId
+    ) {
+      throw new Error(
+        'routeLimits.tenant needs a tenant to bucket by: configure resolvePrincipal, resolveTenant or a fixed context tenantId',
+      );
+    }
     this.routeLimiter = this.config.routeLimits
       ? createRouteLimiter(this.config.routeLimits)
       : undefined;
@@ -947,6 +966,31 @@ export class APIGenerator {
     }
   }
 
+  /**
+   * The tenant a request's limits are bucketed by (#5198): the principal's, or
+   * for a host with `resolveTenant` and no `resolvePrincipal`, its answer for
+   * this request (host code, called before `authMiddleware` and called again
+   * later for the admitted request), else the fixed or ambient tenant. A
+   * resolver that throws buckets by what the principal alone says: the typed
+   * error is still answered by the route.
+   */
+  private async limiterTenantOf(
+    req: Request,
+    principal: ResolvedRequestPrincipal,
+  ): Promise<string | null> {
+    if (principal.enforced || !this.config.resolveTenant) {
+      return principal.effectiveTenantId;
+    }
+    try {
+      const resolved = await this.config.resolveTenant(req);
+      return typeof resolved?.tenantId === 'string' && resolved.tenantId
+        ? resolved.tenantId
+        : principal.effectiveTenantId;
+    } catch {
+      return principal.effectiveTenantId;
+    }
+  }
+
   /** The rest of `handleRequest`, once the principal is resolved. */
   private async handleResolvedRequest(
     req: Request,
@@ -958,18 +1002,26 @@ export class APIGenerator {
       this.requestPrincipals.set(req, principal);
       // The route limits come first: a caller over its limit is refused before
       // `onRequest`, authorization or the database see the request (#5198).
+      // Bucketed by the tenant the request is served in (the principal's,
+      // else `resolveTenant`'s, else the fixed context), looked up only when a
+      // limiter exists and never cached, so the host's own resolution later
+      // still sees the admitted request. The same call reports the request to
+      // the meter (#5199) with the decided principal.
+      const limiter = this.routeLimiter ?? getRouteLimiter();
       const limited = nested
         ? undefined
         : enforceRouteLimits(
             {
               request: req,
-              tenantId: principal.effectiveTenantId,
+              tenantId: limiter
+                ? await this.limiterTenantOf(req, principal)
+                : principal.effectiveTenantId,
               userId: principal.userId,
               callerKind: principal.principal.callerKind,
               authenticated: principal.authenticated,
               transport: 'rest',
             },
-            this.routeLimiter ?? getRouteLimiter(),
+            limiter,
             this.config.requestMeter ?? getRequestMeterSink(),
           );
       if (limited) return this.addCorsHeaders(limited, req);

@@ -165,3 +165,7 @@ commit whose production sources produced them.
   `enforceRouteLimits` from core and returns its 429 (`Retry-After`) before any
   decision; with no limits configured it admits. The digests of the emitted
   routes were re-baselined by hand for this one addition; nothing else moved.
+- Request metering (#5199; the same emitted route files): `routeRateLimit` also
+  passes `authenticated` to `enforceRouteLimits`, which reports the request to
+  the meter sink. The digests of the emitted routes were re-baselined by hand
+  for that one argument.

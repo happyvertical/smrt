@@ -6,7 +6,7 @@ import type { RequestEvent } from '@sveltejs/kit';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { createCookbookOnboarding } from '../host/onboarding.js';
 
-const empty: Cookbook = { $schema: 'https://s-m-r-t.dev/schemas/cookbook/v1.json', version: 1, recipes: [], features: [], policies: [] };
+const empty: Cookbook = { $schema: 'https://smrt.happyvertical.com/schemas/cookbook/v1.json', version: 1, recipes: [], features: [], policies: [] };
 const yoga: Cookbook = { ...empty, recipes: ['classes'], layout: { version: 1, items: { 'item:fixture:Customer': { label: 'Our customers' } } } };
 const catalog = { recipes: [{ id: 'classes', label: 'Classes', models: ['@fixture/app:Customer'], nav: [{ model: '@fixture/app:Customer', label: 'Customers' }], requires: [] }], models: [{ id: '@fixture/app:Customer', name: 'Customer', packageId: 'fixture' }] };
 let db: Awaited<ReturnType<typeof getTestDatabase>>;
