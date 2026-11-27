@@ -25,7 +25,16 @@ import {
   enginePrincipal,
   OWNER_SLUG,
 } from '../../engine/index.ts';
+import { ModelAccessGrantCollection } from '../objects/ModelAccessGrant.ts';
 import { getShellDb } from './host.ts';
+import {
+  type AccessAction,
+  finalStaffSlugs,
+  isAccessAction,
+  sharedTableModels,
+  slugsFor,
+} from './model-access.ts';
+import { ShellVersionStore } from './version-store.ts';
 
 export interface Principal {
   id: string;
@@ -178,4 +187,100 @@ export function authorCaller(
   host: { def: AppDefinition },
 ): EnginePrincipal {
   return principalFor(owner, host.def);
+}
+
+/**
+ * The role slug of a STAFF member (#5197): an ACTIVE member of the principal's
+ * tenant who is not the owner (`admin`, `member`, `viewer` or a custom role
+ * are all plain staff). Null for the owner, for any membership that is not
+ * ACTIVE, for a missing membership or role, and for any failure (fail closed).
+ * Looked up in shell.db on every call.
+ */
+export async function staffRoleOf(
+  principal: Principal | null | undefined,
+): Promise<string | null> {
+  if (!principal?.id || !principal.tenantId) return null;
+  try {
+    if (await isOwner(principal)) return null;
+    return await runAs(principal, async () => {
+      const db = await getShellDb();
+      const memberships = await MembershipCollection.create({ db });
+      const membership = await memberships.findByUserAndTenant(
+        principal.id,
+        principal.tenantId,
+      );
+      if (
+        !membership ||
+        membership.status !== MembershipStatus.ACTIVE ||
+        !membership.roleId
+      )
+        return null;
+      const roles = await RoleCollection.create({ db });
+      const role = await roles.get(membership.roleId);
+      const slug = role?.slug;
+      return slug && slug !== DEFAULT_ROLE_SLUGS.OWNER ? slug : null;
+    });
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * The engine principal of a verified STAFF member (#5197): kind `user`, with
+ * exactly the slugs the owner's per-model grants allow (`read` is list, get,
+ * count; `create`; `update`), for models that still exist with the identity
+ * the grant was stamped with, capped to `read` for the `viewer` role. Never
+ * `_engine.owner`, never `delete` or a method slug. Empty permissions when the
+ * user is the owner (who is not staff), is not an ACTIVE member of `tenant`,
+ * or anything fails. Built only from a `Principal` taken from the session.
+ */
+export async function staffPrincipalFor(
+  user: Principal,
+  tenant: string,
+  def: AppDefinition,
+): Promise<EnginePrincipal> {
+  const permissions: string[] = [];
+  const role = user.tenantId === tenant ? await staffRoleOf(user) : null;
+  if (role !== null) {
+    try {
+      const { rows, stamps } = await runAs(user, async () => {
+        const db = await getShellDb();
+        return {
+          rows: await (await ModelAccessGrantCollection.create({ db })).list({
+            limit: 10000,
+          }),
+          stamps: (await new ShellVersionStore(db, tenant).modelStamps())
+            .stamps,
+        };
+      });
+      const shared = sharedTableModels(def);
+      const byModel = new Map<string, Set<AccessAction>>();
+      for (const row of rows) {
+        const model = row.modelName;
+        const action = row.action;
+        if (
+          row.tenantId !== tenant ||
+          !isAccessAction(action) ||
+          !Object.hasOwn(def.models, model) ||
+          shared.has(model) ||
+          row.modelStamp !== stamps.get(model) ||
+          (role === 'viewer' && action !== 'read')
+        )
+          continue;
+        const set = byModel.get(model) ?? new Set<AccessAction>();
+        set.add(action);
+        byModel.set(model, set);
+      }
+      for (const [model, actions] of byModel)
+        permissions.push(...slugsFor(def, model, actions));
+    } catch {
+      permissions.length = 0; // fail closed
+    }
+  }
+  return enginePrincipal({
+    kind: 'user',
+    tenantId: tenant,
+    userId: user.id,
+    permissions: finalStaffSlugs(def, permissions),
+  });
 }

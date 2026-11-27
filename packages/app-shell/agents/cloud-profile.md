@@ -421,6 +421,9 @@ A second way into `POST /api/shell/app/receive`, for the CLI, which has no
 browser session. `src/lib/server/receive-link.ts`, `ReceiveLink` (`receive_links`,
 a tenant-scoped shell table, RLS like the others).
 
+Tenant-scoped shell tables added since: `model_access_grants` (`ModelAccessGrant`, per-model
+staff access, #5197; policy version 3).
+
 - **Minted** only by the signed-in owner (`POST /api/shell/app/receive-link`,
   session cookie and same origin; a link token cannot mint one). Hosted profile
   only. Shown once; only the SHA-256 of its 256-bit secret is stored. One row per
