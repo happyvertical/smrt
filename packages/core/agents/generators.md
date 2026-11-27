@@ -1217,7 +1217,7 @@ ordinary guard and is refused as an anonymous caller (401). The list and get
 handlers charge `guestReadThrottle` (120/min per client, 1200/min per tenant by
 default). The emitted routes also import `guestCreateAdmission`,
 `guestReadThrottle` and `handleGuestCreate`; stubs must export them. The runtime
-REST handler (`rest.ts`) has no guest create. See
+REST handler (`rest.ts`) has no guest create. A run-time model reaches the guest pipeline only when the app names its qualified name in `permissions.guest.runtimeModels`; the ceiling still decides everything else per model. See
 [users guest creates](../../users/agents/permissions.md#guest-creates-a-contact-form).
 
 ## Custom-action permission aliases (#3878)

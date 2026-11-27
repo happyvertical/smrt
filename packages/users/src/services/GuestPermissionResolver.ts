@@ -55,6 +55,13 @@ export interface GuestPermissionConfig {
    * collection without an entry accepts no guest create. Validated against the
    * registered model when the route first serves a guest.
    */
+  /**
+   * Qualified names (`package:Class`) of run-time models (`registerRuntimeModel`)
+   * the app opts in for guests. A run-time model is excluded from the ceiling
+   * unless named here; being exposed or listed in `collections` is not an
+   * opt-in. Everything else of the ceiling still applies to it.
+   */
+  runtimeModels?: string[];
   createFields?: Record<
     string,
     { allowedFields: string[]; maxBodyBytes?: number; maxStringLength?: number }
@@ -105,6 +112,8 @@ function crudOperationGenerated(config: unknown, operation: string): boolean {
   return true;
 }
 
+const NO_RUNTIME_OPT_IN: ReadonlySet<string> = new Set();
+
 function sameSlugs(actual: string[] | undefined, expected: string): boolean {
   return Array.isArray(actual) && actual.length === 1 && actual[0] === expected;
 }
@@ -116,6 +125,7 @@ function sameSlugs(actual: string[] | undefined, expected: string): boolean {
 export function collectionPassesGuestCeiling(
   target: PostgresPermissionPolicyTarget | undefined,
   kind: GuestPermissionKind,
+  runtimeOptIn: ReadonlySet<string> = NO_RUNTIME_OPT_IN,
 ): boolean {
   if (!target?.collection) return false;
   const qualifiedName = target.qualifiedName;
@@ -125,7 +135,10 @@ export function collectionPassesGuestCeiling(
 
   const registered = ObjectRegistry.getClass(qualifiedName);
   if (!registered) return false;
-  if (isRuntimeModelClass(qualifiedName)) return false;
+  // A run-time model passes only when the app named it (fail closed).
+  if (isRuntimeModelClass(qualifiedName) && !runtimeOptIn.has(qualifiedName)) {
+    return false;
+  }
   if (isEffectivelySensitiveClass(qualifiedName)) return false;
 
   // Required-mode tenant table (the generator only targets those, and skips
@@ -177,6 +190,7 @@ export function guestSlugTargets(
 ): Map<string, PostgresPermissionPolicyTarget> {
   const listed = new Set(guest.collections);
   const createListed = new Set(guest.createCollections ?? []);
+  const runtimeOptIn = new Set(guest.runtimeModels ?? []);
   const out = new Map<string, PostgresPermissionPolicyTarget>();
   for (const slug of slugs) {
     const parsed = splitSlug(slug);
@@ -192,7 +206,11 @@ export function guestSlugTargets(
         (target.actions[action] ?? []).includes(slug),
     );
     if (reachable.length !== 1) continue;
-    if (!collectionPassesGuestCeiling(reachable[0], parsed.kind)) continue;
+    if (
+      !collectionPassesGuestCeiling(reachable[0], parsed.kind, runtimeOptIn)
+    ) {
+      continue;
+    }
     out.set(slug, reachable[0]);
   }
   return out;
@@ -224,15 +242,16 @@ export function guestCeilingTables(
 ): GuestCeilingTable[] {
   const listed = new Set(guest.collections);
   const createListed = new Set(guest.createCollections ?? []);
+  const runtimeOptIn = new Set(guest.runtimeModels ?? []);
   const seen = new Set<string>();
   const tables: GuestCeilingTable[] = [];
   for (const target of targets) {
     const collection = target.collection;
     if (!collection || !listed.has(collection)) continue;
     const passes =
-      collectionPassesGuestCeiling(target, 'read') ||
+      collectionPassesGuestCeiling(target, 'read', runtimeOptIn) ||
       (createListed.has(collection) &&
-        collectionPassesGuestCeiling(target, 'create'));
+        collectionPassesGuestCeiling(target, 'create', runtimeOptIn));
     if (!passes) continue;
     const key = `${target.schemaName}.${target.tableName}`;
     if (seen.has(key)) continue;
@@ -273,6 +292,7 @@ export class GuestPermissionResolver {
     this.guest = {
       collections: list(guest?.collections),
       createCollections: list(guest?.createCollections),
+      runtimeModels: list(guest?.runtimeModels),
     };
   }
 
