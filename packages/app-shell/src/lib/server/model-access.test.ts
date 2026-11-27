@@ -547,11 +547,36 @@ describe('unstage back to no version (#5197)', () => {
     expect(
       (await staffPrincipalFor(staff, staff.tenantId, again)).permissions,
     ).toEqual([]);
-    // a failed unstage rolls back with its grants
+    // A failure AFTER the grants were cleared (the statement that moves the
+    // pointer to "no version") rolls the clear back with the rest.
     await asOwner(() => ModelAccessGrant.grant('Chore', 'read'));
+    const failing = new ShellVersionStore(
+      new Proxy(h.db, {
+        get: (target, prop) =>
+          prop === 'transaction'
+            ? (fn: (tx: unknown) => Promise<unknown>) =>
+                target.transaction((tx) =>
+                  fn(
+                    new Proxy(tx, {
+                      get: (t, p) =>
+                        p === 'query'
+                          ? (sql: string, ...rest: unknown[]) => {
+                              if (/SET current_version = -1/.test(sql))
+                                throw new Error('injected after the clear');
+                              return (t as any).query(sql, ...rest);
+                            }
+                          : (t as any)[p],
+                    }),
+                  ),
+                )
+            : (target as any)[prop],
+      }),
+      null,
+    );
     await expect(
-      runAs(h.owner, () => s.unstage([first], -12345)),
-    ).rejects.toThrow();
+      runAs(h.owner, () => failing.unstage([first], null)),
+    ).rejects.toThrow(/injected after the clear/);
     expect(await rows()).toHaveLength(1);
+    expect(await runAs(h.owner, () => s.current())).toBe(first);
   });
 });
