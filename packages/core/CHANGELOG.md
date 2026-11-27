@@ -1,5 +1,37 @@
 # @happyvertical/smrt-core
 
+## 0.73.0
+
+### Minor Changes
+
+- ### Breaking Changes
+  
+  - one authorization contract for REST and generated routes (#5195) (#5700) (core)
+  
+  ### Features
+  
+  - ship the MCP bridge and fix consumer desktop build gaps (#5708) (smrt-desktop)
+  - sample storage and worker activity at app wake and idle close (#5698) (app-shell)
+  - provision hosted keys for joining members and repair on a timer (#5701) (app-shell)
+  - downgrade a migrated app to its desktop file until it takes writes (#5193) (#5692) (app-shell)
+  
+  ### Bug Fixes
+  
+  - tighten the remaining mail write checks (#5695) (messages)
+  
+  ### Other Changes
+  
+  - test: build the draft-scope fixture once per file from a template db (#5724) (messages)
+  - ci: regenerate generated pages after merge, not in PRs (#5711) (knowledge)
+  - perf: rebalance test-packages shards from measured unit durations (#5709) (ci)
+  - perf: run the M5 gate as parallel part jobs behind one verdict (#5702) (ci)
+
+### Patch Changes
+
+- @happyvertical/smrt-config@0.73.0
+  - @happyvertical/smrt-scanner@0.73.0
+  - @happyvertical/smrt-types@0.73.0
+
 ## 0.72.0
 
 ### Minor Changes
