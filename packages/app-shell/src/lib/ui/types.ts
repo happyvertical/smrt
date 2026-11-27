@@ -150,6 +150,8 @@ export interface Description {
   pendingApprovals: number;
   /** Set only on a staff member's filtered description (#5197): granted models, no builder detail. */
   staff?: boolean;
+  /** Staff only: what this member may do with each listed model. Absent for the owner (everything). */
+  access?: Record<string, { read: boolean; create: boolean; update: boolean }>;
 }
 
 export type RecordRow = Record<string, unknown> & {

@@ -1,5 +1,6 @@
 <script lang="ts">
 import { invalidate } from '$app/navigation';
+import { can } from '$lib/ui/access';
 import { ApiError, records as api, isPendingApproval } from '$lib/ui/api';
 import {
   cellText,
@@ -75,6 +76,9 @@ function sort(name: string) {
 const lookup = $derived(indexReferences(references));
 const methods = $derived(Object.entries(info.methods));
 const base = $derived(modelHref(model));
+const canCreate = $derived(can(description, model, 'create'));
+const canUpdate = $derived(can(description, model, 'update'));
+const canDelete = $derived(can(description, model, 'delete'));
 
 let target: RecordRow | null = $state(null);
 let deleting = $state(false);
@@ -112,8 +116,10 @@ async function confirmDelete() {
 {#if sorted.length === 0}
   <div class="smrt-app-shell__empty" data-smrt-part="empty">
     <p><strong>No {info.label.toLowerCase()} yet</strong></p>
-    <p class="smrt-app-shell__muted" data-smrt-part="description">Add the first one to get started.</p>
-    <a class="smrt-app-shell__btn smrt-app-shell__btn-primary" href="{base}/new" data-smrt-part="trigger">New {singularLabel(info.label).toLowerCase()}</a>
+    {#if canCreate}
+      <p class="smrt-app-shell__muted" data-smrt-part="description">Add the first one to get started.</p>
+      <a class="smrt-app-shell__btn smrt-app-shell__btn-primary" href="{base}/new" data-smrt-part="trigger">New {singularLabel(info.label).toLowerCase()}</a>
+    {/if}
   </div>
 {:else}
   <div class="smrt-app-shell__tablewrap" data-smrt-part="body">
@@ -144,9 +150,12 @@ async function confirmDelete() {
               <td><a class="smrt-app-shell__link" href="{base}/{encodeURIComponent(row.id)}" data-smrt-part="link">{recordLabel(info, row)}</a></td>
             {/if}
             <td class="smrt-app-shell__row-actions" data-smrt-part="actions">
+              {#if canUpdate}
               <a class="smrt-app-shell__btn smrt-app-shell__btn-small" href="{base}/{encodeURIComponent(row.id)}" data-smrt-part="trigger">
                 Edit<span class="smrt-record-list__sr-only" data-smrt-part="label"> {recordLabel(info, row)}</span>
               </a>
+              {/if}
+              {#if canDelete}
               <button
                 type="button"
                 class="smrt-app-shell__btn smrt-app-shell__btn-small smrt-app-shell__btn-danger"
@@ -157,6 +166,7 @@ async function confirmDelete() {
               >
                 Delete<span class="smrt-record-list__sr-only" data-smrt-part="label"> {recordLabel(info, row)}</span>
               </button>
+              {/if}
             </td>
           </tr>
         {/each}

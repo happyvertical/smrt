@@ -54,8 +54,12 @@ export async function staffDescription(
   const readable = new Set(readableModels(host.def, p));
   const full = host.describe();
   const models: Record<string, ModelInfo> = {};
+  // Only the caller's own allowed actions, so the pages can hide what the
+  // record routes would refuse (the routes still decide).
+  const access: NonNullable<Description['access']> = {};
   for (const [name, info] of Object.entries(full.models)) {
     if (!readable.has(name)) continue;
+    access[name] = accessOf(host.def, p, name);
     const fields = Object.fromEntries(
       Object.entries(info.fields).map(([f, def]) => {
         let shown = { ...def };
@@ -110,6 +114,7 @@ export async function staffDescription(
   }
   return {
     staff: true,
+    access,
     mode: 'live',
     draft: null,
     frozen: false,
