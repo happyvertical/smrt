@@ -34,7 +34,6 @@ export function applyRouteMetering(source: string): string {
     )
     .join('\n');
   return `${renamed}
-import { isHttpError as isMeteredHttpError } from '@sveltejs/kit';
 import {
   apiPrincipalFromLocals as meterPrincipalOf,
   getRequestTenantContext as meterTenantContext,
@@ -71,7 +70,9 @@ function withRouteMetering(handler: RequestHandler): RequestHandler {
       status = response.status;
       return response;
     } catch (thrown) {
-      status = isMeteredHttpError(thrown) ? thrown.status : 500;
+      // A thrown error() carries a numeric status; anything else is a 500.
+      const thrownStatus = (thrown as { status?: unknown } | null)?.status;
+      status = typeof thrownStatus === 'number' ? thrownStatus : 500;
       throw thrown;
     } finally {
       reportRouteRequest(event.locals, status);
