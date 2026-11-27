@@ -1,5 +1,16 @@
 # @happyvertical/smrt-core
 
+## 0.73.1
+
+### Patch Changes
+
+- ### Features
+  
+  - ship activity overview widget and enriched triage list (#5725) (smrt-svelte)
+- @happyvertical/smrt-config@0.73.1
+  - @happyvertical/smrt-scanner@0.73.1
+  - @happyvertical/smrt-types@0.73.1
+
 ## 0.73.0
 
 ### Minor Changes

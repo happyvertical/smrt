@@ -1,5 +1,9 @@
 # @happyvertical/smrt-bookings
 
+## 0.73.1
+
+No changes in this release.
+
 ## 0.73.0
 
 No changes in this release.
