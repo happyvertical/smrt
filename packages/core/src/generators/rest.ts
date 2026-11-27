@@ -351,6 +351,11 @@ export interface APIConfig {
    * IP only stands in for a caller with no user id. Without it the
    * process-wide limits (`configureRouteLimits`) apply, the ones the
    * generated SvelteKit routes read; with neither nothing is limited.
+   * The tenant is the one the request is served in (`resolvePrincipal`, else
+   * `resolveTenant`, else the fixed context); `tenant` limits need one of
+   * them and are refused at construction without. A tenant-wide bucket can be
+   * drained by anonymous traffic addressed to that tenant, so the per-client
+   * limits are the primary defence and `tenant` a backstop.
    */
   routeLimits?: RouteLimitsConfig;
 }
@@ -666,6 +671,18 @@ export class APIGenerator {
       ...config,
     };
     this.context = context;
+    // A tenant-wide limit needs a tenant to bucket by; refuse the
+    // configuration rather than silently skip the limit (#5198).
+    if (
+      this.config.routeLimits?.tenant &&
+      !this.config.resolvePrincipal &&
+      !this.config.resolveTenant &&
+      !this.context.tenantId
+    ) {
+      throw new Error(
+        'routeLimits.tenant needs a tenant to bucket by: configure resolvePrincipal, resolveTenant or a fixed context tenantId',
+      );
+    }
     this.routeLimiter = this.config.routeLimits
       ? createRouteLimiter(this.config.routeLimits)
       : undefined;
@@ -949,12 +966,15 @@ export class APIGenerator {
       this.requestPrincipals.set(req, principal);
       // The route limits come first: a caller over its limit is refused before
       // `onRequest`, authorization or the database see the request (#5198).
+      // Bucketed by the tenant the request is served in: the one
+      // `requestTenant()` resolves (the principal's, else `resolveTenant`'s,
+      // else the fixed context), resolved before the limiter runs.
       const limited = nested
         ? undefined
         : enforceRouteLimits(
             {
               request: req,
-              tenantId: principal.effectiveTenantId,
+              tenantId: (await this.requestTenant(req)).effectiveTenantId,
               userId: principal.userId,
               callerKind: principal.principal.callerKind,
             },

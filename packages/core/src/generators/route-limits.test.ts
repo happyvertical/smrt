@@ -166,6 +166,28 @@ describe('enforceRouteLimits', () => {
 });
 
 describe('APIGenerator routeLimits', () => {
+  it('refuses a tenant limit with no way to resolve a tenant', () => {
+    expect(
+      () =>
+        new APIGenerator({
+          routeLimits: {
+            client: { maxEvents: 5, ...WINDOW },
+            tenant: { maxEvents: 5, ...WINDOW },
+          },
+        }),
+    ).toThrow(/needs a tenant/);
+    expect(
+      () =>
+        new APIGenerator({
+          resolveTenant: () => ({ tenantId: 't1' }),
+          routeLimits: {
+            client: { maxEvents: 5, ...WINDOW },
+            tenant: { maxEvents: 5, ...WINDOW },
+          },
+        }),
+    ).not.toThrow();
+  });
+
   it('counts a nested dispatch once, with the outer request', async () => {
     const handler: (req: Request) => Promise<Response> = new APIGenerator(
       {

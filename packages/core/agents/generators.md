@@ -360,7 +360,12 @@ the client is the user id, else the IP (`extractClientIp`, `X-Forwarded-For`
 trusted only to `trustProxyHops`). `callerKind` is an opaque string:
 `callerKindScale` multiplies `client.maxEvents` per kind (`guest` defaults to
 0.25, any other kind is a table entry, never a branch). A limiter defect admits
-the request. Unconfigured, nothing is limited. Parity is covered in
+the request. The REST tenant is the one the request is served in
+(`resolvePrincipal`, else `resolveTenant`, else the fixed context), resolved
+before the limiter runs; a `tenant` limit with none of them is refused at
+construction. A tenant-wide bucket can be drained by anonymous traffic
+addressed to that tenant, so the per-client limits are the primary defence.
+Unconfigured, nothing is limited. Parity is covered in
 `route-parity.test.ts`.
 
 Without `resolvePrincipal`, the tenant is `resolveTenant`'s answer or the
