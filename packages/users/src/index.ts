@@ -134,6 +134,10 @@ export {
   UsersPasswordCredentialCollection,
   UsersPinCredentialCollection,
 } from './collections/index.js';
+export {
+  getGuestPermissionConfig,
+  parseGuestPermissionConfig,
+} from './guest-config.js';
 // Deploy-time data migrations
 export {
   type BackfillLegacyUserProfilesOptions,
@@ -347,9 +351,11 @@ export {
   type GraduateNewTenantOption,
   type GraduateTenantOption,
   type GuestAuditPolicyOptions,
+  type GuestCeilingTable,
   type GuestPermissionConfig,
   type GuestPermissionKind,
   GuestPermissionResolver,
+  type GuestPrincipalPermissionRuntimeOptions,
   type GuestRlsTablePosture,
   type GuestRuntimeDenyReason,
   type GuestRuntimeResult,
@@ -360,6 +366,7 @@ export {
   getCurrentSessionPermissionContext,
   getRequestScopedDatabase,
   getUsersOidcConfig,
+  guestCeilingTables,
   guestOperationKind,
   hasOperationPermission,
   InvalidCredentialsError,
@@ -533,7 +540,6 @@ export {
   withPrincipalPermissionContext,
   withSessionPermissionContext,
 } from './services/index.js';
-
 export {
   type AuthenticatedMailbox,
   type MailboxAuthenticationDelivery,

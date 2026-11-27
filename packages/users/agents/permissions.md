@@ -279,3 +279,40 @@ permissions cap what its tokens can do on every request. The profile models
 refuse an unprivileged principal changing whether a profile is `bot` typed
 (including by create or natural-key upsert) or creating/renaming the type, so an agent cannot relabel itself. See
 `packages/app-runtime/agents/self-issuer-mcp.md`.
+
+## Guest callers (#5196)
+
+An UNAUTHENTICATED request may act as a guest of the tenant its address names,
+with the tenant's `TenantGuestGrant` slugs (`GuestPermissionResolver`: minus
+every chain DENY, then the code ceiling). Request wiring lives in
+`packages/app-runtime/src/sveltekit/guest.ts` and the runtime session step; the
+principal is `callerKind: 'guest'`, `userId: null`
+(`withPrincipalPermissionContext({ callerKind: 'guest', ... })` and
+`createGuestRequestPrincipal` in core; `locals.guestPrincipal`).
+
+App config (`smrt.config.ts`, strict: any malformed value means NO guests; the
+whole block is refused, never filtered):
+
+```ts
+packages: { users: { permissions: { guest: {
+  collections: ['products', 'contact_messages'], // guests may be granted .read
+  createCollections: ['contact_messages'],       // subset that accepts creates
+} } } }
+```
+
+Guests need ALL of: `permissions.guest`, the default subdomain tenant selector,
+`TENANT_BASE_DOMAIN`, an ACTIVE addressed tenant, deployed PostgreSQL with the
+request RLS transaction, enabled tenancy, a non-SUPERUSER/BYPASSRLS role and
+ENABLED+FORCED policies on every ceiling table (catalog check, cached per
+process on success, fail closed). Any failing gate, resolver error or an empty
+set is the ordinary anonymous path, so a response never reveals whether a
+tenant exists or has grants. A valid session, and a session the tenant check
+rejected (a signed-in non-member), never become guests; skipped paths never do.
+
+Generated routes admit a guest only for `list`/`get` when it holds
+`<collection>.read` (`isGuestOperationAllowed`; a custom method aliased onto
+read never passes), cap guest pages at 100 (`GUEST_MAX_LIST_LIMIT`), and answer
+401 to everything else (writes, custom actions, `public` routes of ungranted
+collections; creates arrive in a later slice). The door
+refuses to carry a tenant or permissions without active RLS, and publishes the
+six `smrt.*` settings with `set_config(..., true)` only.

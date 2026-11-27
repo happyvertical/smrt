@@ -126,3 +126,9 @@ DDL, migration and OpenAPI digests have not moved since the recapture above.
   the emitted sync route and both emitted MCP servers pass the caller's read
   permissions (`locals`, `PUBLIC_JSON_OPTIONS`) to `prepareWriteInput()`, which
   refuses such a field whatever its value instead of comparing it.
+- Guest callers (#5196; the list and item routes of each model, plain and
+  sti): `requireRouteAuth` takes the read operation and admits a guest
+  principal (`locals.guestPrincipal`, no user) only for `list`/`get` with the
+  matching `<collection>.read`; `listBounds(url, locals)` caps a guest page at
+  100; every other operation answers a guest 401, `public` routes included.
+  Only those four route digests move.

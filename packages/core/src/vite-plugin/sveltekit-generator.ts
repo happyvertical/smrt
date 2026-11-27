@@ -592,7 +592,9 @@ function generateAuthGuardHelper(
   return `
 // Fail-closed authorization (#1540): generated routes require an authenticated
 // principal on \`locals\` unless explicitly marked \`@smrt({ api: { public } })\`.
-import { isRuntimeModelEnabled, publicSerializerOf, toPublicJSONValue } from '@happyvertical/smrt-core';
+import { GUEST_MAX_LIST_LIMIT, guestPrincipalOf, isGuestLocals, isGuestOperationAllowed, isRuntimeModelEnabled, publicSerializerOf, toPublicJSONValue } from '@happyvertical/smrt-core';
+// The registry key guest operation checks resolve the model's config by (#5196).
+const GUEST_MODEL = ${JSON.stringify(readScopeModelName(permissionObjectDef, permissionObjectDef.className))};
 const RUNTIME_MODEL = ${JSON.stringify({
     qualifiedName:
       permissionObjectDef.qualifiedName ??
@@ -650,10 +652,32 @@ function requestTenantOf(locals: unknown): string | undefined {
 
 // Authentication first, then the runtime exposure gate for the request's
 // tenant: a switched-off model answers 404 only to an admitted caller.
-function requireRouteAuth(locals: unknown, mutating: boolean): void {
-  const open = PUBLIC_ACCESS === true || (PUBLIC_ACCESS === 'read' && !mutating);
-  if (!open && !hasAuthenticatedPrincipal(locals)) {
-    throw error(401, 'Authentication required');
+//
+// A guest (#5196: no user, \`locals.guestPrincipal\`) is admitted only for the
+// generated read operations the caller names (\`guestOperation\`) and only
+// when it holds the matching \`<collection>.read\`. Everything else denies it
+// as an anonymous caller is denied (401), \`public\` routes included: a guest
+// request carries its tenant on \`locals\` and in the entered tenant context,
+// so an operation the guest check did not admit must not run for it.
+function requireRouteAuth(
+  locals: unknown,
+  mutating: boolean,
+  guestOperation?: 'list' | 'get',
+): void {
+  const guest = hasAuthenticatedPrincipal(locals) ? null : guestPrincipalOf(locals);
+  if (guest) {
+    if (
+      mutating ||
+      !guestOperation ||
+      !isGuestOperationAllowed(guest.permissions, GUEST_MODEL, PERMISSION_COLLECTION, guestOperation)
+    ) {
+      throw error(401, 'Authentication required');
+    }
+  } else {
+    const open = PUBLIC_ACCESS === true || (PUBLIC_ACCESS === 'read' && !mutating);
+    if (!open && !hasAuthenticatedPrincipal(locals)) {
+      throw error(401, 'Authentication required');
+    }
   }
   if (!isRuntimeModelEnabled(RUNTIME_MODEL, { surface: 'rest', locals, tenantId: requestTenantOf(locals) })) {
     throw error(404, 'Not found');
@@ -835,7 +859,8 @@ const LIST_ORDER_BY = ${JSON.stringify(orderBy)};
  * Parse \`?limit\`/\`?offset\` (#2367): default when absent, 400 when malformed,
  * clamped to ${MAX_LIST_LIMIT} when oversized.
  */
-function listBounds(url: URL): { limit: number; offset: number } {
+function listBounds(url: URL, locals: unknown): { limit: number; offset: number } {
+  const maxLimit = isGuestLocals(locals) ? Math.min(${MAX_LIST_LIMIT}, GUEST_MAX_LIST_LIMIT) : ${MAX_LIST_LIMIT};
   const parse = (name: 'limit' | 'offset', fallback: number, max?: number): number => {
     const raw = url.searchParams.get(name);
     if (raw === null || raw === '') {
@@ -852,7 +877,7 @@ function listBounds(url: URL): { limit: number; offset: number } {
   };
 
   return {
-    limit: parse('limit', ${DEFAULT_LIST_LIMIT}, ${MAX_LIST_LIMIT}),
+    limit: parse('limit', ${DEFAULT_LIST_LIMIT}, maxLimit),
     offset: parse('offset', 0),
   };
 }
@@ -904,7 +929,11 @@ function routeGuardPreamble(
   permissionAction?: 'create' | 'update' | 'delete',
   readOperation: 'list' | 'get' = 'list',
 ): string {
-  const lines = [`  requireRouteAuth(locals, ${mutating});`];
+  const lines = [
+    mutating
+      ? '  requireRouteAuth(locals, true);'
+      : `  requireRouteAuth(locals, false, ${JSON.stringify(readOperation)});`,
+  ];
   if (mutating) {
     if (!permissionAction) {
       throw new Error('Mutating generated routes require a permission action');
@@ -3409,7 +3438,7 @@ ${generateAuthGuardHelper(objectDef, semanticManifest)}${generateTenantContextHe
 export const GET: RequestHandler = async ({ locals, url, request }) => {
 ${routeGuardPreamble(objectDef, false, undefined, 'list')}
   const publicJsonOptions = getPublicJsonOptions(locals);
-  const { limit, offset } = listBounds(url);
+  const { limit, offset } = listBounds(url, locals);
   const query = listQuery(url, publicJsonOptions);
 
 ${generateCollectionLoad(className, { typeName: modelType.typeName })}

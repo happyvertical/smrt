@@ -3367,9 +3367,11 @@ describe('SvelteKit Route Generator', () => {
       expect(collectionContent).toContain(
         'const LIST_ORDER_BY = ["created_at DESC","id ASC"];',
       );
-      expect(collectionContent).toContain('function listBounds(url: URL)');
       expect(collectionContent).toContain(
-        'const { limit, offset } = listBounds(url);',
+        'function listBounds(url: URL, locals: unknown)',
+      );
+      expect(collectionContent).toContain(
+        'const { limit, offset } = listBounds(url, locals);',
       );
       // The caller's filter and ordering are read once, through the checked
       // `listQuery`, before the bounds reach the collection.

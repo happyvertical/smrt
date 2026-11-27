@@ -34,6 +34,13 @@ export interface SessionPermissionRuntimeContext {
   database?: QueryableDatabase;
   permissions: string[];
   permissionSet: Set<string>;
+  /**
+   * Who the context acts for. Absent means a user (a session or a bound user
+   * principal); `'guest'` is the unauthenticated guest of a tenant (#5196):
+   * `userId` is `null`, nothing resolves per user, and no bypass or system
+   * context exists.
+   */
+  callerKind?: 'user' | 'guest';
   membership: SessionContext['membership'];
   postgresRls: boolean;
   session: SessionContext | null;
@@ -100,11 +107,38 @@ export interface PrincipalPermissionRuntimeOptions extends SmrtClassOptions {
 }
 
 /**
+ * Options for the guest variant of {@link withPrincipalPermissionContext}
+ * (#5196): an unauthenticated caller acting in one tenant with a guest
+ * permission set the host already resolved (`GuestPermissionResolver`).
+ *
+ * A guest has no user: `userId` is `null`, `permissions` is required (it is
+ * never resolved per user), and no session, bypass or system context exists.
+ * It runs only under active PostgreSQL row-level security; otherwise the
+ * context carries no tenant and no permissions.
+ */
+export interface GuestPrincipalPermissionRuntimeOptions
+  extends SmrtClassOptions {
+  callerKind: 'guest';
+  /** Enter tenant context so tenant auto-filtering applies on every adapter. */
+  enterTenantContext?: boolean;
+  /** The guest permission set; the ceiling is already applied. */
+  permissions: string[];
+  /** Opt into Postgres RLS transaction wrapping (defaults to package config). */
+  postgresRls?: boolean;
+  /** The tenant the guest acts in. Required. */
+  tenantId: string;
+  /** A guest has no user. */
+  userId: null;
+}
+
+/**
  * The controls shared by both permission-context entry points that influence
  * transaction wrapping and tenant-context entry.
  */
 interface PermissionRuntimeControls {
   enterTenantContext?: boolean;
+  /** Guest entry (#5196): refuse to carry any permission without active RLS. */
+  guest?: boolean;
   postgresRls?: boolean;
   systemContext?: boolean;
 }
@@ -293,17 +327,23 @@ async function runWithinPermissionRuntime<T>(
     transaction = await baseDatabase.beginTransaction();
   }
 
+  // A guest is only ever admitted by row-level security. If the connection
+  // is not (or cannot be) in the RLS transaction, the guest context carries
+  // no tenant and no permission: nothing the database would not enforce.
+  const guestWithoutRls = controls.guest === true && !usePostgresRls;
+  const permissions = guestWithoutRls ? [] : spec.permissions;
   const runtimeContext: SessionPermissionRuntimeContext = {
     database: transaction ?? baseDatabase,
-    permissions: spec.permissions,
-    permissionSet: new Set(spec.permissions),
+    ...(controls.guest ? { callerKind: 'guest' as const } : {}),
+    permissions,
+    permissionSet: new Set(permissions),
     membership: spec.membership,
     postgresRls: usePostgresRls,
     session: spec.session,
     sessionId: spec.sessionId,
     superAdminBypass: spec.superAdminBypass,
     systemContext: spec.systemContext,
-    tenantId: spec.tenantId,
+    tenantId: guestWithoutRls ? null : spec.tenantId,
     user: spec.user,
     userId: spec.userId,
   };
@@ -418,9 +458,21 @@ export async function withSessionPermissionContext<T>(
  * `assertOperationPermission`).
  */
 export async function withPrincipalPermissionContext<T>(
-  options: PrincipalPermissionRuntimeOptions,
+  options:
+    | PrincipalPermissionRuntimeOptions
+    | GuestPrincipalPermissionRuntimeOptions,
   fn: (context: SessionPermissionRuntimeContext) => Promise<T>,
 ): Promise<T> {
+  if ((options as { callerKind?: unknown }).callerKind !== undefined) {
+    if ((options as { callerKind?: unknown }).callerKind !== 'guest') {
+      throw new Error('Unknown principal caller kind.');
+    }
+    return withGuestPrincipalPermissionContext(
+      options as GuestPrincipalPermissionRuntimeOptions,
+      fn,
+    );
+  }
+  const userOptions = options as PrincipalPermissionRuntimeOptions;
   const {
     enterTenantContext: _enterTenantContext,
     membership,
@@ -431,7 +483,7 @@ export async function withPrincipalPermissionContext<T>(
     tenantId,
     userId,
     ...serviceOptions
-  } = options;
+  } = userOptions;
 
   // Reuse SessionService purely as the blessed database accessor — no session
   // is loaded on this path; the principal comes straight from (userId,
@@ -470,8 +522,8 @@ export async function withPrincipalPermissionContext<T>(
 
   return runWithinPermissionRuntime(
     {
-      enterTenantContext: options.enterTenantContext,
-      postgresRls: options.postgresRls,
+      enterTenantContext: userOptions.enterTenantContext,
+      postgresRls: userOptions.postgresRls,
       systemContext: false,
     },
     configuredDb,
@@ -489,6 +541,70 @@ export async function withPrincipalPermissionContext<T>(
       tenantId: tenantId ?? null,
       user: null,
       userId,
+    },
+    fn,
+  );
+}
+
+/**
+ * The guest variant of {@link withPrincipalPermissionContext} (#5196). The
+ * same transaction lifecycle and transaction-local `set_config(..., true)`
+ * publication as every other principal; no per-user resolution, session,
+ * bypass or system context. Fails closed on anything malformed: a guest needs
+ * a tenant, a `null` user and an explicit permission list.
+ */
+async function withGuestPrincipalPermissionContext<T>(
+  options: GuestPrincipalPermissionRuntimeOptions,
+  fn: (context: SessionPermissionRuntimeContext) => Promise<T>,
+): Promise<T> {
+  const {
+    callerKind: _callerKind,
+    enterTenantContext,
+    permissions,
+    postgresRls,
+    tenantId,
+    userId,
+    ...serviceOptions
+  } = options;
+  if (userId !== null) {
+    throw new Error('A guest principal has no user.');
+  }
+  if (typeof tenantId !== 'string' || tenantId.length === 0) {
+    throw new Error('A guest principal requires a tenant.');
+  }
+  if (
+    !Array.isArray(permissions) ||
+    !permissions.every((slug) => typeof slug === 'string')
+  ) {
+    throw new Error('A guest principal requires an explicit permission list.');
+  }
+  const sessionService = await SessionService.create({
+    ...serviceOptions,
+  } as SessionServiceOptions);
+  const configuredDb =
+    (serviceOptions as SessionServiceOptions).db ??
+    (serviceOptions as SessionServiceOptions).persistence;
+  const baseDatabase = sessionService.getDatabase() as QueryableDatabase;
+
+  return runWithinPermissionRuntime(
+    {
+      enterTenantContext,
+      guest: true,
+      postgresRls,
+      systemContext: false,
+    },
+    configuredDb,
+    baseDatabase,
+    {
+      permissions: [...permissions],
+      membership: null,
+      session: null,
+      sessionId: null,
+      superAdminBypass: false,
+      systemContext: false,
+      tenantId,
+      user: null,
+      userId: null,
     },
     fn,
   );

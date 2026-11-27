@@ -16,12 +16,15 @@
 import {
   chunkArray,
   classifyDatabaseError,
+  GUEST_KIND_OPERATIONS,
+  type GuestPermissionKind,
+  guestOperationKind,
   IN_LIST_CHUNK_SIZE,
   isEffectivelySensitiveClass,
+  isGuestOperationAllowed,
   isRlsBypassingRole,
   isRuntimeModelClass,
   ObjectRegistry,
-  resolveOperationPermissionAlias,
   type SmrtClassOptions,
 } from '@happyvertical/smrt-core';
 import {
@@ -49,14 +52,8 @@ export interface GuestPermissionConfig {
   createCollections?: string[];
 }
 
-/** The only guest permission kinds; everything else never survives. */
-export type GuestPermissionKind = 'read' | 'create';
-
-/** Generated CRUD operations each guest kind may authorize. */
-const GUEST_KIND_OPERATIONS: Record<GuestPermissionKind, readonly string[]> = {
-  read: ['list', 'get'],
-  create: ['create'],
-};
+export type { GuestPermissionKind } from '@happyvertical/smrt-core';
+export { guestOperationKind, isGuestOperationAllowed };
 
 const USERS_PACKAGE_PREFIX = '@happyvertical/smrt-users:';
 
@@ -69,50 +66,6 @@ function splitSlug(
   const kind = slug.slice(dot + 1);
   if (kind !== 'read' && kind !== 'create') return null;
   return { collection, kind };
-}
-
-/**
- * The guest permission kind an operation is authorized by, or `null`.
- *
- * Decided by the operation itself, never by the slug it would be checked
- * against: only the generated CRUD operations (`list`/`get` for read,
- * `create` for create) map to a guest kind. A custom method, even one aliased
- * onto `read` or `create` through `operationPermissions`, maps to nothing, so
- * a `products.read` grant never opens it.
- */
-export function guestOperationKind(
-  model: string,
-  operation: string,
-): GuestPermissionKind | null {
-  let aliased = false;
-  try {
-    aliased =
-      resolveOperationPermissionAlias(
-        ObjectRegistry.getConfig(model),
-        operation,
-      ) !== undefined;
-  } catch {
-    return null;
-  }
-  if (aliased) return null;
-  for (const kind of ['read', 'create'] as const) {
-    if (GUEST_KIND_OPERATIONS[kind].includes(operation)) return kind;
-  }
-  return null;
-}
-
-/**
- * Whether a guest holding `permissions` may run `operation` on `collection`
- * (the collection slug prefix). Fails closed on custom and aliased methods.
- */
-export function isGuestOperationAllowed(
-  permissions: ReadonlySet<string>,
-  model: string,
-  collection: string,
-  operation: string,
-): boolean {
-  const kind = guestOperationKind(model, operation);
-  return kind !== null && permissions.has(`${collection}.${kind}`);
 }
 
 /** Whether the class's generated CRUD config exposes `operation`. */
@@ -218,6 +171,41 @@ export function applyGuestCeiling(
     out.add(slug);
   }
   return out;
+}
+
+/** A table whose row-level security a guest request depends on. */
+export interface GuestCeilingTable {
+  schemaName: string;
+  tableName: string;
+}
+
+/**
+ * The tables behind every listed collection that passes the code ceiling
+ * (read or create): the exact set whose catalog posture the runtime gate
+ * must verify before a guest request is served. Pure.
+ */
+export function guestCeilingTables(
+  guest: GuestPermissionConfig,
+  targets: readonly PostgresPermissionPolicyTarget[],
+): GuestCeilingTable[] {
+  const listed = new Set(guest.collections);
+  const createListed = new Set(guest.createCollections ?? []);
+  const seen = new Set<string>();
+  const tables: GuestCeilingTable[] = [];
+  for (const target of targets) {
+    const collection = target.collection;
+    if (!collection || !listed.has(collection)) continue;
+    const passes =
+      collectionPassesGuestCeiling(target, 'read') ||
+      (createListed.has(collection) &&
+        collectionPassesGuestCeiling(target, 'create'));
+    if (!passes) continue;
+    const key = `${target.schemaName}.${target.tableName}`;
+    if (seen.has(key)) continue;
+    seen.add(key);
+    tables.push({ schemaName: target.schemaName, tableName: target.tableName });
+  }
+  return tables;
 }
 
 /**

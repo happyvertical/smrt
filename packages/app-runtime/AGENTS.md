@@ -231,6 +231,7 @@ Application infrastructure composition for the validated runtime profiles in
   `isSessionTenantAuthorized()` accepts it, else unauthenticated; never via
   `createSessionHandler`, which re-runs `resolve` on downstream errors) →
   publish `locals.tenantContext` only for that verified tenant.
+- Guests (#5196): [users guest callers](../users/agents/permissions.md#guest-callers-5196).
 - `database-rls` isolation forces `postgresRls: true`, including on
   `skipPaths` (anonymous principal). `resolve` runs at most once;
   session-layer failure before it is a 500 with cleared locals.

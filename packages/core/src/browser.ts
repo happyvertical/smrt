@@ -373,6 +373,18 @@ export {
   normalizeTypedHttpError,
   type TypedHttpFailure,
 } from './generators/typed-http-error';
+export {
+  createGuestRequestPrincipal,
+  GUEST_CALLER_KIND,
+  GUEST_KIND_OPERATIONS,
+  GUEST_MAX_LIST_LIMIT,
+  type GuestPermissionKind,
+  type GuestRequestPrincipal,
+  guestOperationKind,
+  guestPrincipalOf,
+  isGuestLocals,
+  isGuestOperationAllowed,
+} from './guest-request';
 export { type HierarchyView, SmrtHierarchical } from './hierarchical';
 // Inference tiers and the binding resolver seam (#4750). Browser-safe; keep
 // this list identical in index.ts and browser.ts.
