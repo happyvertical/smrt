@@ -316,6 +316,7 @@ function writeWorkspaceCoreShim(projectRoot: string): void {
       'export const guestPrincipalOf = () => null;',
       'export const isGuestLocals = () => false;',
       'export const isGuestOperationAllowed = () => false;',
+      'export const isGuestAllowedOnRoute = (...a) => globalThis.__smrtGuest?.isGuestAllowedOnRoute?.(...a) ?? false;',
       // The guest pipeline is the REAL one when a test installs it on
       // `globalThis.__smrtGuest`; otherwise no caller is a guest.
       'export const guestCreateAdmission = (...a) => globalThis.__smrtGuest?.guestCreateAdmission?.(...a) ?? null;',
@@ -1129,6 +1130,9 @@ describe('generated SvelteKit helper runtime', () => {
       guestPrincipal: createGuestRequestPrincipal({
         tenantId: 'tenant-a',
         permissions,
+        slugModels: permissions.map(
+          (slug) => [slug, '@test/generated-helper-app:Widget'] as const,
+        ),
         ...(withRuntime ? { runtime } : {}),
       }),
     });
@@ -1768,7 +1772,7 @@ describe('generated SvelteKit helper runtime', () => {
       // a mocked factory. It must construct and initialize against this DB.
       writeFileSync(
         join(projectRoot, 'node_modules/@happyvertical/smrt-core/index.js'),
-        `export const { apiPrincipalFromLocals, authorize, enforceRouteLimits, stripTenantFilters, modelRoutePolicy, foreignRowModel, RequestPrincipalRefusal, ObjectRegistry, isRuntimeModelEnabled, hasRuntimeExposureGate, createGeneratedCollectionAccess, normalizeCustomActionFailure, normalizeTypedHttpError, reportUnexpectedHttpError, canonicalReadRepresentation, computeTableVersionEtag, getTableVersion, ifNoneMatchHasConcreteMatch, ifNoneMatchSatisfied, parseRestListWhere, applyWhereScope, resolveAnonymousTenantReadScope, scopeTenantReadOptions, publicSerializerOf, toPublicJSONValue, assertQueryAccess, assertCreateTargetSurface, assertCreateInput, isTenantScopedModel, enterRequestTenantContext, getRequestTenantContext, resolveTenantEtagDiscriminator, enterRequestTenancy, tenancyReadScope, scopeActionOptions, boundTenancyCacheScoped, boundTenancyEtagDiscriminator, runInRequestTenancy, GUEST_MAX_LIST_LIMIT, guestPrincipalOf, isGuestOperationAllowed, guestCreateAdmission, guestReadThrottle, handleGuestCreate } = globalThis.__smrt4320Core;`,
+        `export const { apiPrincipalFromLocals, authorize, enforceRouteLimits, stripTenantFilters, modelRoutePolicy, foreignRowModel, RequestPrincipalRefusal, ObjectRegistry, isRuntimeModelEnabled, hasRuntimeExposureGate, createGeneratedCollectionAccess, normalizeCustomActionFailure, normalizeTypedHttpError, reportUnexpectedHttpError, canonicalReadRepresentation, computeTableVersionEtag, getTableVersion, ifNoneMatchHasConcreteMatch, ifNoneMatchSatisfied, parseRestListWhere, applyWhereScope, resolveAnonymousTenantReadScope, scopeTenantReadOptions, publicSerializerOf, toPublicJSONValue, assertQueryAccess, assertCreateTargetSurface, assertCreateInput, isTenantScopedModel, enterRequestTenantContext, getRequestTenantContext, resolveTenantEtagDiscriminator, enterRequestTenancy, tenancyReadScope, scopeActionOptions, boundTenancyCacheScoped, boundTenancyEtagDiscriminator, runInRequestTenancy, GUEST_MAX_LIST_LIMIT, guestPrincipalOf, isGuestOperationAllowed, isGuestAllowedOnRoute, guestCreateAdmission, guestReadThrottle, handleGuestCreate } = globalThis.__smrt4320Core;`,
       );
       const objectFilePath = join(projectRoot, 'src/lib/objects/Widget.ts');
       writeFileSync(

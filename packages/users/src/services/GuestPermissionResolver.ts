@@ -156,25 +156,28 @@ export function collectionPassesGuestCeiling(
 }
 
 /**
- * Apply the code ceiling to a set of slugs. Only exact `<collection>.read`
- * and `<collection>.create` can survive, `create` only for a collection the
- * app lists in `createCollections`, and only for collections the app lists in
- * `collections` that pass {@link collectionPassesGuestCeiling}.
+ * Apply the code ceiling to granted slugs and say, for each survivor, which
+ * single policy target (table and model) it was admitted for.
+ *
+ * A slug survives only when EXACTLY ONE target is reachable by it, and that
+ * target passes {@link collectionPassesGuestCeiling}. Reachable means the
+ * target's own collection name is the slug's collection, OR the target lists
+ * the slug under the matching action (an explicit `permissions.postgres`
+ * binding can aim `items.read` at another table). Two models sharing a
+ * collection name, or a binding that reaches a second table, therefore drop
+ * the slug entirely instead of letting the first model's check speak for
+ * the second. Only exact `<collection>.read` / `<collection>.create` can
+ * survive, `create` only for a collection in `createCollections`, and only
+ * for collections listed in `collections`.
  */
-export function applyGuestCeiling(
+export function guestSlugTargets(
   slugs: Iterable<string>,
   guest: GuestPermissionConfig,
   targets: readonly PostgresPermissionPolicyTarget[],
-): Set<string> {
+): Map<string, PostgresPermissionPolicyTarget> {
   const listed = new Set(guest.collections);
   const createListed = new Set(guest.createCollections ?? []);
-  const byCollection = new Map<string, PostgresPermissionPolicyTarget>();
-  for (const target of targets) {
-    if (target.collection && !byCollection.has(target.collection)) {
-      byCollection.set(target.collection, target);
-    }
-  }
-  const out = new Set<string>();
+  const out = new Map<string, PostgresPermissionPolicyTarget>();
   for (const slug of slugs) {
     const parsed = splitSlug(slug);
     if (!parsed) continue;
@@ -182,17 +185,26 @@ export function applyGuestCeiling(
     if (parsed.kind === 'create' && !createListed.has(parsed.collection)) {
       continue;
     }
-    if (
-      !collectionPassesGuestCeiling(
-        byCollection.get(parsed.collection),
-        parsed.kind,
-      )
-    ) {
-      continue;
-    }
-    out.add(slug);
+    const action = parsed.kind === 'read' ? 'SELECT' : 'INSERT';
+    const reachable = targets.filter(
+      (target) =>
+        target.collection === parsed.collection ||
+        (target.actions[action] ?? []).includes(slug),
+    );
+    if (reachable.length !== 1) continue;
+    if (!collectionPassesGuestCeiling(reachable[0], parsed.kind)) continue;
+    out.set(slug, reachable[0]);
   }
   return out;
+}
+
+/** The slugs of {@link guestSlugTargets}. */
+export function applyGuestCeiling(
+  slugs: Iterable<string>,
+  guest: GuestPermissionConfig,
+  targets: readonly PostgresPermissionPolicyTarget[],
+): Set<string> {
+  return new Set(guestSlugTargets(slugs, guest, targets).keys());
 }
 
 /** A table whose row-level security a guest request depends on. */
@@ -287,6 +299,27 @@ export class GuestPermissionResolver {
       // A deployment that has not migrated the grants table has no guests.
       if (!isMissingTable(error)) throw error;
     }
+  }
+
+  /**
+   * The guest permission set of `tenantId` AND the model each slug was
+   * admitted for (`slugModels`: slug to the qualified name of the one target
+   * the ceiling admitted it on). Routes admit a guest only for that model.
+   */
+  async resolveGuestAdmission(
+    tenantId: string,
+  ): Promise<{ permissions: Set<string>; slugModels: Map<string, string> }> {
+    const permissions = await this.resolveGuestPermissions(tenantId);
+    const admitted = guestSlugTargets(
+      permissions,
+      this.guest,
+      this.policyTargets(),
+    );
+    const slugModels = new Map<string, string>();
+    for (const [slug, target] of admitted) {
+      if (target.qualifiedName) slugModels.set(slug, target.qualifiedName);
+    }
+    return { permissions, slugModels };
   }
 
   /**

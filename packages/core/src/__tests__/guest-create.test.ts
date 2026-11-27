@@ -4,6 +4,7 @@
 import type { DatabaseInterface } from '@happyvertical/sql';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { type AuditEntry, type AuditWriter, GUEST_AUDIT_ACTOR } from '../audit';
+import { field, foreignKey } from '../decorators/index.js';
 import {
   clientKeyFor,
   createGuestCreateLimiter,
@@ -13,7 +14,28 @@ import {
   projectGuestBody,
 } from '../guest-create';
 import { BoundedSlidingWindowRateLimiter } from '../http';
+import { SmrtObject } from '../object';
+import { smrt } from '../registry';
 import { getTestDatabase } from '../testing/database';
+
+@smrt({
+  packageName: '@test/gcrel5196',
+  tenantScoped: true,
+  collection: 'gcrel5196_parents',
+})
+class GcRelParent5196 extends SmrtObject {
+  @field() title = '';
+}
+
+@smrt({
+  packageName: '@test/gcrel5196',
+  tenantScoped: true,
+  collection: 'gcrel5196_items',
+})
+class GcRelItem5196 extends SmrtObject {
+  @field() title = '';
+  @foreignKey('GcRelParent5196') parentId = '';
+}
 
 const TABLE = 'guest_contact_messages';
 const AUDIT_TABLE = 'guest_audit_probe';
@@ -120,6 +142,23 @@ describe('guest create (#5196)', () => {
       expect(() =>
         defineGuestCreate('contact_messages', { allowedFields: ['name'] }),
       ).not.toThrow();
+    });
+
+    it('rejects a relation field: a foreign key is checked without row-level security', () => {
+      expect(() =>
+        defineGuestCreate(
+          'gcrel5196_items',
+          { allowedFields: ['title', 'parentId'] },
+          { className: 'GcRelItem5196' },
+        ),
+      ).toThrow(/relation/);
+      expect(
+        defineGuestCreate(
+          'gcrel5196_items',
+          { allowedFields: ['title'] },
+          { className: 'GcRelItem5196' },
+        ).allowedFields,
+      ).toEqual(['title']);
     });
 
     it('freezes the resolved config', () => {
@@ -326,6 +365,38 @@ describe('guest create (#5196)', () => {
     it('refuses a database without nested transactions', async () => {
       const bare = { query: db.query.bind(db) };
       await expect(run({ db: bare })).rejects.toThrow(/nested transactions/);
+    });
+
+    it('answers a constraint failure on the submitted values exactly like success, writing nothing', async () => {
+      await db.query(
+        'CREATE TABLE gc_strict (id TEXT PRIMARY KEY, tenant_id TEXT NOT NULL, name TEXT NOT NULL CHECK (length(name) > 2))',
+      );
+      const strict = defineGuestCreate('gc_strict', {
+        allowedFields: ['name'],
+      });
+      const send = (body: unknown) =>
+        executeGuestCreate({
+          db,
+          table: 'gc_strict',
+          tenantId: 't1',
+          body,
+          config: strict,
+          limiter: createGuestCreateLimiter(),
+          clientKey: '1.2.3.4',
+          audit: { writer, resourceType: 'GcStrict' },
+          changeFeed: false,
+        });
+      const ok = await send({ name: 'long enough' });
+      // Violates the CHECK, and a missing NOT NULL column: same answer.
+      expect(await send({ name: 'x' })).toEqual(ok);
+      expect(await send({})).toEqual(ok);
+      expect(rowsOf(await db.query('SELECT * FROM gc_strict'))).toHaveLength(1);
+      // The rejected inserts left no audit row.
+      expect(entries).toHaveLength(1);
+    });
+
+    it('still fails on a real server fault, not as a silent success', async () => {
+      await expect(run({ table: 'no_such_table_5196' })).rejects.toBeDefined();
     });
 
     it('rejects unsafe identifiers', async () => {

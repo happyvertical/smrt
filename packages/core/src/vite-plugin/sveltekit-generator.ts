@@ -616,9 +616,16 @@ function generateAuthGuardHelper(
   return `
 // Fail-closed authorization (#1540): generated routes require an authenticated
 // principal on \`locals\` unless explicitly marked \`@smrt({ api: { public } })\`.
-import { GUEST_MAX_LIST_LIMIT, apiPrincipalFromLocals, authorize, enforceRouteLimits, guestCreateAdmission, guestPrincipalOf, guestReadThrottle, handleGuestCreate, isGuestOperationAllowed, isRuntimeModelEnabled, stripTenantFilters, publicSerializerOf, toPublicJSONValue } from '@happyvertical/smrt-core';
+import { GUEST_MAX_LIST_LIMIT, apiPrincipalFromLocals, authorize, enforceRouteLimits, guestCreateAdmission, guestPrincipalOf, guestReadThrottle, handleGuestCreate, isGuestAllowedOnRoute, isRuntimeModelEnabled, stripTenantFilters, publicSerializerOf, toPublicJSONValue } from '@happyvertical/smrt-core';
 // The registry key guest operation checks resolve the model's config by (#5196).
 const GUEST_MODEL = ${JSON.stringify(readScopeModelName(permissionObjectDef, permissionObjectDef.className))};
+// The qualified name the guest ceiling admits a slug for (#5196).
+const GUEST_QUALIFIED_MODEL: string | undefined = ${JSON.stringify(
+    permissionObjectDef.qualifiedName ??
+      (permissionObjectDef.packageName
+        ? `${permissionObjectDef.packageName}:${permissionObjectDef.className}`
+        : undefined),
+  )};
 const RUNTIME_MODEL = ${JSON.stringify({
     qualifiedName:
       permissionObjectDef.qualifiedName ??
@@ -708,7 +715,8 @@ function routeDenial(decision: { status: number; code: string; message: string }
 function guestMayRead(locals: unknown, op: string, mutating: boolean): boolean {
   if (mutating) return false;
   const guest = guestPrincipalOf(locals);
-  return guest !== null && isGuestOperationAllowed(guest.permissions, GUEST_MODEL, PERMISSION_COLLECTION, op);
+  // The ceiling admitted the slug for ONE model: this route must be it.
+  return guest !== null && isGuestAllowedOnRoute(guest, { model: GUEST_MODEL, qualifiedName: GUEST_QUALIFIED_MODEL, collection: PERMISSION_COLLECTION }, op);
 }
 
 function requireRouteAccess(locals: unknown, op: string, mutating: boolean, permissionAction?: string): void {
@@ -977,7 +985,7 @@ function generateGuestCreateBranch(
   typeName?: string,
 ): string {
   const genericSuffix = typeName ? `<${typeName}>` : '';
-  return `  const guestCreate = guestCreateAdmission(locals, GUEST_MODEL, PERMISSION_COLLECTION, PUBLIC_ACCESS);
+  return `  const guestCreate = guestCreateAdmission(locals, GUEST_MODEL, PERMISSION_COLLECTION, PUBLIC_ACCESS, GUEST_QUALIFIED_MODEL);
   if (guestCreate) {
     const guestDecision = routeDecision(locals, 'create', true, undefined, undefined, false, true);
     if (!guestDecision.allow) routeDenial(guestDecision);

@@ -93,6 +93,52 @@ export interface GuestRequestPrincipal {
    * guest reads are refused rather than admitted unlimited.
    */
   readonly runtime?: GuestRuntime;
+  /**
+   * For each granted slug, the qualified name of the ONE model the code
+   * ceiling admitted it for (a collection name can be shared by several
+   * models, and an explicit policy binding can name another table). A route
+   * admits a guest only when its own model is the admitted one; absent means
+   * no route admits the guest.
+   */
+  readonly slugModels?: ReadonlyMap<string, string>;
+}
+
+/** The route a guest operation is checked for. */
+export interface GuestRouteModel {
+  /** Registry key the model's config is resolved by. */
+  model: string;
+  /** The model's qualified name (`package:Class`), when it has one. */
+  qualifiedName: string | undefined;
+  /** The `<collection>` prefix of its permission slugs. */
+  collection: string;
+}
+
+/**
+ * Whether the guest may run `operation` on THIS route's model: the slug is
+ * granted (generated CRUD only), and the ceiling admitted that slug for this
+ * exact model, not merely for a model that shares the collection name.
+ */
+export function isGuestAllowedOnRoute(
+  principal: GuestRequestPrincipal,
+  route: GuestRouteModel,
+  operation: string,
+): boolean {
+  if (
+    !isGuestOperationAllowed(
+      principal.permissions,
+      route.model,
+      route.collection,
+      operation,
+    )
+  ) {
+    return false;
+  }
+  const kind = guestOperationKind(route.model, operation);
+  if (kind === null || !route.qualifiedName) return false;
+  return (
+    principal.slugModels?.get(`${route.collection}.${kind}`) ===
+    route.qualifiedName
+  );
 }
 
 /** Build the frozen principal. Throws on an empty tenant. */
@@ -100,6 +146,7 @@ export function createGuestRequestPrincipal(input: {
   tenantId: string;
   permissions: Iterable<string>;
   runtime?: GuestRuntime;
+  slugModels?: Iterable<readonly [string, string]>;
 }): GuestRequestPrincipal {
   if (typeof input.tenantId !== 'string' || input.tenantId.length === 0) {
     throw new TypeError('A guest principal requires a tenant');
@@ -110,6 +157,9 @@ export function createGuestRequestPrincipal(input: {
     tenantId: input.tenantId,
     permissions: readonlySetOf([...input.permissions]),
     ...(input.runtime ? { runtime: input.runtime } : {}),
+    ...(input.slugModels
+      ? { slugModels: new Map(input.slugModels) as ReadonlyMap<string, string> }
+      : {}),
   });
 }
 

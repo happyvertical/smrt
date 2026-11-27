@@ -14,6 +14,23 @@ export const GUEST_AUDIT_ACTOR = 'smrt:guest';
 
 export type AuditCallerKind = 'user' | 'guest';
 
+/**
+ * Identities minted by {@link guestCreateAuditContext}. `requireAuditOptions`
+ * accepts the guest marker only from one of these, so an arbitrary caller
+ * cannot claim the reserved actor with a bare `{ callerKind: 'guest' }`.
+ */
+const guestCreateIdentities = new WeakSet<object>();
+
+/**
+ * The one audit identity the guest create pipeline passes. Not exported from
+ * the package entry: only code inside core can mint it.
+ */
+export function guestCreateAuditContext(): GuestAuditContext {
+  const identity: GuestAuditContext = Object.freeze({ callerKind: 'guest' });
+  guestCreateIdentities.add(identity);
+  return identity;
+}
+
 interface AuditContextBase {
   reason?: string;
   source?: 'web' | 'cli' | 'ci' | 'webhook' | 'mcp';
@@ -130,6 +147,8 @@ export function requireAuditOptions(
   const base = rest as AuditContextBase;
   if (identity.callerKind === 'guest') {
     if (identity.actorId !== undefined) throw new Error(message);
+    // Only the guest create pipeline's own identity carries the marker.
+    if (!guestCreateIdentities.has(identity)) throw new Error(message);
     return {
       ...base,
       writer: defaults.writer,

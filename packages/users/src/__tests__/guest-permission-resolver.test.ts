@@ -18,6 +18,7 @@ import {
   GuestPermissionResolver,
   guestCeilingTables,
   guestOperationKind,
+  guestSlugTargets,
   isGuestOperationAllowed,
 } from '../services/GuestPermissionResolver.js';
 import { generatePostgresPermissionSql } from '../services/PostgresPermissionPolicies.js';
@@ -364,6 +365,92 @@ describe('GuestPermissionResolver (#5196)', () => {
         .size,
     ).toBe(1);
     registered.runtimeModel = true;
+  });
+
+  describe('a slug is admitted per model, not per collection name', () => {
+    type Target = ReturnType<
+      typeof generatePostgresPermissionSql
+    >['targets'][number];
+    const productsTarget = (): Target => {
+      const t = generatePostgresPermissionSql({ db }).targets.find(
+        (x) => x.collection === 'gp5196_products',
+      );
+      expect(t).toBeDefined();
+      return t as Target;
+    };
+    const guest = { collections: ['gp5196_products'] };
+
+    it('admits the one passing target and says which model it is', () => {
+      const t = productsTarget();
+      const admitted = guestSlugTargets(['gp5196_products.read'], guest, [t]);
+      expect([...admitted.keys()]).toEqual(['gp5196_products.read']);
+      expect(admitted.get('gp5196_products.read')?.qualifiedName).toBe(
+        t.qualifiedName,
+      );
+    });
+
+    it('drops the slug when a second model shares the collection name, even if both would pass', () => {
+      const t = productsTarget();
+      const twin: Target = {
+        ...t,
+        qualifiedName: '@test/other:Products',
+        tableName: 'other_products',
+      };
+      expect(
+        applyGuestCeiling(['gp5196_products.read'], guest, [t, twin]).size,
+      ).toBe(0);
+      // A second model that would NOT pass (sensitive, owner-scoped, smrt-users...)
+      const sensitive: Target = {
+        ...t,
+        qualifiedName: '@happyvertical/smrt-users:User',
+        tableName: 'users',
+      };
+      expect(
+        applyGuestCeiling(['gp5196_products.read'], guest, [t, sensitive]).size,
+      ).toBe(0);
+      expect(
+        applyGuestCeiling(['gp5196_products.read'], guest, [sensitive, t]).size,
+      ).toBe(0);
+    });
+
+    it('drops the slug when an explicit binding aims it at another table', () => {
+      const t = productsTarget();
+      const other: Target = {
+        ...t,
+        collection: 'gp5196_secrets',
+        qualifiedName: '@test/gp5196:GpSecret5196',
+        tableName: 'gp5196_secrets',
+        actions: { ...t.actions, SELECT: ['gp5196_products.read'] },
+      };
+      expect(
+        applyGuestCeiling(['gp5196_products.read'], guest, [t, other]).size,
+      ).toBe(0);
+      // The create slug follows the same rule through INSERT bindings.
+      const createGuest = { ...guest, createCollections: ['gp5196_products'] };
+      const createOther: Target = {
+        ...other,
+        actions: { ...t.actions, INSERT: ['gp5196_products.create'] },
+      };
+      expect(
+        applyGuestCeiling(['gp5196_products.create'], createGuest, [
+          t,
+          createOther,
+        ]).size,
+      ).toBe(0);
+    });
+
+    it('resolveGuestAdmission returns the admitted model of every surviving slug', async () => {
+      const t = await tenant('gp-admit');
+      await grant(t.id!, 'gp5196_products.read');
+      const admission = await resolver.resolveGuestAdmission(t.id!);
+      expect([...admission.permissions]).toEqual(['gp5196_products.read']);
+      expect([...admission.slugModels.keys()]).toEqual([
+        'gp5196_products.read',
+      ]);
+      expect(admission.slugModels.get('gp5196_products.read')).toMatch(
+        /GpProduct5196$/,
+      );
+    });
   });
 
   it('guestCeilingTables lists only listed collections that pass the ceiling', async () => {

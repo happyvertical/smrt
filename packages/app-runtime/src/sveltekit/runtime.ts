@@ -1627,6 +1627,7 @@ export function composeSmrtSvelteKitRuntime(
                 tenantId: admitted.tenantId,
                 permissions: context.permissions,
                 runtime: admitted.runtime,
+                slugModels: admitted.slugModels,
               });
             }
             resolveEntered = true;
