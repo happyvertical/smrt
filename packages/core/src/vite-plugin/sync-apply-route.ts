@@ -290,7 +290,7 @@ import {
   SyncApplyRejection,
   type SyncApplyTarget,
 } from '@happyvertical/smrt-core';
-import { apiPrincipalFromLocals, authorize, applyUpdateInput, assertCreateInput, assertUpdateInput, getRequestTenantContext as getCurrentTenant, isRuntimeModelEnabled, ObjectRegistry, runInRequestTenancy } from '@happyvertical/smrt-core';
+import { apiPrincipalFromLocals, authorize, enforceRouteLimits, applyUpdateInput, assertCreateInput, assertUpdateInput, getRequestTenantContext as getCurrentTenant, isRuntimeModelEnabled, ObjectRegistry, runInRequestTenancy } from '@happyvertical/smrt-core';
 import { error, json } from '@sveltejs/kit';
 import type { RequestHandler } from './$types';
 ${collectionAccessImports}
@@ -330,7 +330,20 @@ function decideItem(locals: unknown, target: SyncTargetConfig, op: SyncApplyOp, 
   });
 }
 
+// Route limits (#5198), as REST applies them before \`onRequest\`.
+function routeRateLimit(locals: unknown, request: Request): Response | undefined {
+  const principal = routePrincipal(locals);
+  return enforceRouteLimits({
+    request,
+    tenantId: principal.tenantId,
+    userId: principal.userId ?? null,
+    callerKind: principal.callerKind ?? null,
+  });
+}
+
 export const POST: RequestHandler = async ({ locals, request }) => {
+  const limited = routeRateLimit(locals, request);
+  if (limited) return limited;
 
   let body: unknown;
   try {

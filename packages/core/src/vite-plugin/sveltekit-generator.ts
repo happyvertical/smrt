@@ -616,7 +616,7 @@ function generateAuthGuardHelper(
   return `
 // Fail-closed authorization (#1540): generated routes require an authenticated
 // principal on \`locals\` unless explicitly marked \`@smrt({ api: { public } })\`.
-import { apiPrincipalFromLocals, authorize, isRuntimeModelEnabled, stripTenantFilters, publicSerializerOf, toPublicJSONValue } from '@happyvertical/smrt-core';
+import { apiPrincipalFromLocals, authorize, enforceRouteLimits, isRuntimeModelEnabled, stripTenantFilters, publicSerializerOf, toPublicJSONValue } from '@happyvertical/smrt-core';
 const RUNTIME_MODEL = ${JSON.stringify({
     qualifiedName:
       permissionObjectDef.qualifiedName ??
@@ -662,6 +662,20 @@ function routeDecision(locals: unknown, op: string, mutating: boolean, permissio
     allowSuperAdminBypass: ALLOW_SUPER_ADMIN_BYPASS,
     tenantColumns: TENANT_COLUMNS,
     ...(body === undefined ? {} : { body }),
+  });
+}
+
+// Route limits (#5198), the ones REST applies before \`onRequest\`: a caller over
+// its limit is answered with the 429 and \`Retry-After\` before authorization
+// or a database read. Tenant, user and caller kind are the decided
+// principal's; nothing the client sent chooses them.
+function routeRateLimit(locals: unknown, request: Request): Response | undefined {
+  const principal = routePrincipal(locals);
+  return enforceRouteLimits({
+    request,
+    tenantId: principal.tenantId,
+    userId: principal.userId ?? null,
+    callerKind: principal.callerKind ?? null,
   });
 }
 
@@ -898,7 +912,11 @@ function routeGuardPreamble(
   permissionAction?: 'create' | 'update' | 'delete',
   readOperation: 'list' | 'get' = 'list',
 ): string {
-  const lines: string[] = [];
+  const lines: string[] = [
+    // Before any decision, as REST's \`onRequest\` position (#5198).
+    '  const limited = routeRateLimit(locals, request);',
+    '  if (limited) return limited;',
+  ];
   if (mutating) {
     if (!permissionAction) {
       throw new Error('Mutating generated routes require a permission action');
@@ -3942,6 +3960,8 @@ function generateActionRouteHandler(
   // Sign-in and, on a mutating action, `<collection>.<method>` (#2977) are one
   // shared decision (#5195).
   const guardLines = [
+    '  const limited = routeRateLimit(locals, request);',
+    '  if (limited) return limited;',
     `  requireRouteAccess(locals, ${JSON.stringify(actionName)}, ${mutating}${mutating ? `, ${JSON.stringify(permissionAction ?? actionName)}` : ''});`,
   ];
   // The request's tenancy (#5375), decided for this action at request time:

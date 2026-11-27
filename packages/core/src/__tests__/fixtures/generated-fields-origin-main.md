@@ -160,3 +160,8 @@ Re-baselined again for the typecheck fix of the emitted denials (#5195): the
 `_events` routes of both cases) because denial bodies are built as a variable
 before `error()`. Every other digest is unchanged, and the revision above is the
 commit whose production sources produced them.
+- Route limits (#5198; every emitted route file): each handler, and the feed
+  and sync routes, begins with `routeRateLimit(locals, request)`, which calls
+  `enforceRouteLimits` from core and returns its 429 (`Retry-After`) before any
+  decision; with no limits configured it admits. The digests of the emitted
+  routes were re-baselined by hand for this one addition; nothing else moved.

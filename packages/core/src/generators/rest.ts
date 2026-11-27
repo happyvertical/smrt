@@ -145,6 +145,13 @@ import {
   stripTenantFilters,
 } from './route-authz';
 import { reportUnexpectedHttpError } from './route-error';
+import {
+  createRouteLimiter,
+  enforceRouteLimits,
+  getRouteLimiter,
+  type RouteLimiter,
+  type RouteLimitsConfig,
+} from './route-limits';
 import { normalizeTypedHttpError } from './typed-http-error';
 
 export interface APIConfig {
@@ -336,6 +343,16 @@ export interface APIConfig {
     principal: RequestPrincipal,
     info: APIRequestInfo,
   ) => undefined | Response | Promise<undefined | Response>;
+  /**
+   * Route-level rate limits (#5198): a caller over its limit gets a 429 with
+   * `Retry-After` before `onRequest`, authorization or any database access.
+   * Counted per tenant and caller, and per tenant when `tenant` is set; the
+   * tenant, user and `callerKind` are the resolved principal's, the client
+   * IP only stands in for a caller with no user id. Without it the
+   * process-wide limits (`configureRouteLimits`) apply, the ones the
+   * generated SvelteKit routes read; with neither nothing is limited.
+   */
+  routeLimits?: RouteLimitsConfig;
 }
 
 export type {
@@ -607,6 +624,8 @@ export class APIGenerator {
   private manifestGeneration = -1;
   /** Models auto-discovery may serve; every registered model when unset. */
   private readonly modelScope: ReadonlySet<string> | undefined;
+  /** The limiter of `routeLimits` (#5198); the process-wide one stands in without it. */
+  private readonly routeLimiter: RouteLimiter | undefined;
   /** Per-request tenant answers; see `requestTenant()`. */
   private readonly requestTenants = new WeakMap<
     Request,
@@ -647,6 +666,9 @@ export class APIGenerator {
       ...config,
     };
     this.context = context;
+    this.routeLimiter = this.config.routeLimits
+      ? createRouteLimiter(this.config.routeLimits)
+      : undefined;
     // A server that resolves principals needs a usable principal scope.
     if (this.config.resolvePrincipal) assertPrincipalScopeUsable();
     this.modelScope = (config as ScopedAPIConfig)[MODEL_SCOPE];
@@ -922,6 +944,18 @@ export class APIGenerator {
   ): Promise<Response> {
     try {
       this.requestPrincipals.set(req, principal);
+      // The route limits come first: a caller over its limit is refused before
+      // `onRequest`, authorization or the database see the request (#5198).
+      const limited = enforceRouteLimits(
+        {
+          request: req,
+          tenantId: principal.effectiveTenantId,
+          userId: principal.userId,
+          callerKind: principal.principal.callerKind,
+        },
+        this.routeLimiter ?? getRouteLimiter(),
+      );
+      if (limited) return this.addCorsHeaders(limited, req);
       const hooked = this.config.onRequest
         ? await this.config.onRequest(
             principal.principal,

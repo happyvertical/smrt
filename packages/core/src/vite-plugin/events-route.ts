@@ -160,6 +160,7 @@ import {
   apiPrincipalFromLocals,
   authorize,
   buildChangeEventStream,
+  enforceRouteLimits,
   eventStreamCapacityExceededResponse,
   resolveDispatchTenantScope,
   tryReserveChangeEventSubscriberSlot,
@@ -207,7 +208,20 @@ function parseCursor(request: Request, url: URL): number | null {
   return null;
 }
 ${tenantHelper}
+// Route limits (#5198), as REST applies them before \`onRequest\`.
+function routeRateLimit(locals: unknown, request: Request): Response | undefined {
+  const principal = apiPrincipalFromLocals(locals);
+  return enforceRouteLimits({
+    request,
+    tenantId: principal.tenantId,
+    userId: principal.userId ?? null,
+    callerKind: principal.callerKind ?? null,
+  });
+}
+
 export const GET: RequestHandler = async ({ locals, url, request }) => {
+  const limited = routeRateLimit(locals, request);
+  if (limited) return limited;
   requireRouteAuth(locals);${tenantCall}
 
   const cursor = parseCursor(request, url);
