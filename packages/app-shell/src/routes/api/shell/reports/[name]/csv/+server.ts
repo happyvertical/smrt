@@ -8,6 +8,7 @@ import {
   principalOfCaller,
 } from '$lib/server/http';
 import { reportFailure } from '$lib/server/report-display';
+import { assertStaffReport } from '$lib/server/staff-access';
 import { reportCell } from '$lib/ui/reports';
 import type { RequestHandler } from './$types';
 
@@ -15,6 +16,7 @@ export const GET: RequestHandler = guarded(async (event) => {
   const who = await callerOf(event);
   const host = await hostFor('live');
   const name = ident(event.params.name, 'report');
+  if (who.kind === 'staff') await assertStaffReport(who.principal, name);
   if (!Object.hasOwn(host.describe().reports ?? {}, name))
     throw new HttpError(404, 'This report is no longer available.');
   try {

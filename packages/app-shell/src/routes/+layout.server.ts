@@ -6,7 +6,7 @@ import {
 } from '$lib/server/agent-cli/service';
 import { shellProfile } from '$lib/server/host';
 import { callerOf } from '$lib/server/http';
-import { principalFromLocals } from '$lib/server/owner';
+import { PolicyError, principalFromLocals } from '$lib/server/owner';
 import { staffDescription } from '$lib/server/staff-access';
 import { DEPENDS } from '$lib/ui/events';
 import { isPluginRequest } from '$lib/ui/layout';
@@ -42,7 +42,13 @@ export const load: LayoutServerLoad = async (event) => {
     };
   // Staff (#5197) get the filtered description (granted models only): never
   // the owner's `/api/shell/describe`, no changes, no onboarding.
-  const caller = await callerOf(event).catch(() => null);
+  let caller: Awaited<ReturnType<typeof callerOf>> | null = null;
+  try {
+    caller = await callerOf(event);
+  } catch (e) {
+    // Not signed in, or not a member: the owner path below answers as before.
+    if (!(e instanceof PolicyError)) throw e;
+  }
   if (caller?.kind === 'staff')
     return {
       session,

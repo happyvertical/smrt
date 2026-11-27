@@ -89,9 +89,13 @@ function event(
   } as never;
 }
 it('requires the owner for results, CSV and mutations, including a different tenant', async () => {
+  // a member with no grants is staff: the report is not theirs to see (404);
+  // renaming or removing is the owner's (403)
   for (const call of [GET, csv, POST])
     for (const who of [null, h.member, h.stranger])
-      expect((await call(event(who))).status).toBe(who ? 403 : 401);
+      expect((await call(event(who))).status).toBe(
+        who ? (who === h.member && call !== POST ? 404 : 403) : 401,
+      );
 });
 it('runs and exports display labels, money and RFC 4180 quotes', async () => {
   expect((await GET(event(h.owner))).status).toBe(200);

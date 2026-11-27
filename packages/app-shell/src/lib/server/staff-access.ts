@@ -11,6 +11,7 @@ import {
 import type { Description, ModelInfo } from '../ui/types.ts';
 import type { ShellEvent } from './events.ts';
 import { hostFor } from './host.ts';
+import { HttpError } from './http.ts';
 import { type Principal, staffPrincipalFor, staffRoleOf } from './owner.ts';
 
 /** The models whose records `p` may list (read access), in definition order. */
@@ -56,13 +57,18 @@ export async function staffDescription(
   for (const [name, info] of Object.entries(full.models)) {
     if (!readable.has(name)) continue;
     const fields = Object.fromEntries(
-      Object.entries(info.fields).map(([f, def]) => [
-        f,
+      Object.entries(info.fields).map(([f, def]) => {
+        let shown = { ...def };
         // A marker, never the expression: staff only need to know it is read-only.
-        def.calculated !== undefined
-          ? { ...def, calculated: {} as never }
-          : { ...def },
-      ]),
+        if (shown.calculated !== undefined)
+          shown = { ...shown, calculated: {} as never };
+        // A link to a model they may not read names nothing: a plain value.
+        if (shown.ref !== undefined && !readable.has(shown.ref)) {
+          const { ref: _ref, ...rest } = shown;
+          shown = { ...rest, type: 'text' };
+        }
+        return [f, shown];
+      }),
     );
     models[name] = {
       kind: 'app',
@@ -83,10 +89,23 @@ export async function staffDescription(
       .map((f) => f.ref)
       .filter((r): r is string => typeof r === 'string');
     if (!refs.every((r) => readable.has(r))) continue;
+    // Display-safe: every array the renderers read is present and empty, so
+    // nothing of the definition (filters, totals, groupings) is shown.
     reports[name] = {
       ...(report.label ? { label: report.label } : {}),
       ...(report.description ? { description: report.description } : {}),
-      spec: { version: 1, title: report.label ?? name, source } as never,
+      spec: {
+        version: 1,
+        title: report.label ?? name,
+        source,
+        dimensions: [],
+        measures: [],
+        filters: [],
+        having: [],
+        sort: [],
+        limit: report.spec.limit,
+        chart: { type: 'table' },
+      } as never,
     };
   }
   return {
@@ -106,8 +125,7 @@ export async function staffDescription(
 /**
  * Whether a live event may reach this staff member's stream (#5197). Checked
  * per event against the grants as they are NOW: `records` events of a model
- * they may read (a record change of unknown model only when they may read
- * something); everything else (`changed`, `approval`, `draft`, `changes`) is
+ * they may read (never one of unknown model); everything else (`changed`, `approval`, `draft`, `changes`) is
  * dropped. `close` when they are no longer ACTIVE staff, so a revoked member's
  * stream ends. Any failure drops the event (fail closed).
  */
@@ -123,7 +141,7 @@ export async function staffEventVerdict(
       host.def,
       await staffPrincipalFor(staff, staff.tenantId, host.def),
     );
-    if (event.model === null) return readable.length ? 'send' : 'drop';
+    if (event.model === null) return 'drop';
     return readable.includes(event.model) ? 'send' : 'drop';
   } catch {
     return 'drop';
@@ -133,4 +151,18 @@ export async function staffEventVerdict(
 /** Whether the member is still ACTIVE staff (the stream's heartbeat check). */
 export async function stillStaff(staff: Principal): Promise<boolean> {
   return (await staffRoleOf(staff)) !== null;
+}
+
+/**
+ * A staff member's report is one the staff description lists; an unknown
+ * report and one they may not read are the same 404 (a report's existence
+ * is not told to someone who cannot read it).
+ */
+export async function assertStaffReport(
+  staff: Principal,
+  name: string,
+): Promise<void> {
+  const d = await staffDescription(staff);
+  if (!Object.hasOwn(d.reports ?? {}, name))
+    throw new HttpError(404, 'This report is no longer available.');
 }

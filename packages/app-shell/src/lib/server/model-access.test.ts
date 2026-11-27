@@ -94,6 +94,59 @@ const rows = () =>
   );
 const wipe = () => h.db.query('DELETE FROM model_access_grants');
 
+describe('create and update need read (they return the record)', () => {
+  it('refuses create and update until read is held; revoking read revokes them', async () => {
+    await wipe();
+    await setDef(def('Chore'));
+    for (const action of ['create', 'update'])
+      await expect(
+        asOwner(() => ModelAccessGrant.grant('Chore', action)),
+      ).rejects.toThrow(/grant read/);
+    expect(await rows()).toHaveLength(0);
+    await asOwner(async () => {
+      await ModelAccessGrant.grant('Chore', 'read');
+      await ModelAccessGrant.grant('Chore', 'create');
+      await ModelAccessGrant.grant('Chore', 'update');
+    });
+    expect(await rows()).toHaveLength(3);
+    expect(await asOwner(() => ModelAccessGrant.revoke('Chore', 'read'))).toBe(
+      true,
+    );
+    expect(await rows()).toHaveLength(0);
+  });
+
+  it('a stored write grant without read mints no slug at all', async () => {
+    await wipe();
+    const d = await setDef(def('Chore'));
+    await asOwner(() => ModelAccessGrant.grant('Chore', 'read'));
+    const staff = await staffAs(DEFAULT_ROLE_SLUGS.MEMBER);
+    // a stray update row (written around the API) with the read row gone
+    await asOwner(() => ModelAccessGrant.grant('Chore', 'update'));
+    await h.db.query("DELETE FROM model_access_grants WHERE action = 'read'");
+    expect(
+      (await staffPrincipalFor(staff, staff.tenantId, d)).permissions,
+    ).toEqual([]);
+  });
+
+  it('finalStaffSlugs drops create and update without the list and get slugs', () => {
+    const d = def('Chore');
+    expect(
+      finalStaffSlugs(d, [
+        'u_chores.update',
+        'u_chores.create',
+        'u_chores.list',
+      ]),
+    ).toEqual(['u_chores.list']);
+    expect(
+      finalStaffSlugs(d, [
+        'u_chores.update',
+        'u_chores.list',
+        'u_chores.get',
+      ]).sort(),
+    ).toEqual(['u_chores.get', 'u_chores.list', 'u_chores.update']);
+  });
+});
+
 describe('ModelAccessGrant', () => {
   it('is owner only and idempotent per tenant + model + action', async () => {
     await wipe();
@@ -122,7 +175,8 @@ describe('ModelAccessGrant', () => {
     expect(await asOwner(() => ModelAccessGrant.revoke('Chore', 'read'))).toBe(
       false,
     );
-    expect(await rows()).toHaveLength(1);
+    // revoking read took create with it
+    expect(await rows()).toHaveLength(0);
   });
 
   it('refuses delete, method slugs and unknown models or actions', async () => {
@@ -166,6 +220,7 @@ describe('staffPrincipalFor', () => {
     await asOwner(async () => {
       await ModelAccessGrant.grant('Chore', 'read');
       await ModelAccessGrant.grant('Chore', 'update');
+      await ModelAccessGrant.grant('Note', 'read');
       await ModelAccessGrant.grant('Note', 'create');
     });
     for (const role of [DEFAULT_ROLE_SLUGS.ADMIN, DEFAULT_ROLE_SLUGS.MEMBER]) {
@@ -177,6 +232,9 @@ describe('staffPrincipalFor', () => {
           'u_chores.get',
           'u_chores.count',
           'u_chores.update',
+          'u_notes.list',
+          'u_notes.get',
+          'u_notes.count',
           'u_notes.create',
         ].sort(),
       );
@@ -326,7 +384,7 @@ describe('grants leave with their model', () => {
     // undo to the version that had Note: it is back, and closed
     await runAs(h.owner, () => s.setCurrent(added));
     expect(await models()).toEqual(['Chore']);
-    await asOwner(() => ModelAccessGrant.grant('Note', 'update'));
+    await asOwner(() => ModelAccessGrant.grant('Note', 'read'));
     expect(await models()).toEqual(['Chore', 'Note']);
     // undo-to before Note existed clears it again
     await runAs(h.owner, () => s.setCurrent(base));

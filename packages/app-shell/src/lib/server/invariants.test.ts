@@ -458,11 +458,54 @@ describe('approval gate invariants', () => {
       expect(h.text, h.id).toMatch(/\bownerOf\(/);
       expect(h.text, h.id).not.toMatch(/\bcallerOf\(/);
     }
-    // a record handler never admits staff to a structural command or a delete
+    // a record handler never admits staff to a structural command or a delete,
+    // and never builds the owner's authority by hand
     for (const h of handlers.filter((x) => RECORD.includes(x.id)))
       expect(h.text, h.id).not.toMatch(
-        /runCommand\(|requestRecordDelete\(|decideApproval|requestApproval\(/,
+        /runCommand\(|requestRecordDelete\(|decideApproval|requestApproval\(|\bprincipalFor\(|\bauthorCaller\(|\brunAs\(/,
       );
+    // the gate is never swallowed: only `.catch(loadError)` (which rethrows) may follow it
+    for (const h of handlers.filter(
+      (x) => !named.has(x.id) || RECORD.includes(x.id),
+    ))
+      expect(h.text, h.id).not.toMatch(
+        /\b(ownerOf|callerOf)\([^)]*\)\s*\.(catch|then)\((?!loadError\))/,
+      );
+    // no other way to export a handler: no export lists, aliases or destructuring
+    for (const [f, raw] of files.filter(([f]) =>
+      /^routes\/.*\+(server|page\.server|layout\.server)\.ts$/.test(f),
+    )) {
+      const text = strip(raw);
+      expect(text, f).not.toMatch(/^export\s*\{(?![^}]*\btype\b)/m);
+      expect(text, f).not.toMatch(/^export\s+(const|let)\s*[{[]/m);
+      expect(text, f).not.toMatch(/^export\s+default\b/m);
+    }
+    // api/app's shared pass() takes the verified caller; it checks nothing itself
+    const appRoute = strip(
+      files.find(([f]) => f === 'routes/api/app/[...path]/+server.ts')?.[1] ??
+        '',
+    );
+    const pass = appRoute.slice(
+      appRoute.indexOf('async function pass('),
+      appRoute.indexOf('const record:'),
+    );
+    expect(pass.length).toBeGreaterThan(300);
+    expect(pass).toMatch(/who: Caller/);
+    expect(pass).toMatch(/principalOfCaller\(who/);
+    expect(pass).not.toMatch(
+      /\b(ownerOf|callerOf|principalFor|authorCaller|runAs)\(/,
+    );
+    // /mcp still mounts the policy-checked MCP server, and that server still authorizes every call
+    const mcpRoute = strip(
+      files.find(([f]) => f === 'routes/mcp/+server.ts')?.[1] ?? '',
+    );
+    expect(mcpRoute).toMatch(/mountMcpRoute\(createShellMcpServer\(/);
+    expect(mcpRoute).toMatch(/resolvePrincipal: principalFromSessionLocals/);
+    const mcpServer = strip(
+      files.find(([f]) => f === 'lib/server/mcp-server.ts')?.[1] ?? '',
+    );
+    expect(mcpServer).toMatch(/await authorizeCall\(who, name, scope\)/);
+    expect(mcpServer).toMatch(/toolsFor\(who/);
   });
 
   it('every onboarding route is a one-line delegate, and each handler checks the owner', () => {

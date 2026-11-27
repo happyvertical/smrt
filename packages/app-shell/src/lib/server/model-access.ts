@@ -101,9 +101,22 @@ export function finalStaffSlugs(
     for (const list of Object.values(ACTION_SLUG_ACTIONS))
       for (const a of list) allowed.add(`${tableFor(m, md)}.${a}`);
   }
-  return [...new Set(slugs)].filter(
+  const kept = [...new Set(slugs)].filter(
     (s) => s !== '_engine.owner' && allowed.has(s),
   );
+  // create and update return the whole record: only with the read slugs of
+  // their table (list and get) too.
+  const held = new Set(kept);
+  return kept.filter((s) => {
+    const [table, action] = [
+      s.slice(0, s.lastIndexOf('.')),
+      s.slice(s.lastIndexOf('.') + 1),
+    ];
+    return (
+      (action !== 'create' && action !== 'update') ||
+      (held.has(`${table}.list`) && held.has(`${table}.get`))
+    );
+  });
 }
 
 /**

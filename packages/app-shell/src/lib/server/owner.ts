@@ -271,8 +271,10 @@ export async function staffPrincipalFor(
         set.add(action);
         byModel.set(model, set);
       }
+      // create and update return the record: without read they mean nothing
       for (const [model, actions] of byModel)
-        permissions.push(...slugsFor(def, model, actions));
+        if (actions.has('read'))
+          permissions.push(...slugsFor(def, model, actions));
     } catch {
       permissions.length = 0; // fail closed
     }

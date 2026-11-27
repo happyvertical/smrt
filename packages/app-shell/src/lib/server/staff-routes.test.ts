@@ -35,6 +35,7 @@ import { GET as reportCsv } from '../../routes/api/shell/reports/[name]/csv/+ser
 import { load as modelPage } from '../../routes/m/[model]/+page.server.ts';
 import { hostOwner } from '../../test/engine-principal.ts';
 import { ModelAccessGrant } from '../objects/ModelAccessGrant.ts';
+import { reportWords } from '../ui/reports.ts';
 import { runCommand } from './builder.ts';
 import { publish } from './events.ts';
 import { hostFor } from './host.ts';
@@ -286,12 +287,12 @@ describe('app REST passthrough as staff', () => {
     expect(ok.status).toBe(200);
     expect(await ok.text()).toContain('mop');
     const denied = await appGET(app(staff, 'secrets'));
-    expect(denied.status).toBeGreaterThanOrEqual(400);
+    expect(denied.status).toBe(403);
     expect(await denied.text()).not.toContain('plans');
     const write = await appPOST(
       app(staff, 'chores', { method: 'POST', body: { title: 'rest' } }),
     );
-    expect(write.status).toBeGreaterThanOrEqual(400);
+    expect(write.status).toBe(403);
     const host = await hostFor('live');
     expect(
       (await host.list(hostOwner(host), 'Chore')).map((r) => r.title),
@@ -306,11 +307,11 @@ describe('app REST passthrough as staff', () => {
     const write = await appPOST(
       app(staff, 'chores', { method: 'POST', body: { title: 'rest' } }),
     );
-    expect(write.status).toBeLessThan(300);
+    expect(write.status).toBe(201);
     const secretWrite = await appPOST(
       app(staff, 'secrets', { method: 'POST', body: { note: 'no' } }),
     );
-    expect(secretWrite.status).toBeGreaterThanOrEqual(400);
+    expect(secretWrite.status).toBe(403);
     await runAs(h.owner, () => ModelAccessGrant.revoke('Chore', 'create'));
   });
 });
@@ -321,8 +322,8 @@ describe('reports as staff', () => {
       ev(staff, `/api/shell/reports/${name}`, { params: { name }, ...extra });
     expect((await reportGET(ev1('chores'))).status).toBe(200);
     expect((await reportCsv(ev1('chores'))).status).toBe(200);
-    expect((await reportGET(ev1('secrets'))).status).toBe(403);
-    expect((await reportCsv(ev1('secrets'))).status).toBe(403);
+    expect((await reportGET(ev1('secrets'))).status).toBe(404);
+    expect((await reportCsv(ev1('secrets'))).status).toBe(404);
     for (const name of ['chores', 'secrets'])
       expect(
         (
@@ -340,6 +341,87 @@ describe('reports as staff', () => {
         )
       ).status,
     ).toBe(200);
+  });
+});
+
+describe('reports and describe details as staff', () => {
+  it('an unknown report and an ungranted one are the same 404', async () => {
+    const call = async (name: string) => {
+      const r = await reportGET(
+        ev(staff, `/api/shell/reports/${name}`, { params: { name } }),
+      );
+      return [r.status, await r.text()] as const;
+    };
+    expect(await call('secrets')).toEqual(await call('nothing-here'));
+    expect((await call('nothing-here'))[0]).toBe(404);
+  });
+
+  it('the staff report spec is display-safe: every array the renderers read is there, empty', async () => {
+    const d = await staffDescription(staff);
+    const report = d.reports?.chores;
+    expect(report).toBeTruthy();
+    for (const key of ['dimensions', 'measures', 'filters', 'having', 'sort'])
+      expect(
+        (report as never as { spec: Record<string, unknown> }).spec[key],
+      ).toEqual([]);
+    expect(report?.spec.chart.type).toBe('table');
+    // what /reports/[name] and the reports list call must not throw
+    expect(() => reportWords(report as never, d.models)).not.toThrow();
+    expect(JSON.stringify(report)).not.toMatch(/count|Secret/);
+  });
+
+  it('create and update need read: taking read back ends them, and create is refused before read', async () => {
+    await expect(
+      runAs(h.owner, () => ModelAccessGrant.grant('Secret', 'create')),
+    ).rejects.toThrow(/grant read/);
+    await runAs(h.owner, async () => {
+      await ModelAccessGrant.grant('Chore', 'create');
+    });
+    expect(
+      (
+        await recordsPOST(
+          rec(staff, 'Chore', { method: 'POST', body: { title: 'a' } }),
+        )
+      ).status,
+    ).toBe(201);
+    await runAs(h.owner, () => ModelAccessGrant.revoke('Chore', 'read'));
+    expect(
+      (
+        await recordsPOST(
+          rec(staff, 'Chore', { method: 'POST', body: { title: 'b' } }),
+        )
+      ).status,
+    ).toBe(403);
+    await runAs(h.owner, () => ModelAccessGrant.grant('Chore', 'read'));
+    expect(
+      (
+        await recordsPOST(
+          rec(staff, 'Chore', { method: 'POST', body: { title: 'c' } }),
+        )
+      ).status,
+    ).toBe(403); // create did not come back with read
+  });
+
+  it('a link to a model staff may not read names nothing in their describe', async () => {
+    await runAs(h.owner, async () => {
+      await runCommand(
+        {
+          type: 'defineModel',
+          name: 'Link',
+          fields: { target: { type: 'reference', ref: 'Secret' } },
+        },
+        h.owner,
+        'live',
+      );
+    });
+    await applyWaiting(h.owner);
+    await runAs(h.owner, () => ModelAccessGrant.grant('Link', 'read'));
+    const d = await staffDescription(staff);
+    expect(Object.keys(d.models).sort()).toEqual(['Chore', 'Link']);
+    expect(d.models.Link.fields.target.ref).toBeUndefined();
+    expect(d.models.Link.fields.target.type).toBe('text');
+    expect(JSON.stringify(d)).not.toContain('Secret');
+    await runAs(h.owner, () => ModelAccessGrant.revoke('Link', 'read'));
   });
 });
 
@@ -553,6 +635,7 @@ describe('the staff view of the app', () => {
     const asOwner = await load(base(h.owner));
     expect(Object.keys(asOwner.description?.models ?? {}).sort()).toEqual([
       'Chore',
+      'Link',
       'Secret',
     ]);
     const outsider = await load(base(h.stranger));
@@ -687,5 +770,26 @@ describe('events as staff', () => {
     let ended = false;
     for (let i = 0; i < 20 && !ended; i++) ended = !(await s.pump());
     expect(ended).toBe(true);
+  });
+
+  it('a revoke mid-stream stops record events at once, and a record change of unknown model is never sent', async () => {
+    const tenant = h.owner.tenantId;
+    await runAs(h.owner, () => ModelAccessGrant.grant('Chore', 'read'));
+    const s = await open(staff);
+    await s.settle();
+    publish({ type: 'records', target: 'live', model: null }, tenant);
+    await s.settle();
+    expect(s.read()).not.toContain('"type":"records"');
+    publish({ type: 'records', target: 'live', model: 'Chore' }, tenant);
+    await s.settle();
+    expect(s.read()).toContain('"model":"Chore"');
+    const before = s.read().length;
+    // the owner takes read back while the stream is open
+    await runAs(h.owner, () => ModelAccessGrant.revoke('Chore', 'read'));
+    publish({ type: 'records', target: 'live', model: 'Chore' }, tenant);
+    await s.settle();
+    expect(s.read().length).toBe(before);
+    await s.reader.cancel();
+    await runAs(h.owner, () => ModelAccessGrant.grant('Chore', 'read'));
   });
 });
