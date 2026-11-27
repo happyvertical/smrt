@@ -331,18 +331,21 @@ function decideItem(locals: unknown, target: SyncTargetConfig, op: SyncApplyOp, 
 }
 
 // Route limits (#5198), as REST applies them before \`onRequest\`.
-function routeRateLimit(locals: unknown, request: Request): Response | undefined {
+function routeRateLimit(locals: unknown, request: Request, clientAddress: () => string): Response | undefined {
   const principal = routePrincipal(locals);
+  let address: string | null = null;
+  try { address = clientAddress(); } catch { /* no peer address: the limiter falls back */ }
   return enforceRouteLimits({
     request,
+    clientAddress: address,
     tenantId: principal.tenantId,
     userId: principal.userId ?? null,
     callerKind: principal.callerKind ?? null,
   });
 }
 
-export const POST: RequestHandler = async ({ locals, request }) => {
-  const limited = routeRateLimit(locals, request);
+export const POST: RequestHandler = async ({ locals, request, getClientAddress }) => {
+  const limited = routeRateLimit(locals, request, getClientAddress);
   if (limited) return limited;
 
   let body: unknown;

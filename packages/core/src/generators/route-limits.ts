@@ -45,6 +45,12 @@ export interface RouteLimitSubject {
   userId?: string | null;
   /** What kind of caller the principal is (a user, a guest, an agent, ...). */
   callerKind?: string | null;
+  /**
+   * The transport's peer address (SvelteKit's `getClientAddress()`). REST has
+   * none; its hosts use {@link RouteLimitsConfig.clientAddress}. With neither,
+   * callers with no user id share one `local` bucket per tenant and kind.
+   */
+  clientAddress?: string | null;
 }
 
 export interface RouteLimitsConfig {
@@ -63,7 +69,10 @@ export interface RouteLimitsConfig {
    * user id (see `extractClientIp`). Default 0: the header is ignored.
    */
   trustProxyHops?: boolean | number;
-  /** Resolve the client address yourself (a socket address, a platform header). */
+  /**
+   * Resolve the client address yourself (a socket address, a platform header);
+   * it wins over the transport's address and `X-Forwarded-For`.
+   */
   clientAddress?: (request: Request) => string | undefined;
   /** Distinct keys kept in memory per limiter (LRU). Default 10,000. */
   maxEntries?: number;
@@ -150,7 +159,7 @@ export function createRouteLimiter(config: RouteLimitsConfig): RouteLimiter {
       const kind = subject.callerKind ? part(subject.callerKind) : '';
       const client = subject.userId
         ? `u:${part(subject.userId)}`
-        : `ip:${config.clientAddress?.(subject.request) ?? extractClientIp(subject.request, undefined, config.trustProxyHops ?? 0)}`;
+        : `ip:${config.clientAddress?.(subject.request) ?? extractClientIp(subject.request, subject.clientAddress ?? undefined, config.trustProxyHops ?? 0)}`;
       const factor = kind && Object.hasOwn(scale, kind) ? scale[kind] : 1;
       const maxEvents = Math.max(
         1,

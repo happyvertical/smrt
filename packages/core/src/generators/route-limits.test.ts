@@ -107,6 +107,22 @@ describe('createRouteLimiter (#5198)', () => {
     expect(trusted.admit(other, 0)).toBeNull();
   });
 
+  it('keys an unsigned caller by the transport peer address', () => {
+    const limiter = createRouteLimiter({ client: { maxEvents: 1, ...WINDOW } });
+    const from = (clientAddress: string) =>
+      subject({ userId: null, clientAddress });
+    expect(limiter.admit(from('10.0.0.1'), 0)).toBeNull();
+    expect(limiter.admit(from('10.0.0.2'), 0)).toBeNull();
+    expect(limiter.admit(from('10.0.0.1'), 1)).not.toBeNull();
+    // A configured resolver wins over the transport's address.
+    const resolved = createRouteLimiter({
+      client: { maxEvents: 1, ...WINDOW },
+      clientAddress: () => 'fixed',
+    });
+    expect(resolved.admit(from('10.0.0.1'), 0)).toBeNull();
+    expect(resolved.admit(from('10.0.0.2'), 0)).not.toBeNull();
+  });
+
   it('rejects malformed limits', () => {
     expect(() =>
       createRouteLimiter({ client: { maxEvents: 0, ...WINDOW } }),
@@ -150,6 +166,34 @@ describe('enforceRouteLimits', () => {
 });
 
 describe('APIGenerator routeLimits', () => {
+  it('counts a nested dispatch once, with the outer request', async () => {
+    const handler: (req: Request) => Promise<Response> = new APIGenerator(
+      {
+        basePath: '/api',
+        routeLimits: { client: { maxEvents: 2, ...WINDOW } },
+        resolvePrincipal: () => ({
+          tenantId: 't1',
+          allowCrossTenant: false,
+          authenticated: true,
+          userId: 'u1',
+        }),
+        customRoutes: {
+          '/outer': async (req: Request) =>
+            // A nested dispatch from inside the request.
+            handler(new Request(new URL('/api/nothing', req.url))),
+        },
+      },
+      { db: { query: vi.fn() } as never },
+    ).generateHandler();
+    const first = await handler(new Request('http://local/api/outer'));
+    expect(first.status).not.toBe(429);
+    // One slot used, not two: the second request is still admitted.
+    const second = await handler(new Request('http://local/api/outer'));
+    expect(second.status).not.toBe(429);
+    const third = await handler(new Request('http://local/api/outer'));
+    expect(third.status).toBe(429);
+  });
+
   it('refuses before onRequest, authorization or the database', async () => {
     const onRequest = vi.fn();
     const query = vi.fn();

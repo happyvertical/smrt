@@ -138,7 +138,7 @@ describe('generateEventsRoute (#1763)', () => {
 
     // The stream lifecycle lives in core — the route imports and delegates.
     expect(content).toContain(
-      "import {\n  apiPrincipalFromLocals,\n  authorize,\n  buildChangeEventStream,\n  enforceRouteLimits,\n  eventStreamCapacityExceededResponse,\n  resolveDispatchTenantScope,\n  tryReserveChangeEventSubscriberSlot,\n} from '@happyvertical/smrt-core'",
+      "import {\n  apiPrincipalFromLocals,\n  authorize,\n  buildChangeEventStream,\n  enforceRouteLimits,\n  eventStreamCapacityExceededResponse,\n  getRequestTenantContext,\n  resolveDispatchTenantScope,\n  tryReserveChangeEventSubscriberSlot,\n} from '@happyvertical/smrt-core'",
     );
     expect(content).toContain('const MANIFEST_HASH = undefined;');
     expect(content).toContain(

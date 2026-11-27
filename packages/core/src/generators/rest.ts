@@ -907,6 +907,8 @@ export class APIGenerator {
         req,
         url,
         principalFromSnapshot(outer.record.snapshot),
+        // The outer request was counted; a nested dispatch is not a second one.
+        true,
       );
     }
 
@@ -941,20 +943,23 @@ export class APIGenerator {
     req: Request,
     url: URL,
     principal: ResolvedRequestPrincipal,
+    nested = false,
   ): Promise<Response> {
     try {
       this.requestPrincipals.set(req, principal);
       // The route limits come first: a caller over its limit is refused before
       // `onRequest`, authorization or the database see the request (#5198).
-      const limited = enforceRouteLimits(
-        {
-          request: req,
-          tenantId: principal.effectiveTenantId,
-          userId: principal.userId,
-          callerKind: principal.principal.callerKind,
-        },
-        this.routeLimiter ?? getRouteLimiter(),
-      );
+      const limited = nested
+        ? undefined
+        : enforceRouteLimits(
+            {
+              request: req,
+              tenantId: principal.effectiveTenantId,
+              userId: principal.userId,
+              callerKind: principal.principal.callerKind,
+            },
+            this.routeLimiter ?? getRouteLimiter(),
+          );
       if (limited) return this.addCorsHeaders(limited, req);
       const hooked = this.config.onRequest
         ? await this.config.onRequest(
