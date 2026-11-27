@@ -187,6 +187,14 @@ export interface HostOptions {
    */
   onRequest?: (request: RestMeter) => void;
   /**
+   * Cloud only (#5198): asked before each generated REST request is served;
+   * a refusal answers it with a 429 and never reaches the app. It is the
+   * plan's request cap for the billing period, so the host decides from its
+   * own tenant, never from the request. A throw admits (the cap is a guard,
+   * not a gate on the app being up). Absent: no cap (the desktop).
+   */
+  requestCap?: () => Promise<RequestCapRefusal | null>;
+  /**
    * Whether the app's tenant may run app-authored method code (#5194). Asked
    * on the host before each call that would run method code and before a
    * change that adds or changes it; refused without a "yes". Absent: allowed
@@ -397,6 +405,27 @@ export interface RestResult {
   meter?: RestMeter;
 }
 
+/** The plan's period request cap refused a request (#5198). */
+export interface RequestCapRefusal {
+  /** Owner-safe sentence naming the cap and when it renews. */
+  message: string;
+  limit: number;
+  used: number;
+  /** ISO time the period ends and the count renews; null for a rolling one. */
+  resetsAt: string | null;
+}
+
+/**
+ * A cap or limit refused a request: told to the owner (#5198). `cap` is the
+ * engine cap named (`maxRows`, `maxModels`, `maxMethodRuns`, ...) or
+ * `maxRequests` for the period request cap; absent for a route limit.
+ */
+export interface LimitNotice {
+  kind: 'cap' | 'route' | 'period';
+  message: string;
+  cap?: string;
+}
+
 /** One request as core's request meter reported it (#5199). */
 export interface RestMeter {
   tenantId: string | null;
@@ -530,6 +559,7 @@ export class AppHost extends EventEmitter {
   private workerLimits: WorkerLimits | undefined;
   private appLimits: AppLimits | undefined;
   #onRequest: ((request: RestMeter) => void) | undefined;
+  #requestCap: (() => Promise<RequestCapRefusal | null>) | undefined;
   private methodCode: MethodCodeGate | undefined;
   private database: DatabaseConfig;
   private dialect: EngineDialect;
@@ -600,6 +630,7 @@ export class AppHost extends EventEmitter {
     };
     this.methodCode = opts.methodCode;
     this.#onRequest = opts.onRequest;
+    this.#requestCap = opts.requestCap;
     this.frozenNow = opts.frozen === true;
     this.#autoApprove = opts.autoApprove === true;
     this.draft = readDraftMarker(dataDir);
@@ -3066,7 +3097,17 @@ export class AppHost extends EventEmitter {
         if (e.code === 'unauthorized') throw new NoPrincipalError(e.message);
         if (e.code === 'forbidden') throw new PermissionDeniedError(e.message);
         if (e.stale) throw new StaleFenceError(e.message);
-        if (e.user) throw new EngineError(e.message, 'invalid', e.details);
+        if (e.user) {
+          if (e.details?.code === 'app_limit')
+            this.#noteLimit({
+              kind: 'cap',
+              message: e.message,
+              ...(typeof e.details.cap === 'string'
+                ? { cap: e.details.cap }
+                : {}),
+            });
+          throw new EngineError(e.message, 'invalid', e.details);
+        }
         throw new EngineError(e.message, 'refused');
       }
       throw e;
@@ -4106,41 +4147,141 @@ export class AppHost extends EventEmitter {
     return r;
   }
 
-  /** The worker's generated REST routes, passed through. A DELETE needs `approved: true`. */
+  /**
+   * The worker's generated REST routes, passed through. A DELETE needs
+   * `approved: true`.
+   *
+   * Every request that reaches here is reported to `onRequest` exactly once
+   * (#5199), whichever way it leaves: served or refused by core (its own
+   * event, with the decided principal's tenant), or answered here without
+   * core (a 404, a DELETE parked for approval, a period-cap refusal, a
+   * thrown error), which carries NO tenant and a reason, so the cloud host
+   * files it under its own tenant and a tenant named by the caller is never
+   * credited.
+   */
   async rest(
     principal: EnginePrincipal,
     req: { method: string; url: string; body?: string },
     opts: { approved?: boolean } = {},
   ) {
     const method = req.method.toUpperCase();
-    // Only the app's own collection routes are served (see restRouteAllowed);
-    // checked before the gate so a reserved route is never even an approval.
-    if (!restRouteAllowed(this.def, req.url))
-      return {
-        status: 404,
-        contentType: 'application/json',
-        body: JSON.stringify({ error: 'Not found' }),
-      } satisfies RestResult;
-    if (method === 'DELETE' && opts.approved !== true && !this.#autoApprove)
-      throw new ApprovalRequiredError({
-        summary: `DELETE ${req.url}`,
-        risky: true,
-        preview: { method, url: req.url },
-      });
-    const { meter, ...r } = await this.onApp<RestResult>(principal, 'rest', {
-      ...req,
-      method,
-    });
-    if (meter) {
+    let reported = false;
+    const report = (meter: RestMeter) => {
+      if (reported) return;
+      reported = true;
       try {
         this.#onRequest?.(meter);
       } catch {
         // Metering never fails a request.
       }
+    };
+    const kind = (principal as { kind?: unknown } | null)?.kind;
+    const refusal = (refused: string): RestMeter => ({
+      tenantId: null,
+      callerKind: typeof kind === 'string' ? kind.slice(0, 64) : null,
+      limited: false,
+      refused,
+    });
+    try {
+      // Only the app's own collection routes are served (see restRouteAllowed);
+      // checked before the gate so a reserved route is never even an approval.
+      if (!restRouteAllowed(this.def, req.url)) {
+        report(refusal('not_found'));
+        return {
+          status: 404,
+          contentType: 'application/json',
+          body: JSON.stringify({ error: 'Not found' }),
+        } satisfies RestResult;
+      }
+      if (method === 'DELETE' && opts.approved !== true && !this.#autoApprove) {
+        report(refusal('approval_required'));
+        throw new ApprovalRequiredError({
+          summary: `DELETE ${req.url}`,
+          risky: true,
+          preview: { method, url: req.url },
+        });
+      }
+      const capped = await this.#capRefusal();
+      if (capped) {
+        report(refusal('period_cap'));
+        this.#noteLimit({
+          kind: 'period',
+          cap: 'maxRequests',
+          message: capped.message,
+        });
+        return {
+          status: 429,
+          contentType: 'application/json',
+          body: JSON.stringify({
+            error: capped.message,
+            code: 'app_limit',
+            cap: 'maxRequests',
+            limit: capped.limit,
+            current: capped.used,
+            requested: 1,
+            resetsAt: capped.resetsAt,
+          }),
+        } satisfies RestResult;
+      }
+      const { meter, ...r } = await this.onApp<RestResult>(principal, 'rest', {
+        ...req,
+        method,
+      });
+      report(meter ?? this.#unmetered(r, refusal));
+      if (meter?.refused === 'rate_limited')
+        this.#noteLimit({
+          kind: 'route',
+          message:
+            'Requests to your app are over the rate limit, so some were refused. They can try again shortly.',
+        });
+      else this.#noteCapBody(r);
+      if (method !== 'GET' && method !== 'HEAD' && r.status < 400)
+        this.emit('records', { model: null });
+      return r;
+    } catch (e) {
+      // A call that threw before core answered: counted once, with a reason.
+      report(refusal('error'));
+      throw e;
     }
-    if (method !== 'GET' && method !== 'HEAD' && r.status < 400)
-      this.emit('records', { model: null });
-    return r;
+  }
+
+  /** The period cap's answer; a failed lookup admits. */
+  async #capRefusal(): Promise<RequestCapRefusal | null> {
+    if (!this.#requestCap) return null;
+    try {
+      return await this.#requestCap();
+    } catch {
+      return null;
+    }
+  }
+
+  /** A response the worker returned with no meter event (a cap refusal, a 404 inside). */
+  #unmetered(
+    r: RestResult,
+    refusal: (refused: string) => RestMeter,
+  ): RestMeter {
+    if (limitBody(r)) return refusal('app_limit');
+    return refusal(r.status === 404 ? 'not_found' : 'unmetered');
+  }
+
+  /** An app cap's refusal inside a REST response tells the owner. */
+  #noteCapBody(r: RestResult) {
+    const body = limitBody(r);
+    if (body)
+      this.#noteLimit({
+        kind: 'cap',
+        message: body.error,
+        ...(body.cap ? { cap: body.cap } : {}),
+      });
+  }
+
+  /** Tell whoever listens (`'limit'`); never throws into the request. */
+  #noteLimit(notice: LimitNotice) {
+    try {
+      this.emit('limit', notice);
+    } catch {
+      // A listener never fails a request.
+    }
   }
 
   describe() {
@@ -4238,4 +4379,23 @@ function isDeadlockError(error: unknown): boolean {
   for (let i = 0; e && i < 6; i++, e = e.cause as typeof e)
     if (e.code === '40P01') return true;
   return false;
+}
+
+/** The cap refusal a worker REST response carries (`code: 'app_limit'`), else null. */
+function limitBody(r: RestResult): { error: string; cap?: string } | null {
+  if (r.status !== 403 && r.status !== 429) return null;
+  try {
+    const b = JSON.parse(r.body) as {
+      code?: unknown;
+      error?: unknown;
+      cap?: unknown;
+    };
+    if (b?.code !== 'app_limit' || typeof b.error !== 'string') return null;
+    return {
+      error: b.error,
+      ...(typeof b.cap === 'string' ? { cap: b.cap } : {}),
+    };
+  } catch {
+    return null;
+  }
 }

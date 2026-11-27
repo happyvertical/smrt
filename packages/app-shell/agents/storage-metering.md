@@ -81,6 +81,24 @@ retry storm) and nothing throws into a request. `readTenantUsage().requests` =
 `{ count (served), metered, limited, refused {reason: n}, byCallerKind }`, so guest traffic reads apart from
 staff traffic.
 
+### Requests that never reach the generated routes (#5199)
+
+`AppHost.rest` reports EVERY request that reaches it to `onRequest` exactly
+once (one `try`/`catch`, a `reported` flag), whichever way it leaves. Core's
+own event covers served and core-refused requests. The host adds the exits
+core never saw, each with `tenantId: null` and a reason in `refused`: `not_found`
+(a route outside the app's collections: the host 404, or one inside the
+worker), `approval_required` (a live DELETE parked for approval; the approved
+replay later counts once as served), `app_limit` (a per-app cap refused a
+create), `period_cap` (the plan's request cap, below), `error` (the call threw)
+and `unmetered` (the worker answered with no event, which should not happen).
+The cloud host files a null tenant under its OWN tenant (`requestCounter`),
+exactly as it does for core's refusals, so a tenant named by the caller is
+never credited or charged. A refusal on the desktop is never reported (no
+`onRequest`), and `RequestMeter.note` still drops an event with no tenant at
+all. These reasons read from `readTenantUsage().requests.refused`, never from
+`count`.
+
 ## Wake and idle-close samples (host.ts)
 
 `host.ts` calls the meter at two points of the live app's life, on the HOST's
