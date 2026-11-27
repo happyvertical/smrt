@@ -231,6 +231,13 @@ Application infrastructure composition for the validated runtime profiles in
   `isSessionTenantAuthorized()` accepts it, else unauthenticated; never via
   `createSessionHandler`, which re-runs `resolve` on downstream errors) →
   publish `locals.tenantContext` only for that verified tenant.
+- Guests (#5196, `src/sveltekit/guest.ts`): an unauthenticated request (no
+  valid session; a session the tenant check rejected and `skipPaths` never
+  qualify) in an addressed ACTIVE tenant with grants enters the principal door
+  as `callerKind: 'guest'` and fills `locals.guestPrincipal`, `locals.tenantId`
+  and `locals.permissions` (one set). Every gate failing, an error or an empty
+  set is the unchanged anonymous path. Config and gates:
+  [users agents/permissions.md](../users/agents/permissions.md#guest-callers-5196).
 - `database-rls` isolation forces `postgresRls: true`, including on
   `skipPaths` (anonymous principal). `resolve` runs at most once;
   session-layer failure before it is a 500 with cleared locals.

@@ -172,6 +172,7 @@ async function request(scenario: Scenario = {}) {
         deployedStub(resolved)) as unknown as never,
       guest: {
         defaultSelector: scenario.defaultSelector ?? true,
+        baseDatabase: async () => ({}) as never,
         rawConfig: () =>
           'guestConfig' in scenario
             ? scenario.guestConfig

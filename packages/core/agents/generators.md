@@ -1096,6 +1096,20 @@ tool schemas (`fieldTypeToJsonSchema`, so MCP and WebMCP descriptors), OpenAPI
 collection `fields` map does not carry `enum` yet (it feeds the shape digest and
 three hand-mirrored d.ts files); tool inputs read it from the manifest field.
 
+## Guest callers on generated routes (#5196)
+
+`requireRouteAuth(locals, mutating, guestOperation?)` admits a guest principal
+(`locals.guestPrincipal`, validated by `guestPrincipalOf`: `callerKind: 'guest'`,
+`userId: null`, same tenant as `locals.tenantId`, no user/session/`smrtAuth`)
+only for `list`/`get` when `isGuestOperationAllowed` passes for the model. Every
+other operation, `public` routes included, answers a guest 401 like an anonymous
+caller: a guest request carries its tenant on `locals` and in the entered tenant
+context, so an unadmitted operation must not run for it. `listBounds(url,
+locals)` caps a guest page at `GUEST_MAX_LIST_LIMIT` (100). The emitted routes
+import these names from `@happyvertical/smrt-core`; hand-written core stubs in
+emitted-route tests must export them. No request-driven `include`/`expand`
+exists on generated routes.
+
 ## Custom-action permission aliases (#3878)
 
 `@smrt({ operationPermissions: { run: { action: 'read' } } })` lets a custom

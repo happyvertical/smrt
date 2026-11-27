@@ -1210,7 +1210,12 @@ export function composeSmrtSvelteKitRuntime(
     defaultSelector: options.selectTenant === undefined,
     baseDomain: () => options.tenantBaseDomain ?? env.TENANT_BASE_DOMAIN,
     baseClassOptions: () => baseClassOptions('Permission'),
-    baseDatabase: database,
+    // The same connection config the request transaction opens (`Session`
+    // class options), so the role gate checks the role requests run as.
+    baseDatabase: async () =>
+      (await getDatabase(
+        baseClassOptions('Session').db as never,
+      )) as unknown as DatabaseInterface,
     ...seams.guest,
   });
   let permissionResolverPromise: Promise<PermissionResolver> | undefined;

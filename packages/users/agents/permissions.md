@@ -311,7 +311,8 @@ rejected (a signed-in non-member), never become guests; skipped paths never do.
 
 Generated routes admit a guest only for `list`/`get` when it holds
 `<collection>.read` (`isGuestOperationAllowed`; a custom method aliased onto
-read never passes), cap guest pages at 100 (`GUEST_MAX_LIST_LIMIT`), and deny
-guest writes and custom actions (creates arrive in a later slice). The door
+read never passes), cap guest pages at 100 (`GUEST_MAX_LIST_LIMIT`), and answer
+401 to everything else (writes, custom actions, `public` routes of ungranted
+collections; creates arrive in a later slice). The door
 refuses to carry a tenant or permissions without active RLS, and publishes the
 six `smrt.*` settings with `set_config(..., true)` only.

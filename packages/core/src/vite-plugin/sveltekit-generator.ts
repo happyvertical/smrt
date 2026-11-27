@@ -655,23 +655,28 @@ function requestTenantOf(locals: unknown): string | undefined {
 //
 // A guest (#5196: no user, \`locals.guestPrincipal\`) is admitted only for the
 // generated read operations the caller names (\`guestOperation\`) and only
-// when it holds the matching \`<collection>.read\`. Writes, custom actions and
-// every other operation deny it; an aliased custom method never passes.
+// when it holds the matching \`<collection>.read\`. Everything else denies it
+// as an anonymous caller is denied (401), \`public\` routes included: a guest
+// request carries its tenant on \`locals\` and in the entered tenant context,
+// so an operation the guest check did not admit must not run for it.
 function requireRouteAuth(
   locals: unknown,
   mutating: boolean,
   guestOperation?: 'list' | 'get',
 ): void {
-  const open = PUBLIC_ACCESS === true || (PUBLIC_ACCESS === 'read' && !mutating);
-  if (!open && !hasAuthenticatedPrincipal(locals)) {
-    const guest = guestPrincipalOf(locals);
-    if (!guest) throw error(401, 'Authentication required');
+  const guest = hasAuthenticatedPrincipal(locals) ? null : guestPrincipalOf(locals);
+  if (guest) {
     if (
       mutating ||
       !guestOperation ||
       !isGuestOperationAllowed(guest.permissions, GUEST_MODEL, PERMISSION_COLLECTION, guestOperation)
     ) {
-      throw error(403, 'Permission denied');
+      throw error(401, 'Authentication required');
+    }
+  } else {
+    const open = PUBLIC_ACCESS === true || (PUBLIC_ACCESS === 'read' && !mutating);
+    if (!open && !hasAuthenticatedPrincipal(locals)) {
+      throw error(401, 'Authentication required');
     }
   }
   if (!isRuntimeModelEnabled(RUNTIME_MODEL, { surface: 'rest', locals, tenantId: requestTenantOf(locals) })) {

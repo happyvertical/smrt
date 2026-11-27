@@ -235,21 +235,48 @@ describe('Issue #1540 (2c): fail-closed auth on generated routes', () => {
         statusOf(() => requireRouteAuth(guest, false, 'get')),
       ).toBeUndefined();
       // Writes, custom actions (no operation) and other collections deny.
-      expect(statusOf(() => requireRouteAuth(guest, true))).toBe(403);
-      expect(statusOf(() => requireRouteAuth(guest, false))).toBe(403);
+      expect(statusOf(() => requireRouteAuth(guest, true))).toBe(401);
+      expect(statusOf(() => requireRouteAuth(guest, false))).toBe(401);
       expect(
         statusOf(() =>
           requireRouteAuth(guestLocals(['widgets.create']), false, 'list'),
         ),
-      ).toBe(403);
+      ).toBe(401);
       expect(
         statusOf(() =>
           requireRouteAuth(guestLocals(['gadgets.read']), false, 'list'),
         ),
-      ).toBe(403);
+      ).toBe(401);
       expect(
         statusOf(() => requireRouteAuth(guestLocals([]), false, 'list')),
-      ).toBe(403);
+      ).toBe(401);
+    });
+
+    it('a guest the check did not admit is denied on public routes too', async () => {
+      // A guest request carries its tenant in locals and the entered context,
+      // so a public route must not serve it as an anonymous caller.
+      for (const open of ['read', true]) {
+        const { requireRouteAuth } = await emitted({
+          include: ['list', 'get'],
+          public: open,
+        });
+        expect(
+          statusOf(() => requireRouteAuth({}, false, 'list')),
+        ).toBeUndefined();
+        const guest = guestLocals(['widgets.read']);
+        expect(
+          statusOf(() => requireRouteAuth(guest, false, 'list')),
+        ).toBeUndefined();
+        expect(statusOf(() => requireRouteAuth(guest, false))).toBe(401);
+        expect(
+          statusOf(() => requireRouteAuth(guestLocals([]), false, 'list')),
+        ).toBe(401);
+        expect(
+          statusOf(() =>
+            requireRouteAuth(guestLocals(['gadgets.read']), false, 'get'),
+          ),
+        ).toBe(401);
+      }
     });
 
     it('anonymous and forged callers stay 401', async () => {

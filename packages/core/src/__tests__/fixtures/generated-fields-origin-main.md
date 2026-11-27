@@ -130,4 +130,5 @@ DDL, migration and OpenAPI digests have not moved since the recapture above.
   sti): `requireRouteAuth` takes the read operation and admits a guest
   principal (`locals.guestPrincipal`, no user) only for `list`/`get` with the
   matching `<collection>.read`; `listBounds(url, locals)` caps a guest page at
-  100. Only those four route digests move.
+  100; every other operation answers a guest 401, `public` routes included.
+  Only those four route digests move.
