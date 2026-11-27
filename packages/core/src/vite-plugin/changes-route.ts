@@ -216,6 +216,7 @@ function routeRateLimit(locals: unknown, request: Request, clientAddress: () => 
     tenantId: principal.tenantId,
     userId: principal.userId ?? null,
     callerKind: principal.callerKind ?? null,
+    authenticated: principal.authenticated,
   });
 }
 

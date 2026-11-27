@@ -39,6 +39,10 @@ import {
   removeTestTenancySource,
 } from '../__tests__/fixtures/test-tenancy-source.js';
 import { setDispatchTenantResolver } from '../dispatch/index.js';
+import {
+  type RequestMeterEvent,
+  setRequestMeterSink,
+} from './request-metering.js';
 import { configureRouteLimits } from './route-limits.js';
 
 // The routes import the app's own modules by names that are not packages
@@ -1224,6 +1228,89 @@ describe('route parity: route limits (#5198)', () => {
       );
       expect(answers.map((a) => a.status)).toEqual([401, 429]);
     }
+  });
+});
+
+describe('route parity: request metering (#5199)', () => {
+  afterEach(() => {
+    setRequestMeterSink(undefined);
+    configureRouteLimits(undefined);
+  });
+
+  /** The metered events of one request sent to one transport. */
+  async function metered(
+    transport: 'rest' | 'kit',
+    principal: ParityPrincipal,
+    request: ParityRequest,
+  ): Promise<Array<Omit<RequestMeterEvent, 'transport'>>> {
+    const events: RequestMeterEvent[] = [];
+    setRequestMeterSink((event) => {
+      events.push(event);
+    });
+    await fx.run(transport, principal, request);
+    setRequestMeterSink(undefined);
+    expect(
+      events.every(
+        (e) => e.transport === (transport === 'rest' ? 'rest' : 'sveltekit'),
+      ),
+    ).toBe(true);
+    return events.map(({ transport: _t, ...rest }) => rest);
+  }
+
+  const withKind = (kind: string): ParityPrincipal => {
+    const w = principals().writer;
+    return {
+      rest: { ...w.rest, callerKind: kind },
+      locals: { ...w.locals, callerKind: kind },
+    };
+  };
+
+  it.each([
+    'writer',
+    'anonymous',
+  ])('both paths report one event from the decided principal: %s', async (name) => {
+    const principal = principals()[name];
+    // A client names another tenant and kind in every place it can; none counts.
+    const request: ParityRequest = {
+      method: 'GET',
+      path: `${segment.note}?tenantId=${TENANT_B}&callerKind=owner`,
+      headers: { 'x-tenant-id': TENANT_B, 'x-caller-kind': 'owner' },
+    };
+    const rest = await metered('rest', principal, request);
+    const kit = await metered('kit', principal, request);
+    expect(rest).toHaveLength(1);
+    expect(kit).toEqual(rest);
+    expect(rest[0].tenantId).toBe(principal.rest.tenantId);
+    expect(rest[0].callerKind).toBeNull();
+  });
+
+  it('tags a guest, or any other kind, from the principal alone', async () => {
+    for (const kind of ['guest', 'job']) {
+      const request: ParityRequest = { method: 'GET', path: segment.note };
+      const rest = await metered('rest', withKind(kind), request);
+      const kit = await metered('kit', withKind(kind), request);
+      expect(rest).toEqual(kit);
+      expect(rest[0].callerKind).toBe(kind);
+    }
+  });
+
+  it('marks a request the limits refused, on both paths', async () => {
+    configureRouteLimits({ client: { maxEvents: 1, windowMs: 60_000 } });
+    const request: ParityRequest = { method: 'GET', path: segment.note };
+    const seen: Record<string, boolean[]> = {};
+    for (const transport of ['rest', 'kit'] as const) {
+      configureRouteLimits({ client: { maxEvents: 1, windowMs: 60_000 } });
+      const events: RequestMeterEvent[] = [];
+      setRequestMeterSink((event) => {
+        events.push(event);
+      });
+      for (let i = 0; i < 2; i++) {
+        await fx.run(transport, principals().writer, request);
+      }
+      seen[transport] = events.map((e) => e.limited);
+    }
+    expect(seen.rest).toEqual([false, true]);
+    expect(seen.kit).toEqual(seen.rest);
   });
 });
 

@@ -126,6 +126,7 @@ import {
   PLAYBOOK_PREFLIGHT_ROUTE_SEGMENT,
   type PlaybookPreflightProvider,
 } from './preflight-route';
+import { getRequestMeterSink, type RequestMeterSink } from './request-metering';
 import {
   type APIRequestInfo,
   type APIRequestPrincipal,
@@ -353,6 +354,14 @@ export interface APIConfig {
    * generated SvelteKit routes read; with neither nothing is limited.
    */
   routeLimits?: RouteLimitsConfig;
+  /**
+   * Request metering (#5199): called once per request with the decided
+   * principal's tenant and caller kind, after the route limits decide and
+   * before `onRequest`, authorization or any database access. It never blocks
+   * the request, and a throw is swallowed. Without it the process-wide sink
+   * (`setRequestMeterSink`, which the generated SvelteKit routes read) applies.
+   */
+  requestMeter?: RequestMeterSink;
 }
 
 export type {
@@ -957,8 +966,11 @@ export class APIGenerator {
               tenantId: principal.effectiveTenantId,
               userId: principal.userId,
               callerKind: principal.principal.callerKind,
+              authenticated: principal.authenticated,
+              transport: 'rest',
             },
             this.routeLimiter ?? getRouteLimiter(),
+            this.config.requestMeter ?? getRequestMeterSink(),
           );
       if (limited) return this.addCorsHeaders(limited, req);
       const hooked = this.config.onRequest

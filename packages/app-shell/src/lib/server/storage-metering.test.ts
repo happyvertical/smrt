@@ -200,7 +200,7 @@ describe('the one read', () => {
     await expect(meter.read(monthWindow())).rejects.toThrow('sign in first');
   });
 
-  it('carries the request-count seam: summed counter, unmetered until #5195 writes it', async () => {
+  it('reads the request counter: summed, unmetered until a row exists', async () => {
     const { meter } = meterWith(() => 1);
     const win = {
       start: new Date(Date.UTC(2027, 0, 1)),
@@ -209,6 +209,8 @@ describe('the one read', () => {
     expect((await runAs(h.a, () => meter.read(win))).requests).toEqual({
       count: 0,
       metered: false,
+      limited: 0,
+      byCallerKind: {},
     });
     await runAs(h.a, async () => {
       const metrics = await TenantUsageMetricCollection.create({ db: h.db });
@@ -227,6 +229,8 @@ describe('the one read', () => {
     expect((await runAs(h.a, () => meter.read(win))).requests).toEqual({
       count: 42,
       metered: true,
+      limited: 0,
+      byCallerKind: { unknown: 42 },
     });
     // tenant B sees none of A's
     expect((await runAs(h.b, () => meter.read(win))).requests.count).toBe(0);

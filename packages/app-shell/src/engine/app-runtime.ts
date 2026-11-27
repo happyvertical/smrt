@@ -1186,9 +1186,24 @@ export class AppRuntime {
     // body or filter (#5588). The caller was checked against the app's tenant
     // before the op reached the runtime.
     const caller = currentOpPrincipal();
+    // Core reports the request with the principal it decided (#5199).
+    let meter:
+      | { tenantId: string | null; callerKind: string | null; limited: boolean }
+      | undefined;
     const api = new APIGenerator(
       {
         basePath: '/api',
+        requestMeter: (e: {
+          tenantId: string | null;
+          callerKind: string | null;
+          limited: boolean;
+        }) => {
+          meter = {
+            tenantId: e.tenantId,
+            callerKind: e.callerKind,
+            limited: e.limited,
+          };
+        },
         resolvePrincipal: () => ({
           tenantId: caller.tenantId,
           allowCrossTenant: false,
@@ -1244,6 +1259,7 @@ export class AppRuntime {
       status: r.status,
       contentType: r.headers.get('content-type') ?? 'application/json',
       body: await r.text(),
+      ...(meter ? { meter } : {}),
     };
   }
 

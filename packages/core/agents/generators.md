@@ -360,7 +360,13 @@ the client is the user id, else the IP (`extractClientIp`, `X-Forwarded-For`
 trusted only to `trustProxyHops`). `callerKind` is an opaque string:
 `callerKindScale` multiplies `client.maxEvents` per kind (`guest` defaults to
 0.25, any other kind is a table entry, never a branch). A limiter defect admits
-the request. Unconfigured, nothing is limited. Parity is covered in
+the request. Unconfigured, nothing is limited. Request metering (#5199,
+`generators/request-metering.ts`) rides the same call: `enforceRouteLimits`
+reports `{ tenantId, callerKind, authenticated, limited, transport }` of the
+decided principal to `APIConfig.requestMeter` (REST) or `setRequestMeterSink`
+(generated routes), after the limits decide and before `onRequest`; a throwing
+or rejecting sink is swallowed, and nothing the client sent chooses the tenant
+or kind. Parity is covered in
 `route-parity.test.ts`.
 
 Without `resolvePrincipal`, the tenant is `resolveTenant`'s answer or the
