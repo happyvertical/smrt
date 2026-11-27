@@ -512,6 +512,8 @@ describe('generated sync-apply route runtime: operation permissions (#3011)', ()
         // The real shared authorization decision (#5195).
         'export const authorize = (input: unknown) => { const r = (globalThis as any).__smrtSyncAuthz.authorize(input); return r; };',
         'export const apiPrincipalFromLocals = (locals: unknown, tenant?: string | null) => (globalThis as any).__smrtSyncAuthz.apiPrincipalFromLocals(locals, tenant);',
+        // The real route limits (#5198); nothing is configured, so none apply.
+        `export { enforceRouteLimits } from ${JSON.stringify(fileURLToPath(new URL('../generators/route-limits.ts', import.meta.url)))};`,
         // The fixture models are plain tables (no STI type selection).
         'export const ObjectRegistry = { getTableStrategy: () => undefined, isServiceOptionInput: (_name: string, key: string) => isServiceOptionInput(key, (field: string) => ((globalThis as any).__smrtSyncDeclaredFields ?? []).includes(field)) };',
         // The route assigns an update payload through `applyUpdateInput`. The

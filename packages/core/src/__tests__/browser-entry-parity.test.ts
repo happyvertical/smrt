@@ -267,6 +267,18 @@ const NODE_ONLY_GROUPS: ReadonlyArray<{
   },
   {
     reason:
+      'Route-level 429 limits for the runtime REST handler and generated SvelteKit routes; server-side request policy, not browser code (#5198)',
+    names: [
+      'configureRouteLimits',
+      'createRouteLimiter',
+      'DEFAULT_CALLER_KIND_SCALE',
+      'enforceRouteLimits',
+      'getRouteLimiter',
+      'rateLimitedResponse',
+    ],
+  },
+  {
+    reason:
       'Shared CORS policy for the runtime REST handler and generated SvelteKit routes; server-side request policy, not browser code (#5195)',
     names: [
       'applyCorsHeaders',

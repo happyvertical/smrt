@@ -175,6 +175,8 @@ import { error, json } from '@sveltejs/kit';
 import {
   apiPrincipalFromLocals,
   authorize,
+  enforceRouteLimits,
+  getRequestTenantContext,
   getAuthorizedTenantScopedChangesSince,
 } from '@happyvertical/smrt-core';
 import type { RequestHandler } from './$types';
@@ -202,7 +204,24 @@ function requireRouteAuth(locals: unknown): void {
   }
 }
 ${tenantHelper}
-export const GET: RequestHandler = async ({ locals, url, request }) => {
+// Route limits (#5198), as REST applies them before \`onRequest\`.
+function routeRateLimit(locals: unknown, request: Request, clientAddress: () => string): Response | undefined {
+  const active = (getRequestTenantContext() as { tenantId?: unknown } | undefined)?.tenantId;
+  const principal = apiPrincipalFromLocals(locals, typeof active === 'string' && active ? active : null);
+  let address: string | null = null;
+  try { address = clientAddress(); } catch { /* no peer address: the limiter falls back */ }
+  return enforceRouteLimits({
+    request,
+    clientAddress: address,
+    tenantId: principal.tenantId,
+    userId: principal.userId ?? null,
+    callerKind: principal.callerKind ?? null,
+  });
+}
+
+export const GET: RequestHandler = async ({ locals, url, request, getClientAddress }) => {
+  const limited = routeRateLimit(locals, request, getClientAddress);
+  if (limited) return limited;
   requireRouteAuth(locals);${tenantCall}
 
   const since = Number(url.searchParams.get('since') ?? '0');

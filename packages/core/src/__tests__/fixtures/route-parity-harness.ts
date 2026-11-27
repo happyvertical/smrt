@@ -164,6 +164,8 @@ export interface Outcome {
   code: string | undefined;
   /** The parsed JSON body (text when it is not JSON); `null` for no body. */
   body: unknown;
+  /** `Retry-After`, in seconds; `null` when the answer carries none. */
+  retryAfter: string | null;
   /** The CORS headers, lower-cased; absent ones are `null`. */
   cors: Record<(typeof CORS_HEADERS)[number], string | null>;
 }
@@ -454,7 +456,13 @@ async function observe(response: Response): Promise<Outcome> {
   const code = (nested.code ?? record.code) as string | undefined;
   const cors = {} as Outcome['cors'];
   for (const name of CORS_HEADERS) cors[name] = response.headers.get(name);
-  return { status: response.status, code, body, cors };
+  return {
+    status: response.status,
+    code,
+    body,
+    retryAfter: response.headers.get('retry-after'),
+    cors,
+  };
 }
 
 function collectRoutes(routesDir: string): EmittedRoute[] {
