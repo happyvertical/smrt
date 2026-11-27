@@ -107,9 +107,14 @@ describe('guest audit table setup is the default when guests can create (#5196)'
     expect(sql).toContain('_nonguest_');
   });
 
-  it('does nothing for a read-only guest config, no guests, or an explicit opt-out', () => {
+  it('installs for a read-only guest config too; nothing without guests or with an explicit opt-out', () => {
     guests(false);
-    expect(generatePostgresPermissionSql({}).sql).not.toContain('"audit_logs"');
+    expect(generatePostgresPermissionSql({}).sql).toContain(
+      'FORCE ROW LEVEL SECURITY',
+    );
+    expect(generatePostgresPermissionSql({}).sql).toContain(
+      guestAuditPolicyName(),
+    );
     clearCache();
     expect(generatePostgresPermissionSql({}).sql).not.toContain('"audit_logs"');
     guests(true);

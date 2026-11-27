@@ -21,6 +21,7 @@ import {
   type CollectionAuditOptions,
   requireAuditOptions,
 } from './audit.js';
+import { bumpChangeFeed } from './change-feed.js';
 import { usesPostgresDialect } from './embedded-write-queue.js';
 import { ValidationError } from './errors.js';
 import { BoundedSlidingWindowRateLimiter, extractClientIp } from './http.js';
@@ -429,6 +430,11 @@ export interface ExecuteGuestCreateInput {
    */
   defaults?: Record<string, string | number | boolean | null>;
   /**
+   * Record the insert in the change feed (default true). Off only for a
+   * hand-built table that is not observable.
+   */
+  changeFeed?: boolean;
+  /**
    * Also write the framework's own columns (`slug`, `context`, `created_at`,
    * `updated_at`) a SMRT table carries. Off for a hand-built table.
    */
@@ -538,6 +544,18 @@ export async function executeGuestCreate(
     // does not report a count, the row is audited: never skip on unknown.
     const rowCount = (result as { rowCount?: unknown } | null)?.rowCount;
     if (rowCount === 0) return;
+    // A raw insert never reaches the ORM's change-feed hook; without this a
+    // staff read answered from the table-version ETag would keep returning
+    // 304 and never show the new row. Same savepoint: it commits or rolls
+    // back with the insert.
+    if (input.changeFeed !== false) {
+      await bumpChangeFeed(tx as never, {
+        table: input.table,
+        rowId: id,
+        operation: 'create',
+        tenantId,
+      });
+    }
     await resolved.writer(
       {
         actorId: resolved.actorId,

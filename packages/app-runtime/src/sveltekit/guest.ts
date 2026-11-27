@@ -254,9 +254,11 @@ export function createGuestAdmitter(deps: GuestAdmissionDeps): GuestAdmitter {
         // No ceiling table means nothing a guest could ever hold.
         if (tables.length === 0) return null;
         const probe = deps.probeCatalog ?? probeGuestCatalog;
-        const auditRequired = (guest.createCollections?.length ?? 0) > 0;
+        // Every guest config needs the protected audit table, read-only
+        // ones included: a config can gain a create collection at any
+        // deploy, and "refuse unless protected" must not depend on it.
         const result = await probe(await deps.baseDatabase(), tables, {
-          audit: auditRequired,
+          audit: true,
         });
         if (!result) return null;
         // Success is cached for the process; it is only trusted when every
@@ -267,7 +269,7 @@ export function createGuestAdmitter(deps: GuestAdmissionDeps): GuestAdmitter {
           rolePosture: result.rolePosture,
           ceilingTables: result.ceilingTables,
           expectedCeilingTables: result.expectedCeilingTables,
-          auditRequired,
+          auditRequired: true,
           auditTable: result.auditTable,
         });
         return verdict.active ? result : null;
@@ -356,7 +358,7 @@ export function createGuestAdmitter(deps: GuestAdmissionDeps): GuestAdmitter {
           rolePosture: verified.rolePosture,
           ceilingTables: verified.ceilingTables,
           expectedCeilingTables: verified.expectedCeilingTables,
-          auditRequired: (guest.createCollections?.length ?? 0) > 0,
+          auditRequired: true,
           auditTable: verified.auditTable,
         });
         if (!verdict.active) return null;

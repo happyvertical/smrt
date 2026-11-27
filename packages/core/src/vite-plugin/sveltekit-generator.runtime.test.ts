@@ -27,6 +27,16 @@ import {
   stripTenantFilters,
 } from '../generators/route-authz.js';
 import { reportUnexpectedHttpError } from '../generators/route-error';
+import {
+  createGuestRequestPrincipal,
+  guestPrincipalOf as realGuestPrincipalOf,
+} from '../guest-request.js';
+import {
+  createGuestRuntime,
+  guestCreateAdmission,
+  guestReadThrottle,
+  handleGuestCreate,
+} from '../guest-runtime.js';
 import { clearManifestCache } from '../manifest/manifest-loader.js';
 import { SmrtObject } from '../object.js';
 import { publicSerializerOf, toPublicJSONValue } from '../public-json.js';
@@ -305,9 +315,11 @@ function writeWorkspaceCoreShim(projectRoot: string): void {
       'export const guestPrincipalOf = () => null;',
       'export const isGuestLocals = () => false;',
       'export const isGuestOperationAllowed = () => false;',
-      'export const guestCreateAdmission = () => null;',
-      'export const guestReadThrottle = () => null;',
-      'export const handleGuestCreate = async () => new Response(null, { status: 201 });',
+      // The guest pipeline is the REAL one when a test installs it on
+      // `globalThis.__smrtGuest`; otherwise no caller is a guest.
+      'export const guestCreateAdmission = (...a) => globalThis.__smrtGuest?.guestCreateAdmission?.(...a) ?? null;',
+      'export const guestReadThrottle = (...a) => globalThis.__smrtGuest?.guestReadThrottle?.(...a) ?? null;',
+      'export const handleGuestCreate = (...a) => globalThis.__smrtGuest.handleGuestCreate(...a);',
       'export async function runInRequestTenancy(input, fn) {',
       '  const tenancy = enterRequestTenancy(input);',
       '  return fn(tenancy);',
@@ -1066,6 +1078,131 @@ describe('generated SvelteKit helper runtime', () => {
       expect(create).toHaveBeenCalledTimes(bypassCreatesSubtype ? 2 : 1);
     } finally {
       restore();
+    }
+  });
+
+  it('executes the emitted guest create branch: empty 201 for an admitted guest, never collection.create, 401 otherwise', async () => {
+    const restore = snapshotObjectRegistryState();
+    class Widget extends SmrtObject {
+      name = '';
+      tenantId = '';
+    }
+    field({ type: 'text' })(Widget.prototype, 'name');
+    ObjectRegistry.register(Widget, {
+      packageName: '@test/generated-helper-app',
+      tableName: 'generated_widgets',
+      collection: 'widgets',
+      tenantScoped: { field: 'tenantId', mode: 'required' },
+    } as never);
+    const { getTestDatabase } = await import('../testing/database.js');
+    const db = await getTestDatabase({ classes: [] });
+    await db.query(
+      'CREATE TABLE generated_widgets (id TEXT PRIMARY KEY, slug TEXT, context TEXT, created_at TEXT, updated_at TEXT, tenant_id TEXT NOT NULL, name TEXT)',
+    );
+    const globals = globalThis as Record<string, unknown>;
+    globals.__smrtGuest = {
+      guestCreateAdmission,
+      guestReadThrottle,
+      handleGuestCreate,
+    };
+    const create = vi.fn();
+    globals.__smrtGeneratedRouteCollection = {
+      create,
+      db,
+      tableName: 'generated_widgets',
+    };
+    const entries: unknown[] = [];
+    const runtime = createGuestRuntime({
+      createFields: { widgets: { allowedFields: ['name'] } },
+      auditWriter: async (entry) => {
+        entries.push(entry);
+      },
+      create: { perClient: 2 },
+    });
+    const guest = (permissions: string[], withRuntime = true) => ({
+      tenantId: 'tenant-a',
+      permissions,
+      guestPrincipal: createGuestRequestPrincipal({
+        tenantId: 'tenant-a',
+        permissions,
+        ...(withRuntime ? { runtime } : {}),
+      }),
+    });
+    const post = (locals: object, body: unknown = { name: 'Ada' }) =>
+      route.POST({
+        locals,
+        getClientAddress: () => '9.9.9.9',
+        request: new Request('http://localhost/api/widgets', {
+          method: 'POST',
+          body: JSON.stringify(body),
+        }),
+      });
+    let route: Awaited<ReturnType<typeof importGeneratedCollectionPost>>;
+    try {
+      route = await importGeneratedCollectionPost();
+      const created = await post(guest(['widgets.create']));
+      expect(created.status).toBe(201);
+      expect(await created.text()).toBe('');
+      expect(created.headers.get('location')).toBeNull();
+      expect(create).not.toHaveBeenCalled();
+      const rows = (await db.query('SELECT * FROM generated_widgets')) as
+        | Array<Record<string, unknown>>
+        | { rows: Array<Record<string, unknown>> };
+      const stored = Array.isArray(rows) ? rows : rows.rows;
+      expect(stored).toHaveLength(1);
+      expect(stored[0]).toMatchObject({ tenant_id: 'tenant-a', name: 'Ada' });
+      expect(entries).toHaveLength(1);
+      expect(entries[0]).toMatchObject({
+        callerKind: 'guest',
+        action: 'create',
+        tenantId: 'tenant-a',
+      });
+      // The per-client limit trips with Retry-After, through the real route.
+      expect(
+        (await post(guest(['widgets.create']), { name: 'B' })).status,
+      ).toBe(201);
+      const limited = await post(guest(['widgets.create']), { name: 'C' });
+      expect(limited.status).toBe(429);
+      expect(limited.headers.get('retry-after')).toBeTruthy();
+      // Not admitted: no create grant, only read, no runtime, no guest at all.
+      for (const locals of [
+        guest([]),
+        guest(['widgets.read']),
+        guest(['widgets.create'], false),
+        { tenantId: 'tenant-a', permissions: ['widgets.create'] },
+      ]) {
+        await expect(post(locals)).rejects.toMatchObject({ status: 401 });
+      }
+      expect(create).not.toHaveBeenCalled();
+      expect(stored).toHaveLength(1);
+    } finally {
+      delete globals.__smrtGuest;
+      restore();
+    }
+  });
+
+  it('executes the emitted POST route for a signed-in caller exactly as before when a guest runtime is installed', async () => {
+    const globals = globalThis as Record<string, unknown>;
+    globals.__smrtGuest = {
+      guestCreateAdmission,
+      guestReadThrottle,
+      handleGuestCreate,
+    };
+    const create = vi.fn(async (data) => ({ toPublicJSON: () => data }));
+    globals.__smrtGeneratedRouteCollection = { create };
+    try {
+      const route = await importGeneratedCollectionPost();
+      const response = await route.POST({
+        locals: { permissions: ['widgets.create'], user: { id: 'user-1' } },
+        request: new Request('http://localhost/api/widgets', {
+          method: 'POST',
+          body: JSON.stringify({ name: 'Widget' }),
+        }),
+      });
+      expect(response.status).toBe(201);
+      expect(create).toHaveBeenCalledTimes(1);
+    } finally {
+      delete globals.__smrtGuest;
     }
   });
 
@@ -3318,6 +3455,46 @@ describe('generated SvelteKit helper runtime', () => {
         route.GET({ locals, request: new Request(url), url });
       return { countCalls, invoke, listCalls };
     }
+
+    it('charges a guest read against the per-client read limit and answers 429 with Retry-After', async () => {
+      const globals = globalThis as Record<string, unknown>;
+      globals.__smrtGuest = { guestReadThrottle };
+      try {
+        const runtime = createGuestRuntime({ read: { perClient: 1 } });
+        const guest = {
+          tenantId: 'tenant-a',
+          permissions: ['widgets.read'],
+          guestPrincipal: createGuestRequestPrincipal({
+            tenantId: 'tenant-a',
+            permissions: ['widgets.read'],
+            runtime,
+          }),
+        };
+        expect(realGuestPrincipalOf(guest)).not.toBeNull();
+        const { listCalls } = await listWithQuery('', guest);
+        const route = await importTenantScopedList();
+        const url = new URL('http://localhost/api/widgets');
+        const get = (locals: object) =>
+          route.GET({
+            locals,
+            request: new Request(url),
+            url,
+            getClientAddress: () => '8.8.8.8',
+          });
+        expect((await get(guest)).status).toBe(200);
+        const limited = await get(guest);
+        expect(limited.status).toBe(429);
+        expect(limited.headers.get('retry-after')).toBeTruthy();
+        // Only the admitted request ran the query; the limited one never did.
+        expect(listCalls).toHaveLength(1);
+        // A caller that is not a guest is never charged.
+        for (let i = 0; i < 3; i += 1) {
+          expect((await get({ user: { id: 'u' } })).status).toBe(200);
+        }
+      } finally {
+        delete globals.__smrtGuest;
+      }
+    });
 
     it.each([
       '?tenantId=x&tenant_id=tenant-b',

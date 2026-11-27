@@ -266,9 +266,10 @@ describe('createGuestAdmitter caching', () => {
     ).toBeNull();
   });
 
-  it('does not require the audit table of a read-only guest config', async () => {
+  it('requires the protected audit table of a read-only guest config too', async () => {
     const guests = admitter(async () => ({ ...posture, auditTable: null }));
-    expect(await guests.admit('t1')).not.toBeNull();
+    expect(await guests.admit('t1')).toBeNull();
+    expect(await admitter(async () => posture).admit('t1')).not.toBeNull();
   });
 
   it('remembers a failure briefly, then retries', async () => {

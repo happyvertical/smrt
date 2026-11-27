@@ -10,6 +10,7 @@ import {
   createGuestRuntime,
   field,
   type GuestRuntimeOptions,
+  getTableVersion,
   getTestDatabase,
   guestCreateAdmission,
   guestReadThrottle,
@@ -211,6 +212,16 @@ describe('guest create route pipeline (#5196)', () => {
     expect(guestCreateAdmission(signedIn, MODEL, COLLECTION, false)).toBeNull();
     // A public model keeps the anonymous create path, not the guest one.
     expect(guestCreateAdmission(locals(), MODEL, COLLECTION, true)).toBeNull();
+  });
+
+  it('bumps the table version so a staff read is not answered from a stale ETag', async () => {
+    const before = await getTableVersion(db, table);
+    await create(locals(), { name: 'A', email: 'a@x.test' });
+    const after = await getTableVersion(db, table);
+    expect(after).not.toBe(before);
+    // A conflict inserted nothing: the version does not move.
+    await create(locals(), { name: 'B', email: 'a@x.test' });
+    expect(await getTableVersion(db, table)).toBe(after);
   });
 
   it('has no read-back: nothing readable arrives with the create, and a guest read grant is separate', async () => {

@@ -344,7 +344,11 @@ recorded before the write, 429 + `Retry-After`, an unknown key is denied when
 the table is full; defaults 5/min per client, 60/min per tenant) -> one
 savepoint holding `INSERT ... ON CONFLICT DO NOTHING` (no `RETURNING`, server
 id and tenant) and its audit row -> `201`, empty body, no id, no `Location`,
-identical for a unique conflict (which writes no audit row).
+identical for a unique conflict (which writes no audit row and does not move
+the table version). The insert is raw SQL, so it bumps the change feed
+(`bumpChangeFeed`) in the same savepoint: a staff list answered from the
+table-version ETag sees the new row instead of a stale 304. A request rejected
+for its body (400/413) is not charged to the rate limits.
 
 The client address is the socket address; `X-Forwarded-For` counts only with
 `trustedProxyHops` set to the number of proxies you run. One process-wide
@@ -371,16 +375,17 @@ into a 500 still lets it commit). The guest branch of that writer is a plain
 `smrt.system_context`: the guest's database context holds only an INSERT
 policy on the audit table.
 
-Because of that, guests whose app configures creates are REFUSED at admission
-unless the audit table has row-level security enabled AND forced and the named
+Because of that, guests are REFUSED at admission (any guest config, read-only
+ones included) unless the audit table has row-level security enabled AND forced and the named
 guest INSERT policy (`guestAuditPolicyName()`, `polcmd = 'a'`) installed. The
 catalog check (`probeGuestCatalog` -> `assertGuestRuntimeActive`, which fails
 closed on a missing table, a missing or non-boolean value and a failed query)
-is read from `pg_class`/`pg_policy` and re-asserted on every request. It is
-not required of a read-only guest config.
+is read from `pg_class`/`pg_policy` and re-asserted on every request, so an
+app with guests needs the profiles tables (and the apply command below) even
+before it opts a collection in to creates.
 
 Setup is the DEFAULT of the documented policy-apply path: when the app config
-has `createCollections`, `generatePostgresPermissionSql` /
+has `permissions.guest`, `generatePostgresPermissionSql` /
 `applyPostgresPermissionPolicies` append, with no caller opt-in, `ENABLE` +
 `FORCE ROW LEVEL SECURITY` on `public.audit_logs` (profiles `AuditLog`), the
 INSERT-only guest policy, and a companion arm

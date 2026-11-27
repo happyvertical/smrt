@@ -436,7 +436,7 @@ export function generateAuditNonGuestPolicySql(
 export interface PostgresPolicyExtras {
   /**
    * Add the guest audit INSERT policy (see {@link GuestAuditPolicyOptions}).
-   * When omitted and the app configures guest creates, it is installed by
+   * When omitted and the app configures guests, it is installed by
    * default with row-level security enabled and forced on the audit table
    * (guests are refused at admission without it); `false` opts out.
    */
@@ -746,12 +746,13 @@ export function generatePostgresPermissionSql(
 
   // Guest creates write an audit row under the guest's own context, so the
   // audit table must carry the guest INSERT policy and FORCEd RLS. Installed
-  // by default whenever the app configures guest creates (not only when a
-  // caller remembers to ask); a policy scope (app-schema run-time models)
+  // by default whenever the app configures guests (not only when a caller
+  // remembers to ask; a read-only config can gain a create collection at any
+  // deploy, and admission refuses guests without it); a policy scope (app-schema run-time models)
   // never gets the default because its schema has no audit table.
   const guestAudit =
     extras.guestAudit ??
-    (!scope && (getGuestPermissionConfig()?.createCollections?.length ?? 0) > 0
+    (!scope && getGuestPermissionConfig() !== null
       ? { enableRls: true }
       : false);
   if (guestAudit) {
