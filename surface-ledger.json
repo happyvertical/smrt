@@ -3409,6 +3409,17 @@
   },
   {
     "kind": "model",
+    "name": "@happyvertical/smrt-app-shell:ModelAccessGrant",
+    "issue": 5197,
+    "nearest": [
+      "@happyvertical/smrt-users:ResourceGrant",
+      "@happyvertical/smrt-users:Permission",
+      "@happyvertical/smrt-app-shell:Approval"
+    ],
+    "reason": "The owner's per-model staff access (#5197): one row per model and slug the owner has granted to staff. ResourceGrant and Permission are core users-package grants to a user or role over a resource and cannot express the shell's own per-model slugs read from the app definition; this table is written only by owner-only statics and read to build the staff principal, with no generated surface."
+  },
+  {
+    "kind": "model",
     "name": "@happyvertical/smrt-app-shell:ReceiveLink",
     "issue": 5638,
     "nearest": [
