@@ -1,7 +1,10 @@
-import { describe, expect, it } from 'vitest';
+import { clearCache, setConfig } from '@happyvertical/smrt-config';
+import { afterEach, describe, expect, it } from 'vitest';
 import {
+  generateAuditNonGuestPolicySql,
   generateGuestAuditInsertPolicySql,
   generatePostgresPermissionSql,
+  guestAuditPolicyName,
 } from '../services/PostgresPermissionPolicies.js';
 
 describe('generateGuestAuditInsertPolicySql (#5196)', () => {
@@ -66,5 +69,79 @@ describe('generateGuestAuditInsertPolicySql (#5196)', () => {
       { guestAudit: true },
     );
     expect(scoped.sql).toContain('ON "app_x"."audit_logs" FOR INSERT');
+  });
+});
+
+describe('guest audit table setup is the default when guests can create (#5196)', () => {
+  afterEach(() => clearCache());
+
+  const guests = (create: boolean) =>
+    setConfig({
+      packages: {
+        users: {
+          permissions: {
+            guest: {
+              collections: ['messages'],
+              ...(create
+                ? {
+                    createCollections: ['messages'],
+                    createFields: { messages: { allowedFields: ['name'] } },
+                  }
+                : {}),
+            },
+          },
+        },
+      },
+    });
+
+  it('installs FORCEd RLS, the guest policy and the non-guest arm with no caller opt-in', () => {
+    guests(true);
+    const sql = generatePostgresPermissionSql({}).sql;
+    expect(sql).toContain(
+      'ALTER TABLE "public"."audit_logs" ENABLE ROW LEVEL SECURITY',
+    );
+    expect(sql).toContain(
+      'ALTER TABLE "public"."audit_logs" FORCE ROW LEVEL SECURITY',
+    );
+    expect(sql).toContain(guestAuditPolicyName());
+    expect(sql).toContain('_nonguest_');
+  });
+
+  it('does nothing for a read-only guest config, no guests, or an explicit opt-out', () => {
+    guests(false);
+    expect(generatePostgresPermissionSql({}).sql).not.toContain('"audit_logs"');
+    clearCache();
+    expect(generatePostgresPermissionSql({}).sql).not.toContain('"audit_logs"');
+    guests(true);
+    expect(
+      generatePostgresPermissionSql({}, undefined, { guestAudit: false }).sql,
+    ).not.toContain('"audit_logs"');
+  });
+
+  it('never defaults into a policy scope (an app schema has no audit table)', () => {
+    guests(true);
+    const scoped = generatePostgresPermissionSql(
+      {},
+      { schemaName: 'app_x', includeClass: () => false },
+    );
+    expect(scoped.sql).not.toContain('audit_logs');
+  });
+
+  it('keeps the guest policy name identical for installer and catalog check', () => {
+    expect(generateGuestAuditInsertPolicySql()[0]).toContain(
+      guestAuditPolicyName(),
+    );
+    expect(
+      guestAuditPolicyName({ schemaName: 'public', tableName: 'audit_logs' }),
+    ).toBe(guestAuditPolicyName());
+  });
+
+  it('gives the non-guest arm nothing a guest context satisfies', () => {
+    const sql = generateAuditNonGuestPolicySql().join(';\n');
+    // a guest publishes a tenant, no user and no bypass
+    expect(sql).toContain('smrt_rls_bypass()');
+    expect(sql).toContain("current_setting('smrt.user_id', true)");
+    expect(sql).toContain('smrt_current_tenant_id() IS NULL');
+    expect(sql).not.toContain('actor_kind');
   });
 });

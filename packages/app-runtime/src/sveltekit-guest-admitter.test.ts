@@ -27,11 +27,21 @@ function fakeDb(
 const healthy = (sql: string): unknown =>
   sql.includes('pg_roles')
     ? { rows: [{ rolsuper: false, rolbypassrls: false }] }
-    : {
-        rows: [
-          { row_security: true, force_row_security: true, policy_count: 2 },
-        ],
-      };
+    : sql.includes('guest_insert_policy')
+      ? {
+          rows: [
+            {
+              row_security: true,
+              force_row_security: true,
+              guest_insert_policy: true,
+            },
+          ],
+        }
+      : {
+          rows: [
+            { row_security: true, force_row_security: true, policy_count: 2 },
+          ],
+        };
 
 describe('probeGuestCatalog', () => {
   it('reads role attributes and the table posture, schema-qualified', async () => {
@@ -48,10 +58,39 @@ describe('probeGuestCatalog', () => {
         },
       ],
       expectedCeilingTables: ['public.products'],
+      auditTable: {
+        table: 'public.audit_logs',
+        rowSecurity: true,
+        forceRowSecurity: true,
+        guestInsertPolicy: true,
+      },
     });
     const calls = (db.query as unknown as ReturnType<typeof vi.fn>).mock.calls;
     expect(calls[0][0]).toContain('current_user');
     expect(calls[1].slice(1)).toEqual(['public', 'products']);
+    // The audit probe names the shared policy, never a literal of its own.
+    expect(calls[2].slice(1, 3)).toEqual(['public', 'audit_logs']);
+    expect(calls[2][3]).toMatch(/^smrt_audit_logs_guest_insert_/);
+    expect(calls[2][0]).toContain("polcmd = 'a'");
+  });
+
+  it('leaves the audit posture unverified when the table is absent or loose', async () => {
+    const noTable = (sql: string) =>
+      sql.includes('guest_insert_policy') ? { rows: [] } : healthy(sql);
+    expect(
+      (await probeGuestCatalog(fakeDb(noTable), TABLES))?.auditTable,
+    ).toBeNull();
+    const loose = (sql: string) =>
+      sql.includes('guest_insert_policy')
+        ? { rows: [{ row_security: true, force_row_security: true }] }
+        : healthy(sql);
+    expect(
+      (await probeGuestCatalog(fakeDb(loose), TABLES))?.auditTable,
+    ).toBeNull();
+    expect(
+      (await probeGuestCatalog(fakeDb(healthy), TABLES, { audit: false }))
+        ?.auditTable,
+    ).toBeNull();
   });
 
   it.each([
@@ -149,11 +188,27 @@ describe('createGuestAdmitter caching', () => {
       },
     ],
     expectedCeilingTables: ['public.products'],
+    auditTable: {
+      table: 'public.audit_logs',
+      rowSecurity: true,
+      forceRowSecurity: true,
+      guestInsertPolicy: true,
+    },
   };
 
-  function admitter(probe: () => Promise<GuestCatalogPosture | null>) {
+  const createConfig = {
+    collections: ['products', 'messages'],
+    createCollections: ['messages'],
+    createFields: { messages: { allowedFields: ['name'] } },
+  };
+
+  function admitter(
+    probe: () => Promise<GuestCatalogPosture | null>,
+    rawConfig: unknown = { collections: ['products'] },
+  ) {
     return createGuestAdmitter({
-      rawConfig: () => ({ collections: ['products'] }),
+      rawConfig: () => rawConfig,
+      auditWriter: () => async () => undefined,
       postgresRls: () => true,
       defaultSelector: true,
       baseDomain: () => 'base.test',
@@ -170,12 +225,50 @@ describe('createGuestAdmitter caching', () => {
   it('caches a verified posture for the process', async () => {
     const probe = vi.fn(async () => posture);
     const guests = admitter(probe);
-    expect(await guests.admit('t1')).toEqual({
+    expect(await guests.admit('t1')).toMatchObject({
       tenantId: 't1',
       permissions: ['products.read'],
     });
     await guests.admit('t2');
     expect(probe).toHaveBeenCalledTimes(1);
+  });
+
+  it('shares ONE guest runtime (and its limiters) across admissions', async () => {
+    const guests = admitter(async () => posture);
+    const a = await guests.admit('t1');
+    const b = await guests.admit('t2');
+    expect(a?.runtime).toBeDefined();
+    expect(b?.runtime).toBe(a?.runtime);
+  });
+
+  it('refuses guest creates unless the audit table is forced with the guest policy', async () => {
+    const loose = (
+      patch: Partial<NonNullable<GuestCatalogPosture['auditTable']>>,
+    ) =>
+      admitter(
+        async () => ({
+          ...posture,
+          auditTable: { ...posture.auditTable!, ...patch },
+        }),
+        createConfig,
+      );
+    expect(
+      await admitter(async () => posture, createConfig).admit('t1'),
+    ).not.toBeNull();
+    expect(await loose({ rowSecurity: false }).admit('t1')).toBeNull();
+    expect(await loose({ forceRowSecurity: false }).admit('t1')).toBeNull();
+    expect(await loose({ guestInsertPolicy: false }).admit('t1')).toBeNull();
+    expect(
+      await admitter(
+        async () => ({ ...posture, auditTable: null }),
+        createConfig,
+      ).admit('t1'),
+    ).toBeNull();
+  });
+
+  it('does not require the audit table of a read-only guest config', async () => {
+    const guests = admitter(async () => ({ ...posture, auditTable: null }));
+    expect(await guests.admit('t1')).not.toBeNull();
   });
 
   it('remembers a failure briefly, then retries', async () => {

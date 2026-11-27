@@ -11,10 +11,20 @@ describe('parseGuestPermissionConfig (#5196)', () => {
       parseGuestPermissionConfig({
         collections: ['products', 'contact_messages', 'products'],
         createCollections: ['contact_messages'],
+        createFields: {
+          contact_messages: { allowedFields: ['name', 'message'] },
+        },
+        trustedProxyHops: 1,
+        rateLimits: { createPerClient: 3, readPerTenant: 500 },
       }),
     ).toEqual({
       collections: ['products', 'contact_messages'],
       createCollections: ['contact_messages'],
+      createFields: {
+        contact_messages: { allowedFields: ['name', 'message'] },
+      },
+      trustedProxyHops: 1,
+      rateLimits: { createPerClient: 3, readPerTenant: 500 },
     });
     expect(parseGuestPermissionConfig({ collections: ['a'] })).toEqual({
       collections: ['a'],
@@ -48,6 +58,55 @@ describe('parseGuestPermissionConfig (#5196)', () => {
       'a malformed create entry',
       { collections: ['a'], createCollections: [1] },
     ],
+    [
+      'a create collection with no field list',
+      { collections: ['a'], createCollections: ['a'] },
+    ],
+    [
+      'a field list for a collection that is not a create collection',
+      {
+        collections: ['a', 'b'],
+        createCollections: ['a'],
+        createFields: {
+          a: { allowedFields: ['x'] },
+          b: { allowedFields: ['x'] },
+        },
+      },
+    ],
+    [
+      'an empty field list',
+      {
+        collections: ['a'],
+        createCollections: ['a'],
+        createFields: { a: { allowedFields: [] } },
+      },
+    ],
+    [
+      'a dotted field name',
+      {
+        collections: ['a'],
+        createCollections: ['a'],
+        createFields: { a: { allowedFields: ['x.y'] } },
+      },
+    ],
+    [
+      'an unknown field-config key',
+      {
+        collections: ['a'],
+        createCollections: ['a'],
+        createFields: { a: { allowedFields: ['x'], tenantId: 'z' } },
+      },
+    ],
+    [
+      'a non-integer trusted hop count',
+      { collections: ['a'], trustedProxyHops: 1.5 },
+    ],
+    [
+      'a negative trusted hop count',
+      { collections: ['a'], trustedProxyHops: -1 },
+    ],
+    ['an unknown rate limit', { collections: ['a'], rateLimits: { x: 1 } }],
+    ['a zero rate limit', { collections: ['a'], rateLimits: { windowMs: 0 } }],
   ])('refuses the whole block when %s', (_name, raw) => {
     expect(parseGuestPermissionConfig(raw)).toBeNull();
   });

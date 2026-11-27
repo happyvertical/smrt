@@ -50,6 +50,28 @@ export interface GuestPermissionConfig {
    * `<collection>.create` survives only for a collection listed here.
    */
   createCollections?: string[];
+  /**
+   * The body fields a guest may set, per create collection. A create
+   * collection without an entry accepts no guest create. Validated against the
+   * registered model when the route first serves a guest.
+   */
+  createFields?: Record<
+    string,
+    { allowedFields: string[]; maxBodyBytes?: number; maxStringLength?: number }
+  >;
+  /**
+   * Trusted reverse-proxy hops for the guest client identity (an integer, or
+   * `true` for one hop). Default 0: only the socket address counts.
+   */
+  trustedProxyHops?: number | boolean;
+  /** Guest rate limits (per window; defaults documented in the users guide). */
+  rateLimits?: {
+    windowMs?: number;
+    createPerClient?: number;
+    createPerTenant?: number;
+    readPerClient?: number;
+    readPerTenant?: number;
+  };
 }
 
 export type { GuestPermissionKind } from '@happyvertical/smrt-core';
@@ -383,7 +405,30 @@ export interface GuestRlsTablePosture {
   policyCount: number;
 }
 
+/**
+ * The audit table's row-level-security state, read from the catalog: guest
+ * creates write their audit row under the guest's own database context, which
+ * is only safe when RLS is enabled AND forced on the table and the guest
+ * INSERT policy (and nothing a guest could read or update with) is present.
+ */
+export interface GuestAuditTablePosture {
+  table: string;
+  /** `relrowsecurity`. */
+  rowSecurity: boolean;
+  /** `relforcerowsecurity`. */
+  forceRowSecurity: boolean;
+  /** The named guest INSERT policy exists with `polcmd = 'a'` (INSERT). */
+  guestInsertPolicy: boolean;
+}
+
 export interface GuestRuntimeState {
+  /**
+   * The app configures guest creates, so the audit table must be protected.
+   * Defaults to TRUE: a caller that forgets to say is checked, not skipped.
+   */
+  auditRequired?: boolean;
+  /** Catalog posture of the audit table (see {@link GuestAuditTablePosture}). */
+  auditTable?: GuestAuditTablePosture | null;
   /** `runtimeContext.postgresRls`; must be exactly `true`. */
   postgresRls?: boolean;
   /** `isTenancyEnabled()`; defaults to reading it. Installed is not enough. */
@@ -412,7 +457,9 @@ export type GuestRuntimeDenyReason =
   | 'role-posture-unknown'
   | 'role-bypasses-rls'
   | 'ceiling-posture-unknown'
-  | 'ceiling-table-not-forced';
+  | 'ceiling-table-not-forced'
+  | 'audit-posture-unknown'
+  | 'audit-table-not-protected';
 
 export type GuestRuntimeResult =
   | { active: true }
@@ -488,6 +535,30 @@ export function assertGuestRuntimeActive(
       return deny(
         'ceiling-table-not-forced',
         `table ${table.table} lacks enabled and forced row-level-security policies`,
+      );
+    }
+  }
+  if (state.auditRequired !== false) {
+    const audit = state.auditTable;
+    if (
+      !audit ||
+      typeof audit.rowSecurity !== 'boolean' ||
+      typeof audit.forceRowSecurity !== 'boolean' ||
+      typeof audit.guestInsertPolicy !== 'boolean'
+    ) {
+      return deny(
+        'audit-posture-unknown',
+        'row-level-security posture of the audit table was not verified',
+      );
+    }
+    if (
+      audit.rowSecurity !== true ||
+      audit.forceRowSecurity !== true ||
+      audit.guestInsertPolicy !== true
+    ) {
+      return deny(
+        'audit-table-not-protected',
+        `audit table ${audit.table} lacks enabled and forced row-level security or the guest audit insert policy`,
       );
     }
   }

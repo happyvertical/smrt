@@ -486,10 +486,63 @@ describe('assertGuestRuntimeActive (#5196)', () => {
         policyCount: 2,
       },
     ],
+    auditTable: {
+      table: 'public.audit_logs',
+      rowSecurity: true,
+      forceRowSecurity: true,
+      guestInsertPolicy: true,
+    },
   };
 
   it('passes when every gate holds', () => {
     expect(assertGuestRuntimeActive(ok)).toEqual({ active: true });
+  });
+
+  it.each([
+    [
+      'audit posture missing',
+      { ...ok, auditTable: undefined },
+      'audit-posture-unknown',
+    ],
+    [
+      'audit posture null',
+      { ...ok, auditTable: null },
+      'audit-posture-unknown',
+    ],
+    [
+      'audit posture non-boolean',
+      { ...ok, auditTable: { ...ok.auditTable, rowSecurity: 1 as never } },
+      'audit-posture-unknown',
+    ],
+    [
+      'audit table without RLS',
+      { ...ok, auditTable: { ...ok.auditTable, rowSecurity: false } },
+      'audit-table-not-protected',
+    ],
+    [
+      'audit table RLS not forced',
+      { ...ok, auditTable: { ...ok.auditTable, forceRowSecurity: false } },
+      'audit-table-not-protected',
+    ],
+    [
+      'audit table without the guest insert policy',
+      { ...ok, auditTable: { ...ok.auditTable, guestInsertPolicy: false } },
+      'audit-table-not-protected',
+    ],
+  ])('refuses %s', (_name, state, reason) => {
+    const result = assertGuestRuntimeActive(state);
+    expect(result).toMatchObject({ active: false, reason });
+  });
+
+  it('checks the audit table unless the caller says guests cannot create', () => {
+    const { auditTable: _a, ...withoutAudit } = ok;
+    expect(assertGuestRuntimeActive(withoutAudit)).toMatchObject({
+      active: false,
+      reason: 'audit-posture-unknown',
+    });
+    expect(
+      assertGuestRuntimeActive({ ...withoutAudit, auditRequired: false }),
+    ).toEqual({ active: true });
   });
 
   it.each([

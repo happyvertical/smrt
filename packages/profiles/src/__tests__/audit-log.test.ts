@@ -80,7 +80,9 @@ describe('AuditLog model', () => {
   });
 
   it('stores a guest entry with a null profile and actor_kind guest', async () => {
-    const { db } = await setup(dbUrl);
+    const { db, profiles } = await setup(dbUrl);
+    const logs = await AuditLogCollection.create({ db });
+    fixtures.track(logs.db);
     const write = createAuditWriter();
     await write(
       {
@@ -92,10 +94,8 @@ describe('AuditLog model', () => {
         tenantId: null,
         changes: {},
       },
-      db as never,
+      profiles.db,
     );
-    const logs = await AuditLogCollection.create({ db });
-    fixtures.track(logs.db);
     const [row] = await logs.list({ where: { resourceId: 'thing-1' } });
     expect(row.profileId ?? null).toBeNull();
     expect(row.actorKind).toBe('guest');
