@@ -22,7 +22,7 @@
         "source/sveltekit/src/lib/server/smrt-register.ts": "f2bc573c66de6f80aa2a31960d85e307c0470ae430ffd71a428c3fabfd8d8ada",
         "source/sveltekit/src/lib/server/smrt.ts": "0ccb2afbd8cc5f2d935fa82bbb52653417890b2e4e225b9fae5c773282f23dbf",
         "source/sveltekit/src/routes/api/_changes/+server.ts": "0ace667762347c9d29d0e4c6c928b5ef9ab11ee28cdf73402fda72358816302d",
-        "source/sveltekit/src/routes/api/_events/+server.ts": "cf147d4056a6859569d7272161c6fad0458ee01872a5ad74cfe59051da0ac8ff",
+        "source/sveltekit/src/routes/api/_events/+server.ts": "444178ddda329600099f75030868f853703e8a271627c186ee9909f6e27c3d8e",
         "source/sveltekit/src/routes/api/compat_plain/[id]/+server.ts": "422a0e1a361d1c028f70ff17ab1930c1517299351a59dd6e32d66fb195df8135",
         "source/sveltekit/src/routes/api/compat_plain/+server.ts": "c0d761f0d59693c73d2147e1053cfdaeac64072ddd7beb3e1107be437e64a1eb",
         "source/sveltekit/src/routes/api/sync/apply/+server.ts": "5a3bc854f1c520c3504e8f06a0a1497a6614dfbc71e87eeae5ab805ee683577b"
@@ -53,7 +53,7 @@
         "source/sveltekit/src/lib/server/smrt-register.ts": "f25b7af11be15449c72773d5047a2eb581977682b950ccae39d2e71d536a0897",
         "source/sveltekit/src/lib/server/smrt.ts": "0ccb2afbd8cc5f2d935fa82bbb52653417890b2e4e225b9fae5c773282f23dbf",
         "source/sveltekit/src/routes/api/_changes/+server.ts": "591da33fbbdb23989baae1531334885f6f4e30499b7228ef471ac41731efc448",
-        "source/sveltekit/src/routes/api/_events/+server.ts": "49dc4458397447bf84a0bb1f7ced90b336fcf94c78ff4484bb9a01551790f903",
+        "source/sveltekit/src/routes/api/_events/+server.ts": "98316e9aa126938b4b967a0430a0af214c8ad94146ab8ebf41eb1956c97bc0e2",
         "source/sveltekit/src/routes/api/compatroots/[id]/+server.ts": "28bb52386ca5b5062432b54e19de1d84ff826e7fa2ab6a924a50be43697018f8",
         "source/sveltekit/src/routes/api/compatroots/+server.ts": "00d74d7641d8fb1379469803e0cdeecf3477421c1408a852140427f07e2cc6f4",
         "source/sveltekit/src/routes/api/sync/apply/+server.ts": "589f76da9cd5d07008540a1add251aade8a83f55f71ad5dc651f4d797f726b3a"
