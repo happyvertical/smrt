@@ -40,6 +40,10 @@ const junk: unknown[] = [
   {
     rows: [null, 3, { title: 5 }],
     items: [{ label: 'x', href: 'javascript:1' }],
+    entries: [
+      { title: 'Calendar with out-of-range now', occurredAt: '2026-11-26' },
+    ],
+    now: 1e20,
   },
 ];
 

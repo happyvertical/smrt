@@ -66,6 +66,27 @@ describe('formatActivityTimestamp & safeActivityHref', () => {
       label: 'today',
     });
 
+    // Out-of-range finite epochs fall back deterministically instead of throwing RangeError.
+    expect(
+      formatActivityTimestamp('2026-11-26', {
+        locale: 'en-US',
+        timeZone: 'UTC',
+        now: 1e20,
+      }),
+    ).toMatchObject({
+      datetime: '2026-11-26',
+      label: 'Nov 26, 2026',
+    });
+    expect(
+      formatActivityTimestamp('2026-11-26T19:00:00.000Z', {
+        locale: 'en-US',
+        timeZone: 'UTC',
+        now: -1e20,
+      }),
+    ).toMatchObject({
+      datetime: '2026-11-26T19:00:00.000Z',
+    });
+
     // Unparseable dates and invalid locales never throw.
     expect(
       formatActivityTimestamp('not-a-real-date', {

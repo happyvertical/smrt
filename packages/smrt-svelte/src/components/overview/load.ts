@@ -105,7 +105,9 @@ export async function loadOverview(
   const timeoutMs = options.timeoutMs ?? DEFAULT_TIMEOUT_MS;
   const maxLength = options.maxDataLength ?? DEFAULT_MAX_DATA_LENGTH;
   const loadedAt =
-    typeof ctx.now === 'number' && Number.isFinite(ctx.now)
+    typeof ctx.now === 'number' &&
+    Number.isFinite(ctx.now) &&
+    Math.abs(ctx.now) <= 8_640_000_000_000_000
       ? ctx.now
       : Date.now();
   const timeZone =

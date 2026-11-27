@@ -171,10 +171,20 @@ const onToggleShowDismissed = $derived(
     ? (data.onToggleShowDismissed as ActivityWidgetData['onToggleShowDismissed'])
     : undefined,
 );
+const MAX_DATE_EPOCH_MS = 8_640_000_000_000_000;
+
+function isValidEpochMs(value: unknown): value is number {
+  return (
+    typeof value === 'number' &&
+    Number.isFinite(value) &&
+    Math.abs(value) <= MAX_DATE_EPOCH_MS
+  );
+}
+
 const now = $derived(
-  isRecord(data) && typeof data.now === 'number' && Number.isFinite(data.now)
+  isRecord(data) && isValidEpochMs(data.now)
     ? data.now
-    : typeof gridNow === 'number' && Number.isFinite(gridNow)
+    : isValidEpochMs(gridNow)
       ? gridNow
       : undefined,
 );

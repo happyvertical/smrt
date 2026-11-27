@@ -133,7 +133,9 @@ export class OverviewController {
 
   #seed(loaded: LoadedOverview): void {
     const loadedAt =
-      typeof loaded.loadedAt === 'number' && Number.isFinite(loaded.loadedAt)
+      typeof loaded.loadedAt === 'number' &&
+      Number.isFinite(loaded.loadedAt) &&
+      Math.abs(loaded.loadedAt) <= 8_640_000_000_000_000
         ? loaded.loadedAt
         : undefined;
     const timeZone =

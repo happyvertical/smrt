@@ -22,6 +22,16 @@ export interface FormatActivityTimestampOptions {
 const CALENDAR_DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
 const ISO_OFFSET_DATETIME_RE =
   /^\d{4}-\d{2}-\d{2}[T ]\d{2}:\d{2}(?::\d{2}(?:\.\d{1,9})?)?(?:Z|[+-]\d{2}:?\d{2})$/i;
+/** ECMAScript maximum valid `Date` epoch magnitude (100,000,000 days). */
+const MAX_DATE_EPOCH_MS = 8_640_000_000_000_000;
+
+function isValidEpochMs(value: unknown): value is number {
+  return (
+    typeof value === 'number' &&
+    Number.isFinite(value) &&
+    Math.abs(value) <= MAX_DATE_EPOCH_MS
+  );
+}
 
 function resolveTimeZone(timeZone: string | undefined): string {
   const candidate = timeZone?.trim();
@@ -154,8 +164,7 @@ export function formatActivityTimestamp(
   const locale = options.locale?.trim() || 'en-US';
   const timeZone = resolveTimeZone(options.timeZone);
   const justNow = options.justNowLabel || 'just now';
-  const hasNow =
-    typeof options.now === 'number' && Number.isFinite(options.now);
+  const hasNow = isValidEpochMs(options.now);
 
   let label: string;
   if (!hasNow) {
