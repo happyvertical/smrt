@@ -126,6 +126,20 @@ describePostgres('guest callers under Postgres RLS', () => {
     }
   }
 
+  /** Read as the system (FORCE RLS also hides rows from the admin role). */
+  async function systemRows(
+    sql: string,
+    ...values: unknown[]
+  ): Promise<Array<Record<string, unknown>>> {
+    const tx = await begin();
+    try {
+      await tx.query("SELECT set_config('smrt.system_context', 'true', true)");
+      return rowsOf(await tx.query(sql, ...values));
+    } finally {
+      if (tx.isActive()) await tx.rollback();
+    }
+  }
+
   const insertRecord = (
     tx: Txn,
     tenantId: string,
@@ -291,11 +305,9 @@ describePostgres('guest callers under Postgres RLS', () => {
       },
       true,
     );
-    const stored = rowsOf(
-      await (adminDb as DatabaseInterface).query(
-        'SELECT tenant_id FROM public.guest_rls_records WHERE id = $1',
-        id,
-      ),
+    const stored = await systemRows(
+      'SELECT tenant_id FROM public.guest_rls_records WHERE id = $1',
+      id,
     );
     expect(stored.map((row) => row.tenant_id)).toEqual([tenantA]);
   });
@@ -316,11 +328,11 @@ describePostgres('guest callers under Postgres RLS', () => {
       },
       true,
     );
-    const count = rowsOf(
-      await (adminDb as DatabaseInterface).query(
+    const count = (
+      await systemRows(
         'SELECT count(*)::int AS n FROM public.guest_rls_records WHERE id = $1',
         id,
-      ),
+      )
     )[0]?.n;
     expect(count).toBe(1);
   });
