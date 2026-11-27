@@ -507,3 +507,51 @@ describe('slug safety', () => {
     ).toEqual(['u_chores.list']);
   });
 });
+
+describe('unstage back to no version (#5197)', () => {
+  it('clears every grant, so a same-named model or a reused version number gets none', async () => {
+    await wipe();
+    // The harness stores rows with no tenant (the desktop's one owner), so the
+    // store names none either, as it does there.
+    const s = new ShellVersionStore(h.db, null);
+    const commitAt = async (version: number, d: AppDefinition) => {
+      const parent = await runAs(h.owner, () => s.current());
+      await runAs(h.owner, () =>
+        s.commit(
+          [
+            {
+              version,
+              parent,
+              author: 'test',
+              summary: `v${version}`,
+              definition: d,
+              migration: null,
+              createdAt: new Date().toISOString(),
+            },
+          ],
+          version,
+        ),
+      );
+    };
+    const first = nextVersion++;
+    await commitAt(first, def('Chore'));
+    await asOwner(() => ModelAccessGrant.grant('Chore', 'read'));
+    expect(await rows()).toHaveLength(1);
+    await runAs(h.owner, () => s.unstage([first], null));
+    expect(await rows()).toHaveLength(0);
+    // the same name again, at the very version number that was unstaged
+    const again = def('Chore');
+    await commitAt(first, again);
+    const staff = await staffAs(DEFAULT_ROLE_SLUGS.MEMBER);
+    expect(await rows()).toHaveLength(0);
+    expect(
+      (await staffPrincipalFor(staff, staff.tenantId, again)).permissions,
+    ).toEqual([]);
+    // a failed unstage rolls back with its grants
+    await asOwner(() => ModelAccessGrant.grant('Chore', 'read'));
+    await expect(
+      runAs(h.owner, () => s.unstage([first], -12345)),
+    ).rejects.toThrow();
+    expect(await rows()).toHaveLength(1);
+  });
+});

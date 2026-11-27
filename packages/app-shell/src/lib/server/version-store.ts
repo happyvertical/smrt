@@ -398,6 +398,16 @@ export class ShellVersionStore implements VersionStore {
           );
         if (restore !== null) return this.point(restore, txDb);
         const app = await this.appRow(txDb);
+        // No definition left: every staff grant goes with it, in this same
+        // transaction, so a reused version number or model name never matches
+        // a stale grant (#5197).
+        await clearGrantsAcross(
+          txDb,
+          this.tenantId,
+          app.definition,
+          [''],
+          true,
+        );
         await txDb.query(
           `UPDATE apps SET current_version = -1, definition = '' WHERE id = ?${this.tenantClause}`,
           [app.id, ...this.tenantParam],
