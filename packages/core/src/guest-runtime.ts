@@ -39,7 +39,7 @@ import {
 import {
   type GuestRequestPrincipal,
   guestPrincipalOf,
-  isGuestOperationAllowed,
+  isGuestAllowedOnRoute,
 } from './guest-request.js';
 import { BoundedSlidingWindowRateLimiter } from './http.js';
 import { ObjectRegistry } from './registry.js';
@@ -254,6 +254,7 @@ export function guestCreateAdmission(
   model: string,
   collection: string,
   publicAccess: boolean | 'read',
+  qualifiedName: string | undefined,
 ): GuestCreateAdmission | null {
   if (publicAccess === true) return null;
   const principal = guestPrincipalOf(locals);
@@ -261,7 +262,11 @@ export function guestCreateAdmission(
   const runtime = principal.runtime;
   if (!runtime || typeof runtime.auditWriter !== 'function') return null;
   if (
-    !isGuestOperationAllowed(principal.permissions, model, collection, 'create')
+    !isGuestAllowedOnRoute(
+      principal,
+      { model, qualifiedName, collection },
+      'create',
+    )
   ) {
     return null;
   }
@@ -361,23 +366,6 @@ export async function handleGuestCreate(
     return jsonError(403, 'PERMISSION_DENIED', 'Permission denied.');
   }
 
-  const body = await readBoundedJson(request, resolved.config.maxBodyBytes);
-  if (!body.ok) return body.response;
-
-  let projected: ReturnType<typeof projectGuestBody>;
-  try {
-    projected = projectGuestBody(body.value, resolved.config);
-  } catch (error) {
-    if (error instanceof GuestCreateBodyError) {
-      return jsonError(
-        error.code === 'GUEST_CREATE_BODY_TOO_LARGE' ? 413 : 400,
-        'BAD_BODY',
-        'Invalid request body',
-      );
-    }
-    throw error;
-  }
-
   let clientKey: string;
   try {
     clientKey = clientKeyFor(
@@ -387,6 +375,37 @@ export async function handleGuestCreate(
     );
   } catch {
     return tooMany(60);
+  }
+  const now = input.nowMs ?? Date.now();
+  const limiterKey = `${principal.tenantId}:${clientKey}`;
+  // A client that is already over its budget is refused before its body is
+  // read, and a body that is rejected (400/413) is charged to that client, so
+  // malformed floods are throttled like real creates. Only the client limiter
+  // is charged for them: a rejected body never spends the tenant's budget.
+  const waiting = runtime.createLimiter.client.check(limiterKey, now);
+  if (waiting !== null) return tooMany(waiting);
+  const rejectBody = (response: Response): Response => {
+    runtime.createLimiter.client.record(limiterKey, now);
+    return response;
+  };
+
+  const body = await readBoundedJson(request, resolved.config.maxBodyBytes);
+  if (!body.ok) return rejectBody(body.response);
+
+  let projected: ReturnType<typeof projectGuestBody>;
+  try {
+    projected = projectGuestBody(body.value, resolved.config);
+  } catch (error) {
+    if (error instanceof GuestCreateBodyError) {
+      return rejectBody(
+        jsonError(
+          error.code === 'GUEST_CREATE_BODY_TOO_LARGE' ? 413 : 400,
+          'BAD_BODY',
+          'Invalid request body',
+        ),
+      );
+    }
+    throw error;
   }
 
   const result = await executeGuestCreate({
@@ -401,7 +420,7 @@ export async function handleGuestCreate(
     limiter: runtime.createLimiter,
     clientKey,
     audit: { writer, resourceType: admission.model },
-    ...(input.nowMs === undefined ? {} : { nowMs: input.nowMs }),
+    nowMs: now,
   });
   if (result.status === 'rate_limited') {
     return tooMany(result.retryAfterSeconds);

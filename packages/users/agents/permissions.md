@@ -397,3 +397,43 @@ scope (run-time models in an app schema) never gets the default. Run the apply
 command after the profiles tables exist; the audit table must be in `public`.
 Proven in `guest-create-postgres.test.ts` (PGlite via `test:pglite`, real
 PostgreSQL via `test:postgres`) and `sveltekit-guest-audit-posture.postgres.test.ts`.
+
+#### Model admission, relations, validators and migrations
+
+- **A slug is admitted for one model.** The ceiling (`guestSlugTargets`) keeps
+  `<collection>.read`/`.create` only when EXACTLY ONE policy target is reachable
+  by it (the target whose collection name it is, or any target that lists the
+  slug under SELECT/INSERT through an explicit `permissions.postgres` binding)
+  and that target passes the ceiling. Two models sharing a collection name, or a
+  binding aimed at a second table, drop the slug. `resolveGuestAdmission`
+  returns the admitted model per slug; it rides on the guest principal as
+  `slugModels` and every generated route admits a guest only when ITS OWN
+  qualified name is the admitted one (`isGuestAllowedOnRoute`; a principal with
+  no map admits no route).
+- **No relation fields.** `defineGuestCreate` rejects foreign keys,
+  `@crossPackageRef`, one-to-many/many-to-many and other relation fields in
+  `allowedFields`: PostgreSQL checks foreign keys without row-level security, so
+  a guest could probe ids across tenants or attach to another tenant's row.
+- **No error oracle.** A failure that depends on the submitted values (unique,
+  not-null, foreign-key, check, exclusion, invalid input) rolls the savepoint
+  back and answers the same `201` as a success; only genuine server faults
+  (privilege, missing table, connection, a failed audit write) answer 500.
+- **Rejected bodies cost the client.** A client over budget is refused before
+  its body is read; a 400/413 body is charged to the client limiter (never the
+  tenant's).
+- **The audit marker is minted only by the pipeline.** `requireAuditOptions`
+  accepts the reserved guest actor only from `guestCreateAuditContext()` (core
+  internal, not exported from the package); a bare `{ callerKind: 'guest' }` is
+  refused.
+- **Raw INSERT skips model validators and hooks.** A guest create does not run
+  `validateBeforeSave`, `beforeSave` hooks, slug generation beyond `slug = id`,
+  interceptors or computed fields; only column defaults of the model are applied.
+  Enforce what matters in the database (NOT NULL, CHECK length/format
+  constraints, unique indexes): a violating value answers `201` and writes
+  nothing.
+- **Migrations before deploy.** Guests need `audit_logs.actor_kind` and a nullable
+  `profile_id` (profiles `AuditLog`) and `tenant_guest_grants`. Run
+  `smrt doctor --db` and `smrt db:status --parity` and migrate before enabling
+  `permissions.guest`; admission refuses guests until the audit table has the
+  forced RLS and guest policy, and the guest audit insert fails (so does the
+  create) against an unmigrated table.

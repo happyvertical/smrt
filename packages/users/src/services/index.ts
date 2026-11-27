@@ -74,6 +74,7 @@ export {
   type GuestRuntimeState,
   guestCeilingTables,
   guestOperationKind,
+  guestSlugTargets,
   isGuestOperationAllowed,
 } from './GuestPermissionResolver.js';
 export {

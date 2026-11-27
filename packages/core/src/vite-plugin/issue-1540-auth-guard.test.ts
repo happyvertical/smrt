@@ -21,7 +21,7 @@ import {
   createGuestRequestPrincipal,
   GUEST_MAX_LIST_LIMIT,
   guestPrincipalOf,
-  isGuestOperationAllowed,
+  isGuestAllowedOnRoute,
 } from '../guest-request';
 import type { SmartObjectManifest } from '../scanner/types';
 
@@ -171,6 +171,7 @@ describe('Issue #1540 (2c): fail-closed auth on generated routes', () => {
       })();
       const source = [
         line('const GUEST_MODEL'),
+        line('const GUEST_QUALIFIED_MODEL'),
         line('const RUNTIME_MODEL'),
         line('const PERMISSION_COLLECTION'),
         line('const PUBLIC_ACCESS'),
@@ -195,7 +196,7 @@ describe('Issue #1540 (2c): fail-closed auth on generated routes', () => {
         'guestPrincipalOf',
         'guestReadThrottle',
         'handleGuestCreate',
-        'isGuestOperationAllowed',
+        'isGuestAllowedOnRoute',
         'apiPrincipalFromLocals',
         'authorize',
         'isRuntimeModelEnabled',
@@ -208,7 +209,7 @@ describe('Issue #1540 (2c): fail-closed auth on generated routes', () => {
         guestPrincipalOf,
         () => null,
         async () => new Response(null, { status: 201 }),
-        isGuestOperationAllowed,
+        isGuestAllowedOnRoute,
         apiPrincipalFromLocals,
         authorize,
         () => true,
@@ -226,12 +227,19 @@ describe('Issue #1540 (2c): fail-closed auth on generated routes', () => {
       };
     }
 
-    const guestLocals = (permissions: string[]) => ({
+    const guestLocals = (
+      permissions: string[],
+      model: string | null = '@test/smrt:Widget',
+    ) => ({
       tenantId: 'tenant-a',
       permissions,
       guestPrincipal: createGuestRequestPrincipal({
         tenantId: 'tenant-a',
         permissions,
+        // The ceiling admits each slug for ONE model (#5196).
+        ...(model
+          ? { slugModels: permissions.map((s) => [s, model] as const) }
+          : {}),
       }),
     });
     const statusOf = (fn: () => void): number | undefined => {
@@ -269,6 +277,26 @@ describe('Issue #1540 (2c): fail-closed auth on generated routes', () => {
       ).toBe(401);
       expect(
         statusOf(() => requireRouteAuth(guestLocals([]), 'list', false)),
+      ).toBe(401);
+    });
+
+    it('a slug admitted for another model, or for none, never opens this route', async () => {
+      const { requireRouteAuth } = await emitted();
+      // Another model that shares the collection name `widgets`.
+      expect(
+        statusOf(() =>
+          requireRouteAuth(
+            guestLocals(['widgets.read'], '@test/other:Widget'),
+            'list',
+            false,
+          ),
+        ),
+      ).toBe(401);
+      // No admitted-model map at all (a host that did not compute one).
+      expect(
+        statusOf(() =>
+          requireRouteAuth(guestLocals(['widgets.read'], null), 'get', false),
+        ),
       ).toBe(401);
     });
 

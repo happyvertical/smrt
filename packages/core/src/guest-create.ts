@@ -19,9 +19,11 @@ import {
   type AuditEntry,
   type AuditWriter,
   type CollectionAuditOptions,
+  guestCreateAuditContext,
   requireAuditOptions,
 } from './audit.js';
 import { bumpChangeFeed } from './change-feed.js';
+import { classifyDatabaseError } from './db-errors.js';
 import { usesPostgresDialect } from './embedded-write-queue.js';
 import { ValidationError } from './errors.js';
 import { BoundedSlidingWindowRateLimiter, extractClientIp } from './http.js';
@@ -107,6 +109,32 @@ function flagged(field: unknown, key: string): boolean {
   return (
     f?.[key] === true || f?._meta?.[key] === true || f?.options?.[key] === true
   );
+}
+
+const RELATION_TYPES = new Set([
+  'foreignKey',
+  'crossPackageRef',
+  'oneToMany',
+  'manyToMany',
+  'relation',
+]);
+
+function isRelationField(field: unknown): boolean {
+  const f = field as
+    | (Record<string, unknown> & { _meta?: Record<string, unknown> })
+    | undefined;
+  if (!f) return false;
+  if (typeof f.type === 'string' && RELATION_TYPES.has(f.type)) return true;
+  for (const key of [
+    'related',
+    'foreignKey',
+    'crossPackageRef',
+    'references',
+    'polymorphic',
+  ]) {
+    if (f[key] || f._meta?.[key]) return true;
+  }
+  return false;
 }
 
 /**
@@ -208,6 +236,16 @@ export function defineGuestCreate(
         throw new ValidationError(
           `guest create for "${collection}": unknown field "${name}"`,
           'GUEST_CREATE_UNKNOWN_FIELD',
+          { collection, field: name },
+        );
+      }
+      // A relation is checked by the database WITHOUT row-level security: a
+      // guest could probe which ids exist in other tenants, or attach the row
+      // to another tenant's record. Only plain values may be guest-writable.
+      if (isRelationField(field)) {
+        throw new ValidationError(
+          `guest create for "${collection}": field "${name}" is a relation and cannot be guest-writable`,
+          'GUEST_CREATE_RELATION_FIELD',
           { collection, field: name },
         );
       }
@@ -519,11 +557,8 @@ export async function executeGuestCreate(
   // Resolve the audit identity before touching the database: only the typed
   // guest variant yields the reserved marker.
   const resolved = requireAuditOptions(
-    {
-      writer: input.audit.writer,
-      callerKind: 'guest',
-    } as CollectionAuditOptions,
-    { callerKind: 'guest' },
+    { writer: input.audit.writer } as unknown as CollectionAuditOptions,
+    guestCreateAuditContext(),
   );
   const changes: AuditEntry['changes'] = {};
   for (const [name, value] of Object.entries(projected)) {
@@ -538,39 +573,73 @@ export async function executeGuestCreate(
   }
   // One savepoint around the insert AND its audit row: a failed audit write
   // rolls the insert back, whatever the request does with the error.
-  await input.db.transaction(async (tx) => {
-    const result = await tx.query(sql, ...columns.map((c) => values[c]));
-    // No audit row when nothing was inserted (a conflict). When the driver
-    // does not report a count, the row is audited: never skip on unknown.
-    const rowCount = (result as { rowCount?: unknown } | null)?.rowCount;
-    if (rowCount === 0) return;
-    // A raw insert never reaches the ORM's change-feed hook; without this a
-    // staff read answered from the table-version ETag would keep returning
-    // 304 and never show the new row. Same savepoint: it commits or rolls
-    // back with the insert.
-    if (input.changeFeed !== false) {
-      await bumpChangeFeed(tx as never, {
-        table: input.table,
-        rowId: id,
-        operation: 'create',
-        tenantId,
-      });
-    }
-    await resolved.writer(
-      {
-        actorId: resolved.actorId,
-        callerKind: 'guest',
-        source: 'web',
-        action: 'create',
-        resourceType: input.audit.resourceType,
-        resourceId: id,
-        tenantId,
-        changes,
-      },
-      tx as never,
-    );
-  });
+  try {
+    await input.db.transaction(async (tx) => {
+      let result: unknown;
+      try {
+        result = await tx.query(sql, ...columns.map((c) => values[c]));
+      } catch (error) {
+        // A failure that depends on the submitted values (a constraint, a type
+        // the column rejects) must not be an oracle for what exists: the
+        // savepoint rolls back and the caller answers exactly as for success.
+        // Anything else (privilege, missing table, connection) is a real fault.
+        if (isDataDependentFailure(error)) throw new GuestInsertRejected();
+        throw error;
+      }
+      // No audit row when nothing was inserted (a conflict). When the driver
+      // does not report a count, the row is audited: never skip on unknown.
+      const rowCount = (result as { rowCount?: unknown } | null)?.rowCount;
+      if (rowCount === 0) return;
+      // A raw insert never reaches the ORM's change-feed hook; without this a
+      // staff read answered from the table-version ETag would keep returning
+      // 304 and never show the new row. Same savepoint: it commits or rolls
+      // back with the insert.
+      if (input.changeFeed !== false) {
+        await bumpChangeFeed(tx as never, {
+          table: input.table,
+          rowId: id,
+          operation: 'create',
+          tenantId,
+        });
+      }
+      await resolved.writer(
+        {
+          actorId: resolved.actorId,
+          callerKind: 'guest',
+          source: 'web',
+          action: 'create',
+          resourceType: input.audit.resourceType,
+          resourceId: id,
+          tenantId,
+          changes,
+        },
+        tx as never,
+      );
+    });
+  } catch (error) {
+    if (!(error instanceof GuestInsertRejected)) throw error;
+  }
   return { status: 'created', retryAfterSeconds: 0 };
+}
+
+/** Internal: the insert failed on the submitted values; roll back, say nothing. */
+class GuestInsertRejected extends Error {}
+
+const DATA_DEPENDENT_KINDS = new Set([
+  'unique_violation',
+  'not_null_violation',
+  'foreign_key_violation',
+  'check_violation',
+  'exclusion_violation',
+  'invalid_input',
+]);
+
+function isDataDependentFailure(error: unknown): boolean {
+  try {
+    return DATA_DEPENDENT_KINDS.has(classifyDatabaseError(error).kind);
+  } catch {
+    return false;
+  }
 }
 
 const BASE_COLUMNS = new Set([

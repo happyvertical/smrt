@@ -372,6 +372,7 @@ export {
   guestAuditPolicyName,
   guestCeilingTables,
   guestOperationKind,
+  guestSlugTargets,
   hasOperationPermission,
   InvalidCredentialsError,
   isAncestorReadableSlug,

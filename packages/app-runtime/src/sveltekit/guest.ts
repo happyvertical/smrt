@@ -86,6 +86,10 @@ export interface GuestAdmissionDeps {
   /** Test seam: replace the resolver. */
   readonly resolver?: () => Promise<{
     resolveGuestPermissions(tenantId: string): Promise<Set<string>>;
+    resolveGuestAdmission?(tenantId: string): Promise<{
+      permissions: Set<string>;
+      slugModels: Map<string, string>;
+    }>;
   }>;
 }
 
@@ -93,6 +97,8 @@ export interface GuestAdmissionDeps {
 export interface GuestAdmission {
   readonly tenantId: string;
   readonly permissions: string[];
+  /** Slug to the qualified name of the one model the ceiling admitted it for. */
+  readonly slugModels: ReadonlyArray<readonly [string, string]>;
   /** The process-wide guest runtime (limiters, create field lists, audit). */
   readonly runtime: GuestRuntime;
 }
@@ -233,6 +239,10 @@ export function createGuestAdmitter(deps: GuestAdmissionDeps): GuestAdmitter {
   let resolverPromise:
     | Promise<{
         resolveGuestPermissions(tenantId: string): Promise<Set<string>>;
+        resolveGuestAdmission?(tenantId: string): Promise<{
+          permissions: Set<string>;
+          slugModels: Map<string, string>;
+        }>;
       }>
     | undefined;
 
@@ -364,12 +374,19 @@ export function createGuestAdmitter(deps: GuestAdmissionDeps): GuestAdmitter {
         if (!verdict.active) return null;
         const resolver = await loadResolver(guest);
         // Uncached: every request reads live grants, DENYs and tenant status.
-        const permissions =
-          await resolver.resolveGuestPermissions(selectedTenantId);
+        // A resolver without the admitted-model map admits no route.
+        const { permissions, slugModels } = resolver.resolveGuestAdmission
+          ? await resolver.resolveGuestAdmission(selectedTenantId)
+          : {
+              permissions:
+                await resolver.resolveGuestPermissions(selectedTenantId),
+              slugModels: new Map<string, string>(),
+            };
         if (permissions.size === 0) return null;
         return {
           tenantId: selectedTenantId,
           permissions: [...permissions],
+          slugModels: [...slugModels],
           runtime: loadRuntime(guest),
         };
       } catch {

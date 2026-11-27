@@ -332,8 +332,10 @@ export {
   GUEST_MAX_LIST_LIMIT,
   type GuestPermissionKind,
   type GuestRequestPrincipal,
+  type GuestRouteModel,
   guestOperationKind,
   guestPrincipalOf,
+  isGuestAllowedOnRoute,
   isGuestLocals,
   isGuestOperationAllowed,
 } from './guest-request';

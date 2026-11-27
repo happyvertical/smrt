@@ -66,6 +66,7 @@ class GcpMessage5196 extends SmrtObject {
 
 const COLLECTION = 'gcp5196_messages';
 const MODEL = 'GcpMessage5196';
+const QUALIFIED = '@test/gcp5196:GcpMessage5196';
 
 const usePglite = process.env.SMRT_TEST_PGLITE === '1';
 const describeBackend =
@@ -146,6 +147,7 @@ describeBackend(`guest creates on ${backendName} (#5196)`, () => {
         tenantId: l.tenantId,
         permissions: l.permissions,
         runtime,
+        slugModels: l.permissions.map((slug) => [slug, QUALIFIED] as const),
       }),
     };
   }
@@ -155,7 +157,13 @@ describeBackend(`guest creates on ${backendName} (#5196)`, () => {
     l: ReturnType<typeof guestRequest>,
     body: Record<string, unknown>,
   ) {
-    const admission = guestCreateAdmission(l, MODEL, COLLECTION, false);
+    const admission = guestCreateAdmission(
+      l,
+      MODEL,
+      COLLECTION,
+      false,
+      QUALIFIED,
+    );
     if (!admission) throw new Error('not admitted');
     return handleGuestCreate({
       admission,
@@ -359,7 +367,13 @@ describeBackend(`guest creates on ${backendName} (#5196)`, () => {
     // The database refuses it too, even if the route check were skipped.
     await expect(
       asGuest(tenantA, [], async (tx) => {
-        const admission = guestCreateAdmission(l, MODEL, COLLECTION, false)!;
+        const admission = guestCreateAdmission(
+          l,
+          MODEL,
+          COLLECTION,
+          false,
+          QUALIFIED,
+        )!;
         return handleGuestCreate({
           admission,
           request: new Request('http://t.test/', {

@@ -185,3 +185,12 @@ ordinary create path is untouched). Four digests were replaced by hand
 (`compat_plain` and `compatroots`, collection and `[id]` routes); the
 manifest, schema, DDL, migration, OpenAPI, MCP and every other emitted file are
 unchanged.
+
+### Per-model guest admission (#5196, slice J)
+
+The collection and item routes of both cases changed again, on purpose: the
+generated guest read check and the guest create admission now also pass the
+route's own qualified model name (`GUEST_QUALIFIED_MODEL`), because a slug is
+admitted for exactly one model. Four digests were replaced by hand
+(`compat_plain` and `compatroots`, collection and `[id]` routes); nothing
+else moved.

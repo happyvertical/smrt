@@ -37,6 +37,7 @@ class GcMessage5196 extends SmrtObject {
 
 const COLLECTION = 'gc5196_messages';
 const MODEL = 'GcMessage5196';
+const QUALIFIED = '@test/gc5196:GcMessage5196';
 
 function rowsOf(result: unknown): Record<string, unknown>[] {
   if (Array.isArray(result)) return result as Record<string, unknown>[];
@@ -84,6 +85,7 @@ describe('guest create route pipeline (#5196)', () => {
         tenantId,
         permissions,
         runtime,
+        slugModels: permissions.map((slug) => [slug, QUALIFIED] as const),
       }),
     };
   }
@@ -101,7 +103,13 @@ describe('guest create route pipeline (#5196)', () => {
     body: unknown,
     init: { raw?: string; ip?: string; nowMs?: number } = {},
   ) {
-    const admission = guestCreateAdmission(l, MODEL, COLLECTION, false);
+    const admission = guestCreateAdmission(
+      l,
+      MODEL,
+      COLLECTION,
+      false,
+      QUALIFIED,
+    );
     if (!admission) return null;
     return handleGuestCreate({
       admission,
@@ -166,12 +174,16 @@ describe('guest create route pipeline (#5196)', () => {
       const l = locals({
         createFields: { [COLLECTION]: { allowedFields: ['name', bad] } },
       });
-      expect(guestCreateAdmission(l, MODEL, COLLECTION, false)).toBeNull();
+      expect(
+        guestCreateAdmission(l, MODEL, COLLECTION, false, QUALIFIED),
+      ).toBeNull();
     }
     const ok = locals({
       createFields: { [COLLECTION]: { allowedFields: ['name', 'status'] } },
     });
-    expect(guestCreateAdmission(ok, MODEL, COLLECTION, false)).not.toBeNull();
+    expect(
+      guestCreateAdmission(ok, MODEL, COLLECTION, false, QUALIFIED),
+    ).not.toBeNull();
   });
 
   it('refuses a collection the app did not opt in', async () => {
@@ -188,10 +200,56 @@ describe('guest create route pipeline (#5196)', () => {
     expect(await messages()).toHaveLength(0);
   });
 
+  it('admits only the model the ceiling admitted the slug for', () => {
+    const l = locals();
+    expect(
+      guestCreateAdmission(l, MODEL, COLLECTION, false, '@test/other:Model'),
+    ).toBeNull();
+    expect(
+      guestCreateAdmission(l, MODEL, COLLECTION, false, undefined),
+    ).toBeNull();
+    // A principal with no admitted-model map admits no route.
+    const bare = {
+      tenantId: 't1',
+      permissions: [`${COLLECTION}.create`],
+      guestPrincipal: createGuestRequestPrincipal({
+        tenantId: 't1',
+        permissions: [`${COLLECTION}.create`],
+        runtime: l.guestPrincipal.runtime,
+      }),
+    };
+    expect(
+      guestCreateAdmission(bare, MODEL, COLLECTION, false, QUALIFIED),
+    ).toBeNull();
+  });
+
+  it('charges rejected bodies to the client and refuses an exhausted client before reading', async () => {
+    const l = locals({ create: { perClient: 2 } });
+    const now = 7_000;
+    expect((await create(l, null, { raw: '{bad', nowMs: now }))?.status).toBe(
+      400,
+    );
+    expect((await create(l, null, { raw: '[1]', nowMs: now }))?.status).toBe(
+      400,
+    );
+    // The client is now over budget: even a valid body is refused with 429,
+    // and the rejected bodies never spent the tenant budget.
+    const limited = await create(l, { email: 'a@x.test' }, { nowMs: now + 1 });
+    expect(limited?.status).toBe(429);
+    expect(limited?.headers.get('retry-after')).toBeTruthy();
+    expect(await messages()).toHaveLength(0);
+    const other = await create(
+      l,
+      { email: 'b@x.test' },
+      { nowMs: now + 1, ip: '8.8.8.8' },
+    );
+    expect(other?.status).toBe(201);
+  });
+
   it('refuses without a runtime, an audit writer, or a guest principal', async () => {
     const withoutWriter = locals({ auditWriter: undefined });
     expect(
-      guestCreateAdmission(withoutWriter, MODEL, COLLECTION, false),
+      guestCreateAdmission(withoutWriter, MODEL, COLLECTION, false, QUALIFIED),
     ).toBeNull();
     const noRuntime = {
       tenantId: 't1',
@@ -202,16 +260,26 @@ describe('guest create route pipeline (#5196)', () => {
       }),
     };
     expect(
-      guestCreateAdmission(noRuntime, MODEL, COLLECTION, false),
+      guestCreateAdmission(noRuntime, MODEL, COLLECTION, false, QUALIFIED),
     ).toBeNull();
     expect(
-      guestCreateAdmission({ tenantId: 't1' }, MODEL, COLLECTION, false),
+      guestCreateAdmission(
+        { tenantId: 't1' },
+        MODEL,
+        COLLECTION,
+        false,
+        QUALIFIED,
+      ),
     ).toBeNull();
     // A signed-in marker voids the guest principal.
     const signedIn = { ...locals(), user: { id: 'u1' } };
-    expect(guestCreateAdmission(signedIn, MODEL, COLLECTION, false)).toBeNull();
+    expect(
+      guestCreateAdmission(signedIn, MODEL, COLLECTION, false, QUALIFIED),
+    ).toBeNull();
     // A public model keeps the anonymous create path, not the guest one.
-    expect(guestCreateAdmission(locals(), MODEL, COLLECTION, true)).toBeNull();
+    expect(
+      guestCreateAdmission(locals(), MODEL, COLLECTION, true, QUALIFIED),
+    ).toBeNull();
   });
 
   it('bumps the table version so a staff read is not answered from a stale ETag', async () => {
@@ -296,7 +364,13 @@ describe('guest create route pipeline (#5196)', () => {
       },
     });
     await db.transaction(async (tx) => {
-      const admission = guestCreateAdmission(l, MODEL, COLLECTION, false);
+      const admission = guestCreateAdmission(
+        l,
+        MODEL,
+        COLLECTION,
+        false,
+        QUALIFIED,
+      );
       await expect(
         handleGuestCreate({
           admission: admission!,
@@ -361,6 +435,7 @@ describe('guest create route pipeline (#5196)', () => {
       tenantId: 't1',
       permissions: [`${COLLECTION}.create`],
       runtime,
+      slugModels: [[`${COLLECTION}.create`, QUALIFIED]],
     });
     const l = {
       tenantId: 't1',
@@ -373,7 +448,13 @@ describe('guest create route pipeline (#5196)', () => {
 
   it('uses the socket address, ignoring X-Forwarded-For without trusted hops', async () => {
     const l = locals({ create: { perClient: 1 } });
-    const admission = guestCreateAdmission(l, MODEL, COLLECTION, false)!;
+    const admission = guestCreateAdmission(
+      l,
+      MODEL,
+      COLLECTION,
+      false,
+      QUALIFIED,
+    )!;
     const send = (xff: string, email: string) =>
       handleGuestCreate({
         admission,
