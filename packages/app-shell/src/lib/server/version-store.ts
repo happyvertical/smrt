@@ -33,7 +33,7 @@ import {
   type AppVersion,
   AppVersionCollection,
 } from '../objects/AppVersion.ts';
-import { clearGrants, creationStamps } from './model-access.ts';
+import { clearGrantsAcross, creationStamps } from './model-access.ts';
 import { bindAmbientShellScope, isPostgresHandle } from './shell-tenancy.ts';
 
 export const APP_SLUG = 'app';
@@ -232,16 +232,17 @@ export class ShellVersionStore implements VersionStore {
     version: number,
     db: DatabaseInterface,
     importing = false,
+    via: VersionRecord[] = [],
   ): Promise<void> {
     const rec = await this.row(version, db);
     if (!rec) throw new Error(`version ${version} is not stored`);
     const app = await this.appRow(db);
     // Staff grants of a model that leaves the definition go with it (#5197).
-    await clearGrants(
+    await clearGrantsAcross(
       db,
       this.tenantId,
       app.definition,
-      rec.definition,
+      [...via.map((r) => JSON.stringify(r.definition)), rec.definition],
       importing,
     );
     app.currentVersion = version;
@@ -308,7 +309,7 @@ export class ShellVersionStore implements VersionStore {
     await db.transaction(async (tx) => {
       const txDb = tx as unknown as DatabaseInterface;
       for (const r of records) await this.insert(r, txDb);
-      await this.point(current, txDb, records.some(isImport));
+      await this.point(current, txDb, records.some(isImport), records);
       if (mark) {
         const draft = await (await AppDraftCollection.create({ db: txDb })).get(
           mark.draftId,
@@ -350,11 +351,11 @@ export class ShellVersionStore implements VersionStore {
       } catch {
         /* keep the name */
       }
-      await clearGrants(
+      await clearGrantsAcross(
         txDb,
         this.tenantId,
         app.definition,
-        rec.definition,
+        [...records.map((r) => JSON.stringify(r.definition)), rec.definition],
         records.some(isImport),
       );
       const hit = await txDb.query(

@@ -367,6 +367,50 @@ describe('grants leave with their model', () => {
   });
 });
 
+describe('remove and recreate in one publish', () => {
+  it('drops the grants and leaves the replacement closed', async () => {
+    await wipe();
+    const d = await setDef(def('Chore'));
+    await asOwner(() => ModelAccessGrant.grant('Chore', 'read'));
+    const staff = await staffAs(DEFAULT_ROLE_SLUGS.MEMBER);
+    const parent = nextVersion - 1;
+    const mk = (version: number, p: number, definition: AppDefinition) => ({
+      version,
+      parent: p,
+      author: 'test',
+      summary: `v${version}`,
+      definition,
+      migration: null,
+      createdAt: new Date().toISOString(),
+    });
+    const a = nextVersion++;
+    const b = nextVersion++;
+    await runAs(h.owner, () =>
+      store().commit([mk(a, parent, def()), mk(b, a, d)], b),
+    );
+    expect(await rows()).toHaveLength(0);
+    expect(
+      (await staffPrincipalFor(staff, staff.tenantId, d)).permissions,
+    ).toEqual([]);
+  });
+
+  it('even if a row survived, the new creation stamp makes it inert', async () => {
+    await wipe();
+    const d = await setDef(def('Chore'));
+    await asOwner(() => ModelAccessGrant.grant('Chore', 'read'));
+    const staff = await staffAs(DEFAULT_ROLE_SLUGS.MEMBER);
+    await setDef(def());
+    await setDef(d);
+    await h.db.query(
+      "INSERT INTO model_access_grants (id, slug, tenant_id, model_name, model_stamp, action, granted_by) VALUES ('22222222-2222-4222-8222-222222222222', 'y', ?, 'Chore', '1', 'read', 'o')",
+      h.owner.tenantId,
+    );
+    expect(
+      (await staffPrincipalFor(staff, staff.tenantId, d)).permissions,
+    ).toEqual([]);
+  });
+});
+
 describe('slug safety', () => {
   it('refuses a grant on a model that shares its table, and never emits its slugs', async () => {
     await wipe();

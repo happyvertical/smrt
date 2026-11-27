@@ -191,3 +191,23 @@ export async function clearGrants(
         [model, ...params],
       );
 }
+
+/**
+ * `clearGrants` over every transition of one publish: the old definition, each
+ * version the batch appended in order, then the one made current. A model
+ * removed and defined again inside one batch loses its grants (its new stamp
+ * would not match them anyway).
+ */
+export async function clearGrantsAcross(
+  db: Pick<DatabaseInterface, 'query'>,
+  tenantId: string | null,
+  previous: string,
+  steps: string[],
+  all = false,
+): Promise<void> {
+  let before = previous;
+  for (const next of steps) {
+    await clearGrants(db, tenantId, before, next, all);
+    before = next;
+  }
+}
