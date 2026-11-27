@@ -15,6 +15,12 @@
  */
 
 import { randomUUID } from 'node:crypto';
+import {
+  type AuditEntry,
+  type AuditWriter,
+  type CollectionAuditOptions,
+  requireAuditOptions,
+} from './audit.js';
 import { usesPostgresDialect } from './embedded-write-queue.js';
 import { ValidationError } from './errors.js';
 import { BoundedSlidingWindowRateLimiter, extractClientIp } from './http.js';
@@ -43,6 +49,13 @@ export interface ResolvedGuestCreateConfig {
 export interface DefineGuestCreateOptions {
   /** Extra column names (snake_case or camelCase) that may never be listed. */
   protectedFields?: readonly string[];
+  /**
+   * The registry key of the model the collection maps to. When given the model
+   * MUST be registered (a miss throws, so field checks can never be skipped by
+   * a slug that is not a class name) and must be a plain table: no STI and no
+   * write-through, whose rows a plain INSERT cannot represent.
+   */
+  className?: string;
 }
 
 export const DEFAULT_GUEST_MAX_BODY_BYTES = 16 * 1024;
@@ -137,10 +150,27 @@ export function defineGuestCreate(
   for (const extra of options.protectedFields ?? [])
     protectedNames.add(snake(extra));
 
-  const registered = ObjectRegistry.getClass(collection);
+  const registered = ObjectRegistry.getClass(options.className ?? collection);
+  if (options.className !== undefined && !registered) {
+    throw new ValidationError(
+      `guest create for "${collection}": model "${options.className}" is not registered`,
+      'GUEST_CREATE_UNREGISTERED_MODEL',
+    );
+  }
   let registryFields: Map<string, unknown> | undefined;
   if (registered) {
-    const tenantColumn = ObjectRegistry.getOwnershipTenantColumn(collection);
+    const key = registered.qualifiedName ?? registered.name;
+    if (
+      ObjectRegistry.getTableStrategy(key) === 'sti' ||
+      (registered.config as { writeThrough?: unknown } | undefined)
+        ?.writeThrough !== undefined
+    ) {
+      throw new ValidationError(
+        `guest create: collection "${collection}" uses STI or write-through`,
+        'GUEST_CREATE_UNSUPPORTED_MODEL',
+      );
+    }
+    const tenantColumn = ObjectRegistry.getOwnershipTenantColumn(key);
     if (tenantColumn) protectedNames.add(tenantColumn);
     if (
       (registered.config as { sensitive?: unknown } | undefined)?.sensitive ===
@@ -360,6 +390,21 @@ export function createGuestCreateLimiter(
 /** Minimal database surface needed for the insert. */
 export interface GuestCreateDb {
   query(sql: string, ...values: unknown[]): Promise<unknown>;
+  /**
+   * Nested transaction (a savepoint inside the request transaction). Required:
+   * the insert and its audit row commit or roll back together, and the
+   * request transaction alone cannot give that (a handler that turns a
+   * failure into a response still lets the request transaction commit).
+   */
+  transaction?<T>(callback: (tx: GuestCreateDb) => Promise<T>): Promise<T>;
+}
+
+/** The audit sink a guest create writes through (never optional). */
+export interface GuestCreateAudit {
+  /** The app's audit writer (profiles `createAuditWriter()`). */
+  writer: AuditWriter;
+  /** Registry name recorded as the audited resource type. */
+  resourceType: string;
 }
 
 export interface ExecuteGuestCreateInput {
@@ -372,10 +417,22 @@ export interface ExecuteGuestCreateInput {
   limiter: GuestCreateLimiter;
   /** Output of {@link clientKeyFor}. */
   clientKey: string;
+  /** Audit sink; the create fails when it cannot be written. */
+  audit: GuestCreateAudit;
   /** Tenant column. Default `tenant_id`. */
   tenantColumn?: string;
   /** Trusted server-side column values (e.g. timestamps); never from the body. */
   serverValues?: Record<string, string | number | boolean | null>;
+  /**
+   * Column defaults for fields the caller did not send ({@link guestRowDefaults});
+   * the projected body overrides them, server-owned columns override both.
+   */
+  defaults?: Record<string, string | number | boolean | null>;
+  /**
+   * Also write the framework's own columns (`slug`, `context`, `created_at`,
+   * `updated_at`) a SMRT table carries. Off for a hand-built table.
+   */
+  smrtColumns?: boolean;
   /** Clock override for tests. */
   nowMs?: number;
 }
@@ -426,7 +483,7 @@ export async function executeGuestCreate(
   limiter.tenant.record(tenantId, now);
   limiter.client.record(clientKey, now);
 
-  const values: Record<string, unknown> = {};
+  const values: Record<string, unknown> = { ...(input.defaults ?? {}) };
   for (const [name, value] of Object.entries(projected)) {
     values[snake(name)] = value;
   }
@@ -436,6 +493,15 @@ export async function executeGuestCreate(
   // Server-owned columns always win, whatever else was supplied.
   values.id = randomUUID();
   values[tenantColumn] = tenantId;
+  if (input.smrtColumns) {
+    const stamp = new Date(now).toISOString();
+    values.slug = values.id;
+    values.context ??= '';
+    values.created_at = stamp;
+    values.updated_at = stamp;
+  }
+
+  const id = values.id as string;
 
   const columns = Object.keys(values);
   const postgres = usesPostgresDialect(input.db as never);
@@ -443,6 +509,117 @@ export async function executeGuestCreate(
   const sql = `INSERT INTO ${quote(input.table)} (${columns
     .map(quote)
     .join(', ')}) VALUES (${placeholders.join(', ')}) ON CONFLICT DO NOTHING`;
-  await input.db.query(sql, ...columns.map((c) => values[c]));
+
+  // Resolve the audit identity before touching the database: only the typed
+  // guest variant yields the reserved marker.
+  const resolved = requireAuditOptions(
+    {
+      writer: input.audit.writer,
+      callerKind: 'guest',
+    } as CollectionAuditOptions,
+    { callerKind: 'guest' },
+  );
+  const changes: AuditEntry['changes'] = {};
+  for (const [name, value] of Object.entries(projected)) {
+    changes[name] = { before: null, after: value };
+  }
+
+  if (typeof input.db.transaction !== 'function') {
+    throw new ValidationError(
+      'guest create requires a database that supports nested transactions',
+      'GUEST_CREATE_NO_TRANSACTION',
+    );
+  }
+  // One savepoint around the insert AND its audit row: a failed audit write
+  // rolls the insert back, whatever the request does with the error.
+  await input.db.transaction(async (tx) => {
+    const result = await tx.query(sql, ...columns.map((c) => values[c]));
+    // No audit row when nothing was inserted (a conflict). When the driver
+    // does not report a count, the row is audited: never skip on unknown.
+    const rowCount = (result as { rowCount?: unknown } | null)?.rowCount;
+    if (rowCount === 0) return;
+    await resolved.writer(
+      {
+        actorId: resolved.actorId,
+        callerKind: 'guest',
+        source: 'web',
+        action: 'create',
+        resourceType: input.audit.resourceType,
+        resourceId: id,
+        tenantId,
+        changes,
+      },
+      tx as never,
+    );
+  });
   return { status: 'created', retryAfterSeconds: 0 };
+}
+
+const BASE_COLUMNS = new Set([
+  'id',
+  'slug',
+  'context',
+  'created_at',
+  'updated_at',
+]);
+
+/**
+ * Column defaults a plain INSERT must supply for the model: the values an
+ * ordinary save would write for a row the caller did not populate (`''` for
+ * unset text, JSON defaults, `null` for unset foreign keys). Only persisted
+ * schema columns are returned; nothing here comes from a request.
+ */
+export function guestRowDefaults(
+  model: string,
+): Record<string, string | number | boolean | null> {
+  const registered = ObjectRegistry.getClass(model);
+  if (!registered) {
+    throw new ValidationError(
+      `guest create: model "${model}" is not registered`,
+      'GUEST_CREATE_UNREGISTERED_MODEL',
+    );
+  }
+  const Ctor = registered.constructor as unknown as new (
+    options?: unknown,
+  ) => { toJSON(): Record<string, unknown> };
+  const json = new Ctor({}).toJSON();
+  const fields = getEffectiveFieldsSync(registered) as Map<
+    string,
+    {
+      type?: string;
+      transient?: boolean;
+      _meta?: { transient?: boolean };
+    }
+  >;
+  const out: Record<string, string | number | boolean | null> = {};
+  for (const [key, value] of Object.entries(json)) {
+    const column = key.startsWith('_') ? key : snake(key);
+    if (BASE_COLUMNS.has(column)) continue;
+    const field = fields.get(key);
+    if (!field) continue;
+    if (
+      field.transient ||
+      field._meta?.transient ||
+      field.type === 'oneToMany' ||
+      field.type === 'manyToMany'
+    ) {
+      continue;
+    }
+    if (value === undefined) continue;
+    if (field.type === 'foreignKey' && value === '') {
+      out[column] = null;
+    } else if (
+      typeof value === 'string' ||
+      typeof value === 'number' ||
+      typeof value === 'boolean' ||
+      value === null
+    ) {
+      out[column] = value;
+    } else if (value instanceof Date) {
+      out[column] = value.toISOString();
+    } else {
+      out[column] = JSON.stringify(value);
+    }
+  }
+  return out;
 }

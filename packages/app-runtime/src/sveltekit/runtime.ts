@@ -1626,6 +1626,7 @@ export function composeSmrtSvelteKitRuntime(
               locals.guestPrincipal = createGuestRequestPrincipal({
                 tenantId: admitted.tenantId,
                 permissions: context.permissions,
+                runtime: admitted.runtime,
               });
             }
             resolveEntered = true;

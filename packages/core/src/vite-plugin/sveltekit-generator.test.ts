@@ -1518,6 +1518,32 @@ describe('SvelteKit Route Generator', () => {
       expect(content).toContain(
         'return smrtRouteErrorResponse(cause, request);',
       );
+
+      // Guest creates (#5196): the guest branch runs BEFORE the ordinary
+      // guard, always returns from the guest pipeline (it never reaches
+      // `collection.create`), and answers a failure without a typed message.
+      const post = content.slice(content.indexOf('export const POST'));
+      const guestBranch = post.indexOf('guestCreateAdmission(locals');
+      expect(guestBranch).toBeGreaterThan(-1);
+      expect(guestBranch).toBeLessThan(post.indexOf('requireRouteAccess('));
+      const branchEnd = post.indexOf('requireRouteAccess(');
+      expect(post.slice(guestBranch, branchEnd)).toContain(
+        'return await handleGuestCreate(',
+      );
+      expect(post.slice(guestBranch, branchEnd)).not.toContain(
+        'collection.create',
+      );
+      expect(post.slice(guestBranch, branchEnd)).toContain(
+        'reportUnexpectedHttpError(cause, request)',
+      );
+      // Reads charge a guest against the per-client and per-tenant limits.
+      const get = content.slice(
+        content.indexOf('export const GET'),
+        content.indexOf('export const POST'),
+      );
+      expect(get).toContain(
+        'guestReadThrottle(locals, request, getClientAddress)',
+      );
       expect(content).toContain(
         'return json(reportUnexpectedHttpError(cause, request), { status: 500 });',
       );

@@ -313,12 +313,14 @@ export {
   defineGuestCreate,
   type ExecuteGuestCreateInput,
   executeGuestCreate,
+  type GuestCreateAudit,
   GuestCreateBodyError,
   type GuestCreateConfig,
   type GuestCreateDb,
   type GuestCreateLimiter,
   type GuestCreateLimiterOptions,
   type GuestCreateResult,
+  guestRowDefaults,
   normalizeClientIdentity,
   projectGuestBody,
   type ResolvedGuestCreateConfig,
@@ -335,6 +337,17 @@ export {
   isGuestLocals,
   isGuestOperationAllowed,
 } from './guest-request';
+export {
+  createGuestRuntime,
+  type GuestCreateAdmission,
+  type GuestReadLimiterOptions,
+  type GuestRuntime,
+  type GuestRuntimeOptions,
+  guestCreateAdmission,
+  guestReadThrottle,
+  type HandleGuestCreateInput,
+  handleGuestCreate,
+} from './guest-runtime';
 export { type HierarchyView, SmrtHierarchical } from './hierarchical';
 // Inference tiers and the binding resolver seam (#4750). Browser-safe; keep
 // this list identical in index.ts and browser.ts.
