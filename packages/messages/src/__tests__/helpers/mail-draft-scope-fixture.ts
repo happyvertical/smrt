@@ -1,4 +1,7 @@
 import { randomUUID } from 'node:crypto';
+import { copyFile, mkdtemp, rm } from 'node:fs/promises';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 import {
   ApprovalService,
   createApprovalMailSendGate,
@@ -21,7 +24,7 @@ import {
   UserCollection,
 } from '@happyvertical/smrt-users';
 import type { DatabaseInterface } from '@happyvertical/sql';
-import { afterEach, beforeEach, vi } from 'vitest';
+import { afterAll, afterEach, beforeAll, beforeEach, vi } from 'vitest';
 import {
   configureMailAccess,
   MailAccessError,
@@ -57,8 +60,13 @@ export interface Person {
  * The shared fixture of the draft-scope suites: one tenant, an owner, a
  * drafter, a sender and a stranger, an owned and an open account, and a
  * principal the tests switch with `as()`. Registers its own hooks, so call it
- * inside a `describe`. The suites are split across files because each test
- * builds a full schema and a single file holds the memory of all of them.
+ * inside a `describe`. The suites are split across files because a single
+ * file holds the memory of all of them.
+ *
+ * The schema, permission catalog, tenant, people, accounts and grants are
+ * built once per file into a template SQLite file; each test copies it, so a
+ * test gets a fresh, isolated database without paying for the schema again
+ * (#5723).
  */
 export function useMailDraftScopeFixture() {
   let db: DatabaseInterface;
@@ -230,28 +238,56 @@ export function useMailDraftScopeFixture() {
       }),
     );
 
-  beforeEach(async () => {
-    db = await getTestDatabase({ type: 'sqlite', url: ':memory:' });
-    options = { db };
-    await prepareMessageParents(db);
-    enableTenancy();
-    await withSystemContext(async () => {
-      await syncPermissionCatalog(options);
-      const tenants = await TenantCollection.create(options);
-      const t = await tenants.create({ name: 'Tenant' });
-      await t.save();
-      tenantId = t.id as string;
-      owner = await newPerson('owner');
-      drafter = await newPerson('drafter');
-      sender = await newPerson('sender');
-      stranger = await newPerson('stranger');
+  let scratchDir: string;
+  let templatePath: string;
+  let testPath: string | undefined;
+  let testCount = 0;
+
+  beforeAll(async () => {
+    scratchDir = await mkdtemp(join(tmpdir(), 'mail-draft-scope-'));
+    templatePath = join(scratchDir, 'template.db');
+    const template = await getTestDatabase({
+      type: 'sqlite',
+      url: templatePath,
     });
-    ownedId = await seedAccount('owned', owner.id);
-    openId = await seedAccount('open', null);
-    await grant(drafter.id, 'read');
-    await grant(drafter.id, 'draft');
-    await grant(sender.id, 'read');
-    await grant(sender.id, 'send');
+    db = template;
+    options = { db: template };
+    try {
+      await prepareMessageParents(template);
+      enableTenancy();
+      await withSystemContext(async () => {
+        await syncPermissionCatalog(options);
+        const tenants = await TenantCollection.create(options);
+        const t = await tenants.create({ name: 'Tenant' });
+        await t.save();
+        tenantId = t.id as string;
+        owner = await newPerson('owner');
+        drafter = await newPerson('drafter');
+        sender = await newPerson('sender');
+        stranger = await newPerson('stranger');
+      });
+      ownedId = await seedAccount('owned', owner.id);
+      openId = await seedAccount('open', null);
+      await grant(drafter.id, 'read');
+      await grant(drafter.id, 'draft');
+      await grant(sender.id, 'read');
+      await grant(sender.id, 'send');
+    } finally {
+      disableTenancy();
+      await template.close?.();
+    }
+  });
+
+  afterAll(async () => {
+    await rm(scratchDir, { recursive: true, force: true });
+  });
+
+  beforeEach(async () => {
+    testPath = join(scratchDir, `test-${testCount++}.db`);
+    await copyFile(templatePath, testPath);
+    db = await getTestDatabase({ type: 'sqlite', url: testPath });
+    options = { db };
+    enableTenancy();
     current = null;
     configureMailAccess({ options, resolvePrincipal: () => current });
     configureMailSendApprovals({
@@ -277,6 +313,7 @@ export function useMailDraftScopeFixture() {
     resetMailAccess();
     disableTenancy();
     await db.close?.();
+    if (testPath) await rm(testPath, { force: true });
   });
 
   return {
