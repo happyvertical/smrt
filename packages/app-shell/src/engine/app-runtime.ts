@@ -1679,48 +1679,60 @@ export class AppRuntime {
   }
 
   /**
-   * The caller of the running operation, or null outside one (engine-internal
-   * work, which keeps today's authority). The system and the owner see
-   * everything; any other principal is held to its per-model slugs (#5197).
+   * The caller of the running operation, or null for the system and the owner
+   * (who see everything). A method run with no operation principal is refused
+   * (NoPrincipalError): every route into `runMethod` (the op worker, core's
+   * generated REST and MCP dispatch) runs inside `runAsPrincipal`, and the
+   * engine runs no methods of its own, so there is no internal caller to mark.
+   */
+  private methodCaller(): EnginePrincipal | null {
+    const p = currentOpPrincipal();
+    return p.kind === 'system' || holds(p, OWNER_SLUG) ? null : p;
+  }
+
+  /**
+   * Reference resolution outside a method (direct create/update) keeps the
+   * engine's own unscoped work (boot, data migrations) unrestricted: there a
+   * missing scope is the engine, not a caller.
    */
   private limitedCaller(): EnginePrincipal | null {
-    let p: EnginePrincipal;
     try {
-      p = currentOpPrincipal();
+      return this.methodCaller();
     } catch {
       return null;
     }
-    return p.kind === 'system' || holds(p, OWNER_SLUG) ? null : p;
   }
 
   /**
    * A method reads every model's rows, so a caller short of `list` on any of
    * them is refused before anything runs. Nothing is filtered: a method run on
-   * partial data would give a wrong answer without saying so.
+   * partial data would give a wrong answer without saying so. The message
+   * names no model.
    */
   private requireMethodReads() {
-    const p = this.limitedCaller();
+    const p = this.methodCaller();
     if (!p) return;
-    const missing = Object.keys(this.def.models).filter(
-      (m) => !holds(p, slugFor(this.def, m, 'list')),
-    );
-    if (missing.length)
+    if (
+      Object.keys(this.def.models).some(
+        (m) => !holds(p, slugFor(this.def, m, 'list')),
+      )
+    )
       throw new PermissionDeniedError(
-        `permission denied: a method reads every model, and you may not read ${missing.join(', ')}; nothing ran`,
+        'permission denied: you may not run this method; nothing ran',
       );
   }
 
   /** The caller needs `<table>.create|update|delete` on every model a method writes. */
   private requireWriteSlugs(writes: Write[]) {
-    const p = this.limitedCaller();
+    const p = this.methodCaller();
     if (!p) return;
     for (const w of writes)
       if (
-        Object.hasOwn(this.def.models, w.model) &&
+        !Object.hasOwn(this.def.models, w.model) ||
         !holds(p, slugFor(this.def, w.model, w.op))
       )
         throw new PermissionDeniedError(
-          `permission denied: ${w.op} on ${w.model}; none of the method's writes were applied`,
+          'permission denied: this method may not make those changes; none were applied',
         );
   }
 
@@ -1864,6 +1876,7 @@ export class AppRuntime {
       } catch (e) {
         if (e instanceof AppError && /kept changing/.test(e.message)) throw e;
         if (e instanceof AppLimitError) throw e;
+        if (e instanceof PermissionDeniedError) throw e;
         throw new AppError(
           `method ${model}.${method}() failed, none of its ${writes.length} writes were applied: ${(e as Error).message}`,
         );
