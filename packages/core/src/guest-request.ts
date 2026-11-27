@@ -12,6 +12,7 @@
  * @packageDocumentation
  */
 
+import type { GuestRuntime } from './guest-runtime.js';
 import { resolveOperationPermissionAlias } from './operation-permission.js';
 import { readonlySetOf } from './readonly-collections';
 import { ObjectRegistry } from './registry';
@@ -86,12 +87,19 @@ export interface GuestRequestPrincipal {
   readonly tenantId: string;
   /** The guest permission set (ceiling already applied). Read-only. */
   readonly permissions: ReadonlySet<string>;
+  /**
+   * The process-wide guest runtime (limiters, create field lists, audit
+   * writer). Absent means nothing beyond the generated reads: no create, and
+   * guest reads are refused rather than admitted unlimited.
+   */
+  readonly runtime?: GuestRuntime;
 }
 
 /** Build the frozen principal. Throws on an empty tenant. */
 export function createGuestRequestPrincipal(input: {
   tenantId: string;
   permissions: Iterable<string>;
+  runtime?: GuestRuntime;
 }): GuestRequestPrincipal {
   if (typeof input.tenantId !== 'string' || input.tenantId.length === 0) {
     throw new TypeError('A guest principal requires a tenant');
@@ -101,6 +109,7 @@ export function createGuestRequestPrincipal(input: {
     userId: null,
     tenantId: input.tenantId,
     permissions: readonlySetOf([...input.permissions]),
+    ...(input.runtime ? { runtime: input.runtime } : {}),
   });
 }
 

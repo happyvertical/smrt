@@ -302,6 +302,11 @@ whole block is refused, never filtered):
 packages: { users: { permissions: { guest: {
   collections: ['products', 'contact_messages'], // guests may be granted .read
   createCollections: ['contact_messages'],       // subset that accepts creates
+  createFields: {                                // REQUIRED per create collection
+    contact_messages: { allowedFields: ['name', 'email', 'message'] },
+  },
+  trustedProxyHops: 1,                           // default 0: socket address only
+  rateLimits: { createPerClient: 5, createPerTenant: 60, readPerClient: 120, readPerTenant: 1200 },
 } } } }
 ```
 
@@ -318,6 +323,77 @@ Generated routes admit a guest only for `list`/`get` when it holds
 `<collection>.read` (`isGuestOperationAllowed`; a custom method aliased onto
 read never passes), cap guest pages at 100 (`GUEST_MAX_LIST_LIMIT`), and answer
 401 to everything else (writes, custom actions, `public` routes of ungranted
-collections; creates arrive in a later slice). The door
+collections). The door
 refuses to carry a tenant or permissions without active RLS, and publishes the
 six `smrt.*` settings with `set_config(..., true)` only.
+
+### Guest creates (a contact form)
+
+A collection accepts guest creates only when the app lists it in
+`createCollections` WITH a `createFields` entry (a create collection without
+one refuses the whole block), the tenant grants `<collection>.create`, and the
+request is the generated `POST` (`guestCreateAdmission`; a custom method
+aliased onto create never passes). The pipeline (`handleGuestCreate`,
+`packages/core/src/guest-runtime.ts`) is: body cap (read before parsing; 413) ->
+`projectGuestBody` (only listed primitive fields; `id`, tenant, owner and
+timestamp columns can never be listed, nor sensitive/system/read-only fields;
+the list is validated against the registered model on first use and a bad list
+means no guest create, not a partial one; STI and write-through models are
+refused) -> rate limit (per tenant AND per client `tenantId:ip`, IPv6 by /64,
+recorded before the write, 429 + `Retry-After`, an unknown key is denied when
+the table is full; defaults 5/min per client, 60/min per tenant) -> one
+savepoint holding `INSERT ... ON CONFLICT DO NOTHING` (no `RETURNING`, server
+id and tenant) and its audit row -> `201`, empty body, no id, no `Location`,
+identical for a unique conflict (which writes no audit row and does not move
+the table version). The insert is raw SQL, so it bumps the change feed
+(`bumpChangeFeed`) in the same savepoint: a staff list answered from the
+table-version ETag sees the new row instead of a stale 304. A request rejected
+for its body (400/413) is not charged to the rate limits.
+
+The client address is the socket address; `X-Forwarded-For` counts only with
+`trustedProxyHops` set to the number of proxies you run. One process-wide
+limiter set lives on the guest runtime (`createGuestRuntime`, built once by
+the admission and shared by every route); it is per replica. #5198's shared
+route limiter does not exist yet, so this is the only floor. Guest reads share
+that runtime with a looser limit (120/min per client, 1200/min per tenant, same
+limiter class, fail closed when full) and pages stay capped at 100.
+
+Update, delete, sync and custom actions stay refused for guests. The runtime
+REST handler (`rest.ts`) has no guest create: a guest principal handed to it is
+unauthenticated and refused as before; guests enter through the generated
+SvelteKit routes only.
+
+#### Audit and the audit-table gate
+
+The create's audit entry is written through the app's audit writer (profiles
+`createAuditWriter()`; a typed `callerKind: 'guest'` entry, the reserved
+`GUEST_AUDIT_ACTOR`, null profile, `actor_kind = 'guest'`) inside the SAME
+savepoint as the insert, so a failed audit write fails and rolls back the
+create (the request transaction alone cannot: a handler that turns the failure
+into a 500 still lets it commit). The guest branch of that writer is a plain
+`INSERT` with no upsert and no `RETURNING` and never raises
+`smrt.system_context`: the guest's database context holds only an INSERT
+policy on the audit table.
+
+Because of that, guests are REFUSED at admission (any guest config, read-only
+ones included) unless the audit table has row-level security enabled AND forced and the named
+guest INSERT policy (`guestAuditPolicyName()`, `polcmd = 'a'`) installed. The
+catalog check (`probeGuestCatalog` -> `assertGuestRuntimeActive`, which fails
+closed on a missing table, a missing or non-boolean value and a failed query)
+is read from `pg_class`/`pg_policy` and re-asserted on every request, so an
+app with guests needs the profiles tables (and the apply command below) even
+before it opts a collection in to creates.
+
+Setup is the DEFAULT of the documented policy-apply path: when the app config
+has `permissions.guest`, `generatePostgresPermissionSql` /
+`applyPostgresPermissionPolicies` append, with no caller opt-in, `ENABLE` +
+`FORCE ROW LEVEL SECURITY` on `public.audit_logs` (profiles `AuditLog`), the
+INSERT-only guest policy, and a companion arm
+(`generateAuditNonGuestPolicySql`) that keeps system, super-admin, signed-in
+(a user id is published) and no-tenant background writers working exactly as
+without RLS; a guest context (a tenant, no user, no bypass) satisfies none of
+it. `extras.guestAudit = false` opts out (guests are then refused); a policy
+scope (run-time models in an app schema) never gets the default. Run the apply
+command after the profiles tables exist; the audit table must be in `public`.
+Proven in `guest-create-postgres.test.ts` (PGlite via `test:pglite`, real
+PostgreSQL via `test:postgres`) and `sveltekit-guest-audit-posture.postgres.test.ts`.

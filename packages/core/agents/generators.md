@@ -1169,6 +1169,23 @@ caps a guest page at `GUEST_MAX_LIST_LIMIT` (100). The emitted routes import
 `@happyvertical/smrt-core`; hand-written core stubs in emitted-route tests must
 export them. No request-driven `include`/`expand` exists on generated routes.
 
+Guest creates and read limits are the guest runtime (`src/guest-runtime.ts`,
+built once per app by the app runtime's guest admission and carried on the
+frozen `locals.guestPrincipal.runtime`). The generated POST opens with a branch
+that runs only when `guestCreateAdmission(locals, ...)` admits the caller (a
+valid guest, an audit writer, a validated field list for the collection, the
+`<collection>.create` grant, the generated `create` operation, not an
+`api.public: true` model): it checks `authorize({ guestCreateAllowed })`,
+the runtime exposure gate and tenancy, then ALWAYS returns from
+`handleGuestCreate` (never `collection.create()`; a failure answers a generic
+500). Anything else, including a guest that is not admitted, continues to the
+ordinary guard and is refused as an anonymous caller (401). The list and get
+handlers charge `guestReadThrottle` (120/min per client, 1200/min per tenant by
+default). The emitted routes also import `guestCreateAdmission`,
+`guestReadThrottle` and `handleGuestCreate`; stubs must export them. The runtime
+REST handler (`rest.ts`) has no guest create. See
+[users guest creates](../../users/agents/permissions.md#guest-creates-a-contact-form).
+
 ## Custom-action permission aliases (#3878)
 
 `@smrt({ operationPermissions: { run: { action: 'read' } } })` lets a custom

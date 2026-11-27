@@ -191,7 +191,10 @@ describe('Issue #1540 (2c): fail-closed auth on generated routes', () => {
       return new Function(
         'error',
         'GUEST_MAX_LIST_LIMIT',
+        'guestCreateAdmission',
         'guestPrincipalOf',
+        'guestReadThrottle',
+        'handleGuestCreate',
         'isGuestOperationAllowed',
         'apiPrincipalFromLocals',
         'authorize',
@@ -201,7 +204,10 @@ describe('Issue #1540 (2c): fail-closed auth on generated routes', () => {
       )(
         error,
         GUEST_MAX_LIST_LIMIT,
+        () => null,
         guestPrincipalOf,
+        () => null,
+        async () => new Response(null, { status: 201 }),
         isGuestOperationAllowed,
         apiPrincipalFromLocals,
         authorize,
@@ -264,6 +270,20 @@ describe('Issue #1540 (2c): fail-closed auth on generated routes', () => {
       expect(
         statusOf(() => requireRouteAuth(guestLocals([]), 'list', false)),
       ).toBe(401);
+    });
+
+    it('update, delete and every other write stay refused for a guest, whatever it holds', async () => {
+      const { requireRouteAuth } = await emitted();
+      // The create grant opens ONLY the guest create pipeline, which is a
+      // separate branch of the POST handler; the generic guard never admits it.
+      const guest = guestLocals([
+        'widgets.create',
+        'widgets.update',
+        'widgets.delete',
+      ]);
+      for (const op of ['create', 'update', 'delete', 'sync', 'archive']) {
+        expect(statusOf(() => requireRouteAuth(guest, op, true))).toBe(401);
+      }
     });
 
     it('a guest on a public route is served as the public contract says', async () => {

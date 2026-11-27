@@ -79,6 +79,14 @@ export interface AuthorizeInput {
    * ignored for any other principal and for any mutating operation.
    */
   guestReadAllowed?: boolean;
+  /**
+   * The host checked that this caller is a guest (#5196) opted in to creating
+   * in this collection (`guestCreateAdmission`). It stands in for sign-in on
+   * the generated `create` operation ONLY; the `<collection>.create`
+   * permission is still required, and it is ignored for any other principal
+   * and any other operation.
+   */
+  guestCreateAllowed?: boolean;
   /** The write body, checked for a tenant other than the principal's. */
   body?: unknown;
 }
@@ -152,9 +160,15 @@ export function authorize(input: AuthorizeInput): AuthorizeDecision {
     input.guestReadAllowed === true &&
     principal.callerKind === GUEST_CALLER_KIND &&
     !mutating;
+  const guestCreate =
+    input.guestCreateAllowed === true &&
+    principal.callerKind === GUEST_CALLER_KIND &&
+    input.op === 'create' &&
+    mutating;
   if (
     !principal.authenticated &&
     !guestRead &&
+    !guestCreate &&
     !isOperationPublic(publicAccess, mutating)
   ) {
     return deny(401, 'AUTHENTICATION_REQUIRED', 'Authentication required');

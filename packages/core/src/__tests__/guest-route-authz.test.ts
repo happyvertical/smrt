@@ -56,4 +56,40 @@ describe('a guest is the shared principal contract (#5196, #5195)', () => {
       true,
     );
   });
+
+  it('guestCreateAllowed stands in for sign-in on the generated create only, and the grant still counts', () => {
+    const guest = apiPrincipalFromLocals(guestLocals(['widgets.create']));
+    const create = { ...base, op: 'create', guestCreateAllowed: true };
+    expect(authorize({ ...create, principal: guest }).allow).toBe(true);
+    // Without the flag a guest create is an unauthenticated write.
+    expect(
+      authorize({ ...base, op: 'create', principal: guest }),
+    ).toMatchObject({
+      allow: false,
+      status: 401,
+    });
+    // The flag never stands in for the permission itself.
+    const noGrant = apiPrincipalFromLocals(guestLocals(['widgets.read']));
+    expect(authorize({ ...create, principal: noGrant })).toMatchObject({
+      allow: false,
+      status: 403,
+    });
+    // Never for update, delete, sync or a custom action.
+    for (const op of ['update', 'delete', 'sync', 'archive']) {
+      const decision = authorize({
+        ...base,
+        op,
+        principal: guest,
+        guestCreateAllowed: true,
+        mutating: true,
+      });
+      expect(decision).toMatchObject({ allow: false, status: 401 });
+    }
+    // Never for a caller that is not a guest.
+    const anon = apiPrincipalFromLocals({ tenantId: 'tenant-a' });
+    expect(authorize({ ...create, principal: anon })).toMatchObject({
+      allow: false,
+      status: 401,
+    });
+  });
 });

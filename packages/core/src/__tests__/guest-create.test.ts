@@ -3,6 +3,7 @@
  */
 import type { DatabaseInterface } from '@happyvertical/sql';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
+import { type AuditEntry, type AuditWriter, GUEST_AUDIT_ACTOR } from '../audit';
 import {
   clientKeyFor,
   createGuestCreateLimiter,
@@ -15,6 +16,7 @@ import { BoundedSlidingWindowRateLimiter } from '../http';
 import { getTestDatabase } from '../testing/database';
 
 const TABLE = 'guest_contact_messages';
+const AUDIT_TABLE = 'guest_audit_probe';
 
 function rowsOf(result: unknown): Record<string, unknown>[] {
   if (Array.isArray(result)) return result as Record<string, unknown>[];
@@ -29,8 +31,26 @@ describe('guest create (#5196)', () => {
     maxStringLength: 50,
   });
 
+  let failAudit = false;
+  const entries: AuditEntry[] = [];
+  const writer: AuditWriter = async (entry, handle) => {
+    if (failAudit) throw new Error('audit sink down');
+    entries.push(entry);
+    await handle.query(
+      `INSERT INTO ${AUDIT_TABLE} (id, actor_kind, resource_id) VALUES (?, ?, ?)`,
+      `a${entries.length}`,
+      entry.callerKind ?? 'user',
+      entry.resourceId,
+    );
+  };
+
   beforeEach(async () => {
+    failAudit = false;
+    entries.length = 0;
     db = (await getTestDatabase({ classes: [] })) as DatabaseInterface;
+    await db.query(
+      `CREATE TABLE ${AUDIT_TABLE} (id TEXT PRIMARY KEY, actor_kind TEXT, resource_id TEXT)`,
+    );
     await db.query(
       `CREATE TABLE ${TABLE} (
         id TEXT PRIMARY KEY,
@@ -56,6 +76,7 @@ describe('guest create (#5196)', () => {
       config,
       limiter: createGuestCreateLimiter(),
       clientKey: '1.2.3.4',
+      audit: { writer, resourceType: 'GuestContactMessage' },
       ...over,
     });
 
@@ -85,6 +106,20 @@ describe('guest create (#5196)', () => {
       expect(() =>
         defineGuestCreate('Anything', { allowedFields: [] }),
       ).toThrow(/non-empty/);
+    });
+
+    it('refuses an unregistered model instead of skipping the field checks', () => {
+      expect(() =>
+        defineGuestCreate(
+          'contact_messages',
+          { allowedFields: ['name'] },
+          { className: 'NoSuchModel5196' },
+        ),
+      ).toThrow(/not registered/);
+      // Without a class name the legacy name-only checks still apply.
+      expect(() =>
+        defineGuestCreate('contact_messages', { allowedFields: ['name'] }),
+      ).not.toThrow();
     });
 
     it('freezes the resolved config', () => {
@@ -253,6 +288,44 @@ describe('guest create (#5196)', () => {
           denyWhenFull: true,
         }),
       ).toBeDefined();
+    });
+
+    it('writes the guest audit row in the same savepoint as the insert', async () => {
+      await run();
+      expect(entries).toHaveLength(1);
+      expect(entries[0]).toMatchObject({
+        actorId: GUEST_AUDIT_ACTOR,
+        callerKind: 'guest',
+        action: 'create',
+        resourceType: 'GuestContactMessage',
+        tenantId: 't1',
+      });
+      const rows = rowsOf(await db.query(`SELECT * FROM ${TABLE}`));
+      expect(entries[0].resourceId).toBe(rows[0].id);
+      expect(rowsOf(await db.query(`SELECT * FROM ${AUDIT_TABLE}`))).toEqual([
+        { id: 'a1', actor_kind: 'guest', resource_id: rows[0].id },
+      ]);
+    });
+
+    it('rolls the insert back when the audit write fails', async () => {
+      failAudit = true;
+      await expect(run()).rejects.toThrow('audit sink down');
+      expect(rowsOf(await db.query(`SELECT * FROM ${TABLE}`))).toHaveLength(0);
+      expect(
+        rowsOf(await db.query(`SELECT * FROM ${AUDIT_TABLE}`)),
+      ).toHaveLength(0);
+    });
+
+    it('writes no audit row when a conflict inserted nothing', async () => {
+      const limiter = createGuestCreateLimiter();
+      await run({ limiter });
+      await run({ limiter });
+      expect(entries).toHaveLength(1);
+    });
+
+    it('refuses a database without nested transactions', async () => {
+      const bare = { query: db.query.bind(db) };
+      await expect(run({ db: bare })).rejects.toThrow(/nested transactions/);
     });
 
     it('rejects unsafe identifiers', async () => {

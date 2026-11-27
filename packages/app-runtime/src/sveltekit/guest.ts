@@ -26,14 +26,23 @@
  * @packageDocumentation
  */
 
-import type { SmrtClassOptions } from '@happyvertical/smrt-core';
+import {
+  type AuditWriter,
+  createGuestRuntime,
+  type GuestRuntime,
+  type SmrtClassOptions,
+} from '@happyvertical/smrt-core';
+import { createAuditWriter } from '@happyvertical/smrt-profiles';
 import { isTenancyEnabled } from '@happyvertical/smrt-tenancy';
 import {
   assertGuestRuntimeActive,
+  GUEST_AUDIT_TABLE_DEFAULTS,
+  type GuestAuditTablePosture,
   type GuestPermissionConfig,
   GuestPermissionResolver,
   type GuestRlsTablePosture,
   generatePostgresPermissionSql,
+  guestAuditPolicyName,
   guestCeilingTables,
   parseGuestPermissionConfig,
 } from '@happyvertical/smrt-users';
@@ -44,6 +53,8 @@ export interface GuestCatalogPosture {
   rolePosture: { rolsuper: boolean; rolbypassrls: boolean };
   ceilingTables: GuestRlsTablePosture[];
   expectedCeilingTables: string[];
+  /** Audit table posture; `null` when it could not be verified or is absent. */
+  auditTable: GuestAuditTablePosture | null;
 }
 
 export interface GuestAdmissionDeps {
@@ -63,12 +74,15 @@ export interface GuestAdmissionDeps {
   readonly probeCatalog?: (
     db: DatabaseInterface,
     tables: readonly { schemaName: string; tableName: string }[],
+    options: { audit: boolean },
   ) => Promise<GuestCatalogPosture | null>;
   /** Test seam: replace the ceiling tables derived from the policy targets. */
   readonly ceilingTables?: () => readonly {
     schemaName: string;
     tableName: string;
   }[];
+  /** Test seam: replace the audit writer (default: profiles `createAuditWriter()`). */
+  readonly auditWriter?: () => AuditWriter | undefined;
   /** Test seam: replace the resolver. */
   readonly resolver?: () => Promise<{
     resolveGuestPermissions(tenantId: string): Promise<Set<string>>;
@@ -79,6 +93,8 @@ export interface GuestAdmissionDeps {
 export interface GuestAdmission {
   readonly tenantId: string;
   readonly permissions: string[];
+  /** The process-wide guest runtime (limiters, create field lists, audit). */
+  readonly runtime: GuestRuntime;
 }
 
 export interface GuestAdmitter {
@@ -110,6 +126,7 @@ function bool(value: unknown): boolean | undefined {
 export async function probeGuestCatalog(
   db: DatabaseInterface,
   tables: readonly { schemaName: string; tableName: string }[],
+  options: { audit: boolean } = { audit: true },
 ): Promise<GuestCatalogPosture | null> {
   const query = db.query.bind(db) as (
     sql: string,
@@ -158,9 +175,48 @@ export async function probeGuestCatalog(
       policyCount,
     });
   }
+  let auditTable: GuestAuditTablePosture | null = null;
+  if (options.audit) {
+    const { schemaName, tableName } = GUEST_AUDIT_TABLE_DEFAULTS;
+    const rows = rowsOf(
+      await query(
+        `SELECT c.relrowsecurity AS row_security,
+                c.relforcerowsecurity AS force_row_security,
+                EXISTS (
+                  SELECT 1 FROM pg_policy p
+                   WHERE p.polrelid = c.oid AND p.polname = $3 AND p.polcmd = 'a'
+                ) AS guest_insert_policy
+           FROM pg_class c
+           JOIN pg_namespace n ON n.oid = c.relnamespace
+          WHERE n.nspname = $1 AND c.relname = $2 AND c.relkind IN ('r', 'p')`,
+        schemaName,
+        tableName,
+        guestAuditPolicyName({ schemaName, tableName }),
+      ),
+    );
+    // Missing table or any unexpected value stays unverified (null).
+    if (rows.length === 1) {
+      const rowSecurity = bool(rows[0].row_security);
+      const forceRowSecurity = bool(rows[0].force_row_security);
+      const guestInsertPolicy = bool(rows[0].guest_insert_policy);
+      if (
+        rowSecurity !== undefined &&
+        forceRowSecurity !== undefined &&
+        guestInsertPolicy !== undefined
+      ) {
+        auditTable = {
+          table: `${schemaName}.${tableName}`,
+          rowSecurity,
+          forceRowSecurity,
+          guestInsertPolicy,
+        };
+      }
+    }
+  }
   return {
     rolePosture: { rolsuper, rolbypassrls },
     ceilingTables,
+    auditTable,
     expectedCeilingTables: tables.map(
       (table) => `${table.schemaName}.${table.tableName}`,
     ),
@@ -198,7 +254,12 @@ export function createGuestAdmitter(deps: GuestAdmissionDeps): GuestAdmitter {
         // No ceiling table means nothing a guest could ever hold.
         if (tables.length === 0) return null;
         const probe = deps.probeCatalog ?? probeGuestCatalog;
-        const result = await probe(await deps.baseDatabase(), tables);
+        // Every guest config needs the protected audit table, read-only
+        // ones included: a config can gain a create collection at any
+        // deploy, and "refuse unless protected" must not depend on it.
+        const result = await probe(await deps.baseDatabase(), tables, {
+          audit: true,
+        });
         if (!result) return null;
         // Success is cached for the process; it is only trusted when every
         // gate that depends on it passes.
@@ -208,6 +269,8 @@ export function createGuestAdmitter(deps: GuestAdmissionDeps): GuestAdmitter {
           rolePosture: result.rolePosture,
           ceilingTables: result.ceilingTables,
           expectedCeilingTables: result.expectedCeilingTables,
+          auditRequired: true,
+          auditTable: result.auditTable,
         });
         return verdict.active ? result : null;
       } catch {
@@ -222,6 +285,28 @@ export function createGuestAdmitter(deps: GuestAdmissionDeps): GuestAdmitter {
     } finally {
       postureInFlight = undefined;
     }
+  };
+
+  // One runtime per application: every route and collection shares its
+  // limiters, so the per-tenant limit is per tenant and not per route.
+  let runtime: GuestRuntime | undefined;
+  const loadRuntime = (guest: GuestPermissionConfig): GuestRuntime => {
+    runtime ??= createGuestRuntime({
+      createFields: guest.createFields,
+      trustedHops: guest.trustedProxyHops ?? 0,
+      auditWriter: deps.auditWriter ? deps.auditWriter() : createAuditWriter(),
+      create: {
+        windowMs: guest.rateLimits?.windowMs,
+        perClient: guest.rateLimits?.createPerClient,
+        perTenant: guest.rateLimits?.createPerTenant,
+      },
+      read: {
+        windowMs: guest.rateLimits?.windowMs,
+        perClient: guest.rateLimits?.readPerClient,
+        perTenant: guest.rateLimits?.readPerTenant,
+      },
+    });
+    return runtime;
   };
 
   const loadResolver = (guest: GuestPermissionConfig) => {
@@ -273,6 +358,8 @@ export function createGuestAdmitter(deps: GuestAdmissionDeps): GuestAdmitter {
           rolePosture: verified.rolePosture,
           ceilingTables: verified.ceilingTables,
           expectedCeilingTables: verified.expectedCeilingTables,
+          auditRequired: true,
+          auditTable: verified.auditTable,
         });
         if (!verdict.active) return null;
         const resolver = await loadResolver(guest);
@@ -280,7 +367,11 @@ export function createGuestAdmitter(deps: GuestAdmissionDeps): GuestAdmitter {
         const permissions =
           await resolver.resolveGuestPermissions(selectedTenantId);
         if (permissions.size === 0) return null;
-        return { tenantId: selectedTenantId, permissions: [...permissions] };
+        return {
+          tenantId: selectedTenantId,
+          permissions: [...permissions],
+          runtime: loadRuntime(guest),
+        };
       } catch {
         // Any failure is the anonymous path: no error that tells a client
         // whether a tenant exists or has grants.

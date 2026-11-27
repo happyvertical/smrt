@@ -23,8 +23,8 @@
         "source/sveltekit/src/lib/server/smrt.ts": "0ccb2afbd8cc5f2d935fa82bbb52653417890b2e4e225b9fae5c773282f23dbf",
         "source/sveltekit/src/routes/api/_changes/+server.ts": "9bebf4d7fc16ce1b399ea608b891f06800bef4306d9547896cc28d7abc3e447c",
         "source/sveltekit/src/routes/api/_events/+server.ts": "65126f25fb627b4fc9d4eb5d21de472e79a09dd1756a5de175373ef127d5c002",
-        "source/sveltekit/src/routes/api/compat_plain/[id]/+server.ts": "d91ca4fdc6520a6c56af63db55dd3a7e2dc4c0db7534dec83df32a512f47f26f",
-        "source/sveltekit/src/routes/api/compat_plain/+server.ts": "41205a83672795602818974d001e3ceab84eb800161f88db52d54f199f086939",
+        "source/sveltekit/src/routes/api/compat_plain/[id]/+server.ts": "47af6c568d9e1b3824c4d1fb3d2b2fd579dfa21bad0575a4cad9867ad3f72591",
+        "source/sveltekit/src/routes/api/compat_plain/+server.ts": "71a70fa996eccfc37b617a38b72d9250a26818bdce3325d9e21baad9faee9d41",
         "source/sveltekit/src/routes/api/sync/apply/+server.ts": "dd042b316bdeb9bfa2a1791fee6c71a854663575ebdff8bdeb3c8bc3ec96f1fd"
       }
     },
@@ -54,8 +54,8 @@
         "source/sveltekit/src/lib/server/smrt.ts": "0ccb2afbd8cc5f2d935fa82bbb52653417890b2e4e225b9fae5c773282f23dbf",
         "source/sveltekit/src/routes/api/_changes/+server.ts": "efb25b48dce094832f682751d8746453ebbb1dda4c941f365429d54e55d19fbd",
         "source/sveltekit/src/routes/api/_events/+server.ts": "be4ae5b66c955ca22ac1b47b52d253410d8e70407d90c58fcf16a6c7b253075b",
-        "source/sveltekit/src/routes/api/compatroots/[id]/+server.ts": "193c5fd58f33fc3e3b673081fe0fe3ac4772b4b0e7e677ecffc1bbc29d35a2bf",
-        "source/sveltekit/src/routes/api/compatroots/+server.ts": "2ee51253007591144ecf70b75b95cccc9fedcc305130a79fa8ca01c3c921844c",
+        "source/sveltekit/src/routes/api/compatroots/[id]/+server.ts": "75ee86706affa39ebca06878d6e9a19b9d015454cd2d706f40683cfc95f77b54",
+        "source/sveltekit/src/routes/api/compatroots/+server.ts": "c767397a442c747a8e38a12f02b54af08302b0bebf3637a57e43f6850cafb7f9",
         "source/sveltekit/src/routes/api/sync/apply/+server.ts": "c99689e84d9ddf670ffae2cd967385291bfe773688f68ee2bc7ae8ddf51d8b05"
       }
     }

@@ -116,6 +116,12 @@ const healthyCatalog: GuestCatalogPosture = {
     },
   ],
   expectedCeilingTables: ['public.products'],
+  auditTable: {
+    table: 'public.audit_logs',
+    rowSecurity: true,
+    forceRowSecurity: true,
+    guestInsertPolicy: true,
+  },
 };
 
 function deployedStub(runtime: ResolvedApplicationRuntime) {
@@ -366,6 +372,43 @@ describe('guest gates fail closed', () => {
     [
       'ceiling table missing from the catalog',
       { catalog: { ...healthyCatalog, ceilingTables: [] } },
+    ],
+    [
+      'audit table posture unknown',
+      { catalog: { ...healthyCatalog, auditTable: null } },
+    ],
+    [
+      'audit table without row-level security',
+      {
+        catalog: {
+          ...healthyCatalog,
+          auditTable: { ...healthyCatalog.auditTable!, rowSecurity: false },
+        },
+      },
+    ],
+    [
+      'audit table row-level security not forced',
+      {
+        catalog: {
+          ...healthyCatalog,
+          auditTable: {
+            ...healthyCatalog.auditTable!,
+            forceRowSecurity: false,
+          },
+        },
+      },
+    ],
+    [
+      'audit table without the guest insert policy',
+      {
+        catalog: {
+          ...healthyCatalog,
+          auditTable: {
+            ...healthyCatalog.auditTable!,
+            guestInsertPolicy: false,
+          },
+        },
+      },
     ],
   ] as Array<[string, Scenario]>)('%s', async (_name, scenario) => {
     const result = await request({

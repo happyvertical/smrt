@@ -10,6 +10,7 @@ import {
   type SmrtClassOptions,
 } from '@happyvertical/smrt-core';
 import { PermissionCollection } from '../collections/PermissionCollection.js';
+import { getGuestPermissionConfig } from '../guest-config.js';
 import {
   PermissionCatalogService,
   type PostgresPermissionAction,
@@ -358,14 +359,11 @@ export interface GuestAuditPolicyOptions {
 export function generateGuestAuditInsertPolicySql(
   options: GuestAuditPolicyOptions = {},
 ): string[] {
-  const schemaName = options.schemaName ?? 'public';
-  const tableName = options.tableName ?? 'audit_logs';
+  const schemaName =
+    options.schemaName ?? GUEST_AUDIT_TABLE_DEFAULTS.schemaName;
+  const tableName = options.tableName ?? GUEST_AUDIT_TABLE_DEFAULTS.tableName;
   const qualifiedTable = `${quoteIdent(schemaName)}.${quoteIdent(tableName)}`;
-  const policyName = buildPolicyName(
-    `${tableName}:guest`,
-    'INSERT',
-    schemaName,
-  );
+  const policyName = guestAuditPolicyName({ schemaName, tableName });
   const tenant = quoteIdent(options.tenantField ?? 'tenant_id');
   const kind = quoteIdent(options.actorKindField ?? 'actor_kind');
   const condition = `${kind} = 'guest' AND ${tenant}::text = smrt_current_tenant_id()`;
@@ -379,10 +377,70 @@ export function generateGuestAuditInsertPolicySql(
   return statements;
 }
 
+/** Where the audit table lives unless the host says otherwise. */
+export const GUEST_AUDIT_TABLE_DEFAULTS = Object.freeze({
+  schemaName: 'public',
+  tableName: 'audit_logs',
+  tenantField: 'tenant_id',
+  actorKindField: 'actor_kind',
+});
+
+/**
+ * The name of the guest audit INSERT policy for a table. One definition for
+ * the installer and for the catalog check at guest admission, so the two can
+ * never drift apart.
+ */
+export function guestAuditPolicyName(
+  options: Pick<GuestAuditPolicyOptions, 'schemaName' | 'tableName'> = {},
+): string {
+  const tableName = options.tableName ?? GUEST_AUDIT_TABLE_DEFAULTS.tableName;
+  return buildPolicyName(
+    `${tableName}:guest`,
+    'INSERT',
+    options.schemaName ?? GUEST_AUDIT_TABLE_DEFAULTS.schemaName,
+  );
+}
+
+/**
+ * The companion policy that keeps every NON-guest writer working once
+ * row-level security is FORCEd on the audit table: system context, super-admin
+ * bypass, any signed-in principal (a user id is published) and any caller that
+ * published no tenant at all keep exactly the access they had without RLS.
+ * A guest context (a tenant, no user, no bypass) satisfies none of it, so the
+ * guest's only door to the table is the INSERT-only guest policy.
+ */
+export function generateAuditNonGuestPolicySql(
+  options: GuestAuditPolicyOptions = {},
+): string[] {
+  const schemaName =
+    options.schemaName ?? GUEST_AUDIT_TABLE_DEFAULTS.schemaName;
+  const tableName = options.tableName ?? GUEST_AUDIT_TABLE_DEFAULTS.tableName;
+  const qualifiedTable = `${quoteIdent(schemaName)}.${quoteIdent(tableName)}`;
+  const policyName = buildPolicyName(
+    `${tableName}:nonguest`,
+    'ALL' as PostgresPermissionAction,
+    schemaName,
+  );
+  const condition = [
+    'smrt_rls_bypass()',
+    "NULLIF(current_setting('smrt.user_id', true), '') IS NOT NULL",
+    'smrt_current_tenant_id() IS NULL',
+  ].join(' OR ');
+  return [
+    `DROP POLICY IF EXISTS ${quoteIdent(policyName)} ON ${qualifiedTable}`,
+    `CREATE POLICY ${quoteIdent(policyName)} ON ${qualifiedTable} FOR ALL USING (${condition}) WITH CHECK (${condition})`,
+  ];
+}
+
 /** Opt-in additions to the generated policy set. */
 export interface PostgresPolicyExtras {
-  /** Add the guest audit INSERT policy (see {@link GuestAuditPolicyOptions}). */
-  guestAudit?: GuestAuditPolicyOptions | true;
+  /**
+   * Add the guest audit INSERT policy (see {@link GuestAuditPolicyOptions}).
+   * When omitted and the app configures guests, it is installed by
+   * default with row-level security enabled and forced on the audit table
+   * (guests are refused at admission without it); `false` opts out.
+   */
+  guestAudit?: GuestAuditPolicyOptions | true | false;
 }
 
 function buildHelperStatements(schemaName?: string): string[] {
@@ -686,13 +744,28 @@ export function generatePostgresPermissionSql(
     }
   }
 
-  if (extras.guestAudit) {
-    const auditOptions =
-      extras.guestAudit === true ? {} : { ...extras.guestAudit };
+  // Guest creates write an audit row under the guest's own context, so the
+  // audit table must carry the guest INSERT policy and FORCEd RLS. Installed
+  // by default whenever the app configures guests (not only when a caller
+  // remembers to ask; a read-only config can gain a create collection at any
+  // deploy, and admission refuses guests without it); a policy scope (app-schema run-time models)
+  // never gets the default because its schema has no audit table.
+  const guestAudit =
+    extras.guestAudit ??
+    (!scope && getGuestPermissionConfig() !== null
+      ? { enableRls: true }
+      : false);
+  if (guestAudit) {
+    const auditOptions = guestAudit === true ? {} : { ...guestAudit };
     if (scope && !auditOptions.schemaName) {
       auditOptions.schemaName = scope.schemaName;
     }
     statements.push(...generateGuestAuditInsertPolicySql(auditOptions));
+    // FORCEd RLS without a non-guest arm would lock out every signed-in,
+    // system and background audit writer.
+    if (auditOptions.enableRls) {
+      statements.push(...generateAuditNonGuestPolicySql(auditOptions));
+    }
   }
 
   return {
