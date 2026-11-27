@@ -231,6 +231,6 @@ export const kitchenCommands: Record<string, CLICommand> = {
     ...apply,
     name: 'kitchen apply',
     description:
-      'Apply a cookbook made elsewhere (file, cookbook URL or plan.s-m-r-t.dev plan URL) to a new project; same as `cookbook apply`',
+      'Apply a cookbook made elsewhere (a cookbook file or cookbook URL) to a new project; same as `cookbook apply`',
   },
 };
