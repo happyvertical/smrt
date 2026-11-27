@@ -5,12 +5,16 @@
 // principals now and by guests later: `read` -> list, get, count; `create`;
 // `update`. `delete` and a model's method slugs are never grantable.
 //
-// A grant names the model and a stamp of its identity (name, table, the shipped
-// model it extends). The stamp is a second lock: the first is that every grant
-// of a model is deleted when the model leaves the definition (`clearGrants`,
-// called from `ShellVersionStore.point`, the one place every publish, undo,
-// undo-to and import moves the current definition), so a new model of an old
-// name starts closed.
+// A grant names the model and a stamp of its creation identity: the number of
+// the version that created it in the chain leading to the current version
+// (`creationStamps`), so a model removed and defined again, in any later or the
+// same publish, never matches an old grant. The stamp is the second lock; the
+// first is that every grant of a model is deleted when the model leaves the
+// definition (`clearGrantsAcross`, called from `ShellVersionStore.point`, the
+// one place every publish, undo, undo-to and import moves the current
+// definition). A template import only runs on an empty app (engine
+// `analyseImport`), also when it is published from a draft, so it always starts
+// from a definition with no models and clears every grant of the tenant.
 import { createHash } from 'node:crypto';
 import type { DatabaseInterface } from '@happyvertical/sql';
 import {

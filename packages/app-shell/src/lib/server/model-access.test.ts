@@ -350,19 +350,21 @@ describe('grants leave with their model', () => {
     expect(await slugs()).toEqual([]);
   });
 
-  it('an import commit clears every grant, even a same-named model', async () => {
+  it('an import published from a draft clears every grant', async () => {
     await wipe();
-    const d = await setDef(def('Chore'));
-    await asOwner(() => ModelAccessGrant.grant('Chore', 'read'));
-    const s = store();
+    await setDef(def());
     const parent = nextVersion - 1;
+    await h.db.query(
+      "INSERT INTO model_access_grants (id, slug, tenant_id, model_name, model_stamp, action, granted_by) VALUES ('33333333-3333-4333-8333-333333333333', 'z', ?, 'Chore', 'old', 'read', 'o')",
+      h.owner.tenantId,
+    );
+    const v = nextVersion++;
     await runAs(h.owner, () =>
-      s.commit(
-        [record(nextVersion, parent, d, 'import template')],
-        nextVersion,
+      store().commit(
+        [record(v, parent, def('Chore'), '[draft: Plan] import template')],
+        v,
       ),
     );
-    nextVersion++;
     expect(await models()).toEqual([]);
   });
 });
@@ -399,12 +401,16 @@ describe('remove and recreate in one publish', () => {
     const d = await setDef(def('Chore'));
     await asOwner(() => ModelAccessGrant.grant('Chore', 'read'));
     const staff = await staffAs(DEFAULT_ROLE_SLUGS.MEMBER);
+    const [original] = await rows();
     await setDef(def());
     await setDef(d);
+    // the old row, put back as it was (same stamp): only the stamp keeps it inert
     await h.db.query(
-      "INSERT INTO model_access_grants (id, slug, tenant_id, model_name, model_stamp, action, granted_by) VALUES ('22222222-2222-4222-8222-222222222222', 'y', ?, 'Chore', '1', 'read', 'o')",
+      "INSERT INTO model_access_grants (id, slug, tenant_id, model_name, model_stamp, action, granted_by) VALUES ('22222222-2222-4222-8222-222222222222', 'y', ?, 'Chore', ?, 'read', 'o')",
       h.owner.tenantId,
+      original.modelStamp,
     );
+    expect(await rows()).toHaveLength(1);
     expect(
       (await staffPrincipalFor(staff, staff.tenantId, d)).permissions,
     ).toEqual([]);

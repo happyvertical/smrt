@@ -82,9 +82,6 @@ async function bindClaimTx(
   if (tenantId && isPostgresHandle(db)) await bindAmbientShellScope(tx);
 }
 
-/** A version made by a template import: every model in it starts closed. */
-const isImport = (r: VersionRecord): boolean => /^import/i.test(r.summary);
-
 function toRecord(row: VersionRow): VersionRecord {
   const migration = row.migration
     ? (JSON.parse(row.migration) as { steps: never[]; purged?: boolean })
@@ -231,20 +228,16 @@ export class ShellVersionStore implements VersionStore {
   private async point(
     version: number,
     db: DatabaseInterface,
-    importing = false,
     via: VersionRecord[] = [],
   ): Promise<void> {
     const rec = await this.row(version, db);
     if (!rec) throw new Error(`version ${version} is not stored`);
     const app = await this.appRow(db);
     // Staff grants of a model that leaves the definition go with it (#5197).
-    await clearGrantsAcross(
-      db,
-      this.tenantId,
-      app.definition,
-      [...via.map((r) => JSON.stringify(r.definition)), rec.definition],
-      importing,
-    );
+    await clearGrantsAcross(db, this.tenantId, app.definition, [
+      ...via.map((r) => JSON.stringify(r.definition)),
+      rec.definition,
+    ]);
     app.currentVersion = version;
     app.definition = rec.definition;
     try {
@@ -309,7 +302,7 @@ export class ShellVersionStore implements VersionStore {
     await db.transaction(async (tx) => {
       const txDb = tx as unknown as DatabaseInterface;
       for (const r of records) await this.insert(r, txDb);
-      await this.point(current, txDb, records.some(isImport), records);
+      await this.point(current, txDb, records);
       if (mark) {
         const draft = await (await AppDraftCollection.create({ db: txDb })).get(
           mark.draftId,
@@ -351,13 +344,10 @@ export class ShellVersionStore implements VersionStore {
       } catch {
         /* keep the name */
       }
-      await clearGrantsAcross(
-        txDb,
-        this.tenantId,
-        app.definition,
-        [...records.map((r) => JSON.stringify(r.definition)), rec.definition],
-        records.some(isImport),
-      );
+      await clearGrantsAcross(txDb, this.tenantId, app.definition, [
+        ...records.map((r) => JSON.stringify(r.definition)),
+        rec.definition,
+      ]);
       const hit = await txDb.query(
         `UPDATE apps SET current_version = ?, definition = ?, name = ? WHERE id = ? AND current_version = ?${this.tenantClause} RETURNING id`,
         [
