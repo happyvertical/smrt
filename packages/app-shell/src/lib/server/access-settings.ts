@@ -22,16 +22,17 @@ export async function accessOverview(): Promise<ModelAccessRow[]> {
   const host = await hostFor('live');
   const shared = sharedTableModels(host.def);
   const held = new Set(grants.map((g) => `${g.model}:${g.action}`));
-  return Object.entries(host.describe().models)
-    .filter(([, info]) => info.kind === 'app')
-    .map(([model, info]) => ({
-      model,
-      label: info.label,
-      grantable: !shared.has(model),
-      read: held.has(`${model}:read`),
-      create: held.has(`${model}:create`),
-      update: held.has(`${model}:update`),
-    }));
+  // Every model of the app definition: its own models and the app subclasses of
+  // shipped models (recipe-backed, kind 'shipped-subclass'). The shell's own
+  // tables are not in the definition, so they never appear here.
+  return Object.entries(host.describe().models).map(([model, info]) => ({
+    model,
+    label: info.label,
+    grantable: !shared.has(model),
+    read: held.has(`${model}:read`),
+    create: held.has(`${model}:create`),
+    update: held.has(`${model}:update`),
+  }));
 }
 
 /**

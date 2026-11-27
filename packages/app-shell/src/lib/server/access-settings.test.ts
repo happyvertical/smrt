@@ -223,3 +223,30 @@ describe('owner control of staff access', () => {
     expect(can({ staff: undefined }, 'Chore', 'update')).toBe(true);
   });
 });
+
+describe('recipe-backed models', () => {
+  it('lists app subclasses of shipped models; one sharing a table stays closed', async () => {
+    await runAs(h.owner, async () => {
+      await runCommand(
+        { type: 'enableRecipe', recipe: 'profiles' },
+        h.owner,
+        'live',
+      );
+    });
+    await applyWaiting(h.owner);
+    const host = await (await import('./host.ts')).hostFor('live');
+    const sub = Object.entries(host.describe().models).filter(
+      ([, i]) => i.kind === 'shipped-subclass',
+    );
+    expect(sub.length).toBeGreaterThan(0);
+    const all = await rows();
+    const shared = (await import('./model-access.ts')).sharedTableModels(
+      host.def,
+    );
+    for (const [name] of sub) {
+      const r = all.find((x) => x.model === name);
+      expect(r, name).toBeDefined();
+      expect(r?.grantable).toBe(!shared.has(name));
+    }
+  });
+});
