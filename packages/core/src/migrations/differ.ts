@@ -52,7 +52,13 @@ import {
   requireForeignKeyAction,
 } from '../schema/foreign-key-policy.js';
 import { shortenIdentifier } from '../schema/index-utils.js';
-import { inspectTableSchema } from '../schema/inspection.js';
+import {
+  canInspectTableSchema,
+  inspectTableSchema,
+  TableSchemaUnreadableError,
+  TableSpellingMismatchError,
+  TemporaryTableShadowError,
+} from '../schema/inspection.js';
 import { sqliteUserObjectName } from '../schema/sqlite-internal-names.js';
 import { STI_CHECK_PREFIX } from '../schema/sti-hardening.js';
 import {
@@ -693,6 +699,10 @@ export function canonicalizeDefault(
   return { kind: 'raw', key: lower };
 }
 
+/** SQLite and DuckDB fold ASCII letters only when they match identifiers. */
+const asciiLower = (name: string): string =>
+  name.replace(/[A-Z]/g, (letter) => letter.toLowerCase());
+
 /**
  * SchemaComparer class for comparing manifest schemas to database
  */
@@ -872,6 +882,10 @@ export class SchemaComparer {
         ),
       );
       const existingTables = await this.getExistingTables();
+      await this.assertDeclaredNamesResolve(
+        Object.keys(manifestSchemas),
+        existingTables,
+      );
       this.plannedTables = new Map(
         Object.entries(manifestSchemas).filter(
           ([name, schema]) =>
@@ -888,6 +902,18 @@ export class SchemaComparer {
           existingTables.has(tableName),
         ),
       );
+      // A table the catalog lists is compared or the run stops. One that
+      // cannot be read is neither "to add" nor "in sync"; skipping it would
+      // let the rest of the plan apply and the run be recorded as a migrate
+      // of a schema it never looked at.
+      for (const tableName of Object.keys(manifestSchemas)) {
+        if (
+          existingTables.has(tableName) &&
+          !this.liveSchemas.get(tableName) &&
+          this.comparesExistingTables()
+        )
+          throw new TableSchemaUnreadableError(tableName, this.engine);
+      }
       await this.precomputeIndexPredicates();
 
       // #2878: precompute every table's rename-pending advisory findings in
@@ -1097,9 +1123,21 @@ export class SchemaComparer {
       ),
     );
 
+    if (this.engine !== 'postgres')
+      await this.assertDeclaredNamesResolve(
+        [tableName],
+        await this.getExistingTables(),
+      );
     // Get current table schema from database
     const dbSchema = await this.getLiveSchema(tableName);
     if (!dbSchema) {
+      // An existing table that cannot be read is an error, never "no
+      // changes" (see `compare`).
+      if (
+        this.comparesExistingTables() &&
+        (await this.getExistingTables()).has(tableName)
+      )
+        throw new TableSchemaUnreadableError(tableName, this.engine);
       // Table doesn't exist - this is an add_table case
       return changes;
     }
@@ -1351,9 +1389,27 @@ export class SchemaComparer {
   private async introspectTable(
     tableName: string,
   ): Promise<SqlTableSchemaInfo | null | undefined> {
-    const schema = unquoteIndexColumns(
-      await inspectTableSchema(this.db, tableName, this.engine),
-    );
+    let schema: SqlTableSchemaInfo | null;
+    try {
+      schema =
+        unquoteIndexColumns(
+          await inspectTableSchema(this.db, tableName, this.engine),
+        ) ?? null;
+      // SQLite and DuckDB cannot have a table without columns. An empty
+      // adapter description is therefore a failed inspection, not a schema.
+      if (
+        schema &&
+        (!schema.columns ||
+          typeof schema.columns !== 'object' ||
+          Array.isArray(schema.columns) ||
+          (this.engine !== 'postgres' &&
+            Object.keys(schema.columns).length === 0))
+      )
+        throw new TableSchemaUnreadableError(tableName, this.engine);
+    } catch (cause) {
+      if (cause instanceof TableSchemaUnreadableError) throw cause;
+      throw new TableSchemaUnreadableError(tableName, this.engine, { cause });
+    }
     if (
       schema &&
       this.engine === 'duckdb' &&
@@ -1428,14 +1484,33 @@ export class SchemaComparer {
   }
 
   /**
+   * False only for the JSON adapter. Its tables take their shape from the
+   * data they hold, not from DDL (`smrt db:migrate` says so and does not run
+   * there), and it exposes no inspector, so there is no live definition to
+   * compare a declared table with. On every other engine an existing table is
+   * compared or the run stops.
+   */
+  private comparesExistingTables(): boolean {
+    // Exempt only a positively identified JSON adapter or an explicit `json`
+    // hint. `json` inferred from `exportTable` alone (`resolveMigrationEngine`
+    // does that for legacy wrappers) is not enough: a DuckDB handle that hides
+    // `getTableSchema` and forwards `exportTable` looks the same.
+    return !(
+      isJsonAdapterHandle(this.db) || this.options.engineHint === 'json'
+    );
+  }
+
+  /**
    * Read (and memoize for this run) one table's live schema. Returns
    * `undefined` when the table does not exist or the adapter cannot
-   * introspect it.
+   * introspect it. A caller comparing a table the catalog lists must treat
+   * `undefined` as unreadable and stop ({@link TableSchemaUnreadableError}),
+   * never as "nothing to change".
    */
   private async getLiveSchema(
     tableName: string,
   ): Promise<SqlTableSchemaInfo | undefined> {
-    if (!this.db.getTableSchema && this.engine !== 'postgres') return undefined;
+    if (!canInspectTableSchema(this.db, this.engine)) return undefined;
     if (this.liveSchemas.has(tableName)) {
       return this.liveSchemas.get(tableName) ?? undefined;
     }
@@ -1466,11 +1541,7 @@ export class SchemaComparer {
    * `introspectionConcurrency` introspections in flight on the pool.
    */
   private async prefetchLiveSchemas(tableNames: string[]): Promise<void> {
-    if (
-      typeof this.db.getTableSchema !== 'function' &&
-      this.engine !== 'postgres'
-    )
-      return;
+    if (!canInspectTableSchema(this.db, this.engine)) return;
     const pending = tableNames.filter(
       (tableName) => !this.liveSchemas.has(tableName),
     );
@@ -3672,7 +3743,8 @@ export class SchemaComparer {
     dbSchema: SqlTableSchemaInfo,
     dbColumnNames: Set<string>,
     manifestColumnNames: ReadonlySet<string>,
-  ): Promise<void> {
+  ): Promise<ReadonlySet<string>> {
+    const generatedNames = new Set<string>();
     try {
       const { rows } = await this.db.query(
         'SELECT * FROM pragma_table_xinfo($1) WHERE hidden IN (2, 3)',
@@ -3680,6 +3752,7 @@ export class SchemaComparer {
       );
       for (const row of rows) {
         const name = String(row.name);
+        generatedNames.add(name);
         if (manifestColumnNames.has(name) || dbSchema.columns[name]) continue;
         // Never an insert blocker: a generated column cannot be supplied, so a
         // NOT NULL here must not raise the NOT NULL-orphan warning.
@@ -3694,6 +3767,7 @@ export class SchemaComparer {
     } catch {
       // Keep the ordinary column list.
     }
+    return generatedNames;
   }
 
   private async compareColumns(
@@ -4647,14 +4721,15 @@ export class SchemaComparer {
 
     // Orphan columns: always reported, dropped only on request (#2369).
     const manifestColumnNames = new Set(Object.keys(manifest.columns));
-    if (this.engine === 'sqlite') {
-      await this.addLiveGeneratedColumns(
-        tableName,
-        dbSchema,
-        dbColumnNames,
-        manifestColumnNames,
-      );
-    }
+    const sqliteGeneratedNames =
+      this.engine === 'sqlite'
+        ? await this.addLiveGeneratedColumns(
+            tableName,
+            dbSchema,
+            dbColumnNames,
+            manifestColumnNames,
+          )
+        : undefined;
     for (const colName of dbColumnNames) {
       if (manifestColumnNames.has(colName)) continue;
       const dbCol = dbSchema.columns[colName];
@@ -4671,7 +4746,14 @@ export class SchemaComparer {
         });
         continue;
       }
-      changes.push(this.describeOrphanColumn(tableName, colName, dbCol));
+      changes.push(
+        this.describeOrphanColumn(
+          tableName,
+          colName,
+          dbCol,
+          sqliteGeneratedNames?.has(colName),
+        ),
+      );
     }
 
     changes.push(
@@ -5920,10 +6002,11 @@ export class SchemaComparer {
     tableName: string,
     colName: string,
     dbCol: SqlTableSchemaInfo['columns'][string],
+    isGenerated = false,
   ): SchemaChange {
     const dbHasDefault =
       dbCol.defaultValue !== null && dbCol.defaultValue !== undefined;
-    const blocking = dbCol.notNull === true && !dbHasDefault;
+    const blocking = !isGenerated && dbCol.notNull === true && !dbHasDefault;
     const quotedTable = this.quoteIdentifier(tableName);
     const quotedCol = this.quoteIdentifier(colName);
     const dropSql = `ALTER TABLE ${quotedTable} DROP COLUMN ${quotedCol}`;
@@ -6667,6 +6750,49 @@ export class SchemaComparer {
     return new Set(
       rows.map((r) => r.name || r.table_name || '').filter(Boolean),
     );
+  }
+
+  /**
+   * Stop before planning when a declared table name does not reach the table
+   * the catalog lists under it. Tables are matched by exact name everywhere in
+   * the plan, but SQLite and DuckDB resolve identifiers without regard to
+   * (ASCII) case, so a declared `items` and a catalog `Items` are one table to
+   * the engine and two to the plan; and on SQLite a `temp` table of the same
+   * name takes unqualified statements away from the permanent table. Both
+   * cases stop with a named error rather than plan against the wrong table.
+   */
+  private async assertDeclaredNamesResolve(
+    declared: string[],
+    existingTables: Set<string>,
+  ): Promise<void> {
+    if (this.engine === 'postgres') return;
+    const unchecked = declared;
+    if (!unchecked.length) return;
+    for (const name of unchecked) {
+      if (existingTables.has(name)) continue;
+      const lower = asciiLower(name);
+      for (const existing of existingTables)
+        if (asciiLower(existing) === lower)
+          throw new TableSpellingMismatchError(name, existing);
+    }
+    if (this.engine === 'sqlite') {
+      let temporary: string[] = [];
+      try {
+        const result = await this.db.query(
+          "SELECT name FROM sqlite_temp_master WHERE type = 'table'",
+        );
+        temporary = result.rows.map((row) => String(row.name));
+      } catch (cause) {
+        throw new TableSchemaUnreadableError(unchecked[0], this.engine, {
+          cause,
+        });
+      }
+      for (const name of unchecked) {
+        const lower = asciiLower(name);
+        if (temporary.some((temp) => asciiLower(temp) === lower))
+          throw new TemporaryTableShadowError(name);
+      }
+    }
   }
 
   /**

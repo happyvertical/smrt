@@ -1203,7 +1203,10 @@ describe('SchemaComparer engine-specific SQL generation', () => {
     const mockSqliteDb = {
       url: ':memory:',
       // Return table name from query so getExistingTables() knows it exists
-      query: async () => ({ rows: [{ name: 'items' }] }),
+      // (the temp catalog, also read, has no such table)
+      query: async (sql: string) => ({
+        rows: sql.includes('sqlite_temp_master') ? [] : [{ name: 'items' }],
+      }),
       getTableSchema: async () => ({
         columns: {
           id: { type: 'TEXT', notnull: true },

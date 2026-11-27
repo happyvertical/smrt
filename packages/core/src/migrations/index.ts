@@ -11,6 +11,12 @@
 
 // Installs the tenant-type-agnostic change-feed helpers before a conversion.
 export { ensurePostgresChangeFeedAppendFunction } from '../change-feed.js';
+// An existing table the comparison could not read
+export {
+  TableSchemaUnreadableError,
+  TableSpellingMismatchError,
+  TemporaryTableShadowError,
+} from '../schema/inspection.js';
 export type {
   RetireConfirmation,
   RetireConfirmationSource,
