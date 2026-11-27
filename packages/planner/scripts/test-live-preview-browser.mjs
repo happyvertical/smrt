@@ -5,7 +5,7 @@ import { createServer as createViteServer } from 'vite';
 
 const planId = 'plan-12345678';
 const empty = {
-  $schema: 'https://s-m-r-t.dev/schemas/cookbook/v1.json',
+  $schema: 'https://smrt.happyvertical.com/schemas/cookbook/v1.json',
   version: 1,
   recipes: [],
   features: [],

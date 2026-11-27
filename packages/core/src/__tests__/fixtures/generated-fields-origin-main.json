@@ -1,5 +1,5 @@
 {
-  "sourceRevision": "0f16192e1b3b5d64b639cce688aaa35075a71464",
+  "sourceRevision": "45e9002f44c2e6207b59e6efd8c9f33310462cc2",
   "cases": {
     "plain": {
       "sqliteDeployment": [
@@ -21,11 +21,11 @@
         "source/single/index.ts": "df2d5fba1b97faaad6b595b5159e615d06fc61fa401f879d693d881794a61aaa",
         "source/sveltekit/src/lib/server/smrt-register.ts": "f2bc573c66de6f80aa2a31960d85e307c0470ae430ffd71a428c3fabfd8d8ada",
         "source/sveltekit/src/lib/server/smrt.ts": "0ccb2afbd8cc5f2d935fa82bbb52653417890b2e4e225b9fae5c773282f23dbf",
-        "source/sveltekit/src/routes/api/_changes/+server.ts": "0d90d327ad6437bc07aee0466797ac19851716d3e93d1781c34c7a457725819e",
-        "source/sveltekit/src/routes/api/_events/+server.ts": "7d2cc146aa19cdf11640693976bc506fb86e26483970a82e26232dd3c7cb5040",
-        "source/sveltekit/src/routes/api/compat_plain/[id]/+server.ts": "4c7264013a749b48c05b75fc1aa32579c093a21aee73d1605f984f20f045b811",
-        "source/sveltekit/src/routes/api/compat_plain/+server.ts": "10e4ff5140af96e7ff3b727c09b1ab010526292a78404d35ae072d202b6a2efc",
-        "source/sveltekit/src/routes/api/sync/apply/+server.ts": "6ff5e4a0b122c0e8bcaccacdb0a1c666a65664f9b2dffc50860300952071862c"
+        "source/sveltekit/src/routes/api/_changes/+server.ts": "9bebf4d7fc16ce1b399ea608b891f06800bef4306d9547896cc28d7abc3e447c",
+        "source/sveltekit/src/routes/api/_events/+server.ts": "65126f25fb627b4fc9d4eb5d21de472e79a09dd1756a5de175373ef127d5c002",
+        "source/sveltekit/src/routes/api/compat_plain/[id]/+server.ts": "d91ca4fdc6520a6c56af63db55dd3a7e2dc4c0db7534dec83df32a512f47f26f",
+        "source/sveltekit/src/routes/api/compat_plain/+server.ts": "41205a83672795602818974d001e3ceab84eb800161f88db52d54f199f086939",
+        "source/sveltekit/src/routes/api/sync/apply/+server.ts": "dd042b316bdeb9bfa2a1791fee6c71a854663575ebdff8bdeb3c8bc3ec96f1fd"
       }
     },
     "sti": {
@@ -52,11 +52,11 @@
         "source/single/index.ts": "9e6534f37ed2291e38f4fa631bdc971779eb6331f13845038feafc56dd1a80c1",
         "source/sveltekit/src/lib/server/smrt-register.ts": "f25b7af11be15449c72773d5047a2eb581977682b950ccae39d2e71d536a0897",
         "source/sveltekit/src/lib/server/smrt.ts": "0ccb2afbd8cc5f2d935fa82bbb52653417890b2e4e225b9fae5c773282f23dbf",
-        "source/sveltekit/src/routes/api/_changes/+server.ts": "51b9498c2881de41b4fc1d18155386746071681028f215478e2365cd03835e6f",
-        "source/sveltekit/src/routes/api/_events/+server.ts": "f0473b6d66e0e35cb1a36c3997a2aa06215f20a18ffef3a08b86637191a14927",
-        "source/sveltekit/src/routes/api/compatroots/[id]/+server.ts": "8773e6746abf14554103c52e23ef04238760c18f521c7e3afa6144c9294b749c",
-        "source/sveltekit/src/routes/api/compatroots/+server.ts": "5277ec79ca897fca485d6b5269aa7ead00ace117a19b84e5254ea2ad20956b67",
-        "source/sveltekit/src/routes/api/sync/apply/+server.ts": "400dd2231d933769e5ac788fbfbade3b25ba4093c2044e627fab3c86c8d95e98"
+        "source/sveltekit/src/routes/api/_changes/+server.ts": "efb25b48dce094832f682751d8746453ebbb1dda4c941f365429d54e55d19fbd",
+        "source/sveltekit/src/routes/api/_events/+server.ts": "be4ae5b66c955ca22ac1b47b52d253410d8e70407d90c58fcf16a6c7b253075b",
+        "source/sveltekit/src/routes/api/compatroots/[id]/+server.ts": "193c5fd58f33fc3e3b673081fe0fe3ac4772b4b0e7e677ecffc1bbc29d35a2bf",
+        "source/sveltekit/src/routes/api/compatroots/+server.ts": "2ee51253007591144ecf70b75b95cccc9fedcc305130a79fa8ca01c3c921844c",
+        "source/sveltekit/src/routes/api/sync/apply/+server.ts": "c99689e84d9ddf670ffae2cd967385291bfe773688f68ee2bc7ae8ddf51d8b05"
       }
     }
   }

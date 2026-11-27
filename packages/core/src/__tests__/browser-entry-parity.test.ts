@@ -266,6 +266,36 @@ const NODE_ONLY_GROUPS: ReadonlyArray<{
   },
   {
     reason:
+      'Shared route authorization decision for the runtime REST handler and generated SvelteKit routes; server-side request policy, not browser code (#5195)',
+    names: [
+      'apiPrincipalFromLocals',
+      'authorize',
+      'foreignRowModel',
+      'isMutatingOperation',
+      'isOperationPublic',
+      'modelRoutePolicy',
+      'RequestPrincipalRefusal',
+      'stripTenantFilters',
+    ],
+  },
+  {
+    reason:
+      'Shared CORS policy for the runtime REST handler and generated SvelteKit routes; server-side request policy, not browser code (#5195)',
+    names: [
+      'applyCorsHeaders',
+      'CORS_ALLOWED_HEADERS',
+      'CORS_ALLOWED_METHODS',
+      'CORS_MAX_AGE',
+      'corsPreflightHeaders',
+      'corsPreflightResponse',
+      'corsResponseHeaders',
+      'isCorsEnabled',
+      'normalizeCorsOrigins',
+      'resolveCorsOrigin',
+    ],
+  },
+  {
+    reason:
       'Test-database helper; belongs behind `@happyvertical/smrt-core/testing`',
     names: ['getTestDatabase'],
   },

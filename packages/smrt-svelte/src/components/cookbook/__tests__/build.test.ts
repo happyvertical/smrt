@@ -262,7 +262,7 @@ describe('buildCookbookShell: bakery', () => {
 
 describe('buildCookbookShell: sections and features', () => {
   const base = (over: Partial<Cookbook>): Cookbook => ({
-    $schema: 'https://s-m-r-t.dev/schemas/cookbook/v1.json',
+    $schema: 'https://smrt.happyvertical.com/schemas/cookbook/v1.json',
     version: 1,
     recipes: [],
     features: [],
@@ -463,7 +463,7 @@ describe('buildCookbookShell: recipe surfaces', () => {
     };
     const shell = buildCookbookShell({
       cookbook: {
-        $schema: 'https://s-m-r-t.dev/schemas/cookbook/v1.json',
+        $schema: 'https://smrt.happyvertical.com/schemas/cookbook/v1.json',
         version: 1,
         recipes: ['demo.surfaces'],
         features: [],
@@ -499,7 +499,7 @@ describe('buildCookbookShell: recipe surfaces', () => {
     expect(withSurfaces.length).toBeGreaterThan(0);
     const shell = buildCookbookShell({
       cookbook: {
-        $schema: 'https://s-m-r-t.dev/schemas/cookbook/v1.json',
+        $schema: 'https://smrt.happyvertical.com/schemas/cookbook/v1.json',
         version: 1,
         recipes: withSurfaces.map((r) => r.id),
         features: [],

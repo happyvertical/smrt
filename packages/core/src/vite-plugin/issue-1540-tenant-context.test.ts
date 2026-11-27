@@ -129,9 +129,7 @@ describe('Issue #1540 (facet 2): tenant-context establishment', () => {
     expect(itemRoute).toContain('enterTenancy(locals, "update");');
     expect(itemRoute).toContain('enterTenancy(locals, "delete");');
     // A refusal is answered with its own status.
-    expect(collectionRoute).toContain(
-      'if (failure) throw error(failure.status, failure.message);',
-    );
+    expect(collectionRoute).toContain('throw error(failure.status, body);');
   });
 
   it('does NOT pull tenancy into a non-tenant object’s routes', async () => {
@@ -164,7 +162,7 @@ describe('Issue #1540 (facet 2): tenant-context establishment', () => {
     );
     expect(collectionRoute).toContain('enterTenancy(locals, "create");');
     // Auth guard is still present (every route is fail-closed).
-    expect(collectionRoute).toContain('requireRouteAuth(locals,');
+    expect(collectionRoute).toContain('requireRouteAccess(locals,');
   });
 
   it('publishes only a complete trusted principal for opted-in non-tenant routes', async () => {

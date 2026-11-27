@@ -5,9 +5,9 @@
   "description": "Plan a business app with SMRT recipes in conversation, check it, and create the project on your machine. Runs locally; no separate model, API key or hosted service.",
   "author": {
     "name": "HappyVertical",
-    "url": "https://s-m-r-t.dev"
+    "url": "https://smrt.happyvertical.com"
   },
-  "homepage": "https://s-m-r-t.dev",
+  "homepage": "https://smrt.happyvertical.com",
   "repository": "https://github.com/happyvertical/smrt",
   "license": "MIT",
   "keywords": ["smrt", "cookbook", "planner", "app-builder", "mcp"],
@@ -20,7 +20,7 @@
         "developerName": "HappyVertical",
         "category": "Productivity",
         "capabilities": ["Read", "Write"],
-        "websiteURL": "https://s-m-r-t.dev",
+        "websiteURL": "https://smrt.happyvertical.com",
         "defaultPrompt": [
           "Use SMRT Kitchen to plan an app for my bakery.",
           "Use SMRT Kitchen to start from a ready-made cookbook and tweak it.",

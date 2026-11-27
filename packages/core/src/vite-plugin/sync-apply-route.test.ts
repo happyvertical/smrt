@@ -18,6 +18,7 @@ import { dirname, join } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import { build } from 'esbuild';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
+import { apiPrincipalFromLocals, authorize } from '../generators/route-authz';
 import type { SmartObjectManifest } from '../scanner/types';
 import { RouteFilePlan } from './generated-route-files';
 import { generateCollectionAccessImports } from './sveltekit-config-import';
@@ -227,11 +228,14 @@ describe('generateSyncApplyRouteTemplate', () => {
   });
 
   it('is fail-closed: requires an authenticated principal unless public', () => {
-    expect(content).toContain('hasAuthenticatedPrincipal');
     expect(content).toContain('permissionCollection: "products"');
-    expect(content).toContain('hasOperationPermission(locals');
-    expect(content).toContain('target.publicAccess !== true');
+    // The decision is the shared one (#5195), not an emitted copy of it.
+    expect(content).toContain('decideItem(locals, target, op)');
+    expect(content).toContain('target.publicAccess');
     expect(content).toContain("'auth_required'");
+    expect(content).not.toContain('hasAuthenticatedPrincipal');
+    expect(content).not.toContain('hasGrantedPermission');
+    expect(content).not.toContain('hasOperationPermission');
   });
 
   it('runs every item inside the request tenancy its target has at request time', () => {
@@ -410,11 +414,16 @@ describe('generated sync-apply route runtime: operation permissions (#3011)', ()
     projectRoot = mkdtempSync(join(tmpdir(), 'smrt-sync-apply-runtime-'));
     createCalls.length = 0;
     (globalThis as Record<string, unknown>).__smrtSyncCreateCalls = createCalls;
+    (globalThis as Record<string, unknown>).__smrtSyncAuthz = {
+      apiPrincipalFromLocals,
+      authorize,
+    };
   });
 
   afterEach(() => {
     rmSync(projectRoot, { force: true, recursive: true });
     delete (globalThis as Record<string, unknown>).__smrtSyncCreateCalls;
+    delete (globalThis as Record<string, unknown>).__smrtSyncAuthz;
     delete (globalThis as Record<string, unknown>).__smrtSyncDeclaredFields;
     delete (globalThis as Record<string, unknown>).__smrtSyncWritePolicy;
     delete (globalThis as Record<string, unknown>).__smrtSyncStoredRow;
@@ -500,6 +509,9 @@ describe('generated sync-apply route runtime: operation permissions (#3011)', ()
         // The real rule runs here over the field names a test declares
         // (none by default), standing in for the registry's field lookup.
         `import { isServiceOptionInput } from ${JSON.stringify(fileURLToPath(new URL('../service-options.ts', import.meta.url)))};`,
+        // The real shared authorization decision (#5195).
+        'export const authorize = (input: unknown) => { const r = (globalThis as any).__smrtSyncAuthz.authorize(input); return r; };',
+        'export const apiPrincipalFromLocals = (locals: unknown, tenant?: string | null) => (globalThis as any).__smrtSyncAuthz.apiPrincipalFromLocals(locals, tenant);',
         // The fixture models are plain tables (no STI type selection).
         'export const ObjectRegistry = { getTableStrategy: () => undefined, isServiceOptionInput: (_name: string, key: string) => isServiceOptionInput(key, (field: string) => ((globalThis as any).__smrtSyncDeclaredFields ?? []).includes(field)) };',
         // The route assigns an update payload through `applyUpdateInput`. The
@@ -734,7 +746,7 @@ describe('generated sync-apply route runtime: operation permissions (#3011)', ()
           code: null,
           total: null,
           displayLabel: 'projected',
-          tenantId: 'tenant-b',
+          tenantId: 'tenant-a',
         },
       );
       expect(result).toMatchObject({ status: 'applied' });
@@ -745,6 +757,21 @@ describe('generated sync-apply route runtime: operation permissions (#3011)', ()
           _insertOnly: true,
         },
       ]);
+    });
+
+    it('refuses an item whose payload names another tenant (#5195)', async () => {
+      tenantWidgetPolicy();
+      const result = await apply(
+        'tenantwidgets',
+        {
+          tenantId: 'tenant-a',
+          permissions: ['tenantwidgets.create'],
+          user: { id: 'user-1' },
+        },
+        { name: 'Widget', tenantId: 'tenant-b' },
+      );
+      expect(result).toMatchObject({ status: 'rejected', reason: 'forbidden' });
+      expect(createCalls).toEqual([]);
     });
 
     it('reads the tenant from every place the CRUD route does', async () => {
@@ -903,7 +930,6 @@ describe('generated sync-apply route runtime: operation permissions (#3011)', ()
         tenantContext: { permissions: new Set(['widgets.create']) },
         user: { id: 'u' },
       },
-      { tenantContext: { superAdminBypass: true }, user: { id: 'u' } },
     ];
     for (const locals of snapshots) {
       const result = await firstResult(
@@ -912,6 +938,65 @@ describe('generated sync-apply route runtime: operation permissions (#3011)', ()
       expect(result).toMatchObject({ status: 'applied' });
     }
     expect(createCalls).toHaveLength(snapshots.length);
+  });
+
+  it('takes permissions from the first defined source only, never a union (#5195)', async () => {
+    const route = await importRoute({ Widget: widgetDef });
+    for (const locals of [
+      {
+        permissions: [],
+        smrtPermissions: ['widgets.create'],
+        user: { id: 'u' },
+      },
+      {
+        permissionSet: ['widgets.read'],
+        tenantContext: { permissions: ['widgets.create'] },
+        user: { id: 'u' },
+      },
+    ]) {
+      const result = await firstResult(
+        await route.POST({ locals, request: createBatch('widgets') }),
+      );
+      expect(result).toMatchObject({ status: 'rejected', reason: 'forbidden' });
+    }
+    expect(createCalls).toHaveLength(0);
+  });
+
+  const bypassLocals = {
+    tenantContext: { superAdminBypass: true },
+    user: { id: 'u' },
+  };
+
+  it('refuses a super-admin bypass in place of the permission on a model that does not opt in', async () => {
+    const route = await importRoute({ Widget: widgetDef });
+    expect(
+      await firstResult(
+        await route.POST({
+          locals: bypassLocals,
+          request: createBatch('widgets'),
+        }),
+      ),
+    ).toMatchObject({ status: 'rejected', reason: 'forbidden' });
+  });
+
+  it('lets a super-admin bypass stand in for the permission on a model that opts in', async () => {
+    const route = await importRoute({
+      Widget: {
+        ...widgetDef,
+        decoratorConfig: {
+          ...widgetDef.decoratorConfig,
+          tenantScoped: { mode: 'optional', allowSuperAdminBypass: true },
+        },
+      },
+    });
+    expect(
+      await firstResult(
+        await route.POST({
+          locals: bypassLocals,
+          request: createBatch('widgets'),
+        }),
+      ),
+    ).toMatchObject({ status: 'applied' });
   });
 
   it('uses the decorator collection override as the permission prefix', async () => {

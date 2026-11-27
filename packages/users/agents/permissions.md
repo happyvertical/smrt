@@ -140,9 +140,14 @@ a request the gate is unchanged. Test: `src/__tests__/rest-request-scope.test.ts
 Generated SvelteKit write routes (POST/PUT/PATCH/DELETE CRUD and mutating
 custom actions) enforce the same `collection.action` slug (custom actions use
 `collection.<method>`; actions hosted on a collection class use the item collection, which the catalog now emits) after authentication: the slug must be in the request's
-session permission snapshot (`locals.permissions`/`permissionSet`/
-`smrtPermissions` or `locals.tenantContext.permissions`), otherwise 403. Only
-`locals.tenantContext.superAdminBypass` skips it; `api.public: true` stays open.
+session permission snapshot, otherwise 403 (`PERMISSION_DENIED`). The snapshot
+is one source, the first defined of `locals.permissions`/`permissionSet`/
+`smrtPermissions`/`locals.tenantContext.permissions` (`apiPrincipalFromLocals`;
+an empty list is defined and grants nothing; sources are never combined), the
+principal REST uses. `locals.tenantContext.superAdminBypass` skips it only on a
+model with `tenantScoped: { allowSuperAdminBypass: true }`; `api.public: true`
+stays open. A write body naming another tenant is 403 `TENANT_MISMATCH`. The
+decision is the shared `authorize` (`packages/core/src/generators/route-authz.ts`).
 
 Resource-anchored guards receive the resource tenant ID. When it differs from
 the session tenant, omit the session membership so the resolver selects the

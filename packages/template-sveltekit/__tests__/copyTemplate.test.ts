@@ -75,6 +75,17 @@ describe('copyTemplate', () => {
     );
   });
 
+  it('does not ignore the routes an app authors under _runtime', () => {
+    copyTemplate(tempDir, { name: 'my-app' });
+
+    const ignored = readFileSync(join(tempDir, '.gitignore'), 'utf8');
+    for (const route of ['health', 'diagnostics', 'owner-link']) {
+      expect(ignored).toContain(
+        `!src/routes/api/_runtime/${route}/+server.ts\n`,
+      );
+    }
+  });
+
   it('preserves existing ignore files unless overwrite is requested', () => {
     writeFileSync(join(tempDir, '.gitignore'), 'user-git-ignore\n');
     writeFileSync(join(tempDir, '.npmignore'), 'user-npm-ignore\n');

@@ -24,8 +24,15 @@ import type {
   SmartObjectManifest,
 } from '../scanner/types';
 import type { RouteFilePlan } from './generated-route-files.js';
+import { applyRouteCors } from './route-cors.js';
 import { AUTO_GENERATED_ROUTE_HEADER } from './route-header.js';
-import { getApiPublicAccess, usesPrincipalContext } from './route-policy.js';
+import {
+  allowsSuperAdminBypass,
+  generateRoutePrincipalHelper,
+  getApiPublicAccess,
+  manifestTenantColumns,
+  usesPrincipalContext,
+} from './route-policy.js';
 import { generateCollectionAccessImports } from './sveltekit-config-import.js';
 import type { SvelteKitOptions } from './sveltekit-generator.js';
 import {
@@ -63,6 +70,8 @@ interface SyncTargetSpec {
   publicAccess: boolean | 'read';
   /** `api.principalContext`: writes need a complete principal. */
   principalContext: boolean;
+  allowSuperAdminBypass: boolean;
+  tenantColumns: string[];
 }
 
 /**
@@ -182,6 +191,8 @@ export function collectSyncApplyTargets(
       // by `prepareWriteInput`, as the CRUD routes read it.
       publicAccess: getApiPublicAccess(apiConfig),
       principalContext: usesPrincipalContext(objectDef),
+      allowSuperAdminBypass: allowsSuperAdminBypass(objectDef),
+      tenantColumns: manifestTenantColumns(objectDef),
     };
     bySegment.set(objectDef.collection, { target, isStiChild });
   }
@@ -200,6 +211,8 @@ function serializeTargets(targets: SyncTargetSpec[]): string {
       `ops: ${JSON.stringify(target.ops)}`,
       `publicAccess: ${JSON.stringify(target.publicAccess)}`,
       `principalContext: ${JSON.stringify(target.principalContext)}`,
+      `allowSuperAdminBypass: ${JSON.stringify(target.allowSuperAdminBypass)}`,
+      `tenantColumns: ${JSON.stringify(target.tenantColumns)}`,
     ];
     return `  ${JSON.stringify(target.segment)}: {\n    ${fields.join(',\n    ')},\n  },`;
   });
@@ -277,24 +290,10 @@ import {
   SyncApplyRejection,
   type SyncApplyTarget,
 } from '@happyvertical/smrt-core';
-import { applyUpdateInput, assertCreateInput, assertUpdateInput, getRequestTenantContext as getCurrentTenant, isRuntimeModelEnabled, ObjectRegistry, runInRequestTenancy } from '@happyvertical/smrt-core';
+import { apiPrincipalFromLocals, authorize, applyUpdateInput, assertCreateInput, assertUpdateInput, getRequestTenantContext as getCurrentTenant, isRuntimeModelEnabled, ObjectRegistry, runInRequestTenancy } from '@happyvertical/smrt-core';
 import { error, json } from '@sveltejs/kit';
 import type { RequestHandler } from './$types';
 ${collectionAccessImports}
-
-// Fail-closed authorization (#1540): sync mutations require an authenticated
-// principal on \`locals\` unless the target model is \`api: { public: true }\`.
-function hasAuthenticatedPrincipal(locals: unknown): boolean {
-  if (!locals || typeof locals !== 'object') return false;
-  const l = locals as Record<string, unknown>;
-  const isResolvedPrincipal = (v: unknown) =>
-    typeof v === 'object' && v !== null;
-  return (
-    isResolvedPrincipal(l.user) ||
-    isResolvedPrincipal(l.session) ||
-    l.smrtAuth === true
-  );
-}
 
 interface SyncTargetConfig {
   /** Manifest registry key (may be package-qualified), as CRUD routes use. */
@@ -306,75 +305,32 @@ interface SyncTargetConfig {
   publicAccess: boolean | 'read';
   /** \`api.principalContext\`: a write needs a complete principal. */
   principalContext: boolean;
+  /** \`tenantScoped.allowSuperAdminBypass\`: a verified bypass stands in for the permission. */
+  allowSuperAdminBypass: boolean;
+  /** snake_case columns recording a row's tenant (the write-body check). */
+  tenantColumns: string[];
 }
 
 // One entry per syncable model, keyed by the collection route segment its
 // generated CRUD routes use.
 const SYNC_TARGETS: Record<string, SyncTargetConfig> = ${serializeTargets(targets)};
 ${scopeConstant}
-function readRecord(value: unknown): Record<string, unknown> {
-  return value && typeof value === 'object'
-    ? (value as Record<string, unknown>)
-    : {};
-}
-
-// The tenant the request acts for, from the same \`locals\` sources the
-// tenant helper enters (\`tenantId\`, \`user\`, \`session\`, \`tenantContext\`),
-// else the tenant context active for the request (entered by the host, or by
-// the tenant helper for this item).
-function requestTenantOf(locals: unknown): string | undefined {
-  const l = readRecord(locals);
-  const tenant =
-    l.tenantId ??
-    readRecord(l.user).tenantId ??
-    readRecord(l.session).tenantId ??
-    readRecord(l.tenantContext).tenantId;
-  if (typeof tenant === 'string' && tenant) return tenant;
-  const active = readRecord(getCurrentTenant()).tenantId;
-  return typeof active === 'string' && active ? active : undefined;
-}
-
-// The permissions the caller's own responses are projected with, from the same
-// snapshot the CRUD routes use: a protected field they cannot read is never
-// compared with the stored value.
-function getPublicJsonOptions(locals: unknown): { permissions?: Iterable<string> } {
-  const l = readRecord(locals);
-  const permissions = l.permissions ?? l.permissionSet ?? l.smrtPermissions;
-  if (Array.isArray(permissions) || permissions instanceof Set) {
-    return { permissions };
-  }
-  return {};
-}
-
-function hasGrantedPermission(value: unknown, permission: string): boolean {
-  if (Array.isArray(value)) return value.includes(permission);
-  if (value instanceof Set) return value.has(permission);
-  return false;
-}
-
-// Fail-closed operation permission (#2977, #3011): each applied op requires
-// the same \`<collection>.<op>\` permission the mirrored generated write route
-// enforces, read from the principal's session permission snapshot. A missing
-// snapshot denies; only an explicit tenancy super-admin bypass skips it.
-function hasOperationPermission(
-  locals: unknown,
-  permissionCollection: string,
-  op: SyncApplyOp,
-): boolean {
-  const l = readRecord(locals);
-  const tenantContext = readRecord(l.tenantContext);
-  if (tenantContext.superAdminBypass === true) return true;
-  const permission = \`\${permissionCollection}.\${op}\`;
-  return (
-    hasGrantedPermission(l.permissions, permission) ||
-    hasGrantedPermission(l.permissionSet, permission) ||
-    hasGrantedPermission(l.smrtPermissions, permission) ||
-    hasGrantedPermission(tenantContext.permissions, permission)
-  );
+${generateRoutePrincipalHelper()}
+// One shared decision per item (#5195): sign-in, the \`<collection>.<op>\`
+// permission and the tenant the payload names, as REST decides them.
+function decideItem(locals: unknown, target: SyncTargetConfig, op: SyncApplyOp, body?: unknown) {
+  return authorize({
+    principal: routePrincipal(locals),
+    op,
+    permissionCollection: target.permissionCollection,
+    publicAccess: target.publicAccess,
+    allowSuperAdminBypass: target.allowSuperAdminBypass,
+    tenantColumns: new Set(target.tenantColumns),
+    ...(body === undefined ? {} : { body }),
+  });
 }
 
 export const POST: RequestHandler = async ({ locals, request }) => {
-  const authenticated = hasAuthenticatedPrincipal(locals);
 
   let body: unknown;
   try {
@@ -433,21 +389,19 @@ export const POST: RequestHandler = async ({ locals, request }) => {
         },
         isOpAllowed: (op: SyncApplyOp) => target.ops.includes(op),
         authorize: (op: SyncApplyOp) => {
-          // \`public: true\` keeps its unauthenticated write semantics, as on
-          // the generated CRUD routes.
-          if (target.publicAccess !== true) {
-            if (!authenticated) return 'auth_required' as const;
-            if (!hasOperationPermission(locals, target.permissionCollection, op)) {
-              return 'forbidden' as const;
-            }
-          }
-          return 'ok' as const;
+          const decision = decideItem(locals, target, op);
+          if (decision.allow) return 'ok' as const;
+          return decision.status === 401 ? ('auth_required' as const) : ('forbidden' as const);
         },
         // The write-input rule of the CRUD routes: server-managed keys and
         // service options are skipped, and a field the caller may not write
         // is refused when the payload would change the stored value.
-        prepare: (payload: Record<string, unknown>, stored) =>
-          prepareWriteInput(target.registryKey, payload, stored, getPublicJsonOptions(locals)),
+        // A payload naming another tenant is refused for that item.
+        prepare: (payload: Record<string, unknown>, stored) => {
+          const decision = decideItem(locals, target, stored ? 'update' : 'create', payload);
+          if (!decision.allow) throw new SyncApplyRejection('forbidden');
+          return prepareWriteInput(target.registryKey, payload, stored, getPublicJsonOptions(locals));
+        },
       };
     },
   });
@@ -480,12 +434,15 @@ export function generateSyncApplyRoute(
   plan.emit({
     root: join(projectRoot, options.routesDir),
     routeDir,
-    content: generateSyncApplyRouteTemplate(
-      targets,
-      generateCollectionAccessImports(projectRoot, routeDir, options, [
-        'getCollection',
-      ]),
-      syncModelScope(manifest),
+    content: applyRouteCors(
+      generateSyncApplyRouteTemplate(
+        targets,
+        generateCollectionAccessImports(projectRoot, routeDir, options, [
+          'getCollection',
+        ]),
+        syncModelScope(manifest),
+      ),
+      options.cors,
     ),
     label: 'sync/apply',
     policy: 'yield',

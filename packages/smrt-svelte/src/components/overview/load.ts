@@ -41,6 +41,10 @@ export interface LoadOverviewOptions {
 export interface WidgetLoadInput {
   signal?: AbortSignal;
   locale?: string;
+  /** Optional shared reference epoch (ms); defaults to `Date.now()` once per `loadOverview` call. */
+  now?: number;
+  /** Optional IANA time zone carried onto {@link LoadedOverview} so SSR and client hydration agree. */
+  timeZone?: string;
   [capability: string]: unknown;
 }
 
@@ -100,6 +104,16 @@ export async function loadOverview(
   const sanitized = sanitizeOverview(document, { registry, definition });
   const timeoutMs = options.timeoutMs ?? DEFAULT_TIMEOUT_MS;
   const maxLength = options.maxDataLength ?? DEFAULT_MAX_DATA_LENGTH;
+  const loadedAt =
+    typeof ctx.now === 'number' &&
+    Number.isFinite(ctx.now) &&
+    Math.abs(ctx.now) <= 8_640_000_000_000_000
+      ? ctx.now
+      : Date.now();
+  const timeZone =
+    typeof ctx.timeZone === 'string' && ctx.timeZone.trim()
+      ? ctx.timeZone.trim()
+      : undefined;
   const widgets = await Promise.all(
     sanitized.document.widgets.map(async (widget): Promise<LoadedWidget> => {
       const def = registry.get(widget.type);
@@ -116,6 +130,8 @@ export async function loadOverview(
             def.load?.(widget.options, {
               ...ctx,
               overviewId: definition.id,
+              now: loadedAt,
+              ...(timeZone ? { timeZone } : {}),
               signal,
             }),
           timeoutMs,
@@ -129,5 +145,11 @@ export async function loadOverview(
       }
     }),
   );
-  return { overviewId: definition.id, widgets, issues: sanitized.issues };
+  return {
+    overviewId: definition.id,
+    loadedAt,
+    ...(timeZone ? { timeZone } : {}),
+    widgets,
+    issues: sanitized.issues,
+  };
 }

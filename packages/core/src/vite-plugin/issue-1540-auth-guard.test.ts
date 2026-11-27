@@ -2,8 +2,8 @@
  * Test for issue #1540 (increment 2c): fail-closed authorization on generated
  * SvelteKit routes.
  *
- * Every generated CRUD handler calls `requireRouteAuth(locals, mutating)`, which
- * throws 401 unless the object opts out via `@smrt({ api: { public } })`.
+ * Every generated CRUD handler calls `requireRouteAccess(locals, op, mutating)`,
+ * which throws 401 unless the object opts out via `@smrt({ api: { public } })`.
  */
 
 import {
@@ -16,11 +16,11 @@ import {
 } from 'node:fs';
 import ts from 'typescript';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { apiPrincipalFromLocals, authorize } from '../generators/route-authz';
 import {
   createGuestRequestPrincipal,
   GUEST_MAX_LIST_LIMIT,
   guestPrincipalOf,
-  isGuestLocals,
   isGuestOperationAllowed,
 } from '../guest-request';
 import type { SmartObjectManifest } from '../scanner/types';
@@ -96,30 +96,37 @@ describe('Issue #1540 (2c): fail-closed auth on generated routes', () => {
     expect(collectionRoute).toContain(
       "const PUBLIC_ACCESS: boolean | 'read' = false;",
     );
-    expect(collectionRoute).toContain('function requireRouteAuth');
+    expect(collectionRoute).toContain('function requireRouteAccess');
+    // The decision is the shared one (#5195), not an emitted copy of it.
+    expect(collectionRoute).toContain('authorize({');
+    expect(collectionRoute).not.toContain('function hasAuthenticatedPrincipal');
+    expect(collectionRoute).not.toContain('function hasGrantedPermission');
     // Reads are non-mutating; writes are mutating.
     expect(collectionRoute).toContain(
-      'requireRouteAuth(locals, false, "list");',
+      'requireRouteAccess(locals, "list", false);',
     ); // GET list
-    expect(collectionRoute).toContain('requireRouteAuth(locals, true);'); // POST
-    expect(itemRoute).toContain('requireRouteAuth(locals, false, "get");'); // GET item
-    expect(itemRoute).toContain('requireRouteAuth(locals, true);'); // PUT + DELETE
+    expect(collectionRoute).toContain(
+      'requireRouteAccess(locals, "create", true);',
+    ); // POST
+    expect(itemRoute).toContain('requireRouteAccess(locals, "get", false);'); // GET item
+    expect(itemRoute).toContain('requireRouteAccess(locals, "update", true);'); // PUT
+    expect(itemRoute).toContain('requireRouteAccess(locals, "delete", true);'); // DELETE
+    expect(collectionRoute).toContain(
+      "requireRouteBody(locals, 'create', body);",
+    );
+    expect(itemRoute).toContain("requireRouteBody(locals, 'update', body);");
     // Writes also require the operation permission (#2977); reads do not.
     expect(collectionRoute).toContain(
       'const PERMISSION_COLLECTION = "widgets";',
     );
+    expect(collectionRoute).not.toContain('requireRoutePermission');
     expect(collectionRoute).toContain(
-      'requireRoutePermission(locals, "create");',
+      'const ALLOW_SUPER_ADMIN_BYPASS = false;',
     );
-    expect(itemRoute).toContain('requireRoutePermission(locals, "update");');
-    expect(itemRoute).toContain('requireRoutePermission(locals, "delete");');
-    expect(collectionRoute).not.toContain(
-      'requireRoutePermission(locals, "read")',
-    );
-    expect(collectionRoute).toContain("throw error(403, 'Permission denied');");
-    // 401 on missing principal.
+    // The shared decision answers 401 and 403 with their codes.
+    expect(collectionRoute).toContain('routeDenial(decision)');
     expect(collectionRoute).toContain(
-      "throw error(401, 'Authentication required');",
+      'const body: { message: string; code: string }',
     );
     // Must NOT fail open on a callable `locals.auth` (Auth.js puts an `auth()`
     // helper on every request, including anonymous ones).
@@ -164,14 +171,17 @@ describe('Issue #1540 (2c): fail-closed auth on generated routes', () => {
       })();
       const source = [
         line('const GUEST_MODEL'),
+        line('const RUNTIME_MODEL'),
         line('const PERMISSION_COLLECTION'),
         line('const PUBLIC_ACCESS'),
+        line('const ALLOW_SUPER_ADMIN_BYPASS'),
+        line('const TENANT_COLUMNS'),
         between(
-          'function hasAuthenticatedPrincipal(',
-          'function hasGrantedPermission(',
+          '// The principal of this request',
+          '// A write body may not name',
         ),
         bounds,
-        'return { requireRouteAuth, listBounds };',
+        'return { requireRouteAuth: requireRouteAccess, listBounds };',
       ].join('\n');
       const js = ts.transpileModule(source, {
         compilerOptions: { target: ts.ScriptTarget.ES2022 },
@@ -182,8 +192,9 @@ describe('Issue #1540 (2c): fail-closed auth on generated routes', () => {
         'error',
         'GUEST_MAX_LIST_LIMIT',
         'guestPrincipalOf',
-        'isGuestLocals',
         'isGuestOperationAllowed',
+        'apiPrincipalFromLocals',
+        'authorize',
         'isRuntimeModelEnabled',
         'getCurrentTenant',
         js,
@@ -191,15 +202,16 @@ describe('Issue #1540 (2c): fail-closed auth on generated routes', () => {
         error,
         GUEST_MAX_LIST_LIMIT,
         guestPrincipalOf,
-        isGuestLocals,
         isGuestOperationAllowed,
+        apiPrincipalFromLocals,
+        authorize,
         () => true,
         () => undefined,
       ) as {
         requireRouteAuth: (
           locals: unknown,
+          op: string,
           mutating: boolean,
-          op?: 'list' | 'get',
         ) => void;
         listBounds: (
           url: URL,
@@ -229,68 +241,67 @@ describe('Issue #1540 (2c): fail-closed auth on generated routes', () => {
       const { requireRouteAuth } = await emitted();
       const guest = guestLocals(['widgets.read']);
       expect(
-        statusOf(() => requireRouteAuth(guest, false, 'list')),
+        statusOf(() => requireRouteAuth(guest, 'list', false)),
       ).toBeUndefined();
       expect(
-        statusOf(() => requireRouteAuth(guest, false, 'get')),
+        statusOf(() => requireRouteAuth(guest, 'get', false)),
       ).toBeUndefined();
-      // Writes, custom actions (no operation) and other collections deny.
-      expect(statusOf(() => requireRouteAuth(guest, true))).toBe(401);
-      expect(statusOf(() => requireRouteAuth(guest, false))).toBe(401);
+      // Writes, custom actions and other collections deny as anonymous does.
+      expect(statusOf(() => requireRouteAuth(guest, 'create', true))).toBe(401);
+      expect(statusOf(() => requireRouteAuth(guest, 'archive', false))).toBe(
+        401,
+      );
       expect(
         statusOf(() =>
-          requireRouteAuth(guestLocals(['widgets.create']), false, 'list'),
+          requireRouteAuth(guestLocals(['widgets.create']), 'list', false),
         ),
       ).toBe(401);
       expect(
         statusOf(() =>
-          requireRouteAuth(guestLocals(['gadgets.read']), false, 'list'),
+          requireRouteAuth(guestLocals(['gadgets.read']), 'list', false),
         ),
       ).toBe(401);
       expect(
-        statusOf(() => requireRouteAuth(guestLocals([]), false, 'list')),
+        statusOf(() => requireRouteAuth(guestLocals([]), 'list', false)),
       ).toBe(401);
     });
 
-    it('a guest the check did not admit is denied on public routes too', async () => {
-      // A guest request carries its tenant in locals and the entered context,
-      // so a public route must not serve it as an anonymous caller.
-      for (const open of ['read', true]) {
-        const { requireRouteAuth } = await emitted({
-          include: ['list', 'get'],
-          public: open,
-        });
+    it('a guest on a public route is served as the public contract says', async () => {
+      // `public` routes stay public for a guest as for an anonymous caller
+      // (#5195 semantics): row policies bound a guest to its permission set.
+      const { requireRouteAuth } = await emitted({
+        include: ['list', 'get', 'create'],
+        public: 'read',
+      });
+      for (const guest of [
+        guestLocals(['widgets.read']),
+        guestLocals([]),
+        guestLocals(['gadgets.read']),
+      ]) {
         expect(
-          statusOf(() => requireRouteAuth({}, false, 'list')),
+          statusOf(() => requireRouteAuth(guest, 'list', false)),
         ).toBeUndefined();
-        const guest = guestLocals(['widgets.read']);
-        expect(
-          statusOf(() => requireRouteAuth(guest, false, 'list')),
-        ).toBeUndefined();
-        expect(statusOf(() => requireRouteAuth(guest, false))).toBe(401);
-        expect(
-          statusOf(() => requireRouteAuth(guestLocals([]), false, 'list')),
-        ).toBe(401);
-        expect(
-          statusOf(() =>
-            requireRouteAuth(guestLocals(['gadgets.read']), false, 'get'),
-          ),
-        ).toBe(401);
+        // A write on a read-public route still needs sign-in.
+        expect(statusOf(() => requireRouteAuth(guest, 'create', true))).toBe(
+          401,
+        );
       }
     });
 
     it('anonymous and forged callers stay 401', async () => {
       const { requireRouteAuth } = await emitted();
-      expect(statusOf(() => requireRouteAuth({}, false, 'list'))).toBe(401);
+      expect(statusOf(() => requireRouteAuth({}, 'list', false))).toBe(401);
       expect(
-        statusOf(() => requireRouteAuth({ auth: () => true }, false, 'list')),
+        statusOf(() => requireRouteAuth({ auth: () => true }, 'list', false)),
       ).toBe(401);
       // A marker that disagrees with the locals tenant is not a guest.
       const forged = { ...guestLocals(['widgets.read']), tenantId: 'tenant-b' };
-      expect(statusOf(() => requireRouteAuth(forged, false, 'list'))).toBe(401);
-      // A guest that also carries a user is not a guest.
+      expect(statusOf(() => requireRouteAuth(forged, 'list', false))).toBe(401);
+      // A guest that also carries a user is not a guest: the user decides.
       const both = { ...guestLocals(['widgets.read']), user: { id: 'u' } };
-      expect(statusOf(() => requireRouteAuth(both, true))).toBeUndefined();
+      expect(
+        statusOf(() => requireRouteAuth(both, 'list', false)),
+      ).toBeUndefined();
     });
 
     it('caps a guest page at 100 and leaves other callers at the route maximum', async () => {

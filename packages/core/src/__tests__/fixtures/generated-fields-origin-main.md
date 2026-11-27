@@ -126,9 +126,45 @@ DDL, migration and OpenAPI digests have not moved since the recapture above.
   the emitted sync route and both emitted MCP servers pass the caller's read
   permissions (`locals`, `PUBLIC_JSON_OPTIONS`) to `prepareWriteInput()`, which
   refuses such a field whatever its value instead of comparing it.
+- Shared route decision (#5195; the list and item routes of each model,
+  `sync/apply/+server.ts`, `_changes/+server.ts`, `_events/+server.ts`): the
+  emitted guard copies are gone. Handlers call `requireRouteAccess` and
+  `requireRouteBody`, which ask `authorize` from core for sign-in, the
+  `<collection>.<action>` permission and the tenant a write body names; reads
+  drop tenant filters with `stripTenantFilters`. A create that selects an STI
+  subtype and an update or delete of a subtype's row decide under the subtype's
+  policy (`modelDecision`, `FAMILY_POLICY`). The feed routes ask `authorize` on
+  the `_feed` collection, and `_events` takes its CORS from the shared policy
+  (`applyRouteCors`) instead of its own helpers. Manifest, schema, DDL,
+  migration and OpenAPI digests are unchanged; only the emitted route digests
+  moved.
 - Guest callers (#5196; the list and item routes of each model, plain and
-  sti): `requireRouteAuth` takes the read operation and admits a guest
-  principal (`locals.guestPrincipal`, no user) only for `list`/`get` with the
-  matching `<collection>.read`; `listBounds(url, locals)` caps a guest page at
-  100; every other operation answers a guest 401, `public` routes included.
-  Only those four route digests move.
+  sti): a guest is main's unauthenticated principal with `callerKind: 'guest'`
+  and goes through the same `authorize`; `requireRouteAccess` passes
+  `guestReadAllowed` for a `list`/`get` the guest permission set grants
+  (`<collection>.read`), and `listBounds(url, locals)` caps a guest page at
+  100. `public` routes stay public for a guest as for an anonymous caller.
+  Only those four route digests move (by hand, as for #5195: the capture gate
+  needs the baseline sources unchanged).
+
+## Re-baseline of the emitted routes for #5195
+
+`sourceRevision` (and `BASELINE` in the test) is now
+`45e9002f44c2e6207b59e6efd8c9f33310462cc2`, the commit whose production sources
+under `packages/core/src` produced the current digests, so the capture gate
+(`SMRT_CAPTURE_ORIGIN_MAIN`, a clean `git diff` of production sources against
+that commit) applies to it. The digests were not recaptured from a pre-#5195
+tree: the #5195 route templates change the emitted SvelteKit routes on purpose,
+and the digests of exactly those files were replaced (the entry above lists
+the change). Compared with the fixture on `release/5195-auth-contract` before
+this change, only `source/sveltekit/**` digests moved (five per case: the list
+and item routes, `sync/apply`, `_changes`, `_events`). The manifest, schema,
+registry schema, OpenAPI, DDL (`ddl/*`), migration and `source/single/**` /
+`source/modular/**` digests, and the SQLite deployment SQL, are identical to
+the #4972 baseline `0f16192e1b3b5d64b639cce688aaa35075a71464`.
+
+Re-baselined again for the typecheck fix of the emitted denials (#5195): the
+`source/sveltekit/**` digests moved (list, item, `sync/apply`, `_changes`,
+`_events` routes of both cases) because denial bodies are built as a variable
+before `error()`. Every other digest is unchanged, and the revision above is the
+commit whose production sources produced them.

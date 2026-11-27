@@ -37,6 +37,7 @@ import type {
   SmartObjectManifest,
 } from '../scanner/types';
 import type { RouteFilePlan } from './generated-route-files.js';
+import { applyRouteCors } from './route-cors.js';
 import { AUTO_GENERATED_ROUTE_HEADER } from './route-header.js';
 import { generateCollectionAccessImports } from './sveltekit-config-import.js';
 import type { SvelteKitOptions } from './sveltekit-generator.js';
@@ -120,7 +121,7 @@ export function generateChangesRoute(
   plan.emit({
     root: join(projectRoot, options.routesDir),
     routeDir,
-    content,
+    content: applyRouteCors(content, options.cors),
     label: '_changes',
   });
   return true;
@@ -171,27 +172,33 @@ function establishTenantContext(locals: unknown): void {
 // never stalls or re-requests it.
 
 import { error, json } from '@sveltejs/kit';
-import { getAuthorizedTenantScopedChangesSince } from '@happyvertical/smrt-core';
+import {
+  apiPrincipalFromLocals,
+  authorize,
+  getAuthorizedTenantScopedChangesSince,
+} from '@happyvertical/smrt-core';
 import type { RequestHandler } from './$types';
 ${collectionAccessImports}
 
-// Fail-closed authorization (#1540): the change feed spans every table, so
-// it is never public — an authenticated principal on \`locals\` is required.
-function hasAuthenticatedPrincipal(locals: unknown): boolean {
-  if (!locals || typeof locals !== 'object') return false;
-  const l = locals as Record<string, unknown>;
-  const isResolvedPrincipal = (v: unknown) =>
-    typeof v === 'object' && v !== null;
-  return (
-    isResolvedPrincipal(l.user) ||
-    isResolvedPrincipal(l.session) ||
-    l.smrtAuth === true
-  );
-}
-
+// Fail-closed authorization (#1540, #5195): the change feed spans every table,
+// so it is never public. The shared decision REST makes for \`_changes\` is asked
+// for the principal of \`locals\`: sign-in alone, on a collection that opens
+// nothing (401 AUTHENTICATION_REQUIRED).
 function requireRouteAuth(locals: unknown): void {
-  if (!hasAuthenticatedPrincipal(locals)) {
-    throw error(401, 'Authentication required');
+  const decision = authorize({
+    principal: apiPrincipalFromLocals(locals),
+    op: 'read',
+    permissionCollection: '_feed',
+    publicAccess: false,
+  });
+  if (!decision.allow) {
+    // A variable, not a literal: SvelteKit types the body of error() as
+    // App.Error, which has no code, and only a literal is checked for it.
+    const body: { message: string; code: string } = {
+      message: decision.message,
+      code: decision.code,
+    };
+    throw error(decision.status, body);
   }
 }
 ${tenantHelper}

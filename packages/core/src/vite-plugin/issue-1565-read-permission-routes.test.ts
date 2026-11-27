@@ -90,7 +90,7 @@ describe('Issue #1565: generated route read permissions', () => {
       expect(content).toContain(
         'const publicJsonOptions = getPublicJsonOptions(locals);',
       );
-      expect(content).toContain('l.permissions ?? l.permissionSet');
+      expect(content).toContain('routePrincipal(locals).permissions');
       expect(content).toContain(
         "const READ_CACHE_CONTROL = 'private, no-cache';",
       );

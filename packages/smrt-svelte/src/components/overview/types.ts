@@ -192,6 +192,10 @@ export interface WidgetComponentProps<Data = unknown> {
   title: string;
   /** BCP-47 locale for number formatting. */
   locale: string;
+  /** Shared reference epoch (ms) from `LoadedOverview.loadedAt` for deterministic SSR/hydration relative timestamps. */
+  now?: number;
+  /** IANA time zone carried from `LoadedOverview.timeZone` (defaults to `'UTC'` in timestamp formatters). */
+  timeZone?: string;
   /** The host's renderer for icon names that are not built in. */
   iconComponent?: Component<{ name: string; size?: number }>;
   /**
@@ -221,6 +225,10 @@ export interface WidgetLoadContext {
   /** Aborts when the load times out or the request ends. */
   signal?: AbortSignal;
   locale?: string;
+  /** Shared reference epoch (ms) stamped for this overview load. */
+  now?: number;
+  /** Optional IANA time zone for date/timestamp formatting across SSR and hydration. */
+  timeZone?: string;
   /**
    * The record a record overview is rendered on. A `records` / `metric`
    * loader honours `options.filter === 'parent'` by confining its query to
@@ -324,6 +332,10 @@ export interface LoadedWidget extends OverviewWidget {
 /** What a page's server load returns for the client to render. */
 export interface LoadedOverview {
   overviewId: string;
+  /** Shared reference epoch (ms) stamped during `loadOverview` so SSR and client hydration agree. */
+  loadedAt?: number;
+  /** Optional IANA time zone carried from `loadOverview` context. */
+  timeZone?: string;
   widgets: LoadedWidget[];
   issues: OverviewIssue[];
 }

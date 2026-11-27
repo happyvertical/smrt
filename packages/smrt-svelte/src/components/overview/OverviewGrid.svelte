@@ -69,6 +69,8 @@ interface Row {
   title: string;
   status: 'ready' | 'loading' | 'error';
   data: unknown;
+  loadedAt?: number;
+  timeZone?: string;
   def: ReturnType<typeof registry.get>;
 }
 
@@ -86,6 +88,8 @@ const rows = $derived<Row[]>(
       title: custom || (def ? t(def.title) : widget.type),
       status: entry.status,
       data: entry.data,
+      loadedAt: entry.loadedAt,
+      timeZone: entry.timeZone,
     };
   }),
 );
@@ -373,6 +377,8 @@ const headingTag = $derived(`h${headingLevel}`);
           span={spanOf(row)}
           title={row.title}
           {locale}
+          now={row.loadedAt}
+          timeZone={row.timeZone}
           {iconComponent}
           presentation={editing ? 'card' : presentation}
         />

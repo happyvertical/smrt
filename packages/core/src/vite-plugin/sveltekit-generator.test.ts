@@ -308,10 +308,143 @@ describe('SvelteKit Route Generator', () => {
           String(path).includes(`reports/[id]/${action}/+server.ts`),
         );
       expect(write?.[1]).toContain(
-        `requireRoutePermission(locals, "${permission}");`,
+        `requireRouteAccess(locals, "${action}", true, "${permission}");`,
       );
       expect(write?.[1]).toContain(`action: '${action}',`);
     }
+  });
+
+  describe('cors option (#5195)', () => {
+    const reportManifest: SmartObjectManifest = {
+      version: '1',
+      timestamp: 0,
+      objects: {
+        Report: {
+          className: 'Report',
+          name: 'Report',
+          filePath: '',
+          collection: 'reports',
+          fields: {},
+          methods: {
+            archive: {
+              name: 'archive',
+              async: true,
+              parameters: [],
+              returnType: 'Promise<void>',
+              isStatic: false,
+              isPublic: true,
+            },
+          },
+          decoratorConfig: {
+            api: { routes: { archive: { method: 'POST' } } },
+          },
+        },
+      },
+    };
+    const baseOptions = {
+      enabled: true,
+      routesDir: 'src/routes/api',
+      objectsDir: 'src/lib/objects',
+    };
+    const written = (needle: string) =>
+      String(
+        vi
+          .mocked(writeFileSync)
+          .mock.calls.find(([path]) => String(path).includes(needle))?.[1],
+      );
+
+    it('emits no CORS surface by default', async () => {
+      await generateSvelteKitRoutes(projectRoot, reportManifest, baseOptions);
+      for (const needle of [
+        'reports/+server.ts',
+        'reports/[id]/+server.ts',
+        'reports/[id]/archive/+server.ts',
+        'sync/apply/+server.ts',
+      ]) {
+        const source = written(needle);
+        expect(source, needle).toContain('export const');
+        expect(source, needle).not.toContain('ROUTE_CORS');
+        expect(source, needle).not.toContain('OPTIONS');
+      }
+    });
+
+    it('emits no CORS surface for an empty or wildcard allow-list', async () => {
+      await generateSvelteKitRoutes(projectRoot, reportManifest, {
+        ...baseOptions,
+        cors: { allowedOrigins: ['*', ' '], allowCredentials: true },
+      });
+      expect(written('reports/+server.ts')).not.toContain('ROUTE_CORS');
+    });
+
+    it('wraps CRUD, action and sync/apply routes and adds OPTIONS', async () => {
+      await generateSvelteKitRoutes(projectRoot, reportManifest, {
+        ...baseOptions,
+        cors: {
+          allowedOrigins: ['https://app.example.com'],
+          allowCredentials: true,
+        },
+      });
+      for (const [needle, methods] of [
+        ['reports/+server.ts', ['GET', 'POST']],
+        ['reports/[id]/+server.ts', ['GET', 'PUT', 'DELETE']],
+        ['reports/[id]/archive/+server.ts', ['POST']],
+        ['sync/apply/+server.ts', ['POST']],
+        ['_changes/+server.ts', ['GET']],
+      ] as const) {
+        const source = written(needle);
+        expect(source, needle).toContain(
+          '{"allowedOrigins":["https://app.example.com"],"allowCredentials":true}',
+        );
+        expect(source, needle).toContain('export const OPTIONS');
+        expect(source, needle).toContain('corsPreflightResponse');
+        for (const method of methods) {
+          expect(source, `${needle} ${method}`).toContain(
+            `export const ${method}: RequestHandler = withRouteCors(${method}Handler);`,
+          );
+          expect(source, `${needle} ${method}`).not.toContain(
+            `export const ${method}: RequestHandler = async`,
+          );
+        }
+        expect(source, needle).not.toContain("'*'");
+      }
+    });
+
+    it('inherits the allow-list for _events unless eventsRoute sets its own', async () => {
+      await generateSvelteKitRoutes(projectRoot, reportManifest, {
+        ...baseOptions,
+        cors: { allowedOrigins: ['https://app.example.com'] },
+      });
+      const inherited = written('_events/+server.ts');
+      expect(inherited).toContain(
+        'const ROUTE_CORS = {"allowedOrigins":["https://app.example.com"],"allowCredentials":false}',
+      );
+
+      vi.mocked(writeFileSync).mockClear();
+      await generateSvelteKitRoutes(projectRoot, reportManifest, {
+        ...baseOptions,
+        cors: { allowedOrigins: ['https://app.example.com'] },
+        eventsRoute: {
+          allowedOrigins: ['https://events.example.com'],
+          allowCredentials: true,
+        },
+      });
+      const own = written('_events/+server.ts');
+      expect(own).toContain(
+        'const ROUTE_CORS = {"allowedOrigins":["https://events.example.com"],"allowCredentials":true}',
+      );
+      expect(own).not.toContain('https://app.example.com');
+    });
+
+    it('lets eventsRoute.allowedOrigins: [] keep _events same-origin whatever cors allows', async () => {
+      await generateSvelteKitRoutes(projectRoot, reportManifest, {
+        ...baseOptions,
+        cors: { allowedOrigins: ['https://app.example.com'] },
+        eventsRoute: { allowedOrigins: [] },
+      });
+      expect(written('_events/+server.ts')).not.toContain('ROUTE_CORS');
+      // The other routes keep the shared allow-list.
+      expect(written('_changes/+server.ts')).toContain('ROUTE_CORS');
+    });
   });
 
   describe('Configuration File Generation', () => {
@@ -648,7 +781,7 @@ describe('SvelteKit Route Generator', () => {
       // item's collection, matching the permission catalog (#2977).
       expect(content).toContain('const PERMISSION_COLLECTION = "widgets";');
       expect(content).toContain(
-        'requireRoutePermission(locals, "restoreSpecial");',
+        'requireRouteAccess(locals, "restoreSpecial", true, "restoreSpecial");',
       );
     });
 
@@ -715,8 +848,73 @@ describe('SvelteKit Route Generator', () => {
       const content = route?.[1] as string;
       expect(content).toContain('const PERMISSION_COLLECTION = "gadgets";');
       expect(content).toContain(
-        'requireRoutePermission(locals, "importBatch");',
+        'requireRouteAccess(locals, "importBatch", true, "importBatch");',
       );
+    });
+
+    it.each([
+      [true, 'const ALLOW_SUPER_ADMIN_BYPASS = true;'],
+      [false, 'const ALLOW_SUPER_ADMIN_BYPASS = false;'],
+    ])('derives the bypass opt-in of a collection-hosted action from the item model (opt-in %s)', async (optIn, expected) => {
+      const manifest = {
+        version: '1',
+        timestamp: 0,
+        objects: {
+          Widget: {
+            className: 'Widget',
+            name: 'Widget',
+            filePath: '',
+            collection: 'widgets',
+            extends: 'SmrtObject',
+            fields: {},
+            methods: {},
+            decoratorConfig: {
+              api: false,
+              ...(optIn
+                ? { tenantScoped: { allowSuperAdminBypass: true } }
+                : {}),
+            },
+          },
+          WidgetCollection: {
+            className: 'WidgetCollection',
+            name: 'WidgetCollection',
+            filePath: '',
+            collection: 'widget_collections',
+            extends: 'SmrtCollection',
+            extendsTypeArg: 'Widget',
+            fields: {},
+            methods: {
+              importBatch: {
+                async: false,
+                name: 'importBatch',
+                parameters: [],
+                returnType: 'Promise<any>',
+                isPublic: true,
+                isStatic: false,
+              },
+            },
+            decoratorConfig: {
+              api: {
+                include: ['importBatch'],
+                routes: { importBatch: { method: 'POST' } },
+              },
+            },
+          },
+        },
+      } as unknown as SmartObjectManifest;
+
+      await generateSvelteKitRoutes(projectRoot, manifest, {
+        enabled: true,
+        routesDir: 'src/routes/api',
+        objectsDir: 'src/lib/objects',
+        configPath: 'src/lib/server',
+      });
+      const route = vi
+        .mocked(writeFileSync)
+        .mock.calls.find(([filePath]) =>
+          String(filePath).includes('/importBatch/+server.ts'),
+        );
+      expect(route?.[1] as string).toContain(expected);
     });
 
     it('keeps an inherited item type name when a partial manifest omits the item', async () => {
@@ -1759,7 +1957,7 @@ describe('SvelteKit Route Generator', () => {
         'export const GET: RequestHandler = async ({ locals, params, request }) => {',
       );
       // Fail-closed auth guard (#1540): reads do not require auth as a mutation.
-      expect(content).toContain('requireRouteAuth(locals, false);');
+      expect(content).toMatch(/requireRouteAccess\(locals, "\w+", false\);/);
       expect(content).toContain(
         "type ActionArgs = Parameters<Document['evaluateReviewProfileAction']>;",
       );
@@ -2183,7 +2381,9 @@ describe('SvelteKit Route Generator', () => {
         'export const POST: RequestHandler = async ({ locals, params, request }) => {',
       );
       // Fail-closed auth guard (#1540): POST is a mutating verb.
-      expect(content).toContain('requireRouteAuth(locals, true);');
+      expect(content).toMatch(
+        /requireRouteAccess\(locals, "\w+", true, "\w+"\);/,
+      );
       expect(content).not.toContain('{ params, request }');
     });
 

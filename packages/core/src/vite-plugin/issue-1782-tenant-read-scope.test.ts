@@ -103,7 +103,7 @@ describe('Issue #1782: fail-closed tenant read scope in generated routes', () =>
     // List + count both carry the scope, applied by the helper the runtime
     // REST route uses so no spelling of the tenant key survives beside it.
     expect(collectionRoute).toContain(
-      'const where = applyWhereScope(query.where, tenancyReadScope(tenancy)) ?? {};',
+      'const where = applyWhereScope(stripTenantFilters(routePrincipal(locals), TENANT_COLUMNS, query.where), tenancyReadScope(tenancy)) ?? {};',
     );
     expect(collectionRoute).not.toContain('...tenantReadScope()');
     // #2367 added the deterministic ordering; the read scope still rides along.
@@ -253,7 +253,7 @@ describe('Issue #1782: fail-closed tenant read scope in generated routes', () =>
       'const TENANCY_MODEL = "@test/smrt:PlainDoc";',
     );
     expect(collectionRoute).toContain(
-      'applyWhereScope(query.where, tenancyReadScope(tenancy))',
+      'applyWhereScope(stripTenantFilters(routePrincipal(locals), TENANT_COLUMNS, query.where), tenancyReadScope(tenancy))',
     );
     expect(collectionRoute).toContain(
       'collection.list({ limit, offset, orderBy, where })',

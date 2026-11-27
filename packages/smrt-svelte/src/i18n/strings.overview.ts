@@ -84,6 +84,9 @@ export const M = defineMessages({
     'Cards that link to a section’s pages.',
   'ui.overview.widget.note.title': 'Note',
   'ui.overview.widget.note.description': 'Text with simple formatting.',
+  'ui.overview.widget.activity.title': 'Activity',
+  'ui.overview.widget.activity.description':
+    'Recent activity across your workspace.',
   // Core widgets: options
   'ui.overview.opt.title': 'Title',
   'ui.overview.opt.title_help':

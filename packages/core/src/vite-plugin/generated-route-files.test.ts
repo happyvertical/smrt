@@ -13,6 +13,7 @@ import {
   mkdtempSync,
   readdirSync,
   readFileSync,
+  realpathSync,
   rmSync,
   symlinkSync,
   writeFileSync,
@@ -42,7 +43,9 @@ const APPLICATION = "export const GET = () => new Response('app');\n";
 let root: string;
 
 beforeEach(() => {
-  root = mkdtempSync(join(tmpdir(), 'smrt-generated-route-files-'));
+  root = realpathSync(
+    mkdtempSync(join(tmpdir(), 'smrt-generated-route-files-')),
+  );
   vi.spyOn(console, 'log').mockImplementation(() => {});
 });
 

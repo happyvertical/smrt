@@ -1,8 +1,8 @@
 # Contributing to SMRT
 
 Thanks for trying the framework. Feedback is the most useful contribution right
-now: if something on [s-m-r-t.dev](https://s-m-r-t.dev) confused you, broke,
-or took longer than it should have, tell us.
+now: if something on [smrt.happyvertical.com](https://smrt.happyvertical.com) confused you,
+broke, or took longer than it should have, tell us.
 
 ## Ways to help
 

@@ -168,6 +168,55 @@ transports; `packages/cli/src/__tests__/cli-writable-policy.test.ts`;
 
 ### Host-resolved principal on runtime REST (#5195)
 
+**One decision** (`generators/route-authz.ts`, #5195). `authorize()` is the pure
+sign-in / `<collection>.<action>` / write-body tenant decision; `stripTenantFilters()`
+the read-filter rule; `apiPrincipalFromLocals()` derives the principal of a SvelteKit
+request from `locals`. Callers pass model policy in (no registry); super-admin bypass
+counts only with `allowSuperAdminBypass`.
+
+**One CORS policy** (`generators/cors.ts`, #5195). Pure functions on an origin and
+`{ allowedOrigins, allowCredentials }`: an origin is echoed only when it is
+listed verbatim (never `*`; a `*` entry is dropped), with `Vary: Origin`;
+`Access-Control-Allow-Credentials: true` only for an echoed origin and only
+with `allowCredentials`, so an empty list never carries credentials; a
+preflight (`corsPreflightResponse`, 200) answers with the allowed methods,
+headers and max-age; an existing `Vary` is extended, not replaced. With a
+non-empty allow-list every response (no Origin, disallowed, allowed; 304, error,
+preflight) carries `Vary: Origin`, so a shared cache never serves one origin's
+answer to another; only an allowed origin gets `Access-Control-Allow-Origin`
+and credentials. REST
+(`enableCors` + `allowedOrigins` + `allowCredentials`) and generated SvelteKit
+routes (`sveltekit.cors: { allowedOrigins, allowCredentials }`) both decide
+through it, so one origin gets identical headers on both. SvelteKit default is
+off: no CORS headers, same-origin only. `vite-plugin/route-cors.ts`
+(`applyRouteCors`) wraps each emitted method handler of the CRUD, custom
+action, `sync/apply`, `_changes` and `_events` routes (a thrown `error()`
+included) and adds `OPTIONS`, so `_events` gets the same `Vary: Origin`,
+preflight status and headers (also on its 401) as REST's `_events`.
+`sveltekit.eventsRoute.allowedOrigins` / `allowCredentials` still configure
+`_events` alone and win over `cors` there; with none of its own, `_events`
+inherits the `cors` allow-list, and `eventsRoute.allowedOrigins: []` keeps it
+same-origin only. The feed routes' sign-in is `authorize` on the `_feed`
+collection (401 `AUTHENTICATION_REQUIRED`), as REST's.
+
+**Parity contract** (#5195). The runtime REST handler and the emitted SvelteKit
+routes must answer the same request from the same caller identically: status,
+error code and message, body, CORS headers. `src/generators/route-parity.test.ts`
+enforces it. It scans fixture models (private, `api.public: 'read'`, `true`,
+super-admin opt-in), emits their routes with the real generator, sends one set of
+requests (CRUD, protected-field writes, `sync/apply` with mixed items, custom
+actions, CORS) from one set of principals to both paths over in-process SQLite,
+and fails on any difference. Differences that cannot be removed today are named
+in its `DIVERGENCES` list, each with a reason, and the list is closed both ways:
+a divergence that stops differing fails the test, and a new one fails it.
+Today: the list envelope (REST bare array, routes `{ items, count, limit,
+offset }`), the delete success answer (REST 204, routes 200 `{ success: true }`),
+the not-found message, item-scope and multi-segment custom actions (routes
+only), and `allowCrossTenant` principals (REST only; `locals` has no marker).
+Change an answer on one path and the test names the case; change both on
+purpose and update the test with them. The harness is
+`src/__tests__/fixtures/route-parity-harness.ts`.
+
 `APIConfig.resolvePrincipal(req)` returns the request's
 `APIRequestPrincipal` (`{ tenantId, allowCrossTenant, authenticated, userId?,
 permissions?, callerKind?, superAdminBypass? }`) or `null` (anonymous). The
@@ -177,7 +226,13 @@ request as received, and passes the result (`ResolvedRequestPrincipal`,
 `generators/request-principal.ts`) explicitly to every check: CRUD, custom
 actions, each `sync/apply` item, subtype re-checks, `_changes`, `_events`,
 `_inference` and `_preflight`. Rebuilt requests (sync items, subtype checks)
-never resolve it again. A throw, or a value of the wrong shape, is a 500 that
+never resolve it again. Every check is the shared decision of
+`generators/route-authz.ts` (`authorize`, `stripTenantFilters`), called by
+`APIGenerator.decide` with the model's policy read from the registry; it
+applies only with `resolvePrincipal`, since the fixed `APIContext` principal
+carries no verified permissions and `authMiddleware` decides alone there.
+`_inference` and `_preflight` make no principal decision (anonymous callers
+may read them). A throw, or a value of the wrong shape, is a 500 that
 carries only a request id, before any hook. `normalizeRequestPrincipal` reads
 the answer into the request's one `RequestPrincipal` snapshot (frozen, null
 prototype; what `onRequest` receives): each own field exactly once in a fixed
@@ -234,8 +289,8 @@ field and, for a family with a ceiling, admitted and creatable subsets with
 equal member signatures; anything else is 403 `TENANT_CONTEXT_CONFLICT`
 (`RequestPrincipalScopeError`). Work that kept the context of an ended
 record is refused by the request-tenancy interceptor (`REQUEST_ENDED`), and
-`requirePermission` refuses unless the live record's snapshot is the
-principal checked. A handler invoked while a record is live (nested
+`APIGenerator.decide` refuses (403 `PERMISSION_DENIED`) unless the live
+record's snapshot is the principal checked. A handler invoked while a record is live (nested
 dispatch, `handleRequest` sees `currentPrincipalFrame()`) inherits it
 exactly: its own `resolvePrincipal`, `resolveTenant`, fixed context and
 enforcement are not consulted (the exposure gate and create targets read the
@@ -260,10 +315,10 @@ When it is configured, runtime REST enforces, from the principal:
 
 | Rule | Where | Refusal |
 |---|---|---|
-| Sign-in: `authenticated`, unless `api.public` opens the route (`'read'`: reads only), as `requireRouteAuth` decides on the emitted routes | `admitObjectRequest`, `authorizeRowModel`, sync `authorize`; `_changes` / `_events` are never public (`authenticateFeedRequest`) | 401; sync `auth_required` |
-| `<collection>.<action>` through one `requirePermission(principal, model, action)`: create, update, delete; mutating custom actions as `<collection>.<method>` (or the `operationPermissions` alias); each sync item as `<collection>.<op>`; a subtype row's own model on create, update, delete and sync | `routeCrudOperation`, `dispatchCustomCollectionAction`, sync `authorize`, `authorizeRowModel` | 403 `PERMISSION_DENIED`; sync `forbidden` |
-| A write body naming a tenant other than `tenantId` (`tenantId`, `tenant_id`, or an ownership column of the model, any spelling of the column; `null` included) | `assertWriteTenant` on create (base and selected subtype), update (and the subtype row's model), sync `prepare` | 403 `TENANT_MISMATCH`; sync `forbidden` |
-| Query filters on a tenant ownership column are removed unless `allowCrossTenant` | `withoutTenantFilters` in `applyTenantReadScope` (list, count) | none: the filter is ignored |
+| Sign-in: `authenticated`, unless `api.public` opens the route (`'read'`: reads only), as `requireRouteAccess` decides on the emitted routes (both ask `authorize`, `src/generators/route-authz.ts`) | `admitObjectRequest`, `authorizeRowModel`, sync `authorize`; `_changes` / `_events` are never public (`authenticateFeedRequest`) | 401; sync `auth_required` |
+| `<collection>.<action>` through one `authorize` decision (`APIGenerator.decide`): create, update, delete; mutating custom actions as `<collection>.<method>` (or the `operationPermissions` alias); each sync item as `<collection>.<op>`; a subtype row's own model on create, update, delete and sync | `routeCrudOperation`, `dispatchCustomCollectionAction`, sync `authorize`, `authorizeRowModel` | 403 `PERMISSION_DENIED`; sync `forbidden` |
+| A write body naming a tenant other than `tenantId` (`tenantId`, `tenant_id`, or an ownership column of the model, any spelling of the column; `null` included) | `assertWriteBody` (`authorize` with the body) on create (base and selected subtype), update (and the subtype row's model), sync `prepare` | 403 `TENANT_MISMATCH`; sync `forbidden` |
+| Query filters on a tenant ownership column are removed unless `allowCrossTenant` | `stripTenantFilters` (`route-authz.ts`) in `applyTenantReadScope` (list, count) | none: the filter is ignored |
 | Read redaction, query field checks and `_preflight` use `principal.permissions` | `getPublicJsonOptions(principal)` | — |
 
 The permission collection is `resolvePermissionCollection()`
@@ -271,8 +326,9 @@ The permission collection is `resolvePermissionCollection()`
 sync routes use: `@smrt({ collection })`, else the model's manifest
 collection. `api.public: true` models need no permission (as on the emitted
 routes). `superAdminBypass` stands in for a permission only on a model with
-`tenantScoped: { allowSuperAdminBypass: true }`; the emitted routes'
-`tenantContext.superAdminBypass` skips the check on every model. GET custom
+`tenantScoped: { allowSuperAdminBypass: true }`, on the emitted routes too
+(read from the model the write lands in, a subtype's own opt-in on create).
+GET custom
 actions need no permission, as on the emitted routes. `authMiddleware`, when
 also set, runs after these checks as an extra check and can only refuse.
 `APIContext.user` / `permissions` are not read.
@@ -995,7 +1051,7 @@ connection.
 Core never imports smrt-dev-mcp; only the generated file does, at consumer
 runtime. The route carries the auto-generated header so the sweep owns it.
 
-Generated SvelteKit write routes (#2977) call `requireRoutePermission(locals, action)` after `requireRouteAuth`: CRUD writes need `<collection>.create|update|delete` and mutating custom actions `<collection>.<method>` in the session permission snapshot on `locals`, else 403 (fail-closed; `api.public: true` stays open, `tenantContext.superAdminBypass` skips). See `packages/users/agents/permissions.md`. Runtime REST enforces the same slugs when the host resolves principals; see "Host-resolved principal on runtime REST" above.
+Generated SvelteKit write routes (#2977, #5195) call `requireRouteAccess(locals, op, mutating, permissionAction?)`, which asks the shared `authorize` (`src/generators/route-authz.ts`) for sign-in (401), the permission and, with `requireRouteBody` (and `requireModelAccess` for an STI subtype a create selects or a row belongs to), the tenant a write body names (403 `TENANT_MISMATCH`): CRUD writes need `<collection>.create|update|delete` and mutating custom actions `<collection>.<method>` in ONE permission source on `locals` (the first defined of `permissions`, `permissionSet`, `smrtPermissions`, `tenantContext.permissions`; an empty list is authoritative), else 403 `PERMISSION_DENIED` (fail-closed; `api.public: true` stays open). A super-admin bypass (`tenantContext.superAdminBypass`) stands in for the permission only on a model with `tenantScoped.allowSuperAdminBypass`. `_changes` and `_events` ask `authorize` for sign-in on the `_feed` collection (401 `AUTHENTICATION_REQUIRED`, never public) and answer CORS through `generators/cors.ts` (`applyRouteCors`), as REST does. See `packages/users/agents/permissions.md`. Runtime REST enforces the same slugs when the host resolves principals; see "Host-resolved principal on runtime REST" above.
 
 ## MCP protocol identifiers (#3219)
 
@@ -1098,17 +1154,20 @@ three hand-mirrored d.ts files); tool inputs read it from the manifest field.
 
 ## Guest callers on generated routes (#5196)
 
-`requireRouteAuth(locals, mutating, guestOperation?)` admits a guest principal
-(`locals.guestPrincipal`, validated by `guestPrincipalOf`: `callerKind: 'guest'`,
-`userId: null`, same tenant as `locals.tenantId`, no user/session/`smrtAuth`)
-only for `list`/`get` when `isGuestOperationAllowed` passes for the model. Every
-other operation, `public` routes included, answers a guest 401 like an anonymous
-caller: a guest request carries its tenant on `locals` and in the entered tenant
-context, so an unadmitted operation must not run for it. `listBounds(url,
-locals)` caps a guest page at `GUEST_MAX_LIST_LIMIT` (100). The emitted routes
-import these names from `@happyvertical/smrt-core`; hand-written core stubs in
-emitted-route tests must export them. No request-driven `include`/`expand`
-exists on generated routes.
+A guest is the shared principal contract's unauthenticated caller with
+`callerKind: 'guest'` (`apiPrincipalFromLocals` sets it when
+`guestPrincipalOf(locals)` validates `locals.guestPrincipal`: `userId: null`,
+same tenant as `locals.tenantId`, no user/session/`smrtAuth`). The same
+`authorize` decides it. `requireRouteAccess` passes `guestReadAllowed` for a
+`list`/`get` the guest set grants (`isGuestOperationAllowed`: `<collection>.read`,
+generated operations only), which stands in for sign-in on a non-public read.
+Every other non-public operation answers a guest 401 like an anonymous caller;
+`public` routes stay public for a guest exactly as for an anonymous one (the
+row policies bound what it reads to its guest set). `listBounds(url, locals)`
+caps a guest page at `GUEST_MAX_LIST_LIMIT` (100). The emitted routes import
+`GUEST_MAX_LIST_LIMIT`, `guestPrincipalOf` and `isGuestOperationAllowed` from
+`@happyvertical/smrt-core`; hand-written core stubs in emitted-route tests must
+export them. No request-driven `include`/`expand` exists on generated routes.
 
 ## Custom-action permission aliases (#3878)
 

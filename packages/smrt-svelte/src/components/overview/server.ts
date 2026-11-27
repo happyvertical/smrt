@@ -5,6 +5,19 @@
  * schemas, widget registry, and the server load contract. Safe to import from
  * a `+page.server.ts` or a save endpoint.
  */
+export { safeActivityHref } from '../activity/safe-href.js';
+export {
+  type FormatActivityTimestampOptions,
+  type FormattedActivityTime,
+  formatActivityTimestamp,
+} from '../activity/time.js';
+export type {
+  ActivityContextBadge,
+  ActivityListControls,
+  ActivityListEntry,
+  ActivityStatusBadge,
+  ActivityStatusTone,
+} from '../activity/types.js';
 export {
   createOverviewAssistantSurface,
   type OverviewAssistantPersistResult,
@@ -95,6 +108,7 @@ export {
 } from './schema.js';
 export { sectionOverviewDefaults } from './section-defaults.js';
 export * from './types.js';
+export type { ActivityWidgetData } from './widgets/data.js';
 export {
   type LineItemsTotals,
   type LineTotalKey,

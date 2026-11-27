@@ -132,8 +132,9 @@ ordering that is not a string or a list of strings is refused
 
 Where each transport takes the caller's permissions, which is where it takes
 them for projection: runtime REST `APIContext.permissions`; in-process MCP
-`MCPContext.permissions`; emitted SvelteKit routes `locals.permissions` /
-`permissionSet` / `smrtPermissions`; emitted MCP servers the
+`MCPContext.permissions`; emitted SvelteKit routes the principal's one permission source
+(`apiPrincipalFromLocals`: the first defined of `locals.permissions`,
+`permissionSet`, `smrtPermissions`, `tenantContext.permissions`); emitted MCP servers the
 `SMRT_MCP_PERMISSIONS` environment list (they have no per-call principal);
 the assistant tool loop `run.permissions`. The CLI `list --where` is an
 operator surface that prints unredacted rows and does not apply the check.

@@ -741,6 +741,7 @@ export {
   applyUpdateInput,
   assertCreateInput,
   assertUpdateInput,
+  foreignRowModel,
   prepareWriteInput,
   updateInputRulesFor,
 } from './request-input';

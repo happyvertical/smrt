@@ -1,11 +1,26 @@
 import { expectNoA11yViolations } from '@happyvertical/smrt-ui/test-support/a11y';
 import { render, screen } from '@testing-library/svelte';
-import { describe, expect, it } from 'vitest';
+import userEvent from '@testing-library/user-event';
+import { describe, expect, it, vi } from 'vitest';
+import {
+  formatActivityTimestamp as formatFromOverview,
+  safeActivityHref as safeHrefFromOverview,
+} from '../index.js';
+import { loadOverview } from '../load.js';
+import { defineOverview, resolveOverview } from '../model.js';
+import { createWidgetRegistry } from '../registry.js';
+import {
+  formatActivityTimestamp as formatFromServer,
+  safeActivityHref as safeHrefFromServer,
+} from '../server.js';
+import ActivityWidget from '../widgets/ActivityWidget.svelte';
 import ChartWidget from '../widgets/ChartWidget.svelte';
+import { registerCoreWidgets } from '../widgets/core.js';
 import MetricWidget from '../widgets/MetricWidget.svelte';
 import NoteWidget from '../widgets/NoteWidget.svelte';
 import RecordListWidget from '../widgets/RecordListWidget.svelte';
 import ShortcutsWidget from '../widgets/ShortcutsWidget.svelte';
+import OverviewHarness from './overview-harness.svelte';
 
 const base = { id: 'w1', options: {}, span: 1, title: 'T', locale: 'en-US' };
 const junk: unknown[] = [
@@ -25,6 +40,10 @@ const junk: unknown[] = [
   {
     rows: [null, 3, { title: 5 }],
     items: [{ label: 'x', href: 'javascript:1' }],
+    entries: [
+      { title: 'Calendar with out-of-range now', occurredAt: '2026-11-26' },
+    ],
+    now: 1e20,
   },
 ];
 
@@ -32,6 +51,7 @@ describe('core widget components', () => {
   it('survive any data shape without throwing', () => {
     for (const data of junk) {
       for (const Component of [
+        ActivityWidget,
         MetricWidget,
         ChartWidget,
         RecordListWidget,
@@ -321,5 +341,177 @@ describe('core widget components', () => {
         .querySelector('[data-smrt-component="ShortcutsWidget"]')
         ?.getAttribute('data-presentation'),
     ).toBe('plain');
+  });
+
+  it('registers activity in registerCoreWidgets and forwards enriched entries and dismissal controls', async () => {
+    const registry = createWidgetRegistry();
+    registerCoreWidgets(registry, {
+      activity: () => ({ entries: [] }),
+    });
+    expect(registry.get('activity')).toMatchObject({
+      type: 'activity',
+      defaultSpan: 4,
+    });
+
+    const seededRegistry = createWidgetRegistry();
+    registerCoreWidgets(seededRegistry, { activity: true });
+    expect(seededRegistry.get('activity')?.load).toBeUndefined();
+
+    const onDismiss = vi.fn();
+    const { container } = render(ActivityWidget, {
+      props: {
+        ...base,
+        span: 4,
+        options: { limit: 1 },
+        data: {
+          entries: [
+            {
+              id: 'act-1',
+              title: 'Ticket triaged',
+              detail: 'Escalated to platform engineering',
+              occurredAt: '2026-11-26T19:50:00.000Z',
+              href: '/app/support/act-1',
+              source: 'support',
+              sourceLabel: 'Support',
+              code: 'SUP-101',
+              context: { label: 'Platform', href: '/app/projects/platform' },
+              status: { label: 'Triaged', tone: 'success' },
+              meta: '2 comments',
+            },
+            {
+              id: 'act-2',
+              title: 'Clipped by limit option',
+              occurredAt: '2026-11-26T18:00:00.000Z',
+            },
+          ],
+          onDismiss,
+        },
+      },
+    });
+
+    expect(screen.getByText('Ticket triaged')).toBeInTheDocument();
+    expect(screen.getByText('SUP-101')).toBeInTheDocument();
+    expect(screen.getByText('Triaged')).toBeInTheDocument();
+    expect(
+      screen.queryByText('Clipped by limit option'),
+    ).not.toBeInTheDocument();
+
+    await userEvent.click(
+      screen.getByRole('button', { name: 'Dismiss Ticket triaged' }),
+    );
+    expect(onDismiss).toHaveBeenCalledWith('act-1');
+    await expectNoA11yViolations(container);
+  });
+
+  it('re-exports safeActivityHref and formatActivityTimestamp on overview and overview/server', () => {
+    expect(safeHrefFromServer).toBe(safeHrefFromOverview);
+    expect(formatFromServer).toBe(formatFromOverview);
+    expect(safeHrefFromServer('javascript:alert(1)')).toBeUndefined();
+    expect(safeHrefFromServer('/app/activity')).toBe('/app/activity');
+    expect(
+      formatFromServer('2026-11-26T19:59:30.000Z', {
+        now: Date.parse('2026-11-26T20:00:00.000Z'),
+      })?.label,
+    ).toBe('just now');
+  });
+
+  it('activity widget resolves duplicate and generated-id collisions without crashing or corrupting callback ids', async () => {
+    const onDismiss = vi.fn();
+    render(ActivityWidget, {
+      props: {
+        ...base,
+        span: 4,
+        data: {
+          entries: [
+            // Missing id must not take '0' because a later item explicitly owns '0'.
+            {
+              title: 'Missing id entry',
+              occurredAt: '2026-11-26T19:50:00.000Z',
+            },
+            {
+              id: '0',
+              title: 'Explicit zero id entry',
+              occurredAt: '2026-11-26T19:49:00.000Z',
+            },
+            {
+              id: 'dup',
+              title: 'First duplicate kept',
+              occurredAt: '2026-11-26T19:48:00.000Z',
+            },
+            {
+              id: 'dup',
+              title: 'Second duplicate dropped',
+              occurredAt: '2026-11-26T19:47:00.000Z',
+            },
+          ] as never,
+          onDismiss,
+        },
+      },
+    });
+
+    expect(screen.getByText('Missing id entry')).toBeInTheDocument();
+    expect(screen.getByText('Explicit zero id entry')).toBeInTheDocument();
+    expect(screen.getByText('First duplicate kept')).toBeInTheDocument();
+    expect(
+      screen.queryByText('Second duplicate dropped'),
+    ).not.toBeInTheDocument();
+
+    await userEvent.click(
+      screen.getByRole('button', { name: 'Dismiss Explicit zero id entry' }),
+    );
+    expect(onDismiss).toHaveBeenCalledWith('0');
+
+    await userEvent.click(
+      screen.getByRole('button', { name: 'Dismiss First duplicate kept' }),
+    );
+    expect(onDismiss).toHaveBeenCalledWith('dup');
+  });
+
+  it('preserves identical relative timestamp label and timezone tooltip from loadOverview across clock drift', async () => {
+    const registry = createWidgetRegistry();
+    registerCoreWidgets(registry, {
+      activity: () => ({
+        entries: [
+          {
+            id: 'a1',
+            title: 'Threshold boundary event',
+            occurredAt: '2026-11-26T19:00:00.000Z',
+          },
+        ],
+      }),
+    });
+    const definition = defineOverview({
+      id: 'work.home',
+      allowed: ['activity'],
+      defaults: [{ id: 'act', type: 'activity', span: 4, options: {} }],
+    });
+    const resolved = resolveOverview(definition, null, registry);
+
+    // Server load runs 30s after occurredAt ('just now') with explicit America/New_York zone.
+    const serverNow = Date.parse('2026-11-26T19:00:30.000Z');
+    const loaded = await loadOverview(resolved.document, definition, registry, {
+      now: serverNow,
+      timeZone: 'America/New_York',
+    });
+
+    // Simulate client hydrating 5 minutes later with a drifted system clock.
+    const spy = vi
+      .spyOn(Date, 'now')
+      .mockReturnValue(Date.parse('2026-11-26T19:05:30.000Z'));
+    try {
+      const { container } = render(OverviewHarness, {
+        props: {
+          options: { definition, registry, loaded },
+        },
+      });
+      const timeEl = container.querySelector('time');
+      expect(timeEl).toHaveTextContent('just now');
+      expect(timeEl?.getAttribute('title')).toContain('2:00 PM');
+      expect(timeEl?.getAttribute('title')).toContain(
+        '2026-11-26T19:00:00.000Z',
+      );
+    } finally {
+      spy.mockRestore();
+    }
   });
 });

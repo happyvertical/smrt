@@ -29,6 +29,10 @@ function showHelp(): void {
 Options:
   --changed          Limit stale-pattern checks to changed files
   --strict           Treat stale-pattern findings as errors
+  --generated        Also require docs/knowledge/components/** and the generated
+                     indexes to match the generator. Off by default: those pages
+                     are regenerated after merge to main (#5705), so do not run
+                     knowledge:okf or commit them in a PR.
   --format <format>  Output format: markdown or json (default: markdown)
   --json             Deprecated alias for --format json
   --help             Show this help text`);
@@ -56,12 +60,15 @@ async function main(): Promise<void> {
   const index = await buildKnowledgeIndex(options);
   const result = await checkKnowledgeFreshnessFromIndex(index, options);
 
-  // OKF bundle (#4686): generated component pages must match their current
-  // inputs and every hand-authored absolute link must resolve. Like the other
+  // OKF bundle (#4686): generation must succeed and every hand-authored
+  // absolute link must resolve. Generated pages are compared with the
+  // generator only under --generated (#5705): the post-merge workflow owns
+  // them, so a PR neither carries nor is failed by them. Like the other
   // stale-* findings these are errors under --strict, warnings otherwise.
   const okfIssues: KnowledgeIssue[] = checkBundle(
     buildComponentModels(index),
     bundleDirFor(index.rootDir),
+    { generated: hasFlag('--generated') },
   ).map((issue) => ({
     severity: options.strict ? 'error' : 'warning',
     code: issue.code,

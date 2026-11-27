@@ -13,7 +13,11 @@ import {
   CookbookStore,
   SAVE_DELAY_MS,
 } from '../src/lib/cookbook/store.svelte.ts';
-import { COOKBOOK_SCHEMA, PREVIOUS_SCHEMA } from '../src/lib/cookbook/types.ts';
+import {
+  COOKBOOK_SCHEMA,
+  PREVIOUS_HOST_SCHEMA,
+  PREVIOUS_SCHEMA,
+} from '../src/lib/cookbook/types.ts';
 import {
   parseCookbook,
   parseCookbookText,
@@ -596,6 +600,9 @@ describe('rename from blueprint', () => {
       $schema: 'https://example.com/x.json',
     });
     expect(bad.ok).toBe(false);
+    // A file saved before the docs site moved hosts still imports.
+    const moved = parseCookbook({ ...valid, $schema: PREVIOUS_HOST_SCHEMA });
+    expect(moved.ok && moved.cookbook.$schema).toBe(COOKBOOK_SCHEMA);
     // An imported old file is normalised to the new schema.
     const imported = parseCookbook({ ...valid, $schema: PREVIOUS_SCHEMA });
     expect(imported.ok && imported.cookbook.$schema).toBe(COOKBOOK_SCHEMA);

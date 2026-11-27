@@ -32,7 +32,7 @@ test('the slowest measured packages land in different shards (#5045)', () => {
     );
   const homes = [
     'ingestion#test',
-    'app-runtime#test',
+    'messages#test',
     'app-shell#test:unit:1of2',
     'app-shell#test:unit:2of2',
   ].map(home);

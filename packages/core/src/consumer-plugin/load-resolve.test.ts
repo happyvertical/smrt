@@ -1263,7 +1263,7 @@ describe('smrtConsumer explicit SvelteKit route hosting (#2850)', () => {
       "import type { Widget } from '@acme/widgets';",
     );
     expect(readFileSync(collectionRoute, 'utf8')).toContain(
-      'requireRouteAuth(locals, false, "list");',
+      'requireRouteAccess(locals, "list", false);',
     );
     expect(readFileSync(collectionRoute, 'utf8')).toContain(
       'const tenancy = enterTenancy(locals, "list");',

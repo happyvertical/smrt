@@ -149,6 +149,19 @@ pre-push:
         Fix the issues above, or run:
           pnpm knowledge:check --strict --format markdown
 
+    generated-knowledge-untouched:
+      # Generated pages are regenerated after merge to main (#5705); a PR must
+      # not carry them. The rolling bot branch is the only exception.
+      run: |
+        [ "$(git rev-parse --abbrev-ref HEAD)" = chore/knowledge-regenerate ] && exit 0
+        git rev-parse --verify -q origin/main >/dev/null || exit 0
+        node scripts/check-generated-knowledge-untouched.mjs origin/main
+      fail_text: |
+        ❌ This branch edits generated knowledge pages!
+
+        Do not run `pnpm knowledge:okf` or commit docs/knowledge/components/**
+        or docs/knowledge/index.md; main regenerates them after merge.
+
     format-check:
       run: npx --yes @biomejs/biome@2.5.3 ci --diagnostic-level=error .
       fail_text: |
@@ -243,7 +256,7 @@ pre-push:
 
     jsdoc:
       # Requires JSDoc on exported Svelte component props, which svelte-package
-      # publishes into the .d.ts that editors and s-m-r-t.dev read. Report-only
+      # publishes into the .d.ts that editors and the docs site read. Report-only
       # until a package sets "smrtJsdoc": "strict" in its own package.json.
       run: node scripts/check-jsdoc.mjs
       fail_text: |
