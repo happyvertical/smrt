@@ -1,6 +1,8 @@
 // ONE policy for every tool surface (the /mcp route, the assistant's tool
-// allow-list). The owner sees and calls everything in the merged catalog;
-// anyone else sees nothing and every call is refused. Risky app tools are not
+// allow-list). The owner sees and calls everything in the merged catalog. An
+// ACTIVE staff member (#5197) sees only the app's record tools their grants
+// allow (no shell or builder tool), run as the staff principal; anyone else
+// sees nothing and every call is refused. Risky app tools are not
 // refused here: the call is accepted and turned into an Approval (builder.ts).
 //
 // The assistant worker reuses these two functions as its allow-list:
@@ -12,8 +14,9 @@ import {
   type CatalogTool,
   dispatchTool,
   listCatalog,
+  listStaffCatalog,
 } from './catalog.ts';
-import { isOwner, PolicyError, type Principal } from './owner.ts';
+import { isOwner, PolicyError, type Principal, staffRoleOf } from './owner.ts';
 import { type CallScope, LIVE_SCOPE } from './target.ts';
 
 function asMcp(principal: Principal): McpAppPrincipal {
@@ -26,16 +29,19 @@ function asMcp(principal: Principal): McpAppPrincipal {
 }
 
 /**
- * The tools this principal may see. Empty unless the principal is the owner.
- * `scope` names the copies the request is about (default: live); it picks
+ * The tools this principal may see: all for the owner, the granted record
+ * tools for staff, nothing for anyone else. `scope` names the copies the request is about (default: live); it picks
  * which copy's app tools are listed.
  */
 export async function toolsFor(
   principal: Principal | null | undefined,
   scope: CallScope = LIVE_SCOPE,
 ): Promise<CatalogTool[]> {
-  if (!principal || !(await isOwner(principal))) return [];
-  return listCatalog(asMcp(principal), scope);
+  if (!principal) return [];
+  if (await isOwner(principal)) return listCatalog(asMcp(principal), scope);
+  if ((await staffRoleOf(principal)) !== null)
+    return listStaffCatalog(asMcp(principal));
+  return [];
 }
 
 /**
@@ -50,8 +56,15 @@ export async function authorizeCall(
 ): Promise<CatalogTool> {
   if (!principal?.id || !principal.tenantId)
     throw new PolicyError(401, 'sign in first');
-  if (!(await isOwner(principal)))
-    throw new PolicyError(403, 'only the owner can use these tools');
+  if (!(await isOwner(principal))) {
+    if ((await staffRoleOf(principal)) === null)
+      throw new PolicyError(403, 'only the owner can use these tools');
+    const staffTool = (await listStaffCatalog(asMcp(principal))).find(
+      (t) => t.name === name,
+    );
+    if (!staffTool) throw new PolicyError(403, 'unknown tool');
+    return staffTool;
+  }
   const tool = (await listCatalog(asMcp(principal), scope)).find(
     (t) => t.name === name,
   );

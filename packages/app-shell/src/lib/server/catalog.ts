@@ -22,7 +22,7 @@ import { reviseChangeCard } from './changes.ts';
 import { ENGINE_TOOLS, isEngineTool, runEngineTool } from './engine-tools.ts';
 import { getShellDb, hostFor, shellDbSync } from './host.ts';
 import { HttpError } from './http.ts';
-import { principalFor, runAs } from './owner.ts';
+import { principalFor, runAs, staffPrincipalFor } from './owner.ts';
 import { ownerSafe } from './owner-text.ts';
 import { reportFailureForOwner } from './report-display.ts';
 import {
@@ -41,6 +41,11 @@ export interface CatalogTool {
   side: 'shell' | 'app';
   /** Calling it needs the owner's approval first (`<model>_delete`). */
   risky: boolean;
+  /**
+   * Set only by `listStaffCatalog` (#5197): the tool is in a STAFF member's
+   * catalog and runs as the staff principal, never the owner's.
+   */
+  access?: 'staff';
 }
 
 export interface CatalogResponse {
@@ -289,6 +294,32 @@ export async function listCatalog(
   return all;
 }
 
+/**
+ * A staff member's catalog (#5197): the app's own record tools they hold the
+ * slugs for (the worker lists only those), on the live copy. No shell or
+ * builder tool, no delete (never granted), and nothing that would shadow a
+ * shell tool's name.
+ */
+export async function listStaffCatalog(
+  principal: McpAppPrincipal,
+): Promise<CatalogTool[]> {
+  const who = principal as { id: string; tenantId: string };
+  const host = await hostFor('live');
+  const staff = await staffPrincipalFor(who, who.tenantId, host.def);
+  const taken = new Set((await listShellTools(principal)).map((t) => t.name));
+  return (await host.appTools(staff))
+    .filter((t) => !taken.has(t.name) && !isRiskyTool(t.name))
+    .map((t) => ({
+      name: t.name,
+      description: t.description,
+      inputSchema: t.inputSchema ?? { type: 'object', properties: {} },
+      side: 'app' as const,
+      risky: false,
+      access: 'staff' as const,
+    }))
+    .sort((a, b) => (a.name < b.name ? -1 : 1));
+}
+
 function asText(value: unknown): { type: 'text'; text: string }[] {
   return [{ type: 'text', text: JSON.stringify(value) }];
 }
@@ -368,12 +399,21 @@ async function dispatchInner(
       }),
     );
   }
-  const out = await runAppTool(
-    tool.name,
-    args,
-    { id: principal.id, tenantId: principal.tenantId ?? '' },
-    scope.records,
-  );
+  const who = { id: principal.id, tenantId: principal.tenantId ?? '' };
+  // A staff tool runs on live as the staff principal built now from the
+  // owner's current grants (never the owner's authority).
+  if (tool.access === 'staff') {
+    const host = await hostFor('live');
+    const out = await runAppTool(
+      tool.name,
+      args,
+      who,
+      'live',
+      await staffPrincipalFor(who, who.tenantId, host.def),
+    );
+    return out as CatalogResponse;
+  }
+  const out = await runAppTool(tool.name, args, who, scope.records);
   if (
     out &&
     typeof out === 'object' &&

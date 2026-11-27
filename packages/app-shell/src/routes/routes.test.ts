@@ -156,7 +156,6 @@ describe('every route needs the owner session', () => {
           }),
         ),
     ],
-    ['GET events', (w) => eventsRoute.GET(event(w, 'GET', '/api/events'))],
   ];
   for (const [name, call] of calls) {
     it(`${name}: 401 anonymous, 403 member`, async () => {
@@ -165,6 +164,14 @@ describe('every route needs the owner session', () => {
       expect((await call(h.stranger)).status).toBe(403);
     });
   }
+  it('GET events: 401 anonymous, 403 outsider (an active member is staff and hears only what is granted)', async () => {
+    expect(
+      (await eventsRoute.GET(event(null, 'GET', '/api/events'))).status,
+    ).toBe(401);
+    expect(
+      (await eventsRoute.GET(event(h.stranger, 'GET', '/api/events'))).status,
+    ).toBe(403);
+  });
   it('writes from another origin are refused even for the owner', async () => {
     const res = await recordsRoute.POST(
       event(h.owner, 'POST', '/api/shell/records/Chore', {

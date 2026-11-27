@@ -82,6 +82,19 @@ export class ModelAccessGrant extends SmrtObject {
       );
     const grants = await ModelAccessGrantCollection.create({ db });
     const id = accessGrantId(owner.tenantId, model, act);
+    // Create and update return the whole record, so they need read: staff
+    // never get a write that echoes back what they may not read.
+    if (act !== 'read') {
+      const [read] = await grants.list({
+        where: { id: accessGrantId(owner.tenantId, model, 'read') },
+        limit: 1,
+      });
+      if (!read)
+        throw new EngineError(
+          `grant read on '${model}' before ${act}: a ${act} returns the record`,
+          'refused',
+        );
+    }
     const write = async (): Promise<boolean> => {
       const [row] = await grants.list({ where: { id }, limit: 1 });
       if (!row) return false;
@@ -120,6 +133,15 @@ export class ModelAccessGrant extends SmrtObject {
       where: { id: accessGrantId(owner.tenantId, model, act) },
       limit: 1,
     });
+    // Taking read back takes create and update with it (they return the record).
+    if (act === 'read')
+      for (const dependent of ['create', 'update'] as const) {
+        const [d] = await grants.list({
+          where: { id: accessGrantId(owner.tenantId, model, dependent) },
+          limit: 1,
+        });
+        if (d) await d.delete();
+      }
     if (!row) return false;
     await row.delete();
     return true;

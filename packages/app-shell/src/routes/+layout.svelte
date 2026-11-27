@@ -60,12 +60,13 @@ async function applyFromChat(applyNow: boolean): Promise<void> {
   });
   await invalidateAll();
 }
-const isOwner = $derived(data.description !== null);
+const isStaff = $derived(data.description?.staff === true);
+const isOwner = $derived(data.description !== null && !isStaff);
 
 // The side menu is the person's app only; Approvals and History live in the
 // user menu.
 const nav: ShellNavItem[] = $derived(
-  isOwner
+  data.description && (isOwner || isStaff)
     ? buildMenu(data.description).map((item) => ({
         id: item.id,
         href: item.href,
@@ -116,7 +117,7 @@ $effect(() => {
 
 // Live updates only make sense for the signed-in owner.
 $effect(() => {
-  if (isOwner) live.start();
+  if (isOwner || isStaff) live.start();
   else live.stop();
 });
 // Toasts sit in the bottom corner of the page's own content region, so the
@@ -184,7 +185,7 @@ onMount(() => {
   {@render children()}
   <!-- Screen readers hear changes made elsewhere (the assistant, another tab). -->
   <div class="smrt-app-shell-layout__sr-only" aria-live="polite" role="status" data-smrt-part="label">{live.announcement}</div>
-  {#if isOwner && live.status === 'reconnecting'}
+  {#if (isOwner || isStaff) && live.status === 'reconnecting'}
     <p class="smrt-app-shell-layout__live-note" role="status" data-smrt-part="status">Reconnecting to your app…</p>
   {/if}
 </AppShell>

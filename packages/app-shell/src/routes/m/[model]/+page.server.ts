@@ -1,4 +1,5 @@
 import { redirect } from '@sveltejs/kit';
+import { callerOf, loadError } from '$lib/server/http';
 import { DEPENDS } from '$lib/ui/events';
 import {
   loadRecords,
@@ -9,13 +10,10 @@ import {
 import { parseLinkParam } from '$lib/ui/related';
 import type { PageServerLoad } from './$types';
 
-export const load: PageServerLoad = async ({
-  params,
-  parent,
-  depends,
-  fetch,
-  url,
-}) => {
+export const load: PageServerLoad = async (event) => {
+  // The owner, or staff: the record route re-checks every read per model.
+  await callerOf(event).catch(loadError);
+  const { params, parent, depends, fetch, url } = event;
   depends(DEPENDS.records);
   const description = needOwner((await parent()).description);
   if (!Object.hasOwn(description.models, params.model)) redirect(303, '/');

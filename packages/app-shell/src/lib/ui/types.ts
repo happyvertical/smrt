@@ -148,6 +148,8 @@ export interface Description {
   models: Record<string, ModelInfo>;
   reports?: Record<string, ReportDef>;
   pendingApprovals: number;
+  /** Set only on a staff member's filtered description (#5197): granted models, no builder detail. */
+  staff?: boolean;
 }
 
 export type RecordRow = Record<string, unknown> & {

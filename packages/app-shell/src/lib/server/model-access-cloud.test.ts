@@ -79,6 +79,7 @@ it("tenant B's staff get nothing from tenant A's grants; list shows own only", a
   const d = def('Widget');
   await runAs(h.a, () => asStore(h.a).commit([record(2, d)], 2));
   await runAs(h.b, () => asStore(h.b).commit([record(3, d)], 3));
+  await runAs(h.a, () => ModelAccessGrant.grant('Widget', 'read'));
   await runAs(h.a, () => ModelAccessGrant.grant('Widget', 'update'));
   const roles = await RoleCollection.create({ db: h.db });
   await roles.seedSystemRoles({ seedPermissions: false });
@@ -101,6 +102,7 @@ it("tenant B's staff get nothing from tenant A's grants; list shows own only", a
     (await staffPrincipalFor(staffB, h.b.tenantId, d)).permissions.toSorted(),
   ).toEqual(['u_widgets.count', 'u_widgets.get', 'u_widgets.list']);
   expect(await runAs(h.a, () => ModelAccessGrant.list())).toEqual([
+    expect.objectContaining({ model: 'Widget', action: 'read' }),
     expect.objectContaining({ model: 'Widget', action: 'update' }),
   ]);
 });

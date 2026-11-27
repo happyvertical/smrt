@@ -1,5 +1,6 @@
 /**
- * One record (owner session required). The copy is named by
+ * One record (GET and PUT: the owner, or staff within the models the owner
+ * granted them, #5197; DELETE: the owner only). The copy is named by
  * `?target=live|draft` (default `live`).
  *
  * `GET    /api/shell/records/<Model>/<id>` -> the record
@@ -14,16 +15,23 @@
 
 import { isPending, requestRecordDelete } from '$lib/server/builder';
 import { hostFor } from '$lib/server/host';
-import { guarded, ident, json, ownerOf, readJson } from '$lib/server/http';
-import { principalFor } from '$lib/server/owner';
+import {
+  callerOf,
+  guarded,
+  ident,
+  json,
+  ownerOf,
+  principalOfCaller,
+  readJson,
+} from '$lib/server/http';
 import type { RequestHandler } from './$types';
 
 export const GET: RequestHandler = guarded(async (event) => {
-  const owner = await ownerOf(event);
+  const who = await callerOf(event);
   const host = await hostFor('live');
   return json(
     await host.get(
-      principalFor(owner, host.def),
+      await principalOfCaller(who, host.def),
       ident(event.params.model, 'model'),
       ident(event.params.id, 'id'),
     ),
@@ -31,12 +39,12 @@ export const GET: RequestHandler = guarded(async (event) => {
 });
 
 export const PUT: RequestHandler = guarded(async (event) => {
-  const owner = await ownerOf(event);
+  const who = await callerOf(event);
   const data = await readJson(event.request);
   const host = await hostFor('live');
   return json(
     await host.update(
-      principalFor(owner, host.def),
+      await principalOfCaller(who, host.def),
       ident(event.params.model, 'model'),
       ident(event.params.id, 'id'),
       data,

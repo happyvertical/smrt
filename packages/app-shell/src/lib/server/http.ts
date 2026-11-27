@@ -1,12 +1,17 @@
 // Shared plumbing for the shell's JSON routes: owner session required,
 // same-origin for writes, bounded JSON bodies, errors without internals.
+
+import { error as kitError } from '@sveltejs/kit';
+import type { EnginePrincipal } from '../../engine/index.ts';
 import { EngineError, METHOD_CODE_DENIED } from '../../engine/index.ts';
 import {
   isOwner,
   PolicyError,
   type Principal,
+  principalFor,
   principalFromLocals,
   requireOwner,
+  staffPrincipalFor,
   staffRoleOf,
 } from './owner.ts';
 
@@ -77,6 +82,26 @@ export async function callerOf(event: EventLike): Promise<Caller> {
   if ((await staffRoleOf(principal)) !== null)
     return { kind: 'staff', principal };
   throw new PolicyError(403, 'you are not a member of this app');
+}
+
+/**
+ * The engine principal a record route acts as: the owner's (every slug of the
+ * app) or the staff member's (only what the owner's grants allow; the engine's
+ * `authorize.ts` then decides each operation). Never built from a request.
+ */
+export function principalOfCaller(
+  caller: Caller,
+  def: Parameters<typeof principalFor>[1],
+): Promise<EnginePrincipal> | EnginePrincipal {
+  return caller.kind === 'owner'
+    ? principalFor(caller.principal, def)
+    : staffPrincipalFor(caller.principal, caller.principal.tenantId, def);
+}
+
+/** A page `load`'s refusal: the policy error's status as a SvelteKit error page. */
+export function loadError(e: unknown): never {
+  if (e instanceof PolicyError) kitError(e.status, e.message);
+  throw e;
 }
 
 export async function readJson(

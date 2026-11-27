@@ -1,10 +1,17 @@
 import { beforeEach, expect, it, vi } from 'vitest';
 
+const caller = (tenantId: string) => ({
+  kind: 'owner' as const,
+  principal: { id: 'o', tenantId },
+});
 const mocks = vi.hoisted(() => ({
-  owner: vi.fn(async () => ({ tenantId: 't' })),
+  owner: vi.fn(async () => ({
+    kind: 'owner' as const,
+    principal: { id: 'o', tenantId: 't' },
+  })),
 }));
 vi.mock('$lib/server/http', () => ({
-  ownerOf: mocks.owner,
+  callerOf: mocks.owner,
   errorResponse: (e: unknown) => new Response(String(e), { status: 500 }),
 }));
 
@@ -37,10 +44,10 @@ it('ends an open stream when shutdown begins', async () => {
 it('ends at once a stream whose owner check finished after shutdown began', async () => {
   let release!: () => void;
   mocks.owner.mockImplementationOnce(
-    () => new Promise((r) => (release = () => r({ tenantId: 't' }))),
+    () => new Promise((r) => (release = () => r(caller('t')))),
   );
   const pending = call();
-  events.closeAllStreams(); // while ownerOf is still running
+  events.closeAllStreams(); // while callerOf is still running
   release();
   const res = await pending;
   const reader = res.body!.getReader();
