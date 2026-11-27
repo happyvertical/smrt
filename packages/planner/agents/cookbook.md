@@ -5,7 +5,7 @@ Part of the [planner guidance](../AGENTS.md). Paths are relative to `packages/pl
 - `src/lib/cookbook/`: the app document, a **cookbook** (smrt#3604's format, first instance; it
   was called a blueprint): one `Cookbook`
   (`{ $schema, version: 1, recipes, features, policies, exposure?, layout?, theme?, overviews? }`, schema
-  `https://s-m-r-t.dev/schemas/cookbook/v1.json`; import also accepts the old `.../blueprint/v1.json`)
+  `https://smrt.happyvertical.com/schemas/cookbook/v1.json`; import also accepts the old `.../blueprint/v1.json` and the pre-move `s-m-r-t.dev` cookbook URL)
   holding recipes, options, layout and theme. Optional `name`, `description` and `specs` (free-text
   product requirements beyond the recipes and features, up to 20,000 characters; `store.setSpecs`,
   the `set_name` command and the Specs tab write it, and the agent prompt adds a step telling the

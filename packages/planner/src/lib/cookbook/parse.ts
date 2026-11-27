@@ -12,6 +12,7 @@ import {
   COOKBOOK_VERSION,
   type Cookbook,
   type CookbookResult,
+  PREVIOUS_HOST_SCHEMA,
   PREVIOUS_SCHEMA,
 } from './types.ts';
 
@@ -134,7 +135,8 @@ export function parseCookbookWith(
   if (
     input.$schema !== undefined &&
     input.$schema !== COOKBOOK_SCHEMA &&
-    input.$schema !== PREVIOUS_SCHEMA
+    input.$schema !== PREVIOUS_SCHEMA &&
+    input.$schema !== PREVIOUS_HOST_SCHEMA
   ) {
     return fail(
       'This is not a cookbook: its "$schema" is not a cookbook schema this planner knows.',

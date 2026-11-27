@@ -8,13 +8,21 @@ import type { ThemeSetting } from '../theme/theme.ts';
  * Placeholder until happyvertical/smrt#3604 publishes the real schema URL.
  * The planner writes it so a file says what it is; it does not fetch it.
  */
-export const COOKBOOK_SCHEMA = 'https://s-m-r-t.dev/schemas/cookbook/v1.json';
+export const COOKBOOK_SCHEMA =
+  'https://smrt.happyvertical.com/schemas/cookbook/v1.json';
 
 /**
  * The URL files carried while the document was called a blueprint. Import
  * still accepts it; nothing writes it.
  */
 export const PREVIOUS_SCHEMA = 'https://s-m-r-t.dev/schemas/blueprint/v1.json';
+
+/**
+ * The cookbook URL files carried before the docs site moved hosts. Import
+ * still accepts it; nothing writes it.
+ */
+export const PREVIOUS_HOST_SCHEMA =
+  'https://s-m-r-t.dev/schemas/cookbook/v1.json';
 
 export const COOKBOOK_VERSION = 1;
 

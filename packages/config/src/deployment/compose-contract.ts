@@ -21,7 +21,7 @@ export const X_HAPPYVERTICAL_VERSION = 1;
 
 /** `$id` of the published JSON Schema for {@link X_HAPPYVERTICAL_VERSION}. */
 export const X_HAPPYVERTICAL_SCHEMA_ID =
-  'https://s-m-r-t.dev/schemas/x-happyvertical/v1.schema.json';
+  'https://smrt.happyvertical.com/schemas/x-happyvertical/v1.schema.json';
 
 /** Platform presets a version 1 declaration may name. */
 export const X_HAPPYVERTICAL_PRESETS = ['smrt'] as const;
