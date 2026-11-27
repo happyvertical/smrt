@@ -116,4 +116,31 @@ describe('request metering (#5199)', () => {
       transport: 'rest',
     });
   });
+
+  it('attributes a resolveTenant host to its tenant with no limiter, and does not resolve with no meter', async () => {
+    const sink = vi.fn();
+    const resolveTenant = vi.fn(() => ({
+      tenantId: 't9',
+      authenticated: true,
+    }));
+    const config = {
+      basePath: '/api',
+      resolveTenant,
+      customRoutes: { '/ping': async () => new Response('pong') },
+    };
+    const metered = new APIGenerator(
+      { ...config, requestMeter: sink },
+      { db: { query: vi.fn() } as never },
+    ).generateHandler();
+    await metered(new Request('http://local/api/ping'));
+    expect(sink).toHaveBeenCalledWith(
+      expect.objectContaining({ tenantId: 't9', limited: false }),
+    );
+    resolveTenant.mockClear();
+    const bare = new APIGenerator(config, {
+      db: { query: vi.fn() } as never,
+    }).generateHandler();
+    await bare(new Request('http://local/api/ping'));
+    expect(resolveTenant).not.toHaveBeenCalled();
+  });
 });

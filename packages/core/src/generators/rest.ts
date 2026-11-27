@@ -1008,21 +1008,26 @@ export class APIGenerator {
       // still sees the admitted request. The same call reports the request to
       // the meter (#5199) with the decided principal.
       const limiter = this.routeLimiter ?? getRouteLimiter();
+      const meter = this.config.requestMeter ?? getRequestMeterSink();
       const limited = nested
         ? undefined
         : enforceRouteLimits(
             {
               request: req,
-              tenantId: limiter
-                ? await this.limiterTenantOf(req, principal)
-                : principal.effectiveTenantId,
+              // The same tenant attributes the request whether or not a
+              // limiter is set; with neither limiter nor meter nothing looks
+              // it up.
+              tenantId:
+                limiter || meter
+                  ? await this.limiterTenantOf(req, principal)
+                  : principal.effectiveTenantId,
               userId: principal.userId,
               callerKind: principal.principal.callerKind,
               authenticated: principal.authenticated,
               transport: 'rest',
             },
             limiter,
-            this.config.requestMeter ?? getRequestMeterSink(),
+            meter,
           );
       if (limited) return this.addCorsHeaders(limited, req);
       const hooked = this.config.onRequest
