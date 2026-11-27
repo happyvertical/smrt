@@ -36,12 +36,35 @@ describe('formatActivityTimestamp & safeActivityHref', () => {
     });
     expect(hoursAgo?.label).toMatch(/3 hr\. ago/);
 
-    const calendar = formatActivityTimestamp('2026-11-25', {
+    const sameDayAfterNoon = formatActivityTimestamp('2026-11-26', {
       locale: 'en-US',
+      timeZone: 'UTC',
       now: NOW,
     });
-    expect(calendar?.datetime).toBe('2026-11-25');
-    expect(calendar?.label).toBeTruthy();
+    expect(sameDayAfterNoon).toMatchObject({
+      datetime: '2026-11-26',
+      label: 'today',
+    });
+
+    const calendar = formatActivityTimestamp('2026-11-25', {
+      locale: 'en-US',
+      timeZone: 'UTC',
+      now: NOW,
+    });
+    expect(calendar).toMatchObject({
+      datetime: '2026-11-25',
+      label: 'yesterday',
+    });
+
+    const newYorkEvening = formatActivityTimestamp('2026-11-26', {
+      locale: 'en-US',
+      timeZone: 'America/New_York',
+      now: Date.parse('2026-11-27T02:00:00.000Z'),
+    });
+    expect(newYorkEvening).toMatchObject({
+      datetime: '2026-11-26',
+      label: 'today',
+    });
 
     // Unparseable dates and invalid locales never throw.
     expect(

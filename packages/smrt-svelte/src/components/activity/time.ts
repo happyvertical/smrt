@@ -101,6 +101,23 @@ function formatAbsoluteLabel(
   );
 }
 
+function calendarDayEpochUtc(year: number, month: number, day: number): number {
+  return Date.UTC(year, month - 1, day);
+}
+
+function nowCalendarDayEpochUtc(nowMs: number, timeZone: string): number {
+  const parts = new Intl.DateTimeFormat('en-CA', {
+    timeZone,
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+  }).formatToParts(new Date(nowMs));
+  const year = Number(parts.find((p) => p.type === 'year')?.value);
+  const month = Number(parts.find((p) => p.type === 'month')?.value);
+  const day = Number(parts.find((p) => p.type === 'day')?.value);
+  return calendarDayEpochUtc(year, month, day);
+}
+
 /**
  * Formats an ISO timestamp or calendar date into a readable relative label (when
  * a shared `now` epoch is supplied) or deterministic localized timestamp (when
@@ -149,10 +166,33 @@ export function formatActivityTimestamp(
       timeZone,
       isCalendarDate,
     );
+  } else if (isCalendarDate) {
+    const [yearStr, monthStr, dayStr] = trimmed.split('-');
+    const entryDayUtc = calendarDayEpochUtc(
+      Number(yearStr),
+      Number(monthStr),
+      Number(dayStr),
+    );
+    const refDayUtc = nowCalendarDayEpochUtc(options.now as number, timeZone);
+    const dayDiff = Math.round((entryDayUtc - refDayUtc) / 86_400_000);
+    const absDays = Math.abs(dayDiff);
+    const sign = dayDiff < 0 ? -1 : 1;
+    const rtf = resolveRelativeFormatter(locale);
+    if (absDays === 0) {
+      label = rtf.format(0, 'day');
+    } else if (absDays < 7) {
+      label = rtf.format(dayDiff, 'day');
+    } else if (absDays < 30) {
+      label = rtf.format(sign * Math.max(1, Math.round(absDays / 7)), 'week');
+    } else if (absDays < 365) {
+      label = rtf.format(sign * Math.max(1, Math.round(absDays / 30)), 'month');
+    } else {
+      label = rtf.format(sign * Math.max(1, Math.round(absDays / 365)), 'year');
+    }
   } else {
     const deltaSeconds = Math.round((ms - (options.now as number)) / 1000);
     const absSeconds = Math.abs(deltaSeconds);
-    if (absSeconds < 45 && !isCalendarDate) {
+    if (absSeconds < 45) {
       label = justNow;
     } else {
       const rtf = resolveRelativeFormatter(locale);
@@ -160,12 +200,10 @@ export function formatActivityTimestamp(
       const absMinutes = Math.round(absSeconds / 60);
       const absHours = Math.round(absSeconds / 3600);
       const absDays = Math.round(absSeconds / 86_400);
-      if (absSeconds < 3600 && !isCalendarDate) {
+      if (absSeconds < 3600) {
         label = rtf.format(sign * Math.max(1, absMinutes), 'minute');
-      } else if (absSeconds < 86_400 && !isCalendarDate) {
+      } else if (absSeconds < 86_400) {
         label = rtf.format(sign * Math.max(1, absHours), 'hour');
-      } else if (absDays === 0 && isCalendarDate) {
-        label = rtf.format(0, 'day');
       } else if (absDays < 7) {
         label = rtf.format(sign * Math.max(1, absDays), 'day');
       } else if (absDays < 30) {
