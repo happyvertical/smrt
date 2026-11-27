@@ -5,7 +5,7 @@ description: "Reusable CLI factory for SMRT apps — branded `<name> <resource> 
 status: "stable"
 generated:
   by: "smrt/scripts/generate-knowledge-okf.ts"
-  at: "2026-11-26T18:58:32Z"
+  at: "2026-11-27T00:30:11Z"
 audience: "internal"
 evidence_level: "manifest-described"
 source_revision: "sha256:87981e3a49ec07bc71de75d6caccc347f706d4f072865c9966e6a8bd73af2d7f"
