@@ -127,6 +127,12 @@ import {
   type PlaybookPreflightProvider,
 } from './preflight-route';
 import {
+  getRequestMeterSink,
+  meterRequest,
+  type RequestMeterSink,
+  refusalOfStatus,
+} from './request-metering';
+import {
   type APIRequestInfo,
   type APIRequestPrincipal,
   customActionPermission,
@@ -360,6 +366,14 @@ export interface APIConfig {
    * limits are the primary defence and `tenant` a backstop.
    */
   routeLimits?: RouteLimitsConfig;
+  /**
+   * Request metering (#5199): called once per request with the decided
+   * principal's tenant and caller kind, after the route limits decide and
+   * before `onRequest`, authorization or any database access. It never blocks
+   * the request, and a throw is swallowed. Without it the process-wide sink
+   * (`setRequestMeterSink`, which the generated SvelteKit routes read) applies.
+   */
+  requestMeter?: RequestMeterSink;
 }
 
 export type {
@@ -982,8 +996,54 @@ export class APIGenerator {
     }
   }
 
-  /** The rest of `handleRequest`, once the principal is resolved. */
+  /**
+   * The rest of `handleRequest`, once the principal is resolved, then the
+   * request meter (#5199): reported AFTER the authorization and limit
+   * decision, with the response status. A served request counts under the
+   * tenant it was served under (the decided principal's, or for a
+   * `resolveTenant` host its answer); a refused one (401, 403, 429) under no
+   * tenant, so a caller that merely names a tenant cannot inflate its count.
+   * A nested dispatch is part of its outer request. Never throws.
+   */
   private async handleResolvedRequest(
+    req: Request,
+    url: URL,
+    principal: ResolvedRequestPrincipal,
+    nested = false,
+  ): Promise<Response> {
+    const response = await this.routeResolvedRequest(
+      req,
+      url,
+      principal,
+      nested,
+    );
+    if (!nested) {
+      const sink = this.config.requestMeter ?? getRequestMeterSink();
+      if (sink) {
+        try {
+          const refused = refusalOfStatus(response.status);
+          meterRequest(
+            {
+              tenantId: refused
+                ? null
+                : await this.limiterTenantOf(req, principal),
+              callerKind: principal.principal.callerKind,
+              authenticated: principal.authenticated,
+              limited: refused === 'rate_limited',
+              refused,
+              transport: 'rest',
+            },
+            sink,
+          );
+        } catch {
+          // Metering never fails a request.
+        }
+      }
+    }
+    return response;
+  }
+
+  private async routeResolvedRequest(
     req: Request,
     url: URL,
     principal: ResolvedRequestPrincipal,
@@ -996,7 +1056,8 @@ export class APIGenerator {
       // Bucketed by the tenant the request is served in (the principal's,
       // else `resolveTenant`'s, else the fixed context), looked up only when a
       // limiter exists and never cached, so the host's own resolution later
-      // still sees the admitted request.
+      // still sees the admitted request. The same call reports the request to
+      // the meter (#5199) with the decided principal.
       const limiter = this.routeLimiter ?? getRouteLimiter();
       const limited =
         nested || !limiter

@@ -463,7 +463,7 @@ describe('generated sync-apply route runtime: operation permissions (#3011)', ()
     const kitShim = join(projectRoot, 'kit-shim.ts');
     writeFileSync(
       kitShim,
-      'export function json(body: unknown, init: ResponseInit = {}): Response {\n  return new Response(JSON.stringify(body), init);\n}\nexport function error(status: number, message: string): never {\n  throw Object.assign(new Error(message), { status });\n}\n',
+      'export function json(body: unknown, init: ResponseInit = {}): Response {\n  return new Response(JSON.stringify(body), init);\n}\nexport function error(status: number, message: string): never {\n  throw Object.assign(new Error(message), { status });\n}\nexport const isHttpError = (e: unknown) => typeof e === "object" && e !== null && typeof (e as { status?: unknown }).status === "number";\n',
     );
     const smrtShim = join(projectRoot, 'smrt-shim.ts');
     writeFileSync(
@@ -513,6 +513,7 @@ describe('generated sync-apply route runtime: operation permissions (#3011)', ()
         'export const authorize = (input: unknown) => { const r = (globalThis as any).__smrtSyncAuthz.authorize(input); return r; };',
         'export const apiPrincipalFromLocals = (locals: unknown, tenant?: string | null) => (globalThis as any).__smrtSyncAuthz.apiPrincipalFromLocals(locals, tenant);',
         // The real route limits (#5198); nothing is configured, so none apply.
+        'export const meterRequest = () => {}; export const refusalOfStatus = () => null;',
         `export { enforceRouteLimits } from ${JSON.stringify(fileURLToPath(new URL('../generators/route-limits.ts', import.meta.url)))};`,
         // The fixture models are plain tables (no STI type selection).
         'export const ObjectRegistry = { getTableStrategy: () => undefined, isServiceOptionInput: (_name: string, key: string) => isServiceOptionInput(key, (field: string) => ((globalThis as any).__smrtSyncDeclaredFields ?? []).includes(field)) };',

@@ -313,6 +313,7 @@ function writeWorkspaceCoreShim(projectRoot: string): void {
       'export const authorize = (input) => globalThis.__smrtGeneratedRequestHelpers.authorize(input);',
       'export const apiPrincipalFromLocals = (locals, tenant) => globalThis.__smrtGeneratedRequestHelpers.apiPrincipalFromLocals(locals, tenant);',
       // The real route limits (#5198); none are configured, so none apply.
+      'export const meterRequest = () => {}; export const refusalOfStatus = () => null;',
       'export const enforceRouteLimits = (subject) => globalThis.__smrtGeneratedRequestHelpers.enforceRouteLimits(subject);',
       'export const stripTenantFilters = (principal, columns, where) => globalThis.__smrtGeneratedRequestHelpers.stripTenantFilters(principal, columns, where);',
       // The real policy of the model a write lands in, and the typed refusal.
@@ -523,6 +524,7 @@ describe('generated SvelteKit helper runtime', () => {
         "  const payload = typeof body === 'string' ? { message: body } : body;",
         '  throw Object.assign(new Error(payload.message), { status, body: payload });',
         '}',
+        "export const isHttpError = (e: unknown): boolean => typeof e === 'object' && e !== null && typeof (e as { status?: unknown }).status === 'number';",
         'export function json(body: unknown, init: ResponseInit = {}): Response {',
         '  return new Response(JSON.stringify(body), init);',
         '}',
@@ -1623,7 +1625,7 @@ describe('generated SvelteKit helper runtime', () => {
       // a mocked factory. It must construct and initialize against this DB.
       writeFileSync(
         join(projectRoot, 'node_modules/@happyvertical/smrt-core/index.js'),
-        `export const { apiPrincipalFromLocals, authorize, enforceRouteLimits, stripTenantFilters, modelRoutePolicy, foreignRowModel, RequestPrincipalRefusal, ObjectRegistry, isRuntimeModelEnabled, hasRuntimeExposureGate, createGeneratedCollectionAccess, normalizeCustomActionFailure, normalizeTypedHttpError, reportUnexpectedHttpError, canonicalReadRepresentation, computeTableVersionEtag, getTableVersion, ifNoneMatchHasConcreteMatch, ifNoneMatchSatisfied, parseRestListWhere, applyWhereScope, resolveAnonymousTenantReadScope, scopeTenantReadOptions, publicSerializerOf, toPublicJSONValue, assertQueryAccess, assertCreateTargetSurface, assertCreateInput, isTenantScopedModel, enterRequestTenantContext, getRequestTenantContext, resolveTenantEtagDiscriminator, enterRequestTenancy, tenancyReadScope, scopeActionOptions, boundTenancyCacheScoped, boundTenancyEtagDiscriminator, runInRequestTenancy } = globalThis.__smrt4320Core;`,
+        `export const { apiPrincipalFromLocals, authorize, enforceRouteLimits, meterRequest, refusalOfStatus, stripTenantFilters, modelRoutePolicy, foreignRowModel, RequestPrincipalRefusal, ObjectRegistry, isRuntimeModelEnabled, hasRuntimeExposureGate, createGeneratedCollectionAccess, normalizeCustomActionFailure, normalizeTypedHttpError, reportUnexpectedHttpError, canonicalReadRepresentation, computeTableVersionEtag, getTableVersion, ifNoneMatchHasConcreteMatch, ifNoneMatchSatisfied, parseRestListWhere, applyWhereScope, resolveAnonymousTenantReadScope, scopeTenantReadOptions, publicSerializerOf, toPublicJSONValue, assertQueryAccess, assertCreateTargetSurface, assertCreateInput, isTenantScopedModel, enterRequestTenantContext, getRequestTenantContext, resolveTenantEtagDiscriminator, enterRequestTenancy, tenancyReadScope, scopeActionOptions, boundTenancyCacheScoped, boundTenancyEtagDiscriminator, runInRequestTenancy } = globalThis.__smrt4320Core;`,
       );
       const objectFilePath = join(projectRoot, 'src/lib/objects/Widget.ts');
       writeFileSync(
