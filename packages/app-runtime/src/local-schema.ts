@@ -75,9 +75,15 @@ export interface PrepareDatabaseContext {
    * The framework's migration runner (`migrateSmrtSchemas`), bound to
    * {@link PrepareDatabaseContext.db}. Idempotent; call it again after the
    * step registers further `@smrt()` objects. Inside the step's transaction it
-   * creates missing tables; reshaping an existing table is `smrt db:migrate`
-   * (a transaction handle cannot read an existing table's live schema).
-   * Rejects on a deployed profile, which migrates through `smrt db:migrate`.
+   * creates missing tables and compares existing ones, adding what they lack.
+   * A change that needs a SQLite table rebuild is refused there (a rebuild
+   * suspends foreign keys, which SQLite allows only outside a transaction):
+   * the framework step, which runs on the database, applies it on the next
+   * start only for objects registered before that step. It runs before this
+   * hook on every start, so for objects the hook registers itself the refusal
+   * repeats: run the migrate on the database handle with the model loaded.
+   * Rejects on a deployed profile, which migrates through
+   * `smrt db:migrate`.
    */
   migrateSchemas(): Promise<{ readonly applied: boolean }>;
 }
@@ -284,11 +290,12 @@ export async function prepareLocalSchema(
   }
 
   if (!firstRun) {
-    // Upgrade or steady state. A transaction handle cannot read the live
-    // schema of an existing table (`getTableSchema` is not on it), so the
-    // framework step runs on the database itself: the tracker applies its
-    // batch as ONE atomic DDL transaction, and a failed batch changes no
-    // table. The application's step then runs in a transaction of its own.
+    // Upgrade or steady state. Reshaping an existing SQLite table can need a
+    // table rebuild, which suspends foreign keys and so cannot run inside a
+    // caller's transaction. The framework step therefore runs on the database
+    // itself: the tracker applies its batch as ONE atomic DDL transaction, and
+    // a failed batch changes no table. The application's step then runs in a
+    // transaction of its own.
     try {
       await contextFor(db, input, firstRun).migrateSchemas();
     } catch (failure) {

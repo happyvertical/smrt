@@ -26,6 +26,7 @@ import type {
 import type { RouteFilePlan } from './generated-route-files.js';
 import { applyRouteCors } from './route-cors.js';
 import { AUTO_GENERATED_ROUTE_HEADER } from './route-header.js';
+import { applyRouteMetering } from './route-metering.js';
 import {
   allowsSuperAdminBypass,
   generateRoutePrincipalHelper,
@@ -451,12 +452,14 @@ export function generateSyncApplyRoute(
     root: join(projectRoot, options.routesDir),
     routeDir,
     content: applyRouteCors(
-      generateSyncApplyRouteTemplate(
-        targets,
-        generateCollectionAccessImports(projectRoot, routeDir, options, [
-          'getCollection',
-        ]),
-        syncModelScope(manifest),
+      applyRouteMetering(
+        generateSyncApplyRouteTemplate(
+          targets,
+          generateCollectionAccessImports(projectRoot, routeDir, options, [
+            'getCollection',
+          ]),
+          syncModelScope(manifest),
+        ),
       ),
       options.cors,
     ),

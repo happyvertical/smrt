@@ -41,10 +41,9 @@ import { APP_SLUG } from './version-store.ts';
 /** The gauge: bytes of the tenant's app data, latest sample wins. */
 export const STORAGE_BYTES_METRIC = 'storage.bytes';
 /**
- * SEAM (#5195): the per-tenant request counter. NOT written here: counting
- * requests and the caller kind (owner, staff, guest, job, service) needs hooks
- * in core's generated API paths. `readTenantUsage` already reads this key
- * (summed, it is a counter) so the writer only has to record it.
+ * The per-tenant request counter (#5199), a counter: summing is right. Written
+ * by `request-metering.ts` from core's request sink, with the caller kind in
+ * `dimensions.callerKind`; read by `readTenantUsage`.
  */
 export const REQUEST_COUNT_METRIC = 'api.requests';
 /** `source` of every row written here; the reader and nothing else trusts it. */
@@ -190,10 +189,16 @@ export interface TenantUsage {
     backend: string | null;
   };
   requests: {
-    /** Sum of recorded `api.requests` rows; 0 until #5195 writes them. */
+    /** Requests served: the sum of `api.requests` rows that were not refused. */
     count: number;
-    /** False until the request-count writer (#5195) exists. */
+    /** False until a request has been recorded. */
     metered: boolean;
+    /** Requests refused with a 429 by the route limits (not in `count`). */
+    limited: number;
+    /** Requests refused before they were served, by reason (not in `count`). */
+    refused: Record<string, number>;
+    /** `count` split by the kind of caller (`unknown` when none); guests apart from staff. */
+    byCallerKind: Record<string, number>;
   };
   /** Worker activity from wake and idle-close samples (counters: summed). */
   worker: {
@@ -360,7 +365,13 @@ export class StorageMeter {
         samples: 0,
         backend: null,
       },
-      requests: { count: 0, metered: false },
+      requests: {
+        count: 0,
+        metered: false,
+        limited: 0,
+        refused: {},
+        byCallerKind: {},
+      },
       worker: { wakes: 0, awakeMs: 0 },
     };
     if (!(await db.tableExists(USAGE_TABLE))) return result;
@@ -395,9 +406,34 @@ export class StorageMeter {
       where: { ...overlap, metricKey: REQUEST_COUNT_METRIC },
       limit: 100_000,
     });
+    const byCallerKind: Record<string, number> = Object.create(null);
+    const refused: Record<string, number> = Object.create(null);
+    let served = 0;
+    for (const m of requests) {
+      const dims = m.getDimensions();
+      const why =
+        typeof dims.refused === 'string' && dims.refused
+          ? dims.refused
+          : dims.limited === true
+            ? 'rate_limited'
+            : null;
+      if (why) {
+        refused[why] = (refused[why] ?? 0) + m.quantity;
+        continue;
+      }
+      const kind =
+        typeof dims.callerKind === 'string' && dims.callerKind
+          ? dims.callerKind
+          : 'unknown';
+      byCallerKind[kind] = (byCallerKind[kind] ?? 0) + m.quantity;
+      served += m.quantity;
+    }
     result.requests = {
-      count: requests.reduce((sum, m) => sum + m.quantity, 0),
+      count: served,
       metered: requests.length > 0,
+      limited: refused.rate_limited ?? 0,
+      refused: { ...refused },
+      byCallerKind: { ...byCallerKind },
     };
     const worker = await metrics.list({
       where: { ...overlap, source: WORKER_SOURCE },

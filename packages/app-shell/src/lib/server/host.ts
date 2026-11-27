@@ -991,6 +991,9 @@ async function openLive(holder: Holder): Promise<AppHost> {
       workerUrl: workerUrl(),
       workerLimits: budgetedLimits(),
       ...(appLimits ? { appLimits } : {}),
+      ...(holder.tenantId
+        ? { onRequest: requestCounter(holder.tenantId) }
+        : {}),
       ...(methodCodeOf(holder) ? { methodCode: methodCodeOf(holder) } : {}),
       ...(database ? { database } : {}),
     }),
@@ -1058,6 +1061,29 @@ function meterWake(holder: Holder, wakeMs: number): void {
   void import('./storage-metering.ts')
     .then((m) => m.storageMeter().onWake(tenantId, Math.max(0, wakeMs)))
     .catch(() => {});
+}
+
+/**
+ * Request counts (#5199): cloud only, on the HOST's tenant when core reports
+ * none. After the response, never awaited; a failure is swallowed.
+ */
+function requestCounter(
+  hostTenant: string,
+): (request: {
+  tenantId: string | null;
+  callerKind: string | null;
+  limited: boolean;
+  refused: string | null;
+}) => void {
+  return (request) => {
+    void import('./request-metering.ts')
+      .then((m) =>
+        m
+          .requestMeter()
+          .note({ ...request, tenantId: request.tenantId ?? hostTenant }),
+      )
+      .catch(() => {});
+  };
 }
 
 function meterClose(holder: Holder, why: 'idle' | 'capacity'): void {

@@ -181,6 +181,13 @@ export interface HostOptions {
    */
   appLimits?: AppLimits;
   /**
+   * Told of each request that reached the app's generated REST routes, with
+   * the decided principal's tenant and caller kind (#5199). Called after the
+   * response, never awaited; a throw is swallowed. Absent: nothing is counted
+   * (the desktop).
+   */
+  onRequest?: (request: RestMeter) => void;
+  /**
    * Whether the app's tenant may run app-authored method code (#5194). Asked
    * on the host before each call that would run method code and before a
    * change that adds or changes it; refused without a "yes". Absent: allowed
@@ -383,6 +390,21 @@ export interface RestResult {
   status: number;
   contentType: string;
   body: string;
+  /**
+   * What core's request meter saw for this request (#5199): the decided
+   * principal's tenant and caller kind. Set by the worker, consumed by the
+   * host (`HostOptions.onRequest`) and never returned to a caller.
+   */
+  meter?: RestMeter;
+}
+
+/** One request as core's request meter reported it (#5199). */
+export interface RestMeter {
+  tenantId: string | null;
+  callerKind: string | null;
+  limited: boolean;
+  /** Why core refused it (`unauthenticated`, `forbidden`, `rate_limited`), else null; a refused request names no tenant. */
+  refused: string | null;
 }
 
 export interface VersionSummary {
@@ -508,6 +530,7 @@ export class AppHost extends EventEmitter {
   private workerUrl: URL | string;
   private workerLimits: WorkerLimits | undefined;
   private appLimits: AppLimits | undefined;
+  #onRequest: ((request: RestMeter) => void) | undefined;
   private methodCode: MethodCodeGate | undefined;
   private database: DatabaseConfig;
   private dialect: EngineDialect;
@@ -577,6 +600,7 @@ export class AppHost extends EventEmitter {
       methodRunState: new Float64Array(new SharedArrayBuffer(16)),
     };
     this.methodCode = opts.methodCode;
+    this.#onRequest = opts.onRequest;
     this.frozenNow = opts.frozen === true;
     this.#autoApprove = opts.autoApprove === true;
     this.draft = readDraftMarker(dataDir);
@@ -4104,10 +4128,17 @@ export class AppHost extends EventEmitter {
         risky: true,
         preview: { method, url: req.url },
       });
-    const r = await this.onApp<RestResult>(principal, 'rest', {
+    const { meter, ...r } = await this.onApp<RestResult>(principal, 'rest', {
       ...req,
       method,
     });
+    if (meter) {
+      try {
+        this.#onRequest?.(meter);
+      } catch {
+        // Metering never fails a request.
+      }
+    }
     if (method !== 'GET' && method !== 'HEAD' && r.status < 400)
       this.emit('records', { model: restModelFor(this.def, req.url) });
     return r;

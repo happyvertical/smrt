@@ -1,12 +1,79 @@
 /** Schema metadata read through the supplied executor, including uncommitted DDL. */
 import type { DatabaseInterface, TableSchemaInfo } from '@happyvertical/sql';
 import type { DatabaseEngine } from './ddl/types.js';
+import { sqliteUserObjectName } from './sqlite-internal-names.js';
 
 /**
- * Use the adapter's public inspector when present. PostgreSQL transaction
- * handles expose query(), but not getTableSchema(); their catalog reads must
- * stay on that handle rather than checking out another pooled connection.
- * The public schema matches the existing SDK/SchemaComparer migration scope.
+ * A table the catalog lists could not be described through this handle.
+ *
+ * A comparison that cannot read a table has nothing to say about it, and
+ * "nothing to say" must never be read as "nothing to change": the migrate
+ * stops here, before anything is applied or recorded.
+ */
+export class TableSchemaUnreadableError extends Error {
+  constructor(
+    readonly table: string,
+    readonly engine: string,
+    options?: { cause?: unknown },
+  ) {
+    super(
+      `Table "${table}" exists, but its schema could not be read through this ${engine} database handle, so it cannot be compared with the declared schema. Nothing was changed. Core reads PostgreSQL and SQLite through the handle itself; on any other engine the adapter must provide getTableSchema. Run the migrate on a database handle that can describe the table.`,
+      options?.cause === undefined ? undefined : { cause: options.cause },
+    );
+    this.name = 'TableSchemaUnreadableError';
+  }
+}
+
+/**
+ * A declared table name matches a catalog table only by case. SQLite and
+ * DuckDB resolve the two spellings to one table, while the migrate plan
+ * matches names exactly and would treat the declared one as missing.
+ */
+export class TableSpellingMismatchError extends Error {
+  constructor(
+    readonly table: string,
+    readonly existingTable: string,
+  ) {
+    super(
+      `Table "${table}" is declared, but the database holds it as "${existingTable}" (the engine treats the two spellings as one table, a migrate plan does not). Nothing was changed. Rename the table or the declaration so the spellings match exactly.`,
+    );
+    this.name = 'TableSpellingMismatchError';
+  }
+}
+
+/**
+ * A SQLite `temp` table has the name of a declared table. Unqualified DDL
+ * resolves to the temporary table first, so a migrate would change it and
+ * record success while the permanent table stays as it was.
+ */
+export class TemporaryTableShadowError extends Error {
+  constructor(readonly table: string) {
+    super(
+      `A temporary table named "${table}" shadows the declared table of that name, so a migrate would change the temporary table. Nothing was changed. Drop the temporary table, or migrate on a connection that has not created it.`,
+    );
+    this.name = 'TemporaryTableShadowError';
+  }
+}
+
+/** Whether {@link inspectTableSchema} has any way to describe a table here. */
+export function canInspectTableSchema(
+  db: DatabaseInterface,
+  engine: DatabaseEngine,
+): boolean {
+  return (
+    typeof db.getTableSchema === 'function' ||
+    engine === 'postgres' ||
+    engine === 'sqlite'
+  );
+}
+
+/**
+ * Use the adapter's public inspector when present. A handle without
+ * getTableSchema() still exposes query(); its catalog reads must stay on that
+ * handle (it sees the transaction's own uncommitted DDL) rather than checking
+ * out another connection. PostgreSQL and SQLite are read from their catalogs
+ * through the handle; the public schema matches the existing
+ * SDK/SchemaComparer migration scope.
  */
 export async function inspectTableSchema(
   db: DatabaseInterface,
@@ -14,9 +81,10 @@ export async function inspectTableSchema(
   engine: DatabaseEngine,
 ): Promise<TableSchemaInfo | null> {
   if (db.getTableSchema) return (await db.getTableSchema(tableName)) ?? null;
+  if (engine === 'sqlite') return inspectSqliteTableSchema(db, tableName);
   if (engine !== 'postgres')
     throw new Error(
-      'Schema inspection requires an adapter inspector or PostgreSQL',
+      'Schema inspection requires an adapter inspector, PostgreSQL or SQLite',
     );
   const table = await db.query(
     `SELECT c.oid FROM pg_catalog.pg_class c
@@ -96,6 +164,122 @@ export async function inspectTableSchema(
       referencesColumn: String(row.parent_column),
       onDelete: actions[String(row.on_delete)],
       onUpdate: actions[String(row.on_update)],
+    })),
+  };
+}
+
+/**
+ * SQLite through `query()` alone, for a handle without `getTableSchema()`. It
+ * reads ordinary metadata alongside the SQL adapter's SQLite inspector;
+ * `migrations/__tests__/unreadable-table.test.ts` holds the two side by side,
+ * including the reader's corrections for adapter omissions. The adapter skips every
+ * index whose name matches `sqlite_%` with `_` as a wildcard (so
+ * `sqliteX_unique` is hidden), while this reader skips only the literal
+ * `sqlite_` prefix; and the adapter marks only the first column of a
+ * composite primary key as a key column, while this reader marks all of them.
+ * This reader also includes generated columns from table_xinfo (hidden 2/3),
+ * excludes virtual-table module columns (hidden 1), and refuses generated
+ * columns whose expressions the owning reader cannot describe.
+ *
+ * The engine is confirmed first. An in-memory DuckDB handle can read as SQLite
+ * by its URL, and DuckDB answers some of these catalog queries with different
+ * content, so a handle that is not SQLite is unreadable, never "described".
+ */
+async function inspectSqliteTableSchema(
+  db: DatabaseInterface,
+  tableName: string,
+): Promise<TableSchemaInfo | null> {
+  try {
+    await db.query('SELECT sqlite_version()');
+  } catch (cause) {
+    throw new TableSchemaUnreadableError(tableName, 'sqlite', { cause });
+  }
+  const exists = await db.query(
+    "SELECT name FROM sqlite_master WHERE type='table' AND name = ?",
+    tableName,
+  );
+  if (!exists.rows.length) return null;
+  // `main` is named in every pragma: unqualified, a temporary table of the same
+  // name answers first, while the catalog read above and the migration DDL
+  // address the permanent table.
+  const columnRows = await db.query(
+    "SELECT * FROM pragma_table_xinfo(?, 'main')",
+    tableName,
+  );
+  const visibleRows = columnRows.rows.filter((row) => {
+    const hidden =
+      typeof row.hidden === 'number' || typeof row.hidden === 'bigint'
+        ? Number(row.hidden)
+        : Number.NaN;
+    if (![0, 1, 2, 3].includes(hidden))
+      throw new TableSchemaUnreadableError(tableName, 'sqlite');
+    return hidden !== 1; // Module implementation columns are not application columns.
+  });
+  const generatedRows = visibleRows.filter((row) => Number(row.hidden) > 1);
+  if (generatedRows.length) {
+    try {
+      // Reuse the owning expression reader rather than inventing ordinary
+      // columns when SQLite accepts a DDL spelling that reader cannot parse.
+      const { readGeneratedColumns } = await import('../generated-fields.js');
+      const generated = await readGeneratedColumns(db, tableName, 'sqlite');
+      if (generatedRows.some((row) => !generated.has(String(row.name))))
+        throw new TableSchemaUnreadableError(tableName, 'sqlite');
+    } catch (cause) {
+      if (cause instanceof TableSchemaUnreadableError) throw cause;
+      throw new TableSchemaUnreadableError(tableName, 'sqlite', { cause });
+    }
+  }
+  // Define own properties rather than assigning: `__proto__` is a valid SQL
+  // column name and must not invoke Object.prototype's legacy setter.
+  const columns: TableSchemaInfo['columns'] = Object.fromEntries(
+    visibleRows.map((row) => [
+      String(row.name),
+      {
+        type: row.type as string,
+        // `pk` is one-based: every component of a composite key is a key column.
+        primaryKey: Number(row.pk) > 0,
+        notNull: row.notnull === 1,
+        defaultValue: row.dflt_value,
+      },
+    ]),
+  );
+  const indexRows = await db.query(
+    `SELECT name, sql FROM sqlite_master
+      WHERE type = 'index' AND tbl_name = ? AND ${sqliteUserObjectName()}`,
+    tableName,
+  );
+  const indexes: NonNullable<TableSchemaInfo['indexes']> = [];
+  for (const row of indexRows.rows) {
+    const indexName = String(row.name);
+    const info = await db.query(
+      "SELECT * FROM pragma_index_info(?, 'main')",
+      indexName,
+    );
+    const listed = await db.query(
+      "SELECT * FROM pragma_index_list(?, 'main') WHERE name = ?",
+      tableName,
+      indexName,
+    );
+    indexes.push({
+      name: indexName,
+      columns: info.rows.map((column) => column.name as string),
+      unique: listed.rows[0]?.unique === 1,
+    });
+  }
+  const foreignKeyRows = await db.query(
+    "SELECT * FROM pragma_foreign_key_list(?, 'main')",
+    tableName,
+  );
+  return {
+    tableName,
+    columns,
+    indexes,
+    foreignKeys: foreignKeyRows.rows.map((row) => ({
+      column: row.from as string,
+      referencesTable: row.table as string,
+      referencesColumn: row.to as string,
+      onDelete: row.on_delete as string,
+      onUpdate: row.on_update as string,
     })),
   };
 }

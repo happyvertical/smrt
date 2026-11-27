@@ -32,7 +32,12 @@ export {
   resolveForeignKeyDeleteAction,
 } from './foreign-key-policy.js';
 export { SchemaGenerator } from './generator.js';
-export { inspectTableSchema } from './inspection.js';
+export {
+  inspectTableSchema,
+  TableSchemaUnreadableError,
+  TableSpellingMismatchError,
+  TemporaryTableShadowError,
+} from './inspection.js';
 // Live-schema parity check (#2368)
 export {
   type ConflictTargetInput,

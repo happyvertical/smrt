@@ -54,13 +54,32 @@ the SESSION's tenant (no tenant parameter; it refuses with no context):
 `storage { bytes (latest sample), peakBytes, sampledAt (measured), bucketStart, samples, backend }` and
 `requests { count, metered }`, `worker { wakes, awakeMs }`.
 
-## Seam for #5195 (request counts and caller kind)
+## Request counts and caller kind (`request-metering.ts`)
 
-NOT done here: counting requests, and the caller kind (owner, staff, guest,
-job, service), need hooks in core's generated API paths (#5195). The reader
-already sums `REQUEST_COUNT_METRIC` (`'api.requests'`) rows and reports
-`metered: false` until some exist, so the writer only has to record that key
-(a counter: summing is right) with the kind in `dimensions`.
+Core reports each request of the app's generated REST routes to a sink with the
+DECIDED principal's tenant and `callerKind`, after its authorization and limit
+decision (`APIConfig.requestMeter`,
+`generators/request-metering.ts`; the generated SvelteKit routes use the same
+call through `setRequestMeterSink`). The app worker captures that event into
+`RestResult.meter`; `AppHost.rest` hands it to `HostOptions.onRequest` and
+strips it from the answer; the cloud host (`lib/server/host.ts`) passes
+`requestCounter(holder.tenantId)`, which lazily loads `request-metering.ts`.
+The desktop host passes no `onRequest`: nothing is counted or imported there.
+Drafts are not counted.
+
+`RequestMeter` batches counts in memory per `(tenant, callerKind, limited)` (a
+map increment per request) and an unref'd timer (60 s, or 1,000 distinct keys)
+writes one `api.requests` COUNTER row per key (`source: 'app-shell.requests'`,
+random `sourceId`, window = first request to flush, `dimensions {callerKind,
+limited, refused}`; summing is right). A refused request (`unauthenticated`,
+`forbidden`, `rate_limited`) is core's event with no tenant; the host files it
+under its OWN tenant (never one the caller named) with `refused` set, and the
+reader keeps it out of `count`. Tenant and kind are never request input; a caller
+with no kind is `unknown`, and a kind (owner, staff, guest, job, service) is a
+dimension value, not a branch. A failed flush drops that batch (best effort, no
+retry storm) and nothing throws into a request. `readTenantUsage().requests` =
+`{ count (served), metered, limited, refused {reason: n}, byCallerKind }`, so guest traffic reads apart from
+staff traffic.
 
 ## Wake and idle-close samples (host.ts)
 
@@ -80,7 +99,7 @@ spans only) and each then takes a storage sample through `sample()` (still one
 gauge row per bucket, so a wake right after a close adds none). The calls are
 `void`ed behind a lazy import (no import cycle) and swallow every error: a
 wake or close never waits on, or fails from, metering. A lost-claim drop and
-`closeOwnApp` are not samples. Request counts and caller kind remain #5195's.
+`closeOwnApp` are not samples. 
 
 ## Tests
 
