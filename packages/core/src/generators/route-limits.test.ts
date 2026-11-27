@@ -165,6 +165,48 @@ describe('enforceRouteLimits', () => {
   });
 });
 
+describe('APIGenerator routeLimits with resolveTenant (#5198)', () => {
+  const customRoutes = { '/ping': async () => new Response('pong') };
+
+  it('does not call resolveTenant, or change its errors, with no limits', async () => {
+    const resolveTenant = vi.fn(() => {
+      throw new Error('no session');
+    });
+    const handler = new APIGenerator(
+      { basePath: '/api', resolveTenant, customRoutes },
+      { db: { query: vi.fn() } as never },
+    ).generateHandler();
+    const answer = await handler(new Request('http://local/api/ping'));
+    expect(answer.status).toBe(200);
+    expect(resolveTenant).not.toHaveBeenCalled();
+  });
+
+  it('admits a request whose resolveTenant throws, and limits by tenant otherwise', async () => {
+    let broken = true;
+    const handler = new APIGenerator(
+      {
+        basePath: '/api',
+        customRoutes,
+        resolveTenant: () => {
+          if (broken) throw new Error('no session');
+          return { tenantId: 't1' };
+        },
+        routeLimits: {
+          client: { maxEvents: 9, ...WINDOW },
+          tenant: { maxEvents: 1, ...WINDOW },
+        },
+      },
+      { db: { query: vi.fn() } as never },
+    ).generateHandler();
+    const ping = () => handler(new Request('http://local/api/ping'));
+    expect((await ping()).status).toBe(200);
+    expect((await ping()).status).toBe(200);
+    broken = false;
+    expect((await ping()).status).toBe(200);
+    expect((await ping()).status).toBe(429);
+  });
+});
+
 describe('APIGenerator routeLimits', () => {
   it('refuses a tenant limit with no way to resolve a tenant', () => {
     expect(
