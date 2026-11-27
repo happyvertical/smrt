@@ -124,7 +124,7 @@ function readLimiter(
 export function createGuestRuntime(
   options: GuestRuntimeOptions = {},
 ): GuestRuntime {
-  const cache = new Map<string, ResolvedGuestCreateModel | null>();
+  const cache = new Map<string, ResolvedGuestCreateModel>();
   const fields = options.createFields ?? {};
   return Object.freeze({
     trustedHops: options.trustedHops ?? 0,
@@ -133,7 +133,8 @@ export function createGuestRuntime(
     readLimiter: readLimiter(options.read),
     resolveCreate(collection: string, model: string) {
       const key = `${collection}\0${model}`;
-      if (cache.has(key)) return cache.get(key) ?? null;
+      const cached = cache.get(key);
+      if (cached) return cached;
       let resolved: ResolvedGuestCreateModel | null = null;
       try {
         const raw = Object.hasOwn(fields, collection)
@@ -155,7 +156,9 @@ export function createGuestRuntime(
       } catch {
         resolved = null;
       }
-      cache.set(key, resolved);
+      // Only a validated shape is kept: a refusal is recomputed, so a
+      // model that was not registered yet is not denied for the process.
+      if (resolved) cache.set(key, resolved);
       return resolved;
     },
   });
