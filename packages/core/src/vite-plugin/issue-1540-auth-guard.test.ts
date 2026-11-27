@@ -88,28 +88,37 @@ describe('Issue #1540 (2c): fail-closed auth on generated routes', () => {
     expect(collectionRoute).toContain(
       "const PUBLIC_ACCESS: boolean | 'read' = false;",
     );
-    expect(collectionRoute).toContain('function requireRouteAuth');
+    expect(collectionRoute).toContain('function requireRouteAccess');
+    // The decision is the shared one (#5195), not an emitted copy of it.
+    expect(collectionRoute).toContain('authorize({');
+    expect(collectionRoute).not.toContain('function hasAuthenticatedPrincipal');
+    expect(collectionRoute).not.toContain('function hasGrantedPermission');
     // Reads are non-mutating; writes are mutating.
-    expect(collectionRoute).toContain('requireRouteAuth(locals, false);'); // GET list
-    expect(collectionRoute).toContain('requireRouteAuth(locals, true);'); // POST
-    expect(itemRoute).toContain('requireRouteAuth(locals, false);'); // GET item
-    expect(itemRoute).toContain('requireRouteAuth(locals, true);'); // PUT + DELETE
+    expect(collectionRoute).toContain(
+      'requireRouteAccess(locals, "list", false);',
+    ); // GET list
+    expect(collectionRoute).toContain(
+      'requireRouteAccess(locals, "create", true);',
+    ); // POST
+    expect(itemRoute).toContain('requireRouteAccess(locals, "get", false);'); // GET item
+    expect(itemRoute).toContain('requireRouteAccess(locals, "update", true);'); // PUT
+    expect(itemRoute).toContain('requireRouteAccess(locals, "delete", true);'); // DELETE
+    expect(collectionRoute).toContain(
+      "requireRouteBody(locals, 'create', body);",
+    );
+    expect(itemRoute).toContain("requireRouteBody(locals, 'update', body);");
     // Writes also require the operation permission (#2977); reads do not.
     expect(collectionRoute).toContain(
       'const PERMISSION_COLLECTION = "widgets";',
     );
+    expect(collectionRoute).not.toContain('requireRoutePermission');
     expect(collectionRoute).toContain(
-      'requireRoutePermission(locals, "create");',
+      'const ALLOW_SUPER_ADMIN_BYPASS = false;',
     );
-    expect(itemRoute).toContain('requireRoutePermission(locals, "update");');
-    expect(itemRoute).toContain('requireRoutePermission(locals, "delete");');
-    expect(collectionRoute).not.toContain(
-      'requireRoutePermission(locals, "read")',
-    );
-    expect(collectionRoute).toContain("throw error(403, 'Permission denied');");
-    // 401 on missing principal.
+    // The shared decision answers 401 and 403 with their codes.
+    expect(collectionRoute).toContain('routeDenial(decision)');
     expect(collectionRoute).toContain(
-      "throw error(401, 'Authentication required');",
+      'const body: { message: string; code: string }',
     );
     // Must NOT fail open on a callable `locals.auth` (Auth.js puts an `auth()`
     // helper on every request, including anonymous ones).

@@ -107,7 +107,7 @@ describe('SvelteKit generated routes: conditional GET (#1757)', () => {
       "import { assertQueryAccess, parseRestListWhere } from '@happyvertical/smrt-core';",
     );
     expect(collectionRoute).toContain(
-      'applyWhereScope(query.where, tenancyReadScope(tenancy))',
+      'applyWhereScope(stripTenantFilters(routePrincipal(locals), TENANT_COLUMNS, query.where), tenancyReadScope(tenancy))',
     );
     expect(collectionRoute).toContain(
       'const orderBy = query.orderBy || LIST_ORDER_BY;',

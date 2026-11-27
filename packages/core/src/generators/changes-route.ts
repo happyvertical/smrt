@@ -88,7 +88,19 @@ export async function authenticateFeedRequest(
   options: FeedAuthenticationOptions,
 ): Promise<Request | Response> {
   if (options.principalAuthenticated === false) {
-    return errorResponse(401, 'Authentication required');
+    // The host resolved the caller and they are not signed in: the typed 401
+    // every route answers a host-resolved principal with (#5195).
+    return jsonResponse(
+      {
+        error: {
+          code: 'AUTHENTICATION_REQUIRED',
+          message: 'Authentication required',
+          ok: false,
+          status: 401,
+        },
+      },
+      401,
+    );
   }
   if (!options.authMiddleware) {
     return options.principalAuthenticated === true

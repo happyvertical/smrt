@@ -230,10 +230,16 @@ Every sync op is a mutation, so the fail-closed #1540 posture applies:
   CRUD routes); anonymous callers can only target `public: true` models.
   An authenticated principal additionally needs the same
   `<collection>.<op>` operation permission the mirrored generated write
-  route enforces (#2977, #3011) — from `locals.permissions`,
-  `permissionSet`, `smrtPermissions`, or `tenantContext.permissions`, with
-  only `tenantContext.superAdminBypass === true` skipping it. A missing
-  snapshot or permission rejects the item with `forbidden`.
+  route enforces (#2977, #3011), decided **per item** by the shared
+  `authorize` (`generators/route-authz.ts`, #5195), the decision runtime REST
+  makes. The grants come from one source, the first defined of
+  `locals.permissions`, `permissionSet`, `smrtPermissions`, or
+  `tenantContext.permissions` (an empty list is defined and grants nothing;
+  sources are not combined). A verified `tenantContext.superAdminBypass`
+  skips the permission only on a model that opts in with
+  `tenantScoped: { allowSuperAdminBypass: true }`. A missing snapshot or
+  permission, or an item payload naming another tenant than the caller's,
+  rejects that item with `forbidden`.
 
 ## Tenant isolation
 

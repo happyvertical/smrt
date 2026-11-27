@@ -6,12 +6,16 @@
  * is, once per request, outside the server. The server then enforces, from
  * that principal and nothing in the request:
  *
+ * This module holds the principal's shape and what resolves it. The rules the
+ * server enforces from it are decided in one place, `route-authz.ts`
+ * (`authorize`, `stripTenantFilters`), which the REST handler and the generated
+ * SvelteKit routes share:
+ *
  * - sign-in: a route that is not `api.public` needs `authenticated`;
  * - operation permissions: `<collection>.<action>` for create, update, delete,
- *   each mutating custom action and each sync item ({@link requirePermission});
- * - the tenant: a write body may not name another tenant
- *   ({@link assertWriteTenant}) and a query filter may not select one
- *   ({@link withoutTenantFilters}).
+ *   each mutating custom action and each sync item;
+ * - the tenant: a write body may not name another tenant and a query filter
+ *   may not select one.
  *
  * Without `resolvePrincipal` the server keeps its fixed `APIContext` principal
  * and none of these rules apply; `authMiddleware` decides alone.
@@ -22,9 +26,8 @@ import { resolvePermissionCollection } from '../permission-collection.js';
 import { readonlySetOf } from '../readonly-collections';
 import { ObjectRegistry } from '../registry';
 import type { SettledRequestPrincipal } from '../request-actor';
-import { livePrincipalRecord } from '../request-principal-scope';
 import { tenantOwnershipFields } from '../tenant-read-scope';
-import { resolveWhereKey, whereColumnName } from '../where-keys';
+import { getApiPublicAccess } from '../vite-plugin/route-policy';
 
 /**
  * Who one REST request acts for, as the host decided it. See
@@ -125,15 +128,6 @@ export function permissionDenied(): RequestPrincipalRefusal {
     403,
     'PERMISSION_DENIED',
     'Permission denied.',
-  );
-}
-
-/** 403 `TENANT_MISMATCH`. */
-export function tenantMismatch(): RequestPrincipalRefusal {
-  return new RequestPrincipalRefusal(
-    403,
-    'TENANT_MISMATCH',
-    'The request names a tenant other than the caller’s.',
   );
 }
 
@@ -384,100 +378,27 @@ export function customActionPermission(
 }
 
 /**
- * Require the operation permission `<collection>.<action>` of `model`.
- *
- * The one check every write path of the runtime REST server uses: create,
- * update and delete, each mutating custom action, each sync item, and the
- * re-check against the row's own model when a row is a subtype of the route's
- * model. Applies only when the host resolves the principal. A model with
- * `api.public: true` keeps its unauthenticated write semantics, as on the
- * generated routes; a verified super-admin bypass stands in only on a model
- * that opts in with `allowSuperAdminBypass`.
- *
- * @throws {RequestPrincipalRefusal} 403 `PERMISSION_DENIED`
+ * What the shared decision (`route-authz.ts`) is told about `model`: its
+ * `api.public` posture, the `<collection>` of its permission slugs, the
+ * super-admin opt-in and the columns that record its tenant. Read from the
+ * live registry, so the runtime REST handler and the generated routes decide a
+ * write under the model it lands in (an STI subtype selected through its base,
+ * or the subtype a loaded row belongs to) by one rule (#5195).
  */
-export function requirePermission(
-  principal: ResolvedRequestPrincipal,
-  model: string,
-  action: string,
-): void {
-  if (!principal.enforced) return;
-  // The check runs for the live request it belongs to, never for work that
-  // escaped it or outlived it.
-  if (livePrincipalRecord()?.snapshot !== principal.principal) {
-    throw permissionDenied();
-  }
-  const api = ObjectRegistry.getConfig(model)?.api;
-  if (
-    api &&
-    typeof api === 'object' &&
-    (api as { public?: unknown }).public === true
-  ) {
-    return;
-  }
-  if (
-    principal.superAdminBypass &&
-    ObjectRegistry.getTenantScopedConfig(model)?.allowSuperAdminBypass === true
-  ) {
-    return;
-  }
-  if (principal.permissions?.has(operationPermissionOf(model, action))) return;
-  throw permissionDenied();
-}
-
-/** Columns that record a row's tenant on `model`, for body and filter keys. */
-function tenantColumns(model: string, includeDefaults: boolean): Set<string> {
-  const columns = new Set(tenantOwnershipFields(model).values());
-  if (includeDefaults) columns.add('tenant_id');
-  return columns;
-}
-
-/**
- * Refuse a write body that names a tenant other than the principal's.
- *
- * The tenant keys are `tenantId`, `tenant_id` and the model's configured
- * ownership field, under any spelling that resolves to the same column. A key
- * whose value equals `principal.tenantId` passes (a client may echo the row it
- * read); any other value, `null` included, is refused rather than dropped, so
- * a client learns that the request could not choose its tenant. Applies only
- * when the host resolves the principal.
- *
- * @throws {RequestPrincipalRefusal} 403 `TENANT_MISMATCH`
- */
-export function assertWriteTenant(
-  principal: ResolvedRequestPrincipal,
-  model: string | undefined,
-  body: unknown,
-): void {
-  if (!principal.enforced || !model) return;
-  if (!body || typeof body !== 'object' || Array.isArray(body)) return;
-  const columns = tenantColumns(model, true);
-  for (const [key, value] of Object.entries(body)) {
-    if (!columns.has(whereColumnName(key))) continue;
-    if (value !== principal.tenantId) throw tenantMismatch();
-  }
-}
-
-/**
- * Remove every filter on a tenant ownership column of `model` from a request
- * `where`, unless the principal is explicitly cross-tenant. The tenant a read
- * acts in comes from the principal; a query parameter can neither select nor
- * exclude one. Applies only when the host resolves the principal.
- */
-export function withoutTenantFilters<T extends Record<string, unknown>>(
-  principal: ResolvedRequestPrincipal,
-  model: string | undefined,
-  where: T | undefined,
-): T | undefined {
-  if (!principal.enforced || principal.allowCrossTenant || !model || !where) {
-    return where;
-  }
-  const columns = tenantColumns(model, false);
-  if (columns.size === 0) return where;
-  const kept: Record<string, unknown> = {};
-  for (const [key, value] of Object.entries(where)) {
-    if (columns.has(resolveWhereKey(key).column)) continue;
-    kept[key] = value;
-  }
-  return kept as T;
+export function modelRoutePolicy(model: string): {
+  publicAccess: boolean | 'read';
+  permissionCollection: string;
+  allowSuperAdminBypass: boolean;
+  tenantColumns: ReadonlySet<string>;
+} {
+  return {
+    publicAccess: getApiPublicAccess(ObjectRegistry.getConfig(model)?.api),
+    // `<collection>.<action>` minus its action: the collection the generated
+    // routes and the permission catalog use.
+    permissionCollection: operationPermissionOf(model, '_').slice(0, -2),
+    allowSuperAdminBypass:
+      ObjectRegistry.getTenantScopedConfig(model)?.allowSuperAdminBypass ===
+      true,
+    tenantColumns: new Set(tenantOwnershipFields(model).values()),
+  };
 }
