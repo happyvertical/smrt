@@ -168,3 +168,15 @@ Re-baselined again for the typecheck fix of the emitted denials (#5195): the
 `_events` routes of both cases) because denial bodies are built as a variable
 before `error()`. Every other digest is unchanged, and the revision above is the
 commit whose production sources produced them.
+
+### Guest creates and read limits (#5196, slice H)
+
+The collection and item routes of both cases changed on purpose: the list and
+get handlers destructure `getClientAddress` and charge a guest read against
+the per-client and per-tenant read limits (`guestReadThrottle`, a no-op for
+every other caller), and the POST handler opens with the guest create branch
+(`guestCreateAdmission`, which is `null` for every non-guest, so the
+ordinary create path is untouched). Four digests were replaced by hand
+(`compat_plain` and `compatroots`, collection and `[id]` routes); the
+manifest, schema, DDL, migration, OpenAPI, MCP and every other emitted file are
+unchanged.
