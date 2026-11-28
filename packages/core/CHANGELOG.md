@@ -1,5 +1,34 @@
 # @happyvertical/smrt-core
 
+## 0.74.0
+
+### Minor Changes
+
+- ### Breaking Changes
+  
+  - stop migrations when table schemas cannot be inspected (#5675) (core)
+  
+  ### Features
+  
+  - per-model staff access in place of owner-only (#5197) (#5742) (app-shell)
+  - meter requests per tenant and caller kind (#5199) (#5740) (core,app-shell)
+  - route-level 429 limits for REST and generated routes (#5198) (#5733) (core)
+  
+  ### Bug Fixes
+  
+  - describe what kitchen apply accepts (#5737) (cli)
+  
+  ### Other Changes
+  
+  - docs: point the docs site references at smrt.happyvertical.com (#5727)
+  - chore: regenerate generated pages (#5720) (knowledge)
+
+### Patch Changes
+
+- @happyvertical/smrt-config@0.74.0
+  - @happyvertical/smrt-scanner@0.74.0
+  - @happyvertical/smrt-types@0.74.0
+
 ## 0.73.1
 
 ### Patch Changes
