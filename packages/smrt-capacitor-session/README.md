@@ -1,7 +1,9 @@
 # @happyvertical/smrt-capacitor-session
 
-Capacitor Android plugin that flushes the WebView `CookieManager` to disk so a cookie session
-survives the app being killed right after sign-in (happyvertical/smrt#5077).
+Capacitor Android plugin for a shell that loads a smrt web app. It flushes the WebView
+`CookieManager` to disk so a cookie session survives the app being killed right after sign-in
+(happyvertical/smrt#5077), and, opt-in, routes [emailed sign-in links](#emailed-sign-in-links-opt-in)
+into the app and [listed paths](#paths-that-leave-the-app-opt-in) out to the browser.
 
 ## Use
 
@@ -39,6 +41,28 @@ plugins: { SmrtSession: { origins: ['https://hearthed.org'] } }
 
 A shell that serves the app from `https://localhost` and signs in against a remote origin must set
 `server.url` or list that origin. Cookies of any other origin are flushed on pause, stop and destroy only.
+
+## Paths that leave the app (opt-in)
+
+Capacitor keeps every URL of `server.url`'s origin in the WebView, and the WebView cannot
+download files, so a same-origin file link (a direct-APK update, say) does nothing. List the
+paths that should open in the system browser instead (#5703):
+
+```js
+// capacitor.config.js
+plugins: { SmrtSession: { external: ['/download'] } }
+```
+
+A navigation (a link tap, a redirect, a script setting `location`) leaves with `ACTION_VIEW`
+when it is http(s) with no user info, its origin is `server.url`'s, and its path is a listed
+prefix or lies under one at a segment boundary, with no `.`/`..` segments or encoded slashes
+or dots. A URL that `links` also covers stays in the WebView, since a verified App Link would
+come straight back. Everything else follows Capacitor's own policy; without `external`,
+nothing changes. No permission is added.
+
+The browser has its own cookie jar: list only paths that work signed out (or where signing in
+again in the browser is acceptable). The setting is read from the installed shell, so builds
+already on devices need one update before it applies to them.
 
 ## Emailed sign-in links (opt-in)
 

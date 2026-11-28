@@ -23,6 +23,8 @@ native-bearer stack, which has no WebView.
   listed is loaded into the WebView (`handleOnNewIntent`); `test/AppLinkPolicyTest.java` covers it.
 - `.../SpentLinks.java`: SHA-256 digests of links whose page loaded, so a one-time link opens once
   even when Android rebuilds a killed activity from its original intent; `test/SpentLinksTest.java`.
+- `.../ExternalPathPolicy.java`: the pure decision for opt-in paths that leave the WebView
+  (`plugins.SmrtSession.external`, #5703; used by `shouldOverrideLoad`); `test/ExternalPathPolicyTest.java`.
 - `test/CookieFlushPolicyTest.java`, `test/AppLinkPolicyTest.java`: plain-Java tests run by `pnpm test` (needs a JDK;
   skipped locally without one, a failure under `CI`). `pnpm test` also runs the watch
   script against fakes in a Node vm.
@@ -30,6 +32,8 @@ native-bearer stack, which has no WebView.
 
 ## Invariants
 
+- `shouldOverrideLoad` answers `true` or `null`, never `false`: the first non-null plugin
+  answer replaces Capacitor's navigation policy.
 - Android only, no JS entry. The plugin loads on `cap sync` plugin registration; the web app
   adds no code. `Capacitor.Plugins.SmrtSession.flush()` exists for an explicit flush.
 - The loss window is one bridge hop after a fetch/XHR/beacon that set a watched cookie, and at

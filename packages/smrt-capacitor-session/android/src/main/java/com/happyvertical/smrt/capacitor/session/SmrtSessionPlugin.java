@@ -1,8 +1,10 @@
 package com.happyvertical.smrt.capacitor.session;
 
+import android.content.ActivityNotFoundException;
 import android.content.Context;
 import android.content.Intent;
 import android.content.SharedPreferences;
+import android.net.Uri;
 import android.os.Handler;
 import android.os.Looper;
 import android.webkit.CookieManager;
@@ -56,6 +58,11 @@ import com.getcapacitor.annotation.CapacitorPlugin;
  * SHA-256 is remembered ({@link SpentLinks}) and the same link is never loaded
  * again, including when Android rebuilds a killed activity from the intent that
  * first started it. A launch replayed from Recents is ignored as well.
+ *
+ * <p>Opt-in external paths (#5703): when {@code plugins.SmrtSession.external}
+ * lists path prefixes, a navigation to one of them on {@code server.url}'s
+ * origin is handed to the system (a browser) instead of the WebView, which
+ * cannot download files. See {@link ExternalPathPolicy}.
  */
 @CapacitorPlugin(name = "SmrtSession")
 public class SmrtSessionPlugin extends Plugin {
@@ -142,6 +149,32 @@ public class SmrtSessionPlugin extends Plugin {
             pendingPage = SpentLinks.page(url);
         }
         webView.post(() -> webView.loadUrl(url));
+    }
+
+    /**
+     * True when the URL was handed to the system; null leaves Capacitor's own
+     * policy (never false, which would override it for every other URL).
+     */
+    @Override
+    public Boolean shouldOverrideLoad(Uri url) {
+        String[] external = getConfig().getArray("external");
+        if (external == null || url == null || getBridge() == null || getBridge().getConfig() == null) {
+            return null;
+        }
+        String[] links = getConfig().getArray("links");
+        if (!ExternalPathPolicy.opensOutside(url.toString(), getBridge().getConfig().getServerUrl(),
+                Arrays.asList(external), links == null ? null : Arrays.asList(links))) {
+            return null;
+        }
+        Intent view = new Intent(Intent.ACTION_VIEW, url);
+        view.addCategory(Intent.CATEGORY_BROWSABLE);
+        try {
+            getActivity().startActivity(view);
+        } catch (ActivityNotFoundException e) {
+            // Nothing can open it; the WebView could not download it either.
+            Logger.warn(getLogTag(), "no app to open an external path");
+        }
+        return true;
     }
 
     private SharedPreferences linkPrefs() {
