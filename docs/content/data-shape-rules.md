@@ -160,3 +160,22 @@ Read this before you upgrade a deployed app.
   hold back, the packages last seen against those loaded, the database's
   release, and the build's schema fingerprint next to the database's. It reads
   and writes nothing.
+- **Migration checksums keep quoted text.** Newly applied migrations record
+  `v2:<sha256>` checksums (`computeQuotedTextChecksum`) in
+  `_smrt_schema_migrations` that keep string literals (`'...'`, `E'...'`),
+  quoted identifiers (`"..."`, `` `...` ``, `[...]`), and PostgreSQL
+  dollar-quoted bodies (`$$...$$`, `$tag$...$tag$`) as written while still
+  stripping comments and collapsing whitespace outside quotes. A migration id
+  reused with an edited literal, identifier, or dollar body is now refused
+  (`checksum mismatch`). Existing unprefixed checksums written by earlier
+  releases still match unchanged SQL and stay unprefixed on re-runs
+  (`reconcile` or `--force`), and `computeChecksum` / `normalizeSQL` keep
+  their output. Code that verifies stored records must use
+  `verifyRecordedChecksum(up, recordChecksum, appliedChecksum)` or
+  `checksumMatchesRecorded(up, recordChecksum)`: calling
+  `verifyChecksum(computeChecksum(up), ...)` matches unprefixed records only
+  and reports `file_modified` on `v2:` records. A database shared with a build
+  older than this release is one-way for migrations first applied by this
+  release: older builds read `v2:` records as modified, and forcing on an older
+  build (`--force` or `--force-migration`) re-runs the migration's `up`
+  statements, so force only after confirming the SQL is safe to repeat.

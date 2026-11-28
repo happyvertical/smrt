@@ -60,9 +60,15 @@ vi.mock('@happyvertical/smrt-core', () => ({
   SchemaComparer: SchemaComparerMock,
 }));
 
-vi.mock('@happyvertical/smrt-core/migrations', () => ({
-  MigrationTracker: MigrationTrackerMock,
-}));
+vi.mock('@happyvertical/smrt-core/migrations', async () => {
+  const actual = await vi.importActual<
+    typeof import('@happyvertical/smrt-core/migrations')
+  >('@happyvertical/smrt-core/migrations');
+  return {
+    MigrationTracker: MigrationTrackerMock,
+    shortChecksum: actual.shortChecksum,
+  };
+});
 
 import { dbHistoryCommand } from '../db-history.js';
 

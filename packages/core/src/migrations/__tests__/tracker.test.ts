@@ -8,6 +8,12 @@ import type { DatabaseInterface } from '@happyvertical/sql';
 import { getDatabase } from '@happyvertical/sql';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { MigrationDefinition } from '../../schema/types.js';
+import {
+  computeChecksum,
+  computeQuotedTextChecksum,
+  verifyChecksum,
+} from '../checksum.js';
+import { createMigrationDefinition, MigrationGenerator } from '../generator.js';
 import { MigrationTracker } from '../tracker.js';
 
 describe('MigrationTracker', () => {
@@ -219,6 +225,285 @@ describe('MigrationTracker', () => {
 
       expect(retry.success).toBe(false);
       expect(retry.error).toContain('previously failed');
+    });
+
+    it('refuses a reused id whose statement differs only inside a quoted string', async () => {
+      await db.query('CREATE TABLE notes (id TEXT PRIMARY KEY, label TEXT)');
+      const recorded: MigrationDefinition = {
+        id: '0001_label_default',
+        description: 'Fill the label',
+        version: '1.0.0',
+        up: ["UPDATE notes SET label = 'n/a--legacy' WHERE label IS NULL"],
+        down: [],
+      };
+      expect((await tracker.apply(recorded)).success).toBe(true);
+
+      const edited = {
+        ...recorded,
+        up: ["UPDATE notes SET label = 'n/a--v2' WHERE label IS NULL"],
+      };
+      const result = await tracker.apply(edited);
+
+      expect(result.success).toBe(false);
+      expect(result.error).toContain('checksum mismatch');
+      expect(await tracker.detectDrift([edited])).toEqual([
+        expect.objectContaining({
+          migration_name: '0001_label_default',
+          drift_type: 'file_modified',
+        }),
+      ]);
+    });
+
+    it('still recognises a migration an earlier release recorded, whatever its quoted text', async () => {
+      await db.query('CREATE TABLE notes (id TEXT PRIMARY KEY, label TEXT)');
+      const definition: MigrationDefinition = {
+        id: '0001_label_spacing',
+        description: 'Fill the label',
+        version: '1.0.0',
+        up: [
+          "UPDATE notes SET label = 'two  spaces -- kept' WHERE label IS NULL",
+        ],
+        down: [],
+      };
+      // The row as an earlier release wrote it: its checksum came from
+      // normalizing the quoted text as well.
+      const earlier = computeChecksum(definition.up);
+      expect(earlier).not.toBe(computeQuotedTextChecksum(definition.up));
+      await tracker.initialize();
+      await db.query(
+        `INSERT INTO _smrt_schema_migrations
+           (id, name, version, checksum, applied_checksum, status, attempts, is_reversible, batch)
+         VALUES ('earlier-row', ?, '1.0.0', ?, ?, 'completed', 1, 0, 1)`,
+        definition.id,
+        earlier,
+        earlier,
+      );
+
+      const result = await tracker.apply(definition);
+
+      expect(result).toMatchObject({ success: true, skipped: true });
+      expect(await tracker.detectDrift([definition])).toEqual([]);
+
+      // The batch pre-check that selects what `apply` would run reads the
+      // same record the same way, so it also leaves the definition out.
+      const toRun = await (
+        tracker as unknown as {
+          definitionsToRun(
+            definitions: MigrationDefinition[],
+            options: Record<string, never>,
+          ): Promise<MigrationDefinition[]>;
+        }
+      ).definitionsToRun([definition], {});
+      expect(toRun).toEqual([]);
+    });
+
+    it.each([
+      ['spaces gained', "SELECT 'two spaces'", "SELECT 'two  spaces'"],
+      ['spaces lost', "SELECT 'two  spaces'", "SELECT 'two spaces'"],
+      ['a backtick alias', 'SELECT 1 AS `a  b`', 'SELECT 1 AS `a b`'],
+      ['a line ending', "SELECT 'a\r\nb'", "SELECT 'a\nb'"],
+      [
+        'a literal after a comment that never closes under nesting (SQLite ends it at the first close marker)',
+        "UPDATE notes /* example /* marker */ SET label = 'old'",
+        "UPDATE notes /* example /* marker */ SET label = 'new'",
+      ],
+      [
+        'a literal after a comment holding a marker',
+        "UPDATE notes /* -- why */ SET label = 'old'",
+        "UPDATE notes /* -- why */ SET label = 'new'",
+      ],
+    ])('detects a reused id whose literal changed (%s) through the batch path, drift and the pre-check', async (_name, original, changed) => {
+      await db.query('CREATE TABLE notes (id TEXT PRIMARY KEY, label TEXT)');
+      const make = (literal: string): MigrationDefinition => ({
+        id: '0001_literal',
+        description: 'Literal',
+        version: '1.0.0',
+        up: [literal],
+        down: [],
+      });
+      const first = await tracker.applyAll([make(original)]);
+      expect(first[0]).toMatchObject({ success: true, applied: true });
+      expect(first[0].checksum).toMatch(/^v2:/);
+
+      const edited = make(changed);
+      const again = await tracker.applyAll([edited]);
+      expect(again[0].success).toBe(false);
+      expect(again[0].error).toContain('checksum mismatch');
+      expect(await tracker.detectDrift([edited])).toEqual([
+        expect.objectContaining({ drift_type: 'file_modified' }),
+      ]);
+      const toRun = await (
+        tracker as unknown as {
+          definitionsToRun(
+            definitions: MigrationDefinition[],
+            options: Record<string, never>,
+          ): Promise<MigrationDefinition[]>;
+        }
+      ).definitionsToRun([edited], {});
+      expect(toRun).toEqual([edited]);
+      // The unchanged definition is still skipped.
+      expect((await tracker.applyAll([make(original)]))[0]).toMatchObject({
+        success: true,
+        skipped: true,
+      });
+    });
+
+    it.each([
+      [
+        'a comment holding a stray open marker, closed by a marker in a later literal',
+        "/* strip /* markers */ UPDATE notes SET kind = 'old', body = replace(body, '*/', '')",
+        "/* strip /* markers */ UPDATE notes SET kind = 'new', body = replace(body, '*/', '')",
+      ],
+      [
+        'a comment ending in a glob, with a later literal holding a close marker',
+        "UPDATE notes /* old glob: /img/* */ SET kind = 'old*/logo.svg'",
+        "UPDATE notes /* old glob: /img/* */ SET kind = 'new*/logo.svg'",
+      ],
+    ])('refuses a reused id whose literal changed after a comment that ends at its first close marker (%s), in both edit directions', async (_name, left, right) => {
+      await db.query(
+        'CREATE TABLE notes (id TEXT PRIMARY KEY, kind TEXT, body TEXT)',
+      );
+      for (const [recorded, edited] of [
+        [left, right],
+        [right, left],
+      ]) {
+        await db.query('DELETE FROM _smrt_schema_migrations');
+        const make = (sql: string): MigrationDefinition => ({
+          id: '0001_comment_end',
+          description: 'Comment end',
+          version: '1.0.0',
+          up: [sql],
+          down: [],
+        });
+        expect((await tracker.apply(make(recorded))).success).toBe(true);
+        const result = await tracker.apply(make(edited));
+        expect(result.success).toBe(false);
+        expect(result.error).toContain('checksum mismatch');
+        expect(await tracker.detectDrift([make(edited)])).toEqual([
+          expect.objectContaining({ drift_type: 'file_modified' }),
+        ]);
+      }
+    });
+
+    it('refuses a reused id whose bracket identifier holding an open marker changed, in both edit directions', async () => {
+      const make = (sql: string): MigrationDefinition => ({
+        id: '0001_bracket_marker',
+        description: 'Bracket marker',
+        version: '1.0.0',
+        up: [sql],
+        down: [],
+      });
+      const left = 'ALTER TABLE t RENAME COLUMN [a/*b] TO c';
+      const right = 'ALTER TABLE t RENAME COLUMN [a/*b] TO d';
+      for (const [recorded, edited] of [
+        [left, right],
+        [right, left],
+      ]) {
+        await db.query('DROP TABLE IF EXISTS t');
+        await db.query('DELETE FROM _smrt_schema_migrations');
+        await db.query('CREATE TABLE t ("a/*b" TEXT)');
+        expect((await tracker.apply(make(recorded))).success).toBe(true);
+        const result = await tracker.apply(make(edited));
+        expect(result.success).toBe(false);
+        expect(result.error).toContain('checksum mismatch');
+        expect(await tracker.detectDrift([make(edited)])).toEqual([
+          expect.objectContaining({ drift_type: 'file_modified' }),
+        ]);
+      }
+    });
+
+    it('keeps the checksum of an earlier record when reconcile or force runs it again', async () => {
+      const definition: MigrationDefinition = {
+        id: '0001_label_spacing_again',
+        description: 'Select',
+        version: '1.0.0',
+        up: ["SELECT 'two  spaces'"],
+        down: [],
+      };
+      const earlier = computeChecksum(definition.up);
+      await tracker.initialize();
+      await db.query(
+        `INSERT INTO _smrt_schema_migrations
+           (id, name, version, checksum, applied_checksum, status, attempts, is_reversible, batch)
+         VALUES ('earlier-row-2', ?, '1.0.0', ?, ?, 'completed', 1, 0, 1)`,
+        definition.id,
+        earlier,
+        earlier,
+      );
+      for (const options of [{ reconcile: true }, { force: true }]) {
+        const result = await tracker.apply(definition, options);
+        expect(result.success).toBe(true);
+        expect(result.checksum).toBe(earlier);
+        const row = await tracker.getMigration(definition.id);
+        expect(row?.checksum).toBe(earlier);
+        expect(row?.applied_checksum).toBe(earlier);
+      }
+      expect(await tracker.detectDrift([definition])).toEqual([]);
+    });
+
+    it('keeps an earlier record in its own form when a forced edit changes its statements', async () => {
+      const original: MigrationDefinition = {
+        id: '0001_forced_edit',
+        description: 'Select',
+        version: '1.0.0',
+        up: ["SELECT 'two  spaces'"],
+        down: [],
+      };
+      const edited = { ...original, up: ["SELECT 'three   spaces'"] };
+      const earlier = computeChecksum(original.up);
+      await tracker.initialize();
+      await db.query(
+        `INSERT INTO _smrt_schema_migrations
+           (id, name, version, checksum, applied_checksum, status, attempts, is_reversible, batch)
+         VALUES ('earlier-row-3', ?, '1.0.0', ?, ?, 'completed', 1, 0, 1)`,
+        original.id,
+        earlier,
+        earlier,
+      );
+      // Without force the edit is refused and the record is untouched.
+      expect((await tracker.apply(edited)).success).toBe(false);
+      expect((await tracker.getMigration(original.id))?.checksum).toBe(earlier);
+
+      const forced = await tracker.apply(edited, { force: true });
+      expect(forced.success).toBe(true);
+      const row = await tracker.getMigration(original.id);
+      // Still an earlier-form digest, now of the edited statements, so a build
+      // that predates the prefix reads the same definition as unmodified.
+      expect(row?.checksum).toBe(computeChecksum(edited.up));
+      expect(row?.checksum).not.toMatch(/^v2:/);
+      expect(row?.applied_checksum).toBe(row?.checksum);
+      expect(
+        verifyChecksum(
+          computeChecksum(edited.up),
+          row?.checksum as string,
+          row?.applied_checksum,
+        ),
+      ).toEqual({ valid: true });
+      expect(await tracker.detectDrift([edited])).toEqual([]);
+    });
+
+    it('records a new migration in the current form and a generated migration advertises the same value', async () => {
+      const generator = new MigrationGenerator({
+        engine: 'sqlite',
+        format: 'sql',
+        includeDown: false,
+      });
+      const generated = generator.generateFromSQL(
+        ["UPDATE notes SET label = 'two  spaces' WHERE label IS NULL"],
+        [],
+        { name: '0002_generated', description: 'Generated' },
+      );
+      await db.query('CREATE TABLE notes (id TEXT PRIMARY KEY, label TEXT)');
+      const result = await tracker.apply(
+        createMigrationDefinition(generated.id, generated.up, generated.down, {
+          version: '1.0.0',
+        }),
+      );
+      expect(result.success).toBe(true);
+      expect(result.checksum).toBe(generated.checksum);
+      expect((await tracker.getMigration('0002_generated'))?.checksum).toBe(
+        generated.checksum,
+      );
     });
 
     it('should still block checksum mismatches during reconcile', async () => {

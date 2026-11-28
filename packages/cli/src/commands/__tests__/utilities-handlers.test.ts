@@ -255,7 +255,7 @@ vi.mock('@happyvertical/smrt-core/migrations', async () => {
     parsePostgresTimeoutMs: actual.parsePostgresTimeoutMs,
     unusedRetireConfirmations: actual.unusedRetireConfirmations,
     // No retired tables in these fixtures (#5005).
-    shortChecksum: (s: string) => (s ? s.slice(0, 8) : 'nochk'),
+    shortChecksum: (s: string) => (s ? actual.shortChecksum(s) : 'nochk'),
   };
 });
 

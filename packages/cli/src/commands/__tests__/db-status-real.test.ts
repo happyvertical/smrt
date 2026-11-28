@@ -255,6 +255,16 @@ describe('db:status (real SQLite rendering)', () => {
     expect(Array.isArray(parsed.drift)).toBe(true);
   });
 
+  it('reports a checksum without the record-format prefix', async () => {
+    await applyMigration();
+
+    await requireCommandHandler(dbStatusCommand)([], { json: true });
+
+    const parsed = JSON.parse(output());
+    const [first] = parsed.migrations.details;
+    expect(first.checksum).toMatch(/^[a-f0-9]{8}$/);
+  });
+
   it('reports a failure when the schema source throws', async () => {
     await createWidgets();
     getSchemasSpy.mockImplementation(() => {
