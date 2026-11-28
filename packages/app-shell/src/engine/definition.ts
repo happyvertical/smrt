@@ -309,6 +309,29 @@ export function restRouteAllowed(def: AppDefinition, rawUrl: string): boolean {
   return parts.length === 1 || !parts[1].startsWith('_');
 }
 
+/**
+ * The one model a REST url writes to: the model whose route is the first path
+ * segment. Null when the url names none or several models (a table shared by
+ * more than one model), so a caller filtering by model never guesses.
+ */
+export function restModelFor(
+  def: AppDefinition,
+  rawUrl: string,
+): string | null {
+  let path: string;
+  try {
+    path = new URL(rawUrl, 'http://app.local').pathname;
+  } catch {
+    return null;
+  }
+  const first = path.slice('/api'.length).split('/').filter(Boolean)[0];
+  if (!path.startsWith('/api/') || first === undefined) return null;
+  const hits = Object.entries(def.models)
+    .filter(([m, md]) => routeFor(m, md) === first)
+    .map(([m]) => m);
+  return hits.length === 1 ? hits[0] : null;
+}
+
 /** Names of the generated tools: `<class>_list`, ... and one per method. */
 export function toolNamesFor(model: string, md: ModelDef): string[] {
   const cls = classNameFor(model, md).toLowerCase();

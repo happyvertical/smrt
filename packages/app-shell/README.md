@@ -108,6 +108,7 @@ owner). Writes must be same-origin `application/json`. Errors are
 
 | Route | Body | Response |
 |---|---|---|
+| `GET`/`PUT /api/shell/access` | owner only | `{ models: { model, label, grantable, read, create, update }[] }`; PUT `{ model, action: 'read'\|'create'\|'update', allowed }` sets or clears what staff may do (closed by default; create/update need read, delete is never grantable) |
 | `GET /api/shell/describe` | | `{ mode: 'live'\|'draft', draft: DraftInfo \| null, frozen, name, version, recipes, models: { [Model]: { kind: 'app'\|'shipped-subclass', label, table, className, extends, fields: { [name]: FieldDef }, ownFields: string[], methods: { [name]: { description, params } } } }, pendingApprovals }` (see [Changes waiting](#changes-waiting-the-shell)) |
 | `GET /api/shell/history` | | `{ mode, versions: { version, parent, author, summary, createdAt, purged, current, publish: { draftId, name } \| null }[] }` oldest first |
 | `POST /api/shell/undo` | none | change result `{ version, summary, statements, appRestartMs, ... }`; 409 if purged; **202** `PendingApproval` (with `preview.replaced`, the rows that would be overwritten) when the change being undone converted a field's type |

@@ -5,7 +5,9 @@ import {
   assistantSettings,
 } from '$lib/server/agent-cli/service';
 import { shellProfile } from '$lib/server/host';
-import { principalFromLocals } from '$lib/server/owner';
+import { callerOf } from '$lib/server/http';
+import { PolicyError, principalFromLocals } from '$lib/server/owner';
+import { staffDescription } from '$lib/server/staff-access';
 import { DEPENDS } from '$lib/ui/events';
 import { isPluginRequest } from '$lib/ui/layout';
 import { loadChanges, loadDescription } from '$lib/ui/load';
@@ -37,6 +39,23 @@ export const load: LayoutServerLoad = async (event) => {
       changes: null,
       embedded,
       onboardingComplete: false,
+    };
+  // Staff (#5197) get the filtered description (granted models only): never
+  // the owner's `/api/shell/describe`, no changes, no onboarding.
+  let caller: Awaited<ReturnType<typeof callerOf>> | null = null;
+  try {
+    caller = await callerOf(event);
+  } catch (e) {
+    // Not signed in, or not a member: the owner path below answers as before.
+    if (!(e instanceof PolicyError)) throw e;
+  }
+  if (caller?.kind === 'staff')
+    return {
+      session,
+      description: await staffDescription(caller.principal),
+      changes: null,
+      embedded,
+      onboardingComplete: true,
     };
   // Check ownership before reading the saved copy. Signed-in members have no shell.
   const liveResult = await loadDescription(event.fetch, 'live');

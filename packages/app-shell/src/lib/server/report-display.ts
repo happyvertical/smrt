@@ -102,6 +102,12 @@ export function reportFailure(
     );
   }
   const message = error instanceof Error ? error.message : '';
+  // A staff member's report that reaches a model they may not read (#5197).
+  if (
+    (error as { code?: unknown } | null)?.code === 'forbidden' ||
+    /^permission denied/i.test(message)
+  )
+    return new HttpError(403, 'You do not have access to this report.');
   if (/time limit/i.test(message))
     return new HttpError(
       409,

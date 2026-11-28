@@ -1,5 +1,6 @@
 <script lang="ts">
 import RecordForm from '$lib/components/RecordForm.svelte';
+import { can } from '$lib/ui/access';
 import { singularLabel } from '$lib/ui/fields';
 import type { PageProps } from './$types';
 
@@ -16,12 +17,16 @@ const info = $derived(description?.models[data.model]);
     <header class="smrt-app-shell__head">
       <h1>New {singularLabel(info.label).toLowerCase()}</h1>
     </header>
-    <RecordForm
-      model={data.model}
-      {description}
-      references={data.references}
-      prefill={data.prefill}
-      returnTo={data.returnTo}
-    />
+    {#if can(description, data.model, 'create')}
+      <RecordForm
+        model={data.model}
+        {description}
+        references={data.references}
+        prefill={data.prefill}
+        returnTo={data.returnTo}
+      />
+    {:else}
+      <p class="smrt-app-shell__muted" role="status">You can look at {info.label.toLowerCase()} but not add to them. Ask the owner if you need to.</p>
+    {/if}
   </div>
 {/if}

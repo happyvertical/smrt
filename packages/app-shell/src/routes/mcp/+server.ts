@@ -1,8 +1,10 @@
 /**
  * `POST /mcp`: the one MCP endpoint (Streamable HTTP, stateless). Its catalog
  * is the shell's generated tools (App builder methods, Approval.decide and
- * pending) plus the user app's generated tools, under one owner-only policy
- * (`$lib/server/policy`). Risky calls (`<model>_delete`, risky builder
+ * pending) plus the user app's generated tools, under one policy
+ * (`$lib/server/policy`): the owner has all of it; a staff member (#5197) has
+ * only the app's record tools their grants allow, run as their own principal,
+ * and no shell or builder tool. Risky calls (`<model>_delete`, risky builder
  * methods) return `pending_approval` and wait for the owner.
  *
  * The scope is named by the URL a client was configured with, never by state

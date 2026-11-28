@@ -1,16 +1,14 @@
 import { error } from '@sveltejs/kit';
+import { callerOf, loadError } from '$lib/server/http';
 import { ApiError, api } from '$lib/ui/api';
 import { DEPENDS } from '$lib/ui/events';
 import { needOwner } from '$lib/ui/load';
 import { reportApi } from '$lib/ui/reports';
 import type { AppReportResult } from '$lib/ui/types';
 import type { PageServerLoad } from './$types';
-export const load: PageServerLoad = async ({
-  parent,
-  params,
-  fetch,
-  depends,
-}) => {
+export const load: PageServerLoad = async (event) => {
+  await callerOf(event).catch(loadError);
+  const { parent, params, fetch, depends } = event;
   depends(DEPENDS.shell, DEPENDS.records);
   const description = needOwner((await parent()).description);
   const report = Object.hasOwn(description.reports ?? {}, params.name)

@@ -17,4 +17,8 @@ export {
 } from './AssistantThread.ts';
 export { ChangeBatch, ChangeBatchCollection } from './ChangeBatch.ts';
 export { ChangeCard, ChangeCardCollection } from './ChangeCard.ts';
+export {
+  ModelAccessGrant,
+  ModelAccessGrantCollection,
+} from './ModelAccessGrant.ts';
 export { ReceiveLink, ReceiveLinkCollection } from './ReceiveLink.ts';

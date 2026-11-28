@@ -75,6 +75,7 @@ import {
   type Migration,
   RECIPES,
   refuseChanges,
+  restModelFor,
   restRouteAllowed,
   type Step,
   snake,
@@ -4139,7 +4140,7 @@ export class AppHost extends EventEmitter {
       }
     }
     if (method !== 'GET' && method !== 'HEAD' && r.status < 400)
-      this.emit('records', { model: null });
+      this.emit('records', { model: restModelFor(this.def, req.url) });
     return r;
   }
 

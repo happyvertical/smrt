@@ -12,6 +12,8 @@ import {
   ApprovalRequiredError,
   type Command,
   EngineError,
+  type EnginePrincipal,
+  isRiskyTool,
   isStructuralCommand,
 } from '../../engine/index.ts';
 import { commandSummary } from '../ui/command-summary.ts';
@@ -272,16 +274,31 @@ export async function requestCommandApproval(
   );
 }
 
-/** Run an app tool on `target`; a risky one (`<model>_delete`) on live becomes an approval. */
+/** Staff delete nothing and ask for no approval (#5197): the owner's call alone. */
+function refuseStaffDelete(): never {
+  throw new EngineError(
+    'deleting a record waits for the owner: staff cannot delete',
+    'forbidden',
+  );
+}
+
+/**
+ * Run an app tool on `target`; a risky one (`<model>_delete`) on live becomes
+ * an approval. `as` is a STAFF engine principal (#5197): the call runs as it
+ * (the engine's `authorize.ts` decides), and a delete is refused, never an
+ * approval.
+ */
 export async function runAppTool(
   name: string,
   args: Record<string, unknown>,
   owner: Principal,
   target: Target,
+  as?: EnginePrincipal,
 ) {
+  if (as && isRiskyTool(name)) refuseStaffDelete();
   const host = await hostFor(target);
   try {
-    return await host.callAppTool(authorCaller(owner, host), name, args);
+    return await host.callAppTool(as ?? authorCaller(owner, host), name, args);
   } catch (e) {
     if (e instanceof ApprovalRequiredError) {
       const model = Object.entries(host.def.models).find(([model, md]) =>
@@ -309,15 +326,21 @@ export async function runAppTool(
   }
 }
 
-/** Pass a request to the app's generated REST on `target`; a live DELETE becomes an approval. */
+/**
+ * Pass a request to the app's generated REST on `target`; a live DELETE
+ * becomes an approval. `as` is a STAFF engine principal (#5197): the request
+ * runs as it, and a DELETE is refused, never an approval.
+ */
 export async function runRest(
   req: { method: string; url: string; body?: string },
   owner: Principal,
   target: Target,
+  as?: EnginePrincipal,
 ) {
+  if (as && req.method.toUpperCase() === 'DELETE') refuseStaffDelete();
   const host = await hostFor(target);
   try {
-    return await host.rest(authorCaller(owner, host), req);
+    return await host.rest(as ?? authorCaller(owner, host), req);
   } catch (e) {
     if (e instanceof ApprovalRequiredError) {
       const action: ApprovalAction = {

@@ -1,5 +1,6 @@
 <script lang="ts">
 import RecordList from '$lib/components/RecordList.svelte';
+import { can } from '$lib/ui/access';
 import { fieldLabel, recordLabel, singularLabel } from '$lib/ui/fields';
 import { formulaWords } from '$lib/ui/formula';
 import { modelHref } from '$lib/ui/menu';
@@ -35,9 +36,11 @@ const newHref = $derived(
         <h1>{info.label}</h1>
         <p class="smrt-app-shell__sub">{data.rows.length} {data.rows.length === 1 ? 'record' : 'records'}</p>
       </div>
-      <a class="smrt-app-shell__btn smrt-app-shell__btn-primary" href={newHref}>
-        New {singularLabel(info.label).toLowerCase()}
-      </a>
+      {#if can(description, data.model, 'create')}
+        <a class="smrt-app-shell__btn smrt-app-shell__btn-primary" href={newHref}>
+          New {singularLabel(info.label).toLowerCase()}
+        </a>
+      {/if}
     </header>
     {#if filter && info}
       <p class="smrt-app-shell__muted" role="status" data-smrt-part="status">

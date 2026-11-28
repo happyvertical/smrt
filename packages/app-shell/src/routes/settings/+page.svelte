@@ -15,6 +15,11 @@ const extraSections = [
       'Choose what runs the assistant: Claude Code, Codex or an API key.',
   },
   {
+    id: 'access',
+    label: 'Staff access',
+    description: 'Choose what your staff may see, add and change.',
+  },
+  {
     id: 'inference',
     label: 'Inference (advanced)',
     description:

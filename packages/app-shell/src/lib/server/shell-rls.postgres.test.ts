@@ -315,6 +315,8 @@ describe.each(backends)('shell tables, forced RLS (%s)', (backend) => {
         1: '664b71d5cfa8cf2b546e0a13205a62dbf4b44390de58949e78729e148277e2b5',
         // v2 adds receive_links (the CLI receive link token, #5638).
         2: '7eea979dbbd5ea19ef8b3dc69f184f8f05d264ac1d96c8fe5a76fc2f432f8939',
+        // v3 adds model_access_grants (per-model staff access, #5197).
+        3: '12c848e56c5633597d7bae657e23fb7aeaaf12e5eeceacdaad154e038b97c5b2',
       };
       expect(await shellPolicyDigest('public')).toBe(
         pinned[SHELL_RLS_POLICY_VERSION],

@@ -66,7 +66,7 @@ import {
   USER_PKG,
   visible,
 } from './definition.ts';
-import { AppError } from './errors.ts';
+import { AppError, PermissionDeniedError } from './errors.ts';
 import {
   applyExtract,
   assertCanUndoRows,
@@ -86,6 +86,7 @@ import {
   DESKTOP_TENANT,
   type EnginePrincipal,
   holds,
+  OWNER_SLUG,
 } from './principal.ts';
 import { compileReport, type ReportOptions, runAppReport } from './reports.ts';
 import {
@@ -1526,7 +1527,16 @@ export class AppRuntime {
       }
       if (refs && fd.type === 'reference' && c.value !== null) {
         const target = fd.ref as string;
-        if (!(await (await this.collection(target, db)).get(String(c.value))))
+        // A target the caller may not read answers as a missing record does.
+        const p = this.limitedCaller();
+        const hidden =
+          !!p &&
+          !holds(p, slugFor(this.def, target, 'get')) &&
+          !holds(p, slugFor(this.def, target, 'list'));
+        if (
+          hidden ||
+          !(await (await this.collection(target, db)).get(String(c.value)))
+        )
           throw new AppError(`${model}.${k}: no ${target} with id ${c.value}`);
       }
       out[k] = c.value;
@@ -1682,12 +1692,71 @@ export class AppRuntime {
     for (const [p, pd] of Object.entries(md.params ?? {}))
       if (pd.required && params[p] == null)
         throw new AppError(`param ${p} is required`);
+    this.requireMethodReads();
     this.caps?.checkMethodRun();
     // One method at a time per app: the worker handles calls concurrently on
     // one connection, so two runs would otherwise act on the same stale read.
     return this.exclusive(() =>
       this.runMethodLocked(model, method, id, params, md),
     );
+  }
+
+  /**
+   * The caller of the running operation, or null for the system and the owner
+   * (who see everything). A method run with no operation principal is refused
+   * (NoPrincipalError): every route into `runMethod` (the op worker, core's
+   * generated REST and MCP dispatch) runs inside `runAsPrincipal`, and the
+   * engine runs no methods of its own, so there is no internal caller to mark.
+   */
+  private methodCaller(): EnginePrincipal | null {
+    const p = currentOpPrincipal();
+    return p.kind === 'system' || holds(p, OWNER_SLUG) ? null : p;
+  }
+
+  /**
+   * Reference resolution outside a method (direct create/update) keeps the
+   * engine's own unscoped work (boot, data migrations) unrestricted: there a
+   * missing scope is the engine, not a caller.
+   */
+  private limitedCaller(): EnginePrincipal | null {
+    try {
+      return this.methodCaller();
+    } catch {
+      return null;
+    }
+  }
+
+  /**
+   * A method reads every model's rows, so a caller short of `list` on any of
+   * them is refused before anything runs. Nothing is filtered: a method run on
+   * partial data would give a wrong answer without saying so. The message
+   * names no model.
+   */
+  private requireMethodReads() {
+    const p = this.methodCaller();
+    if (!p) return;
+    if (
+      Object.keys(this.def.models).some(
+        (m) => !holds(p, slugFor(this.def, m, 'list')),
+      )
+    )
+      throw new PermissionDeniedError(
+        'permission denied: you may not run this method; nothing ran',
+      );
+  }
+
+  /** The caller needs `<table>.create|update|delete` on every model a method writes. */
+  private requireWriteSlugs(writes: Write[]) {
+    const p = this.methodCaller();
+    if (!p) return;
+    for (const w of writes)
+      if (
+        !Object.hasOwn(this.def.models, w.model) ||
+        !holds(p, slugFor(this.def, w.model, w.op))
+      )
+        throw new PermissionDeniedError(
+          'permission denied: this method may not make those changes; none were applied',
+        );
   }
 
   /** Run `work` after every earlier call has finished; a failure never blocks the next. */
@@ -1742,8 +1811,12 @@ export class AppRuntime {
           ),
           SANDBOX_LIMITS.maxWrites,
         );
+        // Slugs before any existence check (checkWrites repeats this), so a
+        // refusal for an ungranted model never depends on its records.
+        this.requireWriteSlugs(writes);
         await this.checkWrites(writes);
       } catch (e) {
+        if (e instanceof PermissionDeniedError) throw e;
         throw new AppError(
           `method ${model}.${method}() proposed bad writes, none applied: ${(e as Error).message}`,
         );
@@ -1826,6 +1899,7 @@ export class AppRuntime {
       } catch (e) {
         if (e instanceof AppError && /kept changing/.test(e.message)) throw e;
         if (e instanceof AppLimitError) throw e;
+        if (e instanceof PermissionDeniedError) throw e;
         throw new AppError(
           `method ${model}.${method}() failed, none of its ${writes.length} writes were applied: ${(e as Error).message}`,
         );
@@ -1840,6 +1914,7 @@ export class AppRuntime {
 
   /** Reads only: records exist, required fields are present, references resolve. */
   private async checkWrites(writes: Write[], db: Handle = this.db) {
+    this.requireWriteSlugs(writes);
     for (const w of writes) {
       if (w.op === 'create')
         await this.coerce(w.model, w.data ?? {}, true, true, db);
