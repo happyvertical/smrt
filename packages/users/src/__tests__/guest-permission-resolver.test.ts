@@ -65,7 +65,7 @@ class GpFlagged5196 extends SmrtObject {
   packageName: '@test/gp5196',
   tenantScoped: true,
   collection: 'gp5196_owned',
-  principalContext: true,
+  api: { principalContext: true },
 })
 class GpOwned5196 extends SmrtObject {
   @field() title = '';

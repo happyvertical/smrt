@@ -162,3 +162,26 @@ describe('guestPrincipalOf (#5196)', () => {
     ).toThrow();
   });
 });
+
+describe('a custom method named like a CRUD operation (#5196)', () => {
+  it('is never a guest read or create', async () => {
+    const { vi } = await import('vitest');
+    const { guestOperationKind } = await import('../guest-request');
+    const { ObjectRegistry } = await import('../registry');
+    expect(guestOperationKind('Anything', 'list')).toBe('read');
+    const spy = vi.spyOn(ObjectRegistry, 'getMethods').mockReturnValue(
+      new Map([
+        ['list', {}],
+        ['get', {}],
+        ['create', {}],
+      ]) as never,
+    );
+    try {
+      for (const op of ['list', 'get', 'create']) {
+        expect(guestOperationKind('Anything', op)).toBeNull();
+      }
+    } finally {
+      spy.mockRestore();
+    }
+  });
+});

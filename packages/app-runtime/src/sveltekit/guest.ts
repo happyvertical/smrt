@@ -246,23 +246,51 @@ export function createGuestAdmitter(deps: GuestAdmissionDeps): GuestAdmitter {
       }>
     | undefined;
 
+  /** The tables guests could reach NOW: recomputed, never remembered. */
+  const currentTables = (guest: GuestPermissionConfig) =>
+    deps.ceilingTables
+      ? deps.ceilingTables()
+      : guestCeilingTables(
+          guest,
+          generatePostgresPermissionSql(deps.baseClassOptions()).targets,
+        );
+  const nameOf = (table: { schemaName: string; tableName: string }) =>
+    `${table.schemaName}.${table.tableName}`;
+  let failedFor = '';
+
+  /**
+   * The verified catalog posture covering EVERY table guests can reach right
+   * now. The table list is recomputed on each call (a run-time model can be
+   * registered, and opted in, after the first guest request); the cached
+   * posture is kept only while it covers all of them, and is dropped and
+   * re-verified as soon as one is missing. A failed or throwing verification
+   * is `null`: the caller grants nothing.
+   */
   const loadPosture = async (
     guest: GuestPermissionConfig,
   ): Promise<GuestCatalogPosture | null> => {
-    if (posture) return posture;
-    if (postureFailedAt && Date.now() - postureFailedAt < POSTURE_RETRY_MS) {
+    const tables = currentTables(guest);
+    // No ceiling table means nothing a guest could ever hold.
+    if (tables.length === 0) return null;
+    const signature = tables.map(nameOf).sort().join(',');
+    if (
+      posture &&
+      tables.every((table) =>
+        posture?.expectedCeilingTables.includes(nameOf(table)),
+      )
+    ) {
+      return posture;
+    }
+    posture = undefined;
+    if (
+      postureFailedAt &&
+      failedFor === signature &&
+      Date.now() - postureFailedAt < POSTURE_RETRY_MS
+    ) {
       return null;
     }
     postureInFlight ??= (async () => {
       try {
-        const tables = deps.ceilingTables
-          ? deps.ceilingTables()
-          : guestCeilingTables(
-              guest,
-              generatePostgresPermissionSql(deps.baseClassOptions()).targets,
-            );
-        // No ceiling table means nothing a guest could ever hold.
-        if (tables.length === 0) return null;
         const probe = deps.probeCatalog ?? probeGuestCatalog;
         // Every guest config needs the protected audit table, read-only
         // ones included: a config can gain a create collection at any
@@ -271,8 +299,6 @@ export function createGuestAdmitter(deps: GuestAdmissionDeps): GuestAdmitter {
           audit: true,
         });
         if (!result) return null;
-        // Success is cached for the process; it is only trusted when every
-        // gate that depends on it passes.
         const verdict = assertGuestRuntimeActive({
           postgresRls: true,
           tenancyEnabled: true,
@@ -289,8 +315,12 @@ export function createGuestAdmitter(deps: GuestAdmissionDeps): GuestAdmitter {
     })();
     try {
       const result = await postureInFlight;
-      if (result) posture = result;
-      else postureFailedAt = Date.now();
+      if (result) {
+        posture = result;
+      } else {
+        postureFailedAt = Date.now();
+        failedFor = signature;
+      }
       return result;
     } finally {
       postureInFlight = undefined;
@@ -359,6 +389,20 @@ export function createGuestAdmitter(deps: GuestAdmissionDeps): GuestAdmitter {
       try {
         const guest = staticGates(selectedTenantId);
         if (!guest || typeof selectedTenantId !== 'string') return null;
+        // Resolve first, then verify the tables as they are NOW: the
+        // registry only grows, so what was resolved is covered by the list
+        // recomputed afterwards. Nothing is granted unless that holds.
+        const resolver = await loadResolver(guest);
+        // Uncached: every request reads live grants, DENYs and tenant status.
+        // A resolver without the admitted-model map admits no route.
+        const { permissions, slugModels } = resolver.resolveGuestAdmission
+          ? await resolver.resolveGuestAdmission(selectedTenantId)
+          : {
+              permissions:
+                await resolver.resolveGuestPermissions(selectedTenantId),
+              slugModels: new Map<string, string>(),
+            };
+        if (permissions.size === 0) return null;
         const verified = await loadPosture(guest);
         if (!verified) return null;
         // Re-assert with the live gates on every request: RLS and tenancy
@@ -372,17 +416,6 @@ export function createGuestAdmitter(deps: GuestAdmissionDeps): GuestAdmitter {
           auditTable: verified.auditTable,
         });
         if (!verdict.active) return null;
-        const resolver = await loadResolver(guest);
-        // Uncached: every request reads live grants, DENYs and tenant status.
-        // A resolver without the admitted-model map admits no route.
-        const { permissions, slugModels } = resolver.resolveGuestAdmission
-          ? await resolver.resolveGuestAdmission(selectedTenantId)
-          : {
-              permissions:
-                await resolver.resolveGuestPermissions(selectedTenantId),
-              slugModels: new Map<string, string>(),
-            };
-        if (permissions.size === 0) return null;
         return {
           tenantId: selectedTenantId,
           permissions: [...permissions],

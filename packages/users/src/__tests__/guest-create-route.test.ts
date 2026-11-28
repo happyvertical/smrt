@@ -246,6 +246,44 @@ describe('guest create route pipeline (#5196)', () => {
     expect(other?.status).toBe(201);
   });
 
+  it('records the create when the body finished arriving, not when the request began', async () => {
+    const l = locals({ create: { perClient: 1, windowMs: 60_000 } });
+    const admission = guestCreateAdmission(
+      l,
+      MODEL,
+      COLLECTION,
+      false,
+      QUALIFIED,
+    )!;
+    // The precheck reads T0; the (slow) body is read; the recording reads T1.
+    const readings = [0, 120_000, 120_000];
+    const send = (email: string, clock: () => number) =>
+      handleGuestCreate({
+        admission,
+        request: post({ email }),
+        db: db as never,
+        tableName: table,
+        getClientAddress: () => '9.9.9.9',
+        clock,
+      });
+    let i = 0;
+    expect(
+      (
+        await send(
+          'a@x.test',
+          () => readings[Math.min(i++, readings.length - 1)],
+        )
+      ).status,
+    ).toBe(201);
+    // A stale timestamp (T0) would have expired by now and let this through;
+    // the fresh one (T1) is still inside the window.
+    const again = await send('b@x.test', () => 120_001);
+    expect(again.status).toBe(429);
+    expect(await messages()).toHaveLength(1);
+    // After the window passes from the FRESH timestamp, the client is free.
+    expect((await send('c@x.test', () => 120_000 + 60_001)).status).toBe(201);
+  });
+
   it('refuses without a runtime, an audit writer, or a guest principal', async () => {
     const withoutWriter = locals({ auditWriter: undefined });
     expect(

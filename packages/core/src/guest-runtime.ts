@@ -345,8 +345,14 @@ export interface HandleGuestCreateInput {
   tableName: string;
   /** SvelteKit `getClientAddress` (the socket address). */
   getClientAddress?: () => string;
-  /** Clock override for tests. */
+  /** Clock override for tests (a fixed instant). */
   nowMs?: number;
+  /**
+   * Clock override for tests, read again at each step: the precheck, a
+   * rejected body and the final check-and-record each take a FRESH reading,
+   * so a slow upload is recorded when it finished, not when it started.
+   */
+  clock?: () => number;
 }
 
 /**
@@ -376,16 +382,18 @@ export async function handleGuestCreate(
   } catch {
     return tooMany(60);
   }
-  const now = input.nowMs ?? Date.now();
+  const clock: () => number =
+    input.clock ??
+    (input.nowMs !== undefined ? () => input.nowMs as number : Date.now);
   const limiterKey = `${principal.tenantId}:${clientKey}`;
   // A client that is already over its budget is refused before its body is
   // read, and a body that is rejected (400/413) is charged to that client, so
   // malformed floods are throttled like real creates. Only the client limiter
   // is charged for them: a rejected body never spends the tenant's budget.
-  const waiting = runtime.createLimiter.client.check(limiterKey, now);
+  const waiting = runtime.createLimiter.client.check(limiterKey, clock());
   if (waiting !== null) return tooMany(waiting);
   const rejectBody = (response: Response): Response => {
-    runtime.createLimiter.client.record(limiterKey, now);
+    runtime.createLimiter.client.record(limiterKey, clock());
     return response;
   };
 
@@ -420,7 +428,8 @@ export async function handleGuestCreate(
     limiter: runtime.createLimiter,
     clientKey,
     audit: { writer, resourceType: admission.model },
-    nowMs: now,
+    // Fresh: the body may have taken long to arrive.
+    nowMs: clock(),
   });
   if (result.status === 'rate_limited') {
     return tooMany(result.retryAfterSeconds);

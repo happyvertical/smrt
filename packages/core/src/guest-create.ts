@@ -242,6 +242,17 @@ export function defineGuestCreate(
       // A relation is checked by the database WITHOUT row-level security: a
       // guest could probe which ids exist in other tenants, or attach the row
       // to another tenant's record. Only plain values may be guest-writable.
+      // A unique index on a guest-writable field is global unless its key leads
+      // with the tenant: a conflict (answered like success) would still tell a
+      // guest that ANOTHER tenant holds the value. Use a (tenant, value)
+      // unique index instead of a field-level `unique`.
+      if (flagged(field, 'unique')) {
+        throw new ValidationError(
+          `guest create for "${collection}": field "${name}" carries a unique index and cannot be guest-writable`,
+          'GUEST_CREATE_UNIQUE_FIELD',
+          { collection, field: name },
+        );
+      }
       if (isRelationField(field)) {
         throw new ValidationError(
           `guest create for "${collection}": field "${name}" is a relation and cannot be guest-writable`,
@@ -497,7 +508,19 @@ function quote(identifier: string): string {
 }
 
 /**
- * Charge the rate limits, then insert one row. The limit check and record are
+ * Charge the rate limits, then insert one row.
+ *
+ * SERVER-TRUSTED ONLY: this writes the reserved guest audit marker for
+ * whatever `tenantId` it is given and bypasses model validators, hooks and
+ * interceptors (a raw INSERT). Call it only from the guest create pipeline
+ * with the tenant of an admitted guest principal, never with a value that came
+ * from a request. Database facts that still bite a guest-writable field:
+ * a global unique index leaks across tenants (field-level `unique` is refused
+ * at registration; declare `(tenant, value)` indexes), and a foreign key
+ * declared only in raw SQL behaves like any foreign key (checked without
+ * row-level security; a violation is answered like success, but keep such
+ * columns out of `allowedFields`).
+ * The limit check and record are
  * synchronous (no await between them), so concurrent requests cannot both pass
  * the last slot, and the event is recorded before the write whether or not the
  * write later conflicts.
