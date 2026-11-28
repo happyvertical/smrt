@@ -107,6 +107,13 @@ export interface PromptPackageConfig {
   prompts?: Record<string, PromptConfigOverrideInput>;
   allowedProfileNames?: string[];
   allowedModels?: string[];
+  /**
+   * Host opt-in for `withPromptOverrides()` (#5065), default off. While off,
+   * opening a scope throws. Authorization stays with the host: set it only on
+   * a deployment (a prompt-arena or draft-preview surface) that has decided
+   * who may run draft templates.
+   */
+  allowScopedOverrides?: boolean;
   [key: string]: unknown;
 }
 

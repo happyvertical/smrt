@@ -38,7 +38,7 @@ const resolved = await resolvePrompt('projects.issue.incorporateFeedback', {
 ## What this package provides
 
 - **`definePrompt()`** — code-first prompt registration in a global process registry
-- **`resolvePrompt()`** — layered resolution: code default → config override → stored app override → stored tenant override → runtime override
+- **`resolvePrompt()`** — layered resolution: code default → config override → stored app override → stored tenant override → scoped ambient override (`withPromptOverrides()`, host opt-in via `allowScopedOverrides`, does not follow jobs) → explicit `override`
 - **`PromptOverride`** — model for app-level and tenant-level prompt settings, stored in `_smrt_prompt_overrides`
 - **`PromptOverrideService`** / **`PromptSettingsService`** — the authorized write path and the read/write helper for a management screen (see "Management UI" below)
 - **Named AI profiles** loaded from `packages.prompts` config — prompts select profile names, profiles resolve to provider/model in config

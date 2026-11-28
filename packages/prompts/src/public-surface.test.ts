@@ -33,6 +33,7 @@ describe('package entry', () => {
       'definePrompt',
       'PromptRegistry',
       'resolvePrompt',
+      'withPromptOverrides',
       'APP_PROMPT_SCOPE_ID',
     ]) {
       expect((entry as Record<string, unknown>)[name]).toBeDefined();

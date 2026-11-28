@@ -7,8 +7,14 @@ import {
 } from './cache.js';
 import { PromptOverrideCollection } from './collections/PromptOverrideCollection.js';
 import { PromptRegistry } from './prompt-registry.js';
+import {
+  getScopedPromptOverride,
+  runWithScopedOverrides,
+  scopedOverridesPropagate,
+} from './scoped-overrides.js';
 import type {
   PromptCacheValue,
+  PromptConfigOverrideInput,
   PromptLayer,
   PromptPackageConfig,
   PromptSourceLayer,
@@ -130,7 +136,10 @@ export async function resolvePrompt(
 ): Promise<ResolvedPrompt> {
   const config = getPromptConfig();
   const base = await loadPromptBase(key, options);
-  const runtimeOverride = normalizePromptLayer(options.override);
+  // The ambient layer (#5065) is applied here, after the cached base, so a
+  // draft never reaches the prompt cache. The explicit override sits above it.
+  const ambientOverride = normalizePromptLayer(getScopedPromptOverride(key));
+  const explicitOverride = normalizePromptLayer(options.override);
   const merged = mergePromptLayers(
     {
       template: base.template,
@@ -139,17 +148,21 @@ export async function resolvePrompt(
       effort: base.ai.effort ?? null,
       params: base.ai.params,
     },
-    runtimeOverride,
+    ambientOverride,
+    explicitOverride,
   );
 
-  const promptLayer: PromptSourceLayer = suppliesTemplate(runtimeOverride)
-    ? 'runtime'
-    : base.templateLayer;
+  const promptLayer: PromptSourceLayer =
+    suppliesTemplate(ambientOverride) || suppliesTemplate(explicitOverride)
+      ? 'runtime'
+      : base.templateLayer;
   // Only a profile the code default itself supplied is exempt from
   // `allowedProfileNames`; any config, stored or runtime layer that sets one
   // (even the same tier again) is a choice the allow-list governs.
   const profileFromDefault =
-    base.profileLayer === 'default' && !suppliesProfile(runtimeOverride);
+    base.profileLayer === 'default' &&
+    !suppliesProfile(ambientOverride) &&
+    !suppliesProfile(explicitOverride);
   const ai = buildResolvedAI(merged.ai, config, {
     defaultProfile: profileFromDefault
       ? PromptRegistry.get(key)?.ai.profile
@@ -182,4 +195,44 @@ export async function resolvePrompt(
       },
     },
   };
+}
+
+/**
+ * Run `fn` with prompt overrides keyed by prompt key (#5065), so real call
+ * sites that never forward `override` resolve a draft:
+ *
+ * ```ts
+ * await withPromptOverrides(
+ *   { 'content.review': { template: draft, profile: 'cheap' } },
+ *   () => content.review(),
+ * );
+ * ```
+ *
+ * The layer sits above stored overrides and below an explicit
+ * `resolvePrompt(key, { override })`, is tagged `promptLayer: 'runtime'`, and
+ * never enters the prompt cache. Nested scopes: the inner wins per key, outer
+ * keys stay visible. It follows `await` in the same async tree, not work
+ * enqueued as a job. Throws unless the host set `allowScopedOverrides: true`
+ * in the prompts config, when the runtime cannot propagate async context
+ * (browsers: a silent no-op would run, and record, the live template), or
+ * when an override is invalid (effort).
+ */
+export function withPromptOverrides<T>(
+  overrides: Readonly<Record<string, PromptConfigOverrideInput>>,
+  fn: () => T,
+): T {
+  if (getPromptConfig().allowScopedOverrides !== true) {
+    throw new Error(
+      'withPromptOverrides() is disabled: set `allowScopedOverrides: true` in the "prompts" package config to opt in',
+    );
+  }
+  if (!scopedOverridesPropagate()) {
+    throw new Error(
+      'withPromptOverrides() needs async context that survives await, which this runtime does not provide',
+    );
+  }
+  for (const override of Object.values(overrides)) {
+    normalizePromptLayer(override);
+  }
+  return runWithScopedOverrides(overrides, fn);
 }
