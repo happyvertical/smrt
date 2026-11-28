@@ -67,9 +67,10 @@ describe('RequestCapGate', () => {
 
   it('admits up to the limit then refuses, naming the cap and the renewal date', async () => {
     const { g } = gate([cap(3)]);
-    expect(await g.check(T)).toBeNull();
-    expect(await g.check(T)).toBeNull();
-    expect(await g.check(T)).toBeNull();
+    for (let i = 0; i < 3; i++) {
+      expect(await g.check(T)).toBeNull();
+      g.noteServed(T);
+    }
     const refused = await g.check(T);
     expect(refused).toMatchObject({
       limit: 3,
@@ -83,10 +84,19 @@ describe('RequestCapGate', () => {
 
   it('counts what is persisted and what this process has not written yet; refusals do not burn the cap', async () => {
     const { g } = gate([cap(10)], 7, { now: at }, 2);
-    expect(await g.check(T)).toBeNull(); // 9 -> 10
-    expect(await g.check(T)).not.toBeNull();
+    expect(await g.check(T)).toBeNull(); // 9 of 10
+    g.noteServed(T);
     expect(await g.check(T)).not.toBeNull();
     expect((await g.check(T))?.used).toBe(10);
+  });
+
+  it('requests that are asked about but never served (core refused them) do not burn the cap', async () => {
+    const { g } = gate([cap(2)]);
+    for (let i = 0; i < 50; i++) expect(await g.check(T)).toBeNull();
+    g.noteServed(T);
+    expect(await g.check(T)).toBeNull();
+    g.noteServed(T);
+    expect(await g.check(T)).not.toBeNull();
   });
 
   it('has no cap without a threshold, and reads the plan once per ttl', async () => {
@@ -100,6 +110,7 @@ describe('RequestCapGate', () => {
     const clock = { now: at };
     const { g, usage } = gate([cap(1)], 0, clock);
     expect(await g.check(T)).toBeNull();
+    g.noteServed(T);
     expect(await g.check(T)).not.toBeNull();
     clock.now = Date.UTC(2026, 11, 1, 0, 0, 1);
     expect(await g.check(T)).toBeNull();
@@ -109,6 +120,7 @@ describe('RequestCapGate', () => {
   it('the strictest of several caps wins; a lookup error propagates (the host admits)', async () => {
     const { g } = gate([cap(100), cap(1, { window: 'day' })]);
     expect(await g.check(T)).toBeNull();
+    g.noteServed(T);
     expect((await g.check(T))?.limit).toBe(1);
     const broken = new RequestCapGate({
       plan: async () => {
@@ -242,7 +254,10 @@ describe('a cloud shell with a plan cap', () => {
       cap(1, { metricKey: 'other.metric' }),
     ]);
     const g = await createRequestCapGate(h.db);
-    for (let i = 0; i < 3; i++) expect(await g.check(h.a.tenantId)).toBeNull();
+    for (let i = 0; i < 3; i++) {
+      expect(await g.check(h.a.tenantId)).toBeNull();
+      g.noteServed(h.a.tenantId);
+    }
   });
 
   it('refused rows persisted earlier do not count; served rows do', async () => {
@@ -271,7 +286,8 @@ describe('a cloud shell with a plan cap', () => {
     await meter.flush();
     meter.stop();
     const g = await createRequestCapGate(h.db);
-    expect(await g.check(h.a.tenantId)).toBeNull(); // 4 served + this = 5
+    expect(await g.check(h.a.tenantId)).toBeNull(); // 4 served, 1 left
+    g.noteServed(h.a.tenantId);
     expect(await g.check(h.a.tenantId)).not.toBeNull();
   });
 

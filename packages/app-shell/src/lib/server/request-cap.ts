@@ -62,7 +62,7 @@ export interface RequestCapOptions {
 interface Cached {
   at: number;
   caps: Array<{ threshold: PlanThreshold; window: UsageWindow; base: number }>;
-  /** Requests admitted here since `at`. */
+  /** Requests served here since `at`. */
   admitted: number;
 }
 
@@ -112,9 +112,15 @@ export class RequestCapGate {
           message: `This app has used ${fmt(used)} of the ${fmt(cap.threshold.limit)} requests its plan allows ${periodWord(cap.threshold.window)}${resetsAt ? `; the count renews on ${resetsAt.toISOString().slice(0, 10)}` : ''}.`,
         };
     }
-    // A refused request is not counted: it was never served.
-    if (!worst) held.admitted += 1;
+    // Asking never counts: core may still refuse an admitted request (401,
+    // 403, a route limit). `noteServed` counts it once it was served.
     return worst;
+  }
+
+  /** One request was served for the tenant (the host's meter says so). */
+  noteServed(tenantId: string): void {
+    const held = this.state.get(tenantId);
+    if (held) held.admitted += 1;
   }
 
   /** Forget what is held (tests, a plan change). */

@@ -708,7 +708,7 @@ its `window` (`day|week|month|year` calendar UTC, `rolling` = 30 days) is the
 period, the strictest threshold wins, `observe`/`warn` thresholds and other
 metrics are not caps. Counts SERVED requests only (rows with no refusal
 reason; a row belongs to the window its batch began in). One plan read and one
-usage sum per tenant per 30 s plus an in-memory count since; persisted counts
+usage sum per tenant per 30 s plus an in-memory count of requests SERVED since (the host reports each served request; asking never counts, so a request core refuses never burns the cap); persisted counts
 lag the meter's 60 s flush and are per process, so the cap is approximate (a
 tenant can pass it by about one replica's requests per read interval). A
 refusal is 429 `{code: 'app_limit', cap: 'maxRequests', limit, current,

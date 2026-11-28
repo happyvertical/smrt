@@ -1088,6 +1088,11 @@ function requestCounter(
   refused: string | null;
 }) => void {
   return (request) => {
+    // A served request counts toward the plan's period cap at once (#5198).
+    if (!request.refused && !request.limited)
+      void import('./request-cap.ts')
+        .then((m) => m.requestCapGate()?.noteServed(hostTenant))
+        .catch(() => {});
     void import('./request-metering.ts')
       .then((m) =>
         m
