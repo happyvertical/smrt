@@ -37,6 +37,15 @@ export type ShellEvent =
     }
   | {
       /**
+       * A cap or limit refused a request (#5198): the owner's screen reloads
+       * its notices (`limit-notices.ts`).
+       */
+      type: 'limit';
+      kind: 'cap' | 'route' | 'period';
+      message: string;
+    }
+  | {
+      /**
        * Changes waiting moved (#5178): `changed` (a card came, went, was
        * edited or put back), `applied`, `discarded` or `undone`. `count` is
        * the active cards now; `generation` the batch's counter.

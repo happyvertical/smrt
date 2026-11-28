@@ -696,3 +696,39 @@ describe('changes waiting pill', () => {
     expect(pill()).toBeNull();
   });
 });
+
+describe('limit notices (#5198)', () => {
+  const notices = () => q('[data-testid="limit-notices"]');
+  const item = {
+    kind: 'period',
+    cap: 'maxRequests',
+    message:
+      'This app has used 5 of the 5 requests its plan allows this month.',
+    count: 3,
+    lastAt: '2026-11-27T00:00:00.000Z',
+  };
+  it('shows nothing when nothing was refused', async () => {
+    await render(data({ limitNotices: [] }));
+    expect(notices()).toBeNull();
+  });
+  it('tells the owner what was refused and dismisses on the server', async () => {
+    const fetchMock = vi.fn(async () => new Response('{}', { status: 200 }));
+    vi.stubGlobal('fetch', fetchMock);
+    await render(data({ limitNotices: [item] }));
+    expect(notices()?.getAttribute('role')).toBe('status');
+    expect(notices()?.textContent).toContain('request limit is used up');
+    expect(notices()?.textContent).toContain('5 requests its plan allows');
+    expect(notices()?.textContent).toContain('Refused 3 times');
+    const button = notices()?.querySelector('button') as HTMLButtonElement;
+    button.click();
+    await tick();
+    expect(fetchMock).toHaveBeenCalledWith('/api/shell/limit-notices', {
+      method: 'DELETE',
+    });
+    expect(navigation.invalidate).toHaveBeenCalledWith('smrt:shell');
+  });
+  it('is hidden in a plugin view', async () => {
+    await render(data({ limitNotices: [item], embedded: true }));
+    expect(notices()).toBeNull();
+  });
+});

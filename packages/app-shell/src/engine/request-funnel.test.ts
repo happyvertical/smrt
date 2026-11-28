@@ -186,3 +186,21 @@ describe('owner notice and the period cap', () => {
     expect(notices).toEqual([]);
   });
 });
+
+describe('route limits of the generated routes', () => {
+  it('a caller over its limit gets a 429 that never reaches the database, is counted as refused and tells the owner', async () => {
+    const { host, seen, notices } = await open({
+      appLimits: {
+        routeLimits: { client: { maxEvents: 2, windowMs: 60_000 } },
+      },
+    });
+    const owner = hostOwner(host);
+    const get = () => host.rest(owner, { method: 'GET', url: '/api/notes' });
+    expect((await get()).status).toBe(200);
+    expect((await get()).status).toBe(200);
+    const over = await get();
+    expect(over.status).toBe(429);
+    expect(seen.map((m) => m.refused)).toEqual([null, null, 'rate_limited']);
+    expect(notices.map((n) => n.kind)).toEqual(['route']);
+  });
+});

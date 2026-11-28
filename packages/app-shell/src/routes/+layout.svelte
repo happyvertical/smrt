@@ -8,6 +8,7 @@ import { page } from '$app/state';
 import '$lib/ui/ui.css';
 import AssistantPanel from '$lib/assistant/AssistantPanel.svelte';
 import ChangesPill from '$lib/components/ChangesPill.svelte';
+import LimitNotices from '$lib/components/LimitNotices.svelte';
 import { ApiError, isLimitRefusal } from '$lib/ui/api';
 import { changesApi } from '$lib/ui/changes';
 import {
@@ -181,6 +182,7 @@ onMount(() => {
   {#snippet panel({ open })}
     <AssistantPanel {open} owner={data.session.user} changes={data.changes} definition={data.description ?? undefined} onapply={applyFromChat} />
   {/snippet}
+  {#if isOwner && !plugin && !onboarding}<LimitNotices notices={data.limitNotices} />{/if}
   {@render children()}
   <!-- Screen readers hear changes made elsewhere (the assistant, another tab). -->
   <div class="smrt-app-shell-layout__sr-only" aria-live="polite" role="status" data-smrt-part="label">{live.announcement}</div>

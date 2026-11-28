@@ -16,6 +16,7 @@ const mocks = vi.hoisted(() => ({
   stopProvisioning: vi.fn(),
   settleProvisioning: vi.fn(),
   methodCode: vi.fn(),
+  requestCap: vi.fn(),
   env: { dev: false, building: false },
 }));
 vi.mock('$app/environment', () => mocks.env);
@@ -29,6 +30,9 @@ vi.mock('$lib/server/host', () => ({
 }));
 vi.mock('$lib/server/hosted-inference', () => ({
   installHostedInferenceGate: mocks.gate,
+}));
+vi.mock('$lib/server/request-cap', () => ({
+  installRequestCapGate: mocks.requestCap,
 }));
 vi.mock('$lib/server/method-code', () => ({
   installMethodCodeGate: mocks.methodCode,
@@ -146,6 +150,14 @@ it('registers hosted provisioning after the gate, and only once the gate is in',
   await expect(init()).rejects.toThrow('no kill switch table');
   expect(mocks.provisioning).not.toHaveBeenCalled();
 });
+it('installs the request cap gate in init, and does not start without it', async () => {
+  mocks.profile.mockResolvedValue('cloud');
+  await expect(init()).resolves.toBeUndefined();
+  expect(mocks.requestCap).toHaveBeenCalledOnce();
+  mocks.requestCap.mockRejectedValueOnce(new Error('no usage tables'));
+  await expect(init()).rejects.toThrow('no usage tables');
+});
+
 it('installs the method-code entitlement check after the gate, and does not start without it', async () => {
   mocks.profile.mockResolvedValue('cloud');
   await expect(init()).resolves.toBeUndefined();

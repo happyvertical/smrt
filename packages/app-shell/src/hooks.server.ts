@@ -26,6 +26,7 @@ import {
   ensureOwnerHandoff,
   keepOwnerHandoffFresh,
 } from '$lib/server/owner-handoff';
+import { installRequestCapGate } from '$lib/server/request-cap';
 import { createDrain } from '$lib/server/shutdown';
 import { runtime } from '$lib/server/smrt';
 import { storageMeteringHandle } from '$lib/server/storage-metering-handle';
@@ -73,6 +74,11 @@ export const init = async () => {
   // Hosted: app-authored method code runs only for a tenant whose plan grants
   // it (#5194); the check is built here or the server does not start.
   await installMethodCodeGate({
+    db: async () => (await runtime.deployedRuntime()).db,
+  });
+  // Hosted: the plan's request cap per billing period (#5198), read from the
+  // plan's `api.requests` threshold. Inert on the desktop.
+  await installRequestCapGate({
     db: async () => (await runtime.deployedRuntime()).db,
   });
   // The hosted app has no owner link to hand off and no embedded job runner

@@ -40,9 +40,11 @@ import {
   downgradeUserAppToSqlite,
   EngineError,
   isMigratedToPostgres,
+  type LimitNotice,
   type MethodCodeGate,
   type MigrateToPostgresResult,
   migrateUserAppToPostgres,
+  type RequestCapRefusal,
   type WorkerLimits,
   wantsBundledWorker,
 } from '../../engine/index.ts';
@@ -60,6 +62,7 @@ import {
   type HostLifecyclePolicy,
   type HostMetrics,
 } from './host-lifecycle.ts';
+import { recordLimitNotice } from './limit-notices.ts';
 import { assertOwner, PolicyError } from './owner.ts';
 import {
   bindAmbientShellScope,
@@ -449,6 +452,12 @@ export function wireHostEvents(
   host.on('records', (e: { model: string | null }) =>
     publish({ type: 'records', target, model: e.model }, tenantId),
   );
+  // A cap or limit refused a request: the owner is told (#5198). A draft is the
+  // owner's own working copy, so only the live app speaks.
+  if (target === 'live')
+    host.on('limit', (notice: LimitNotice) =>
+      recordLimitNotice(tenantId, notice),
+    );
 }
 
 /**
@@ -992,7 +1001,10 @@ async function openLive(holder: Holder): Promise<AppHost> {
       workerLimits: budgetedLimits(),
       ...(appLimits ? { appLimits } : {}),
       ...(holder.tenantId
-        ? { onRequest: requestCounter(holder.tenantId) }
+        ? {
+            onRequest: requestCounter(holder.tenantId),
+            requestCap: requestCapOf(holder.tenantId),
+          }
         : {}),
       ...(methodCodeOf(holder) ? { methodCode: methodCodeOf(holder) } : {}),
       ...(database ? { database } : {}),
@@ -1083,6 +1095,21 @@ function requestCounter(
           .note({ ...request, tenantId: request.tenantId ?? hostTenant }),
       )
       .catch(() => {});
+  };
+}
+
+/**
+ * The plan's request cap for this tenant's app (#5198): cloud only (a holder
+ * with no tenant never gets one). Lazy, so nothing of smrt-subscriptions loads
+ * on the desktop; no installed gate (a cloud process that never installed
+ * one) admits.
+ */
+function requestCapOf(
+  hostTenant: string,
+): () => Promise<RequestCapRefusal | null> {
+  return async () => {
+    const gate = (await import('./request-cap.ts')).requestCapGate();
+    return gate ? gate.check(hostTenant) : null;
   };
 }
 

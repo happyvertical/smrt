@@ -5,6 +5,7 @@ import {
   assistantSettings,
 } from '$lib/server/agent-cli/service';
 import { shellProfile } from '$lib/server/host';
+import { readLimitNotices } from '$lib/server/limit-notices';
 import { principalFromLocals } from '$lib/server/owner';
 import { DEPENDS } from '$lib/ui/events';
 import { isPluginRequest } from '$lib/ui/layout';
@@ -37,6 +38,7 @@ export const load: LayoutServerLoad = async (event) => {
       changes: null,
       embedded,
       onboardingComplete: false,
+      limitNotices: [],
     };
   // Check ownership before reading the saved copy. Signed-in members have no shell.
   const liveResult = await loadDescription(event.fetch, 'live');
@@ -79,6 +81,14 @@ export const load: LayoutServerLoad = async (event) => {
           : '/welcome',
       );
   }
+  // Caps and limits that refused someone's request (#5198): the owner is told
+  // even when the refused caller was not them. Never for a plugin view.
+  const limitNotices =
+    description && owner
+      ? readLimitNotices(
+          (await shellProfile()) === 'cloud' ? owner.tenantId : null,
+        )
+      : [];
   return {
     session,
     description,
@@ -86,5 +96,6 @@ export const load: LayoutServerLoad = async (event) => {
     changes,
     embedded,
     onboardingComplete,
+    limitNotices,
   };
 };
