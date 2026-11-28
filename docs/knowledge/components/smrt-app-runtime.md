@@ -5,10 +5,10 @@ description: "Validated local, self-hosted, and cloud runtime composition for s-
 status: "stable"
 generated:
   by: "smrt/scripts/generate-knowledge-okf.ts"
-  at: "2026-11-20T00:35:42Z"
+  at: "2026-11-27T22:48:57Z"
 audience: "internal"
 evidence_level: "manifest-described"
-source_revision: "sha256:e5b013b79040002038a451219e0a6fa6ddb68eb3ee983a72471bdefa5990dc84"
+source_revision: "sha256:7dcfd9b85e6f3b962e77a4c318ce8ff434681f6822ddc12e581380ce343b8c4d"
 sources:
   - id: "manifest"
     resource: "https://github.com/happyvertical/smrt/blob/main/packages/app-runtime/package.json"

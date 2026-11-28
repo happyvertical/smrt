@@ -5,10 +5,10 @@ description: "A smrt app that builds and runs a person's own smrt app from defin
 status: "stable"
 generated:
   by: "smrt/scripts/generate-knowledge-okf.ts"
-  at: "2026-11-26T21:20:30Z"
+  at: "2026-11-28T01:07:15Z"
 audience: "internal"
 evidence_level: "source-inspected"
-source_revision: "sha256:d3ce7f6131203ae2c91f5fb578bd2b9875ef724ab085dbc933d03635831721f3"
+source_revision: "sha256:9848d603884262372a1e940d8e2f528422feb98aa5102fd7a30010d9ef9d96e4"
 sources:
   - id: "manifest"
     resource: "https://github.com/happyvertical/smrt/blob/main/packages/app-shell/package.json"
@@ -129,6 +129,8 @@ sources:
 - `ChangeBatchCollection` (collection `changebatches`, extends `SmrtCollection`)
 - `ChangeCard` (collection `changecards`, extends `SmrtObject`)
 - `ChangeCardCollection` (collection `changecards`, extends `SmrtCollection`)
+- `ModelAccessGrant` (collection `modelaccessgrants`, extends `SmrtObject`)
+- `ModelAccessGrantCollection` (collection `modelaccessgrants`, extends `SmrtCollection`)
 - `ReceiveLink` (collection `receivelinks`, extends `SmrtObject`)
 - `ReceiveLinkCollection` (collection `receivelinks`, extends `SmrtCollection`)
 
