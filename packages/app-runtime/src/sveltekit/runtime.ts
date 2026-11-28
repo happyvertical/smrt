@@ -22,12 +22,15 @@
 
 import { createHash } from 'node:crypto';
 import {
+  getPackageConfig,
   loadConfig,
   type ResolvedApplicationRuntime,
   resolveEffectiveApplicationRuntime,
 } from '@happyvertical/smrt-config';
 import {
   assertDatabaseMigratedForBuild,
+  createGuestRequestPrincipal,
+  type GuestRequestPrincipal,
   ObjectRegistry,
   type SmrtClassOptions,
   type SmrtCollection,
@@ -113,6 +116,11 @@ import {
 import type { VaultKeyStore } from '../vault-key-store.js';
 import { acquireWriterLease, type WriterLease } from '../writer-lease.js';
 import {
+  createGuestAdmitter,
+  type GuestAdmission,
+  type GuestAdmissionDeps,
+} from './guest.js';
+import {
   createSubdomainTenantSelector,
   normalizeTenantSelection,
   type TenantSelector,
@@ -128,6 +136,14 @@ export interface SmrtRuntimeLocals extends SessionLocals {
   selectedTenantSlug: string | null;
   /** Full context for the authorized session tenant, when present. */
   tenantContext?: MinimalTenantContext;
+  /**
+   * The guest caller of this request (#5196): set only for an UNAUTHENTICATED
+   * request in a tenant that grants guests access (`callerKind: 'guest'`, no
+   * user). `locals.permissions` and `locals.tenantId` carry the same tenant
+   * and set, so generated route checks and row-level security read one
+   * principal. Absent for signed-in callers and whenever guests are off.
+   */
+  guestPrincipal?: GuestRequestPrincipal;
   /**
    * Display name of the signed-in user, read from the linked profile (the
    * `User` model has no name; a desktop owner has a name and an empty email).
@@ -656,6 +672,8 @@ export interface SmrtSvelteKitRuntimeSeams {
   readonly initializeLocal?: typeof initializeLocalApplicationRuntime;
   readonly initializeDeployed?: typeof initializeDeployedApplicationRuntime;
   readonly loadRuntime?: () => Promise<ResolvedApplicationRuntime>;
+  /** Replace parts of guest admission (catalog probe, resolver, config). */
+  readonly guest?: Partial<GuestAdmissionDeps>;
 }
 
 const DEFAULT_SESSION_TTL_SECONDS = 7 * 24 * 60 * 60;
@@ -1178,6 +1196,28 @@ export function composeSmrtSvelteKitRuntime(
     requireResolved().providers.tenancy.isolation === 'database-rls'
       ? true
       : options.session?.postgresRls;
+  /**
+   * Guest admission (#5196). Guests need the request RLS transaction on a
+   * deployed PostgreSQL connection; `postgresRls()` alone is not enough (the
+   * local SQLite profile can say true and still has no row-level security).
+   */
+  const guestAdmitter = createGuestAdmitter({
+    rawConfig: () =>
+      getPackageConfig<{ permissions?: { guest?: unknown } }>('users', {})
+        .permissions?.guest,
+    postgresRls: () =>
+      postgresRls() === true && requireResolved().profile !== 'local',
+    defaultSelector: options.selectTenant === undefined,
+    baseDomain: () => options.tenantBaseDomain ?? env.TENANT_BASE_DOMAIN,
+    baseClassOptions: () => baseClassOptions('Permission'),
+    // The same connection config the request transaction opens (`Session`
+    // class options), so the role gate checks the role requests run as.
+    baseDatabase: async () =>
+      (await getDatabase(
+        baseClassOptions('Session').db as never,
+      )) as unknown as DatabaseInterface,
+    ...seams.guest,
+  });
   let permissionResolverPromise: Promise<PermissionResolver> | undefined;
   const permissionResolver = (): Promise<PermissionResolver> => {
     permissionResolverPromise ??= PermissionResolver.create(
@@ -1546,6 +1586,60 @@ export function composeSmrtSvelteKitRuntime(
     let downstream: { error: unknown } | undefined;
     try {
       const service = await sessionService();
+      // Guests (#5196) apply only when there is NO valid session. A session
+      // the tenant check rejected belongs to a signed-in caller and keeps
+      // today's behaviour (no guest fallback); a skipped path never loads a
+      // session, so it cannot be known to be signed out.
+      let guest: GuestAdmission | null = null;
+      if (!skipped && guestAdmitter.mayAdmit(locals.selectedTenantId)) {
+        const state = sessionId
+          ? await (service as TenantAuthorizingSessionService).classify(
+              sessionId,
+            )
+          : 'none';
+        if (state === 'none') {
+          guest = await guestAdmitter.admit(locals.selectedTenantId);
+        }
+      }
+      if (guest) {
+        const admitted = guest;
+        return await withPrincipalPermissionContext(
+          {
+            ...baseClassOptions('Session'),
+            callerKind: 'guest',
+            userId: null,
+            tenantId: admitted.tenantId,
+            permissions: admitted.permissions,
+            enterTenantContext: true,
+            postgresRls: rls,
+          },
+          async (context) => {
+            // The door carries a guest only inside the RLS transaction; if
+            // it did not enter one, the request stays anonymous.
+            if (
+              context.callerKind === 'guest' &&
+              context.postgresRls === true &&
+              context.tenantId === admitted.tenantId
+            ) {
+              locals.permissions = context.permissions;
+              locals.tenantId = context.tenantId;
+              locals.guestPrincipal = createGuestRequestPrincipal({
+                tenantId: admitted.tenantId,
+                permissions: context.permissions,
+                runtime: admitted.runtime,
+                slugModels: admitted.slugModels,
+              });
+            }
+            resolveEntered = true;
+            try {
+              return await resolve(event);
+            } catch (error) {
+              downstream = { error };
+              throw error;
+            }
+          },
+        );
+      }
       return await withSessionPermissionContext(
         {
           ...sessionServiceOptions(),
@@ -1688,15 +1782,35 @@ class TenantAuthorizingSessionService extends SessionService {
     this.tenantRequired = tenantRequired;
   }
 
+  /**
+   * Whether `sessionId` is no session (`none`: absent, expired, unknown), a
+   * session this runtime admits (`valid`), or a session whose tenant failed
+   * the authorization check (`rejected`: a signed-in caller). Only `none`
+   * may become a guest.
+   */
+  async classify(sessionId: string): Promise<'none' | 'valid' | 'rejected'> {
+    const context = await super.loadSessionContext(sessionId);
+    if (!context) return 'none';
+    return this.admits(context) ? 'valid' : 'rejected';
+  }
+
+  private admits(
+    context: NonNullable<
+      Awaited<ReturnType<SessionService['loadSessionContext']>>
+    >,
+  ): boolean {
+    if (typeof context.tenantId === 'string' && context.tenantId.length > 0) {
+      return isSessionTenantAuthorized(context);
+    }
+    return !this.tenantRequired;
+  }
+
   override async loadSessionContext(
     sessionId: string,
   ): ReturnType<SessionService['loadSessionContext']> {
     const context = await super.loadSessionContext(sessionId);
     if (!context) return null;
-    if (typeof context.tenantId === 'string' && context.tenantId.length > 0) {
-      return isSessionTenantAuthorized(context) ? context : null;
-    }
-    return this.tenantRequired ? null : context;
+    return this.admits(context) ? context : null;
   }
 }
 
@@ -1711,6 +1825,7 @@ function clearSessionLocals(locals: SmrtRuntimeLocals): void {
   locals.userName = null;
   locals.principalKind = undefined;
   locals.tenantContext = undefined;
+  locals.guestPrincipal = undefined;
   verifiedSessionTenants.delete(locals);
 }
 

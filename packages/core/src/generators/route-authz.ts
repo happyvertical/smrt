@@ -23,6 +23,7 @@
  * given.
  */
 
+import { GUEST_CALLER_KIND, guestPrincipalOf } from '../guest-request';
 import { principalFromLocals } from '../request-actor';
 import { resolveWhereKey, whereColumnName } from '../where-keys';
 import type { APIRequestPrincipal } from './request-principal';
@@ -71,6 +72,21 @@ export interface AuthorizeInput {
    * `tenant_id` is always checked, in addition to these.
    */
   tenantColumns?: ReadonlySet<string>;
+  /**
+   * The host checked that this caller is a guest (#5196, `callerKind:
+   * 'guest'`) whose guest permission set grants `<collection>.read` for this
+   * generated read. It stands in for sign-in on a non-public read only; it is
+   * ignored for any other principal and for any mutating operation.
+   */
+  guestReadAllowed?: boolean;
+  /**
+   * The host checked that this caller is a guest (#5196) opted in to creating
+   * in this collection (`guestCreateAdmission`). It stands in for sign-in on
+   * the generated `create` operation ONLY; the `<collection>.create`
+   * permission is still required, and it is ignored for any other principal
+   * and any other operation.
+   */
+  guestCreateAllowed?: boolean;
   /** The write body, checked for a tenant other than the principal's. */
   body?: unknown;
 }
@@ -140,7 +156,21 @@ export function authorize(input: AuthorizeInput): AuthorizeDecision {
   const { principal, op, publicAccess } = input;
   const mutating = isMutatingOperation(op, input.mutating);
 
-  if (!principal.authenticated && !isOperationPublic(publicAccess, mutating)) {
+  const guestRead =
+    input.guestReadAllowed === true &&
+    principal.callerKind === GUEST_CALLER_KIND &&
+    !mutating;
+  const guestCreate =
+    input.guestCreateAllowed === true &&
+    principal.callerKind === GUEST_CALLER_KIND &&
+    input.op === 'create' &&
+    mutating;
+  if (
+    !principal.authenticated &&
+    !guestRead &&
+    !guestCreate &&
+    !isOperationPublic(publicAccess, mutating)
+  ) {
     return deny(401, 'AUTHENTICATION_REQUIRED', 'Authentication required');
   }
 
@@ -241,9 +271,13 @@ export function apiPrincipalFromLocals(
       if (typeof slug === 'string') permissions.add(slug);
     }
   }
+  // A guest (#5196) is this contract's unauthenticated principal of kind
+  // `guest`; `locals.permissions` and `locals.tenantId` already carry its set.
+  const guest = guestPrincipalOf(locals) !== null;
   return {
     tenantId: fromLocals.tenantId ?? activeTenantId ?? null,
     allowCrossTenant: false,
+    ...(guest ? { callerKind: GUEST_CALLER_KIND } : {}),
     authenticated: fromLocals.authenticated,
     ...(fromLocals.userId ? { userId: fromLocals.userId } : {}),
     permissions,

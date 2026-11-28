@@ -617,7 +617,16 @@ function generateAuthGuardHelper(
   return `
 // Fail-closed authorization (#1540): generated routes require an authenticated
 // principal on \`locals\` unless explicitly marked \`@smrt({ api: { public } })\`.
-import { apiPrincipalFromLocals, authorize, enforceRouteLimits, isRuntimeModelEnabled, stripTenantFilters, publicSerializerOf, toPublicJSONValue } from '@happyvertical/smrt-core';
+import { GUEST_MAX_LIST_LIMIT, apiPrincipalFromLocals, authorize, enforceRouteLimits, guestCreateAdmission, guestPrincipalOf, guestReadThrottle, handleGuestCreate, isGuestAllowedOnRoute, isRuntimeModelEnabled, stripTenantFilters, publicSerializerOf, toPublicJSONValue } from '@happyvertical/smrt-core';
+// The registry key guest operation checks resolve the model's config by (#5196).
+const GUEST_MODEL = ${JSON.stringify(readScopeModelName(permissionObjectDef, permissionObjectDef.className))};
+// The qualified name the guest ceiling admits a slug for (#5196).
+const GUEST_QUALIFIED_MODEL: string | undefined = ${JSON.stringify(
+    permissionObjectDef.qualifiedName ??
+      (permissionObjectDef.packageName
+        ? `${permissionObjectDef.packageName}:${permissionObjectDef.className}`
+        : undefined),
+  )};
 const RUNTIME_MODEL = ${JSON.stringify({
     qualifiedName:
       permissionObjectDef.qualifiedName ??
@@ -652,7 +661,7 @@ ${generateRoutePrincipalHelper()}
 // One decision for the route (#5195), the one REST makes: sign-in (401), the
 // \`<collection>.<action>\` permission of a write (403), and, once a body is
 // given, the tenant it names (403 \`TENANT_MISMATCH\`).
-function routeDecision(locals: unknown, op: string, mutating: boolean, permissionAction?: string, body?: unknown) {
+function routeDecision(locals: unknown, op: string, mutating: boolean, permissionAction?: string, body?: unknown, guestRead?: boolean, guestCreate?: boolean) {
   return authorize({
     principal: routePrincipal(locals),
     op,
@@ -662,6 +671,8 @@ function routeDecision(locals: unknown, op: string, mutating: boolean, permissio
     publicAccess: PUBLIC_ACCESS,
     allowSuperAdminBypass: ALLOW_SUPER_ADMIN_BYPASS,
     tenantColumns: TENANT_COLUMNS,
+    ...(guestRead ? { guestReadAllowed: true } : {}),
+    ...(guestCreate ? { guestCreateAllowed: true } : {}),
     ...(body === undefined ? {} : { body }),
   });
 }
@@ -694,8 +705,23 @@ function routeDenial(decision: { status: number; code: string; message: string }
 // Authentication first, then the runtime exposure gate for the request's
 // tenant (a switched-off model answers 404 only to an admitted caller), then
 // the rest of the decision.
+//
+// A guest (#5196) is the unauthenticated principal of main's contract
+// (\`callerKind: 'guest'\`, no user) and is decided by the same \`authorize\`:
+// \`public\` routes stay public for it exactly as for an anonymous caller (the
+// row policies bound what it can read to its guest permission set), and a
+// guest is admitted to a non-public route only for a generated read the guest
+// ceiling grants (\`guestRead\`: \`<collection>.read\` on \`list\`/\`get\`).
+// Anything else is denied as an anonymous caller is.
+function guestMayRead(locals: unknown, op: string, mutating: boolean): boolean {
+  if (mutating) return false;
+  const guest = guestPrincipalOf(locals);
+  // The ceiling admitted the slug for ONE model: this route must be it.
+  return guest !== null && isGuestAllowedOnRoute(guest, { model: GUEST_MODEL, qualifiedName: GUEST_QUALIFIED_MODEL, collection: PERMISSION_COLLECTION }, op);
+}
+
 function requireRouteAccess(locals: unknown, op: string, mutating: boolean, permissionAction?: string): void {
-  const decision = routeDecision(locals, op, mutating, permissionAction);
+  const decision = routeDecision(locals, op, mutating, permissionAction, undefined, guestMayRead(locals, op, mutating));
   if (!decision.allow && decision.status === 401) routeDenial(decision);
   if (!isRuntimeModelEnabled(RUNTIME_MODEL, { surface: 'rest', locals, tenantId: requestTenantOf(locals) })) {
     throw error(404, 'Not found');
@@ -847,7 +873,8 @@ const LIST_ORDER_BY = ${JSON.stringify(orderBy)};
  * Parse \`?limit\`/\`?offset\` (#2367): default when absent, 400 when malformed,
  * clamped to ${MAX_LIST_LIMIT} when oversized.
  */
-function listBounds(url: URL): { limit: number; offset: number } {
+function listBounds(url: URL, locals: unknown): { limit: number; offset: number } {
+  const maxLimit = guestPrincipalOf(locals) !== null ? Math.min(${MAX_LIST_LIMIT}, GUEST_MAX_LIST_LIMIT) : ${MAX_LIST_LIMIT};
   const parse = (name: 'limit' | 'offset', fallback: number, max?: number): number => {
     const raw = url.searchParams.get(name);
     if (raw === null || raw === '') {
@@ -864,7 +891,7 @@ function listBounds(url: URL): { limit: number; offset: number } {
   };
 
   return {
-    limit: parse('limit', ${DEFAULT_LIST_LIMIT}, ${MAX_LIST_LIMIT}),
+    limit: parse('limit', ${DEFAULT_LIST_LIMIT}, maxLimit),
     offset: parse('offset', 0),
   };
 }
@@ -915,11 +942,15 @@ function routeGuardPreamble(
   mutating: boolean,
   permissionAction?: 'create' | 'update' | 'delete',
   readOperation: 'list' | 'get' = 'list',
+  afterLimit?: string,
 ): string {
   const lines: string[] = [
     // Before any decision, as REST's \`onRequest\` position (#5198).
     '  const limited = routeRateLimit(locals, request, getClientAddress);',
     '  if (limited) return limited;',
+    // The guest create branch (#5196) runs after the shared limit, so a guest
+    // is charged the caller-kind-scaled limit before anything else.
+    ...(afterLimit ? [afterLimit] : []),
   ];
   if (mutating) {
     if (!permissionAction) {
@@ -939,6 +970,44 @@ function routeGuardPreamble(
     );
   }
   return lines.join('\n');
+}
+
+/**
+ * The guest create branch of a generated POST (#5196). A guest opted in to
+ * creating in this collection (`guestCreateAdmission`: a guest principal with
+ * a runtime, an audit writer, a validated field list, the generated `create`
+ * operation and the `<collection>.create` grant) runs the guest pipeline and
+ * ALWAYS returns from it: it never reaches `collection.create()`. Every other
+ * request, including a guest that is not admitted, continues to the ordinary
+ * guard and is decided exactly as before (an unadmitted guest is anonymous: 401).
+ */
+function generateGuestCreateBranch(
+  className: string,
+  typeName?: string,
+): string {
+  const genericSuffix = typeName ? `<${typeName}>` : '';
+  return `  const guestCreate = guestCreateAdmission(locals, GUEST_MODEL, PERMISSION_COLLECTION, PUBLIC_ACCESS, GUEST_QUALIFIED_MODEL);
+  if (guestCreate) {
+    const guestDecision = routeDecision(locals, 'create', true, undefined, undefined, false, true);
+    if (!guestDecision.allow) routeDenial(guestDecision);
+    if (!isRuntimeModelEnabled(RUNTIME_MODEL, { surface: 'rest', locals, tenantId: requestTenantOf(locals) })) {
+      throw error(404, 'Not found');
+    }
+    enterTenancy(locals, 'create');
+    try {
+      const guestCollection = await getCollection${genericSuffix}('${className}');
+      return await handleGuestCreate({
+        admission: guestCreate,
+        request,
+        getClientAddress,
+        db: guestCollection.db as never,
+        tableName: guestCollection.tableName,
+      });
+    } catch (cause) {
+      // Never a typed message: a guest learns nothing about the table or row.
+      return json(reportUnexpectedHttpError(cause, request), { status: 500 });
+    }
+  }`;
 }
 
 function buildRouteHandlerArgs(
@@ -3498,8 +3567,11 @@ ${generateAuthGuardHelper(objectDef, semanticManifest)}${generateTenantContextHe
 // List all ${className.toLowerCase()}s
 export const GET: RequestHandler = async ({ locals, url, request, getClientAddress }) => {
 ${routeGuardPreamble(objectDef, false, undefined, 'list')}
+  // A guest read is charged against the per-client and per-tenant read limits (#5196).
+  const guestThrottled = guestReadThrottle(locals, request, getClientAddress);
+  if (guestThrottled) return guestThrottled;
   const publicJsonOptions = getPublicJsonOptions(locals);
-  const { limit, offset } = listBounds(url);
+  const { limit, offset } = listBounds(url, locals);
   const query = listQuery(url, publicJsonOptions);
 
 ${generateCollectionLoad(className, { typeName: modelType.typeName })}
@@ -3537,7 +3609,7 @@ ${listAndCount}
     ? `
 // Create new ${className.toLowerCase()}
 export const POST: RequestHandler = async ({ locals, request, getClientAddress }) => {
-${routeGuardPreamble(objectDef, true, 'create')}
+${routeGuardPreamble(objectDef, true, 'create', undefined, generateGuestCreateBranch(className, modelType.typeName))}
   const publicJsonOptions = getPublicJsonOptions(locals);
   const body: unknown = await request.json();
   requireRouteBody(locals, 'create', body);
@@ -3701,6 +3773,9 @@ ${generateAuthGuardHelper(objectDef, semanticManifest)}${generateTenantContextHe
 // Get single ${simpleClassName.toLowerCase()}
 export const GET: RequestHandler = async ({ locals, params, request, getClientAddress }) => {
 ${routeGuardPreamble(objectDef, false, undefined, 'get')}
+  // A guest read is charged against the per-client and per-tenant read limits (#5196).
+  const guestThrottled = guestReadThrottle(locals, request, getClientAddress);
+  if (guestThrottled) return guestThrottled;
   const publicJsonOptions = getPublicJsonOptions(locals);
 ${generateCollectionLoad(className, { typeName: modelType.typeName })}
 ${

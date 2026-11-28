@@ -8,6 +8,11 @@ registered mutable fields; audited creates refuse natural-key overwrites.
 Direct object writes and custom overrides need explicit service recording.
 Cascade reuse of a no-savepoint transaction requires an active framework-owned
 transaction handle; raw caller transactions retain the ordinary delete limitation.
+Guest actor: `{ callerKind: 'guest' }` (`AuditContext`) resolves to the reserved
+`GUEST_AUDIT_ACTOR` with no user row or per-tenant identity. `requireAuditOptions`
+accepts it only through that typed variant; a string `actorId` equal to the constant
+is rejected and blank actors still throw. Entries carry `callerKind`; absent means user.
+
 See [audit contract](../../../docs/content/audit-trail.md).
 
 - `initialize()`: loads field initializers, applies option values (options override initializers), loads from DB if id/slug provided

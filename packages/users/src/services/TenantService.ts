@@ -3,10 +3,25 @@
  * @packageDocumentation
  */
 
-import type { SmrtClassOptions } from '@happyvertical/smrt-core';
+import {
+  isEmbeddedDatabase,
+  type SmrtClassOptions,
+  type SmrtCollectionOptions,
+  withEmbeddedWriteTransaction,
+} from '@happyvertical/smrt-core';
+import { CliAuthRequestCollection } from '../collections/CliAuthRequestCollection.js';
+import { GroupCollection } from '../collections/GroupCollection.js';
+import { GroupMemberCollection } from '../collections/GroupMemberCollection.js';
+import { GroupRoleCollection } from '../collections/GroupRoleCollection.js';
 import { MembershipCollection } from '../collections/MembershipCollection.js';
+import { MembershipOverrideCollection } from '../collections/MembershipOverrideCollection.js';
+import { ResourceGrantCollection } from '../collections/ResourceGrantCollection.js';
 import { RoleCollection } from '../collections/RoleCollection.js';
+import { RolePermissionCollection } from '../collections/RolePermissionCollection.js';
+import { SessionCollection } from '../collections/SessionCollection.js';
 import { TenantCollection } from '../collections/TenantCollection.js';
+import { TenantGuestGrantCollection } from '../collections/TenantGuestGrantCollection.js';
+import { TenantPermissionOverrideCollection } from '../collections/TenantPermissionOverrideCollection.js';
 import type { Membership } from '../models/Membership.js';
 import type { Tenant } from '../models/Tenant.js';
 import {
@@ -16,6 +31,97 @@ import {
   type TenantPolicy,
 } from '../types/index.js';
 import { withoutListBounds } from './authorization-read-options.js';
+
+/** Delete every row of `rows` (already loaded), one by one so hooks fire. */
+async function deleteAll(rows: Array<{ delete(): Promise<unknown> }>) {
+  for (const row of rows) await row.delete();
+}
+
+/**
+ * Remove every row that references `tenantId`, children before parents. Runs
+ * inside the caller's transaction (`options.db` is the tx handle).
+ * See {@link TenantService.deleteTenant} for the per-table decisions.
+ */
+async function removeTenantDependents(
+  options: SmrtCollectionOptions,
+  tenantId: string,
+): Promise<void> {
+  const where = { tenantId };
+
+  // Sessions first: CLI auth requests reference them.
+  const sessions = await (await SessionCollection.create(options)).list({
+    where,
+  });
+  const cliRequests = await CliAuthRequestCollection.create(options);
+  await deleteAll(await cliRequests.list({ where }));
+  for (const session of sessions) {
+    // `sessionId` is sensitive, so it cannot be a list() filter.
+    await cliRequests.db.query(
+      `DELETE FROM ${cliRequests.tableName} WHERE session_id = ?`,
+      session.id,
+    );
+  }
+  await deleteAll(sessions);
+
+  // Memberships (and the invitations that are memberships) and overrides.
+  const memberships = await MembershipCollection.create(options);
+  const overrides = await MembershipOverrideCollection.create(options);
+  for (const membership of await memberships.findByTenant(tenantId)) {
+    await deleteAll(
+      await overrides.list({
+        where: { membershipId: membership.id as string },
+      }),
+    );
+    await membership.delete();
+  }
+
+  // Groups with their members and roles.
+  const groups = await GroupCollection.create(options);
+  const groupMembers = await GroupMemberCollection.create(options);
+  const groupRoles = await GroupRoleCollection.create(options);
+  for (const group of await groups.list({ where })) {
+    const groupId = group.id as string;
+    await deleteAll(await groupMembers.list({ where: { groupId } }));
+    await deleteAll(await groupRoles.list({ where: { groupId } }));
+    await group.delete();
+  }
+
+  // Tenant-scoped roles (system roles have no tenant).
+  const roles = await RoleCollection.create(options);
+  const rolePermissions = await RolePermissionCollection.create(options);
+  for (const role of await roles.findTenantRoles(tenantId)) {
+    await deleteAll(
+      await rolePermissions.list({ where: { roleId: role.id as string } }),
+    );
+    await role.delete();
+  }
+
+  // Resource grants form a tree through parentGrantId: delete leaves first.
+  const resourceGrants = await (
+    await ResourceGrantCollection.create(options)
+  ).list({ where });
+  let remaining = resourceGrants;
+  while (remaining.length > 0) {
+    const referenced = new Set(remaining.map((g) => g.parentGrantId));
+    const leaves = remaining.filter((g) => !referenced.has(g.id as string));
+    if (leaves.length === 0) {
+      throw new Error('Resource grant hierarchy is cyclic.');
+    }
+    await deleteAll(leaves);
+    remaining = remaining.filter((g) => !leaves.includes(g));
+  }
+
+  await deleteAll(
+    await (
+      await TenantPermissionOverrideCollection.create(options)
+    ).findByTenant(tenantId),
+  );
+  await deleteAll(
+    await (await TenantGuestGrantCollection.create(options)).findByTenant(
+      tenantId,
+    ),
+  );
+}
 
 /**
  * Result of tenant creation with ownership
@@ -241,8 +347,30 @@ export class TenantService {
   /**
    * Delete a tenant
    *
-   * Note: This does not cascade delete related records (memberships, etc.).
-   * The caller should handle cleanup of related data if needed.
+   * Everything that references the tenant is removed in the SAME transaction
+   * as the tenant (the foreign keys are NO ACTION, there is no CASCADE), so a
+   * failed delete leaves all of it in place. The set below mirrors every table
+   * with a foreign key to `tenants` in this package; a test walks the schema
+   * and fails when a new one appears without a decision here.
+   *
+   * Deleted with the tenant (the data is meaningless without it):
+   * - guest grants (#5196) and permission overrides;
+   * - memberships (this is also how pending invitations go: an invitation is
+   *   a membership row) and their membership overrides;
+   * - sessions bound to the tenant (the holders are signed out; child
+   *   sessions fall with their parent) and CLI auth requests for the tenant
+   *   or for one of those sessions;
+   * - groups with their members and group roles;
+   * - tenant-scoped roles with their role permissions (system roles have no
+   *   tenant and stay);
+   * - resource grants, leaves first.
+   *
+   * Refused (nothing is deleted): a tenant that still has child tenants, since
+   * deleting a whole subtree is a separate, explicit decision. A role of this
+   * tenant still referenced from outside it also fails the delete.
+   *
+   * Other packages that reference the tenant are not touched; a remaining
+   * reference fails the whole delete.
    *
    * @throws Error if user cannot delete the tenant (with specific reason)
    */
@@ -252,10 +380,34 @@ export class TenantService {
       throw new Error(error);
     }
 
-    const tenant = await this.tenantCollection.get(tenantId);
-    if (tenant) {
-      await tenant.delete();
+    const db = this.tenantCollection.db;
+    if (typeof db.transaction !== 'function') {
+      throw new Error(
+        'Deleting a tenant requires database transaction support.',
+      );
     }
+    await withEmbeddedWriteTransaction(
+      db,
+      isEmbeddedDatabase(db),
+      async (tx) => {
+        const options = { ...withoutListBounds(this.options), db: tx };
+        const tenants = await TenantCollection.create(options);
+        const children = await tenants.list({
+          where: { parentTenantId: tenantId },
+          limit: 1,
+        });
+        if (children.length > 0) {
+          throw new Error(
+            'Cannot delete a tenant that has child tenants. Delete or move them first.',
+          );
+        }
+        await removeTenantDependents(options, tenantId);
+        const tenant = await tenants.get(tenantId);
+        if (tenant) {
+          await tenant.delete();
+        }
+      },
+    );
   }
 
   /**

@@ -138,6 +138,14 @@ DDL, migration and OpenAPI digests have not moved since the recapture above.
   (`applyRouteCors`) instead of its own helpers. Manifest, schema, DDL,
   migration and OpenAPI digests are unchanged; only the emitted route digests
   moved.
+- Guest callers (#5196; the list and item routes of each model, plain and
+  sti): a guest is main's unauthenticated principal with `callerKind: 'guest'`
+  and goes through the same `authorize`; `requireRouteAccess` passes
+  `guestReadAllowed` for a `list`/`get` the guest permission set grants
+  (`<collection>.read`), and `listBounds(url, locals)` caps a guest page at
+  100. `public` routes stay public for a guest as for an anonymous caller.
+  Only those four route digests move (by hand, as for #5195: the capture gate
+  needs the baseline sources unchanged).
 
 ## Re-baseline of the emitted routes for #5195
 
@@ -171,3 +179,24 @@ commit whose production sources produced them.
   reports the response status and the decided principal to core's meter sink
   after the handler decided. The digests of the emitted routes were
   re-baselined by hand for that wrapper; nothing else moved.
+
+### Guest creates and read limits (#5196, slice H)
+
+The collection and item routes of both cases changed on purpose: the list and
+get handlers destructure `getClientAddress` and charge a guest read against
+the per-client and per-tenant read limits (`guestReadThrottle`, a no-op for
+every other caller), and the POST handler opens with the guest create branch
+(`guestCreateAdmission`, which is `null` for every non-guest, so the
+ordinary create path is untouched). Four digests were replaced by hand
+(`compat_plain` and `compatroots`, collection and `[id]` routes); the
+manifest, schema, DDL, migration, OpenAPI, MCP and every other emitted file are
+unchanged.
+
+### Per-model guest admission (#5196, slice J)
+
+The collection and item routes of both cases changed again, on purpose: the
+generated guest read check and the guest create admission now also pass the
+route's own qualified model name (`GUEST_QUALIFIED_MODEL`), because a slug is
+admitted for exactly one model. Four digests were replaced by hand
+(`compat_plain` and `compatroots`, collection and `[id]` routes); nothing
+else moved.

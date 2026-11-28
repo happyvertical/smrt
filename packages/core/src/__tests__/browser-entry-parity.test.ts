@@ -97,6 +97,24 @@ const NODE_ONLY_GROUPS: ReadonlyArray<{
   },
   {
     reason:
+      'Guest creates (#5196) are a server-side write path (node:crypto id generation); a browser never inserts rows for a guest',
+    names: [
+      'GuestCreateBodyError',
+      'clientKeyFor',
+      'createGuestCreateLimiter',
+      'defineGuestCreate',
+      'createGuestRuntime',
+      'executeGuestCreate',
+      'guestCreateAdmission',
+      'guestReadThrottle',
+      'guestRowDefaults',
+      'handleGuestCreate',
+      'normalizeClientIdentity',
+      'projectGuestBody',
+    ],
+  },
+  {
+    reason:
       'OpenAPI/Swagger UI serving; belongs behind `@happyvertical/smrt-core/generators/swagger`',
     names: ['generateOpenAPISpec', 'setupSwaggerUI'],
   },

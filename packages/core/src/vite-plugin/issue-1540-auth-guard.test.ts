@@ -2,8 +2,8 @@
  * Test for issue #1540 (increment 2c): fail-closed authorization on generated
  * SvelteKit routes.
  *
- * Every generated CRUD handler calls `requireRouteAuth(locals, mutating)`, which
- * throws 401 unless the object opts out via `@smrt({ api: { public } })`.
+ * Every generated CRUD handler calls `requireRouteAccess(locals, op, mutating)`,
+ * which throws 401 unless the object opts out via `@smrt({ api: { public } })`.
  */
 
 import {
@@ -14,7 +14,15 @@ import {
   unlinkSync,
   writeFileSync,
 } from 'node:fs';
+import ts from 'typescript';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { apiPrincipalFromLocals, authorize } from '../generators/route-authz';
+import {
+  createGuestRequestPrincipal,
+  GUEST_MAX_LIST_LIMIT,
+  guestPrincipalOf,
+  isGuestAllowedOnRoute,
+} from '../guest-request';
 import type { SmartObjectManifest } from '../scanner/types';
 
 vi.mock('node:fs', () => ({
@@ -139,5 +147,220 @@ describe('Issue #1540 (2c): fail-closed auth on generated routes', () => {
     expect(collectionRoute).toContain(
       'const PUBLIC_ACCESS: boolean | \'read\' = "read";',
     );
+  });
+
+  describe('guest callers (#5196)', () => {
+    /** Run the emitted guard and bounds helpers of a generated route. */
+    async function emitted(api: unknown = { include: ['list', 'get'] }) {
+      await generate(api);
+      const route = findRouteContent('widgets/+server.ts');
+      const line = (prefix: string): string => {
+        const start = route.indexOf(prefix);
+        if (start < 0) throw new Error(`missing ${prefix}`);
+        return route.slice(start, route.indexOf('\n', start));
+      };
+      const between = (from: string, to: string): string => {
+        const a = route.indexOf(from);
+        const b = route.indexOf(to, a);
+        if (a < 0 || b < 0) throw new Error(`missing ${from}`);
+        return route.slice(a, b);
+      };
+      const bounds = (() => {
+        const a = route.indexOf('function listBounds(');
+        return route.slice(a, route.indexOf('\n}\n', a) + 3);
+      })();
+      const source = [
+        line('const GUEST_MODEL'),
+        line('const GUEST_QUALIFIED_MODEL'),
+        line('const RUNTIME_MODEL'),
+        line('const PERMISSION_COLLECTION'),
+        line('const PUBLIC_ACCESS'),
+        line('const ALLOW_SUPER_ADMIN_BYPASS'),
+        line('const TENANT_COLUMNS'),
+        between(
+          '// The principal of this request',
+          '// A write body may not name',
+        ),
+        bounds,
+        'return { requireRouteAuth: requireRouteAccess, listBounds };',
+      ].join('\n');
+      const js = ts.transpileModule(source, {
+        compilerOptions: { target: ts.ScriptTarget.ES2022 },
+      }).outputText;
+      const error = (status: number, message: string) =>
+        Object.assign(new Error(message), { status });
+      return new Function(
+        'error',
+        'GUEST_MAX_LIST_LIMIT',
+        'guestCreateAdmission',
+        'guestPrincipalOf',
+        'guestReadThrottle',
+        'handleGuestCreate',
+        'isGuestAllowedOnRoute',
+        'apiPrincipalFromLocals',
+        'authorize',
+        'isRuntimeModelEnabled',
+        'getCurrentTenant',
+        js,
+      )(
+        error,
+        GUEST_MAX_LIST_LIMIT,
+        () => null,
+        guestPrincipalOf,
+        () => null,
+        async () => new Response(null, { status: 201 }),
+        isGuestAllowedOnRoute,
+        apiPrincipalFromLocals,
+        authorize,
+        () => true,
+        () => undefined,
+      ) as {
+        requireRouteAuth: (
+          locals: unknown,
+          op: string,
+          mutating: boolean,
+        ) => void;
+        listBounds: (
+          url: URL,
+          locals: unknown,
+        ) => { limit: number; offset: number };
+      };
+    }
+
+    const guestLocals = (
+      permissions: string[],
+      model: string | null = '@test/smrt:Widget',
+    ) => ({
+      tenantId: 'tenant-a',
+      permissions,
+      guestPrincipal: createGuestRequestPrincipal({
+        tenantId: 'tenant-a',
+        permissions,
+        // The ceiling admits each slug for ONE model (#5196).
+        ...(model
+          ? { slugModels: permissions.map((s) => [s, model] as const) }
+          : {}),
+      }),
+    });
+    const statusOf = (fn: () => void): number | undefined => {
+      try {
+        fn();
+      } catch (error) {
+        return (error as { status?: number }).status;
+      }
+      return undefined;
+    };
+
+    it('admits a guest only to the read operation its grant covers', async () => {
+      const { requireRouteAuth } = await emitted();
+      const guest = guestLocals(['widgets.read']);
+      expect(
+        statusOf(() => requireRouteAuth(guest, 'list', false)),
+      ).toBeUndefined();
+      expect(
+        statusOf(() => requireRouteAuth(guest, 'get', false)),
+      ).toBeUndefined();
+      // Writes, custom actions and other collections deny as anonymous does.
+      expect(statusOf(() => requireRouteAuth(guest, 'create', true))).toBe(401);
+      expect(statusOf(() => requireRouteAuth(guest, 'archive', false))).toBe(
+        401,
+      );
+      expect(
+        statusOf(() =>
+          requireRouteAuth(guestLocals(['widgets.create']), 'list', false),
+        ),
+      ).toBe(401);
+      expect(
+        statusOf(() =>
+          requireRouteAuth(guestLocals(['gadgets.read']), 'list', false),
+        ),
+      ).toBe(401);
+      expect(
+        statusOf(() => requireRouteAuth(guestLocals([]), 'list', false)),
+      ).toBe(401);
+    });
+
+    it('a slug admitted for another model, or for none, never opens this route', async () => {
+      const { requireRouteAuth } = await emitted();
+      // Another model that shares the collection name `widgets`.
+      expect(
+        statusOf(() =>
+          requireRouteAuth(
+            guestLocals(['widgets.read'], '@test/other:Widget'),
+            'list',
+            false,
+          ),
+        ),
+      ).toBe(401);
+      // No admitted-model map at all (a host that did not compute one).
+      expect(
+        statusOf(() =>
+          requireRouteAuth(guestLocals(['widgets.read'], null), 'get', false),
+        ),
+      ).toBe(401);
+    });
+
+    it('update, delete and every other write stay refused for a guest, whatever it holds', async () => {
+      const { requireRouteAuth } = await emitted();
+      // The create grant opens ONLY the guest create pipeline, which is a
+      // separate branch of the POST handler; the generic guard never admits it.
+      const guest = guestLocals([
+        'widgets.create',
+        'widgets.update',
+        'widgets.delete',
+      ]);
+      for (const op of ['create', 'update', 'delete', 'sync', 'archive']) {
+        expect(statusOf(() => requireRouteAuth(guest, op, true))).toBe(401);
+      }
+    });
+
+    it('a guest on a public route is served as the public contract says', async () => {
+      // `public` routes stay public for a guest as for an anonymous caller
+      // (#5195 semantics): row policies bound a guest to its permission set.
+      const { requireRouteAuth } = await emitted({
+        include: ['list', 'get', 'create'],
+        public: 'read',
+      });
+      for (const guest of [
+        guestLocals(['widgets.read']),
+        guestLocals([]),
+        guestLocals(['gadgets.read']),
+      ]) {
+        expect(
+          statusOf(() => requireRouteAuth(guest, 'list', false)),
+        ).toBeUndefined();
+        // A write on a read-public route still needs sign-in.
+        expect(statusOf(() => requireRouteAuth(guest, 'create', true))).toBe(
+          401,
+        );
+      }
+    });
+
+    it('anonymous and forged callers stay 401', async () => {
+      const { requireRouteAuth } = await emitted();
+      expect(statusOf(() => requireRouteAuth({}, 'list', false))).toBe(401);
+      expect(
+        statusOf(() => requireRouteAuth({ auth: () => true }, 'list', false)),
+      ).toBe(401);
+      // A marker that disagrees with the locals tenant is not a guest.
+      const forged = { ...guestLocals(['widgets.read']), tenantId: 'tenant-b' };
+      expect(statusOf(() => requireRouteAuth(forged, 'list', false))).toBe(401);
+      // A guest that also carries a user is not a guest: the user decides.
+      const both = { ...guestLocals(['widgets.read']), user: { id: 'u' } };
+      expect(
+        statusOf(() => requireRouteAuth(both, 'list', false)),
+      ).toBeUndefined();
+    });
+
+    it('caps a guest page at 100 and leaves other callers at the route maximum', async () => {
+      const { listBounds } = await emitted();
+      const url = new URL('https://x.test/api?limit=1000');
+      expect(listBounds(url, guestLocals(['widgets.read'])).limit).toBe(100);
+      expect(listBounds(url, {}).limit).toBe(1000);
+      expect(
+        listBounds(new URL('https://x.test/api'), guestLocals(['widgets.read']))
+          .limit,
+      ).toBeLessThanOrEqual(100);
+    });
   });
 });

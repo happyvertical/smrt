@@ -60,6 +60,24 @@ export {
   type SetPinInput,
 } from './DeviceCredentialService.js';
 export {
+  applyGuestCeiling,
+  assertGuestRuntimeActive,
+  collectionPassesGuestCeiling,
+  type GuestAuditTablePosture,
+  type GuestCeilingTable,
+  type GuestPermissionConfig,
+  type GuestPermissionKind,
+  GuestPermissionResolver,
+  type GuestRlsTablePosture,
+  type GuestRuntimeDenyReason,
+  type GuestRuntimeResult,
+  type GuestRuntimeState,
+  guestCeilingTables,
+  guestOperationKind,
+  guestSlugTargets,
+  isGuestOperationAllowed,
+} from './GuestPermissionResolver.js';
+export {
   DEFAULT_LOGIN_ATTEMPT_WINDOW_SECONDS,
   DEFAULT_LOGIN_LOCKOUT_BASE_SECONDS,
   DEFAULT_LOGIN_LOCKOUT_FACTOR,
@@ -263,9 +281,15 @@ export {
   applyPostgresPermissionPolicies,
   applyScopedPostgresPermissionPolicies,
   type GeneratePostgresPermissionSqlResult,
+  GUEST_AUDIT_TABLE_DEFAULTS,
+  type GuestAuditPolicyOptions,
+  generateAuditNonGuestPolicySql,
+  generateGuestAuditInsertPolicySql,
   generatePostgresPermissionSql,
+  guestAuditPolicyName,
   type PostgresPermissionPolicyReportItem,
   type PostgresPermissionPolicyTarget,
+  type PostgresPolicyExtras,
   type PostgresPolicyScope,
 } from './PostgresPermissionPolicies.js';
 export {
@@ -287,6 +311,7 @@ export {
   type ServicePrincipalServiceOptions,
 } from './ServicePrincipalService.js';
 export {
+  type GuestPrincipalPermissionRuntimeOptions,
   getCurrentSessionPermissionContext,
   getRequestScopedDatabase,
   type PrincipalPermissionRuntimeOptions,
@@ -302,6 +327,11 @@ export {
   type SessionServiceOptions,
   type SwitchTenantResult,
 } from './SessionService.js';
+export {
+  isStorableGuestPermissionSlug,
+  type TenantGuestGrantActor,
+  TenantGuestGrantService,
+} from './TenantGuestGrantService.js';
 export {
   type AcceptedTenantInvitation,
   type IssuedTenantInvitation,

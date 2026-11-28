@@ -55,6 +55,12 @@ export interface PermissionCatalogSyncResult {
 export interface UsersConfig extends Record<string, unknown> {
   permissions?: {
     custom?: PermissionDefinition[];
+    /**
+     * Guest callers (#5196): collections an unauthenticated caller may be
+     * granted. Parsed strictly by `parseGuestPermissionConfig`; a malformed
+     * block means no guests.
+     */
+    guest?: { collections?: string[]; createCollections?: string[] };
     postgres?: {
       bindings?: PostgresPermissionBinding[];
       enabled?: boolean;
@@ -682,6 +688,7 @@ const USERS_AUTHORITY_CATALOG_MODELS: ReadonlySet<string> = new Set(
     'RolePermission',
     'Session',
     'Tenant',
+    'TenantGuestGrant',
     'TenantIntegration',
     'TenantPermissionOverride',
     'User',

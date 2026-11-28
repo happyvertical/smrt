@@ -284,3 +284,173 @@ permissions cap what its tokens can do on every request. The profile models
 refuse an unprivileged principal changing whether a profile is `bot` typed
 (including by create or natural-key upsert) or creating/renaming the type, so an agent cannot relabel itself. See
 `packages/app-runtime/agents/self-issuer-mcp.md`.
+
+## Guest callers (#5196)
+
+An UNAUTHENTICATED request may act as a guest of the tenant its address names,
+with the tenant's `TenantGuestGrant` slugs (`GuestPermissionResolver`: minus
+every chain DENY, then the code ceiling). Request wiring lives in
+`packages/app-runtime/src/sveltekit/guest.ts` and the runtime session step; the
+principal is `callerKind: 'guest'`, `userId: null`
+(`withPrincipalPermissionContext({ callerKind: 'guest', ... })` and
+`createGuestRequestPrincipal` in core; `locals.guestPrincipal`).
+
+App config (`smrt.config.ts`, strict: any malformed value means NO guests; the
+whole block is refused, never filtered):
+
+```ts
+packages: { users: { permissions: { guest: {
+  collections: ['products', 'contact_messages'], // guests may be granted .read
+  createCollections: ['contact_messages'],       // subset that accepts creates
+  createFields: {                                // REQUIRED per create collection
+    contact_messages: { allowedFields: ['name', 'email', 'message'] },
+  },
+  trustedProxyHops: 1,                           // default 0: socket address only
+  rateLimits: { createPerClient: 5, createPerTenant: 60, readPerClient: 120, readPerTenant: 1200 },
+} } } }
+```
+
+Guests need ALL of: `permissions.guest`, the default subdomain tenant selector,
+`TENANT_BASE_DOMAIN`, an ACTIVE addressed tenant, deployed PostgreSQL with the
+request RLS transaction, enabled tenancy, a non-SUPERUSER/BYPASSRLS role and
+ENABLED+FORCED policies on every ceiling table (catalog check, cached per
+process on success, fail closed). Any failing gate, resolver error or an empty
+set is the ordinary anonymous path, so a response never reveals whether a
+tenant exists or has grants. A valid session, and a session the tenant check
+rejected (a signed-in non-member), never become guests; skipped paths never do.
+
+Generated routes admit a guest only for `list`/`get` when it holds
+`<collection>.read` (`isGuestOperationAllowed`; a custom method aliased onto
+read never passes), cap guest pages at 100 (`GUEST_MAX_LIST_LIMIT`), and answer
+401 to everything else (writes, custom actions, `public` routes of ungranted
+collections). The door
+refuses to carry a tenant or permissions without active RLS, and publishes the
+six `smrt.*` settings with `set_config(..., true)` only.
+
+### Guest creates (a contact form)
+
+A collection accepts guest creates only when the app lists it in
+`createCollections` WITH a `createFields` entry (a create collection without
+one refuses the whole block), the tenant grants `<collection>.create`, and the
+request is the generated `POST` (`guestCreateAdmission`; a custom method
+aliased onto create never passes). The pipeline (`handleGuestCreate`,
+`packages/core/src/guest-runtime.ts`) is: body cap (read before parsing; 413) ->
+`projectGuestBody` (only listed primitive fields; `id`, tenant, owner and
+timestamp columns can never be listed, nor sensitive/system/read-only fields;
+the list is validated against the registered model on first use and a bad list
+means no guest create, not a partial one; STI and write-through models are
+refused) -> rate limit (per tenant AND per client `tenantId:ip`, IPv6 by /64,
+recorded before the write, 429 + `Retry-After`, an unknown key is denied when
+the table is full; defaults 5/min per client, 60/min per tenant) -> one
+savepoint holding `INSERT ... ON CONFLICT DO NOTHING` (no `RETURNING`, server
+id and tenant) and its audit row -> `201`, empty body, no id, no `Location`,
+identical for a unique conflict (which writes no audit row and does not move
+the table version). The insert is raw SQL, so it bumps the change feed
+(`bumpChangeFeed`) in the same savepoint: a staff list answered from the
+table-version ETag sees the new row instead of a stale 304. A request rejected
+for its body (400/413) is not charged to the rate limits.
+
+The client address is the socket address; `X-Forwarded-For` counts only with
+`trustedProxyHops` set to the number of proxies you run. One process-wide
+limiter set lives on the guest runtime (`createGuestRuntime`, built once by
+the admission and shared by every route); it is per replica. #5198's shared
+route limiter does not exist yet, so this is the only floor. Guest reads share
+that runtime with a looser limit (120/min per client, 1200/min per tenant, same
+limiter class, fail closed when full) and pages stay capped at 100.
+
+Update, delete, sync and custom actions stay refused for guests. The runtime
+REST handler (`rest.ts`) has no guest create: a guest principal handed to it is
+unauthenticated and refused as before; guests enter through the generated
+SvelteKit routes only.
+
+#### Audit and the audit-table gate
+
+The create's audit entry is written through the app's audit writer (profiles
+`createAuditWriter()`; a typed `callerKind: 'guest'` entry, the reserved
+`GUEST_AUDIT_ACTOR`, null profile, `actor_kind = 'guest'`) inside the SAME
+savepoint as the insert, so a failed audit write fails and rolls back the
+create (the request transaction alone cannot: a handler that turns the failure
+into a 500 still lets it commit). The guest branch of that writer is a plain
+`INSERT` with no upsert and no `RETURNING` and never raises
+`smrt.system_context`: the guest's database context holds only an INSERT
+policy on the audit table.
+
+Because of that, guests are REFUSED at admission (any guest config, read-only
+ones included) unless the audit table has row-level security enabled AND forced and the named
+guest INSERT policy (`guestAuditPolicyName()`, `polcmd = 'a'`) installed. The
+catalog check (`probeGuestCatalog` -> `assertGuestRuntimeActive`, which fails
+closed on a missing table, a missing or non-boolean value and a failed query)
+is read from `pg_class`/`pg_policy` and re-asserted on every request, so an
+app with guests needs the profiles tables (and the apply command below) even
+before it opts a collection in to creates.
+
+Setup is the DEFAULT of the documented policy-apply path: when the app config
+has `permissions.guest`, `generatePostgresPermissionSql` /
+`applyPostgresPermissionPolicies` append, with no caller opt-in, `ENABLE` +
+`FORCE ROW LEVEL SECURITY` on `public.audit_logs` (profiles `AuditLog`), the
+INSERT-only guest policy, and a companion arm
+(`generateAuditNonGuestPolicySql`) that keeps system, super-admin, signed-in
+(a user id is published) and no-tenant background writers working exactly as
+without RLS; a guest context (a tenant, no user, no bypass) satisfies none of
+it. `extras.guestAudit = false` opts out (guests are then refused); a policy
+scope (run-time models in an app schema) never gets the default. Run the apply
+command after the profiles tables exist; the audit table must be in `public`.
+Proven in `guest-create-postgres.test.ts` (PGlite via `test:pglite`, real
+PostgreSQL via `test:postgres`) and `sveltekit-guest-audit-posture.postgres.test.ts`.
+
+#### Model admission, relations, validators and migrations
+
+- **A slug is admitted for one model.** The ceiling (`guestSlugTargets`) keeps
+  `<collection>.read`/`.create` only when EXACTLY ONE policy target is reachable
+  by it (the target whose collection name it is, or any target that lists the
+  slug under SELECT/INSERT through an explicit `permissions.postgres` binding)
+  and that target passes the ceiling. Two models sharing a collection name, or a
+  binding aimed at a second table, drop the slug. `resolveGuestAdmission`
+  returns the admitted model per slug; it rides on the guest principal as
+  `slugModels` and every generated route admits a guest only when ITS OWN
+  qualified name is the admitted one (`isGuestAllowedOnRoute`; a principal with
+  no map admits no route).
+- **No relation fields.** `defineGuestCreate` rejects foreign keys,
+  `@crossPackageRef`, one-to-many/many-to-many and other relation fields in
+  `allowedFields`: PostgreSQL checks foreign keys without row-level security, so
+  a guest could probe ids across tenants or attach to another tenant's row.
+- **No error oracle.** A failure that depends on the submitted values (unique,
+  not-null, foreign-key, check, exclusion, invalid input) rolls the savepoint
+  back and answers the same `201` as a success; only genuine server faults
+  (privilege, missing table, connection, a failed audit write) answer 500.
+- **Rejected bodies cost the client.** A client over budget is refused before
+  its body is read; a 400/413 body is charged to the client limiter (never the
+  tenant's).
+- **The audit marker is minted only by the pipeline.** `requireAuditOptions`
+  accepts the reserved guest actor only from `guestCreateAuditContext()` (core
+  internal, not exported from the package); a bare `{ callerKind: 'guest' }` is
+  refused.
+- **Raw INSERT skips model validators and hooks.** A guest create does not run
+  `validateBeforeSave`, `beforeSave` hooks, slug generation beyond `slug = id`,
+  interceptors or computed fields; only column defaults of the model are applied.
+  Enforce what matters in the database (NOT NULL, CHECK length/format
+  constraints, unique indexes): a violating value answers `201` and writes
+  nothing.
+- **Migrations before deploy.** Guests need `audit_logs.actor_kind` and a nullable
+  `profile_id` (profiles `AuditLog`) and `tenant_guest_grants`. Run
+  `smrt doctor --db` and `smrt db:status --parity` and migrate before enabling
+  `permissions.guest`; admission refuses guests until the audit table has the
+  forced RLS and guest policy, and the guest audit insert fails (so does the
+  create) against an unmigrated table.
+
+#### Run-time models (hosted user apps)
+
+Run-time models (`registerRuntimeModel`, stamped `runtimeModel: true`) are
+excluded from the guest ceiling by default. The app opts a model in with
+`permissions.guest.runtimeModels: ['<package>:<Class>']`, a list of QUALIFIED
+model names (a collection name, whitespace, a wildcard or any non-string
+refuses the whole guest block, as every other malformed value does). Being
+exposed, or being named in `collections`, is not an opt-in. An opted-in
+run-time model must still pass everything else: listed in `collections` (and
+`createCollections` for creates, with a `createFields` list), not effectively
+sensitive (inherited fields included), a required-mode tenant model that has a
+generated policy target (a model with no target at admission is refused, never
+assumed), no owner-scoped or extra binding, the per-model rule (a shared
+collection name drops the slug), relation-free allowed fields. The opt-in
+changes only the run-time exclusion. `guestCeilingTables` includes an opted-in
+run-time table so its RLS posture is verified like any other.

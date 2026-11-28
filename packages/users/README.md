@@ -254,6 +254,10 @@ export default defineConfig({
 });
 ```
 
+Guest callers (#5196) are configured beside them under `permissions.guest`
+(`collections`, and the subset `createCollections`); a malformed block means no
+guests. See [agents/permissions.md](agents/permissions.md#guest-callers-5196).
+
 Custom permissions merge with manifest-derived permissions by slug. If the same
 slug is registered with conflicting metadata, s-m-r-t throws so the mismatch is
 visible early.

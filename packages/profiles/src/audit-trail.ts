@@ -1,7 +1,9 @@
+import { randomUUID } from 'node:crypto';
 import {
   type AuditEntry,
   type AuditWriter,
   ObjectRegistry,
+  usesPostgresDialect,
 } from '@happyvertical/smrt-core';
 import type { DatabaseInterface } from '@happyvertical/sql';
 import type { AuditLogCollection } from './collections/AuditLogCollection.js';
@@ -10,9 +12,12 @@ import { AuditLog } from './models/AuditLog.js';
 /** Profiles owns audit persistence; core only owns the mutation contract. */
 export function createAuditWriter(): AuditWriter {
   return async (entry: AuditEntry, db: DatabaseInterface) => {
+    // Guests have no user row: null profile, reserved marker kind only.
+    const guest = entry.callerKind === 'guest';
     const log = new (ObjectRegistry.resolveEffectiveConstructor(AuditLog))({
       db,
-      profileId: entry.actorId,
+      profileId: guest ? null : entry.actorId,
+      actorKind: guest ? 'guest' : 'user',
       onBehalfOfId: entry.onBehalfOfId,
       tenantId: entry.tenantId,
       action: entry.action,
@@ -22,9 +27,80 @@ export function createAuditWriter(): AuditWriter {
       reason: entry.reason ?? '',
       changes: entry.changes,
     });
+    if (guest) {
+      // No `initialize()`: it runs storage-readiness DDL checks a guest's
+      // database role must not need. A missing table fails the INSERT, and
+      // with it the guest create.
+      await insertGuestAuditRow(entry, log.tableName, db);
+      return;
+    }
     await log.initialize();
     await log.save();
   };
+}
+
+const GUEST_AUDIT_COLUMNS = [
+  'id',
+  'slug',
+  'context',
+  'created_at',
+  'updated_at',
+  'tenant_id',
+  'profile_id',
+  'actor_kind',
+  'action',
+  'reason',
+  'changes',
+  'resource_type',
+  'resource_id',
+  'occurred_at',
+  'source',
+  'metadata',
+  'on_behalf_of_id',
+] as const;
+
+/**
+ * The guest audit row (#5196): a plain INSERT with no upsert and no
+ * `RETURNING`. A guest's database context holds only the narrow INSERT policy
+ * on the audit table (no SELECT or UPDATE policy), and `save()` upserts with
+ * `RETURNING *`, which PostgreSQL authorizes through those policies. Any
+ * failure propagates so the guest create that carries it fails with it.
+ */
+async function insertGuestAuditRow(
+  entry: AuditEntry,
+  tableName: string,
+  db: DatabaseInterface,
+): Promise<void> {
+  const id = randomUUID();
+  const now = new Date().toISOString();
+  const json = (value: unknown) => JSON.stringify(value ?? {});
+  const values: Record<(typeof GUEST_AUDIT_COLUMNS)[number], unknown> = {
+    id,
+    slug: id,
+    context: '',
+    created_at: now,
+    updated_at: now,
+    tenant_id: entry.tenantId,
+    profile_id: null,
+    actor_kind: 'guest',
+    action: entry.action,
+    reason: entry.reason ?? '',
+    changes: json(entry.changes),
+    resource_type: entry.resourceType,
+    resource_id: entry.resourceId,
+    occurred_at: now,
+    source: entry.source ?? 'web',
+    metadata: json({}),
+    on_behalf_of_id: null,
+  };
+  const postgres = usesPostgresDialect(db as never);
+  const placeholders = GUEST_AUDIT_COLUMNS.map((_, i) =>
+    postgres ? `$${i + 1}` : '?',
+  );
+  await db.query(
+    `INSERT INTO "${tableName}" (${GUEST_AUDIT_COLUMNS.map((c) => `"${c}"`).join(', ')}) VALUES (${placeholders.join(', ')})`,
+    ...GUEST_AUDIT_COLUMNS.map((c) => values[c]),
+  );
 }
 
 export interface AuditFilter {

@@ -82,6 +82,7 @@ export {
   TenantCollection,
   TenantHierarchyError,
 } from './TenantCollection.js';
+export { TenantGuestGrantCollection } from './TenantGuestGrantCollection.js';
 export { TenantIntegrationCollection } from './TenantIntegrationCollection.js';
 export {
   TenantPermissionOverrideCollection,

@@ -276,6 +276,10 @@ export {
 // Dispatch system (inter-agent communication)
 export * from './dispatch/index';
 export {
+  isEffectivelySensitiveClass,
+  isRuntimeModelClass,
+} from './effective-sensitivity';
+export {
   isEmbeddedDatabase,
   isPostgresDatabase,
   usesEmbeddedRevisionFallback,
@@ -303,6 +307,49 @@ export {
 // Code generators (tree-shakeable)
 export * from './generators/index';
 export { toProviderToolSchema } from './generators/provider-tool-schema.js';
+export {
+  clientKeyFor,
+  createGuestCreateLimiter,
+  defineGuestCreate,
+  type ExecuteGuestCreateInput,
+  executeGuestCreate,
+  type GuestCreateAudit,
+  GuestCreateBodyError,
+  type GuestCreateConfig,
+  type GuestCreateDb,
+  type GuestCreateLimiter,
+  type GuestCreateLimiterOptions,
+  type GuestCreateResult,
+  guestRowDefaults,
+  normalizeClientIdentity,
+  projectGuestBody,
+  type ResolvedGuestCreateConfig,
+} from './guest-create';
+export {
+  createGuestRequestPrincipal,
+  GUEST_CALLER_KIND,
+  GUEST_KIND_OPERATIONS,
+  GUEST_MAX_LIST_LIMIT,
+  type GuestPermissionKind,
+  type GuestRequestPrincipal,
+  type GuestRouteModel,
+  guestOperationKind,
+  guestPrincipalOf,
+  isGuestAllowedOnRoute,
+  isGuestLocals,
+  isGuestOperationAllowed,
+} from './guest-request';
+export {
+  createGuestRuntime,
+  type GuestCreateAdmission,
+  type GuestReadLimiterOptions,
+  type GuestRuntime,
+  type GuestRuntimeOptions,
+  guestCreateAdmission,
+  guestReadThrottle,
+  type HandleGuestCreateInput,
+  handleGuestCreate,
+} from './guest-runtime';
 export { type HierarchyView, SmrtHierarchical } from './hierarchical';
 // Inference tiers and the binding resolver seam (#4750). Browser-safe; keep
 // this list identical in index.ts and browser.ts.
@@ -579,6 +626,7 @@ export {
 } from './polymorphic-association';
 export {
   applyPostgresPermissions,
+  isRlsBypassingRole,
   type PostgresPermissionContract,
   type PostgresPermissionDiagnostic,
   type PostgresPermissionPlan,
