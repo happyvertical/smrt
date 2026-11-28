@@ -34,7 +34,12 @@ import {
   getSystemTableDDLForEngine,
 } from '../system/schema.js';
 import { toSafeBooleanInteger, toSafeInteger } from '../utils/safe-integer.js';
-import { computeChecksum, verifyChecksum } from './checksum.js';
+import {
+  checksumMatchesRecorded,
+  checksumToRecord,
+  computeQuotedTextChecksum,
+  verifyRecordedChecksum,
+} from './checksum.js';
 import {
   attachCleanupFailure,
   closedCauseText,
@@ -244,15 +249,19 @@ function assertConcurrentCreatesCheckable(
 
 /**
  * Whether {@link MigrationTracker.apply} skips `definition` without running
- * it: recorded `completed` with this checksum, neither forced nor reconciled.
+ * it: recorded `completed` with this definition's checksum (either form a
+ * record may hold, see `checksumMatchesRecorded`), neither forced nor
+ * reconciled.
  */
 function skipsAsApplied(
   definition: MigrationDefinition,
   existing: SchemaMigrationRecord | null,
-  checksum: string,
   options: ApplyMigrationsOptions,
 ): boolean {
-  if (existing?.status !== 'completed' || existing.checksum !== checksum)
+  if (
+    existing?.status !== 'completed' ||
+    !checksumMatchesRecorded(definition.up, existing.checksum)
+  )
     return false;
   const force = Boolean(
     options.force || options.forceMigrations?.includes(definition.id),
@@ -780,7 +789,6 @@ export class MigrationTracker {
         !skipsAsApplied(
           definition,
           records.get(definition.id) ?? null,
-          computeChecksum(definition.up),
           options,
         ),
     );
@@ -851,10 +859,11 @@ export class MigrationTracker {
         continue;
       }
 
-      // Check checksum
-      const currentChecksum = computeChecksum(definition.up);
-      const verification = verifyChecksum(
-        currentChecksum,
+      // Check checksum. A record written before normalization respected
+      // quoted text still describes the statements it was computed from.
+      const currentChecksum = computeQuotedTextChecksum(definition.up);
+      const verification = verifyRecordedChecksum(
+        definition.up,
         record.checksum,
         record.applied_checksum,
       );
@@ -901,7 +910,6 @@ export class MigrationTracker {
     await this.assertSqliteForeignKeysRestored();
     await this.initialize();
     const startTime = Date.now();
-    const checksum = computeChecksum(definition.up);
     const force = Boolean(
       options.force || options.forceMigrations?.includes(definition.id),
     );
@@ -909,12 +917,19 @@ export class MigrationTracker {
 
     // Check if migration record already exists
     const existing = await this.getMigration(definition.id);
+    // A new record gets the current form. A record an earlier release wrote
+    // keeps its own value on a re-run (reconcile, force), so a build that
+    // predates the form still reads it as unmodified.
+    const checksum = checksumToRecord(definition.up, existing?.checksum);
 
     if (existing) {
       // Handle based on existing status
       switch (existing.status) {
         case 'completed':
-          if (!force && existing.checksum !== checksum) {
+          if (
+            !force &&
+            !checksumMatchesRecorded(definition.up, existing.checksum)
+          ) {
             return {
               success: false,
               applied: false,
@@ -926,7 +941,7 @@ export class MigrationTracker {
             };
           }
 
-          if (skipsAsApplied(definition, existing, checksum, options)) {
+          if (skipsAsApplied(definition, existing, options)) {
             // Already applied, skip
             return {
               success: true,
@@ -1046,7 +1061,7 @@ export class MigrationTracker {
     const phase1AlreadyCommitted =
       deferredConcurrent &&
       existing?.status === 'failed' &&
-      existing.checksum === checksum &&
+      checksumMatchesRecorded(definition.up, existing.checksum) &&
       typeof existing.error_message === 'string' &&
       existing.error_message.startsWith(CONCURRENT_INDEX_PHASE1_MARKER);
 
@@ -2168,7 +2183,7 @@ export class MigrationTracker {
     await this.assertSqliteForeignKeysRestored();
     await this.initialize();
     const startTime = Date.now();
-    const checksum = computeChecksum(definition.down);
+    const checksum = computeQuotedTextChecksum(definition.down);
 
     const record = await this.getMigration(name);
     if (!record) {

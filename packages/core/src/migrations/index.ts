@@ -49,10 +49,14 @@ export {
 export * from './change-kinds.js';
 // Checksum utilities
 export {
+  checksumMatchesRecorded,
   computeChecksum,
+  computeQuotedTextChecksum,
   normalizeSQL,
+  normalizeSQLKeepingQuotedText,
   shortChecksum,
   verifyChecksum,
+  verifyRecordedChecksum,
 } from './checksum.js';
 export {
   DeploymentPhaseTracker,
