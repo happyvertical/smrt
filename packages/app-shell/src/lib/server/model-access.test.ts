@@ -555,19 +555,20 @@ describe('unstage back to no version (#5197)', () => {
         get: (target, prop) =>
           prop === 'transaction'
             ? (fn: (tx: unknown) => Promise<unknown>) =>
-                target.transaction((tx) =>
-                  fn(
-                    new Proxy(tx, {
-                      get: (t, p) =>
-                        p === 'query'
-                          ? (sql: string, ...rest: unknown[]) => {
-                              if (/SET current_version = -1/.test(sql))
-                                throw new Error('injected after the clear');
-                              return (t as any).query(sql, ...rest);
-                            }
-                          : (t as any)[p],
-                    }),
-                  ),
+                (target.transaction as NonNullable<typeof target.transaction>)(
+                  (tx) =>
+                    fn(
+                      new Proxy(tx, {
+                        get: (t, p) =>
+                          p === 'query'
+                            ? (sql: string, ...rest: unknown[]) => {
+                                if (/SET current_version = -1/.test(sql))
+                                  throw new Error('injected after the clear');
+                                return (t as any).query(sql, ...rest);
+                              }
+                            : (t as any)[p],
+                      }),
+                    ),
                 )
             : (target as any)[prop],
       }),
