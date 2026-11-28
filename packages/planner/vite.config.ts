@@ -1,7 +1,11 @@
 import { readFileSync, realpathSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { sveltekit } from '@sveltejs/kit/vite';
-import { defineConfig, searchForWorkspaceRoot } from 'vite';
+import {
+  defaultClientConditions,
+  defineConfig,
+  searchForWorkspaceRoot,
+} from 'vite';
 
 // Local QA only: preview unreleased shell defaults without changing package dependencies.
 const localPackages = [
@@ -32,6 +36,11 @@ const localAliases = localPackages.flatMap(({ variable, name }) => {
 export default defineConfig({
   plugins: [sveltekit()],
   resolve: {
+    // ONNX Runtime's own switch for "the WebAssembly is served elsewhere".
+    // transformers.js always points it at jsDelivr, so the copies the default
+    // build emits (26.9 MB, once for the page and once for the worker) are
+    // never requested (#5707).
+    conditions: ['onnxruntime-web-use-extern-wasm', ...defaultClientConditions],
     alias: localAliases,
     dedupe: ['svelte', '@happyvertical/smrt-ui'],
   },

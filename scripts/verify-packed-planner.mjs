@@ -10,8 +10,13 @@
  * Usage: node scripts/verify-packed-planner.mjs <tarball>
  */
 import { spawnSync } from 'node:child_process';
+import { statSync } from 'node:fs';
 import { parse } from 'acorn';
 import { pathToFileURL } from 'node:url';
+import {
+  mcpWidgetProblems,
+  PACKED_BYTES_BUDGET,
+} from './planner-size-budgets.mjs';
 
 const REQUIRED_ENTRIES = [
   'package/package.json',
@@ -66,10 +71,16 @@ export function moduleImports(source) {
 }
 
 /**
- * Problems with a packed planner, given its file list and readers for the
- * entries checked. Pure, so the rules are unit-tested without a tarball.
+ * Problems with a packed planner, given its file list, compressed size and
+ * readers for the entries checked. Pure, so the rules are unit-tested without
+ * a tarball.
  */
-export function plannerTarballProblems({ entries, readJson, readText }) {
+export function plannerTarballProblems({
+  entries,
+  packedBytes,
+  readJson,
+  readText,
+}) {
   const problems = [];
   const present = new Set(entries);
   for (const entry of REQUIRED_ENTRIES) {
@@ -93,8 +104,18 @@ export function plannerTarballProblems({ entries, readJson, readText }) {
   if (!readText('package/dist/smrt-version.js').includes(`'${version}'`)) {
     problems.push(`dist/smrt-version.js does not name ${version}`);
   }
-  if (!readText('package/app/mcp.html').includes('id="smrt-planner-entry"')) {
+  const widget = readText('package/app/mcp.html');
+  if (!widget.includes('id="smrt-planner-entry"')) {
     problems.push('app/mcp.html is not the self-contained planner widget');
+  }
+  problems.push(...mcpWidgetProblems(widget));
+  if (packedBytes > PACKED_BYTES_BUDGET) {
+    problems.push(
+      `tarball is ${packedBytes} bytes, over its ${PACKED_BYTES_BUDGET} byte budget`,
+    );
+  }
+  for (const entry of entries.filter((entry) => entry.endsWith('.wasm'))) {
+    problems.push(`${entry}: the planner ships no WebAssembly`);
   }
   // `smrt kitchen` imports ./core from its cache without installing the
   // planner's dependencies (#4238): the entry must be one self-contained file.
@@ -122,6 +143,7 @@ function main(tarball) {
   const readText = (entry) => tar(['-xzOf', tarball, entry]);
   const problems = plannerTarballProblems({
     entries,
+    packedBytes: statSync(tarball).size,
     readText,
     readJson: (entry) => JSON.parse(readText(entry)),
   });
@@ -129,7 +151,9 @@ function main(tarball) {
     console.error(`❌ ${tarball}:\n  ${problems.join('\n  ')}`);
     process.exit(1);
   }
-  console.log(`✅ packed planner carries its app, widget and this release's catalog`);
+  console.log(
+    `✅ packed planner carries its app, widget and this release's catalog, within its size budgets`,
+  );
 }
 
 if (import.meta.url === pathToFileURL(process.argv[1] ?? '').href) {

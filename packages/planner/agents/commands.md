@@ -45,7 +45,10 @@ Part of the [planner guidance](../AGENTS.md). Paths are relative to `packages/pl
   `publint`) builds
   `dist/` from `src/lib` with exports `.`, `./commands`, `./core` and `./app`, the static app into
   `app/` (kept at the package root: released `smrt kitchen` CLIs resolve `<package>/app/index.html`)
-  and the MCP widget `app/mcp.html`. `tsconfig.package.json` sets `declarationMap` (it does not
+  and the MCP widget `app/mcp.html`. Size is guarded (#5707): the package ships no `.wasm`
+  (`vite.config.ts` selects ONNX Runtime's extern-wasm build; transformers.js fetches it from
+  jsDelivr), the widget bundles no on-device model runtime (`docs/mcp-widget.md`), and
+  `scripts/planner-size-budgets.mjs` holds the tarball and widget byte budgets. `tsconfig.package.json` sets `declarationMap` (it does not
   extend the shared package chain that sets it for other packages), so every `dist/**/*.d.ts` has a
   `.d.ts.map` whose `sources` name its `src/lib` file; consumers such as the docs site (smrt.happyvertical.com) resolve
   component source links through them. Code in `src/lib` imports relatively,

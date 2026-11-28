@@ -40,6 +40,13 @@ engine changes, build `@happyvertical/smrt-types` and `@happyvertical/smrt-core`
 first and set `SMRT_CORE_LOCAL=/absolute/path/to/smrt/packages/core` on the
 Planner build or preview command as well.
 The build writes a self-contained `app/mcp.html` (inline script and styles).
+The widget has no on-device models. The Kitchen gives it no assistant and
+serves it with empty `connectDomains`/`resourceDomains`, so `build-mcp.ts`
+replaces `assistant/voice-host.ts`, `assistant/engine-host.ts` and
+`@mlc-ai/web-llm` with the stand-ins in `src/mcp/`; a download button on
+`#/ai/` (no link leads there in the widget) reports that models are not
+available. The build fails if the file inlines WebAssembly or outgrows its
+budget (`scripts/planner-size-budgets.mjs`).
 Kitchen injects its MCP Apps bridge before that script. The bridge provides
 `window.smrtKitchen.callTool(name, args)` returning structured content and
 `subscribe(listener)` returning an unsubscribe function and replaying the latest result.
