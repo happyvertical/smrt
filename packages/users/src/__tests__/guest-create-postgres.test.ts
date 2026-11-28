@@ -123,6 +123,21 @@ describeBackend(`guest creates on ${backendName} (#5196)`, () => {
     fn: (tx: Tx) => Promise<T>,
   ) => asPrincipal({ tenantId, permissions }, fn);
 
+  /**
+   * The rows of `name` that belong to THIS test: every test draws fresh
+   * tenant ids, and on a real server the tables persist across tests (PGlite
+   * starts from nothing each time), so absolute counts would count the rows
+   * earlier tests committed. A refused create that wrote anything would
+   * write it under this test's tenant and still be counted.
+   */
+  const mine = (name: string, ...tenants: string[]) =>
+    systemRows(
+      `SELECT * FROM ${name} WHERE tenant_id::text IN (${tenants
+        .map((_, i) => `$${i + 1}`)
+        .join(', ')})`,
+      ...tenants,
+    );
+
   async function systemRows(sql: string, ...values: unknown[]) {
     return asPrincipal({ tenantId: null, systemContext: true }, async (tx) =>
       rowsOf(await tx.query(sql, ...values)),
@@ -216,13 +231,13 @@ describeBackend(`guest creates on ${backendName} (#5196)`, () => {
     // the statements of the tables this suite owns are applied, since the
     // shared database holds the others.
     const generated = generatePostgresPermissionSql({});
-    const mine = generated.statements.filter(
+    const installed = generated.statements.filter(
       (statement) =>
         statement.includes('CREATE OR REPLACE FUNCTION') ||
         statement.includes(`"${table}"`) ||
         statement.includes(`"${GUEST_AUDIT_TABLE_DEFAULTS.tableName}"`),
     );
-    for (const statement of mine) await db.query(statement);
+    for (const statement of installed) await db.query(statement);
 
     // A superuser or BYPASSRLS connection would not be subject to the
     // policies: run as a dedicated NOSUPERUSER/NOBYPASSRLS role. Otherwise the
@@ -316,11 +331,9 @@ describeBackend(`guest creates on ${backendName} (#5196)`, () => {
     });
     expect(res.status).toBe(201);
     expect(await res.text()).toBe('');
-    const [row] = await systemRows(`SELECT * FROM ${table}`);
+    const [row] = await mine(table, tenantA);
     expect(row).toMatchObject({ name: 'Ada', tenant_id: tenantA });
-    const [audit] = await systemRows(
-      `SELECT * FROM ${GUEST_AUDIT_TABLE_DEFAULTS.tableName}`,
-    );
+    const [audit] = await mine(GUEST_AUDIT_TABLE_DEFAULTS.tableName, tenantA);
     expect(audit).toMatchObject({
       actor_kind: 'guest',
       profile_id: null,
@@ -351,11 +364,9 @@ describeBackend(`guest creates on ${backendName} (#5196)`, () => {
         ),
       ),
     ).resolves.toBeNull();
-    expect(await systemRows(`SELECT id FROM ${table}`)).toHaveLength(0);
+    expect(await mine(table, tenantA)).toHaveLength(0);
     expect(
-      await systemRows(
-        `SELECT id FROM ${GUEST_AUDIT_TABLE_DEFAULTS.tableName}`,
-      ),
+      await mine(GUEST_AUDIT_TABLE_DEFAULTS.tableName, tenantA),
     ).toHaveLength(0);
   });
 
@@ -386,7 +397,7 @@ describeBackend(`guest creates on ${backendName} (#5196)`, () => {
         });
       }),
     ).rejects.toThrow(/row-level security/i);
-    expect(await systemRows(`SELECT id FROM ${table}`)).toHaveLength(0);
+    expect(await mine(table, tenantA)).toHaveLength(0);
   });
 
   describe('the audit table under FORCEd RLS', () => {
@@ -436,9 +447,7 @@ describeBackend(`guest creates on ${backendName} (#5196)`, () => {
         expect((deleted as { rowCount?: number }).rowCount ?? 0).toBe(0);
       });
       expect(
-        await systemRows(
-          `SELECT id FROM ${GUEST_AUDIT_TABLE_DEFAULTS.tableName}`,
-        ),
+        await mine(GUEST_AUDIT_TABLE_DEFAULTS.tableName, tenantA),
       ).toHaveLength(1);
     });
 
@@ -456,9 +465,7 @@ describeBackend(`guest creates on ${backendName} (#5196)`, () => {
         await insertAudit(tx as Tx, tenantA, 'user');
       });
       expect(
-        await systemRows(
-          `SELECT id FROM ${GUEST_AUDIT_TABLE_DEFAULTS.tableName}`,
-        ),
+        await mine(GUEST_AUDIT_TABLE_DEFAULTS.tableName, tenantA, tenantB),
       ).toHaveLength(3);
     });
   });

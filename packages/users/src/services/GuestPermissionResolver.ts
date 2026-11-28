@@ -151,7 +151,15 @@ export function collectionPassesGuestCeiling(
   // tenant-match only (nothing generated reads `smrt.user_id`), so ownership
   // is detectable only through the principal-context opt-in and through
   // explicit extra policy bindings (checked below).
-  if ((config as { principalContext?: unknown }).principalContext === true) {
+  // `principalContext` is an `api` option (`@smrt({ api: { principalContext } })`),
+  // not a top-level one.
+  const api = (config as { api?: { principalContext?: unknown } | boolean })
+    .api;
+  if (
+    api &&
+    typeof api === 'object' &&
+    (api as { principalContext?: unknown }).principalContext === true
+  ) {
     return false;
   }
 

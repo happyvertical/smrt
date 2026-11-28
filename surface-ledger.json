@@ -5964,6 +5964,16 @@
   },
   {
     "kind": "model",
+    "name": "@happyvertical/smrt-users:TenantGuestGrant",
+    "issue": 5196,
+    "nearest": [
+      "@happyvertical/smrt-users:TenantPermissionOverride",
+      "@happyvertical/smrt-users:Tenant"
+    ],
+    "reason": "Guest-only grants are kept off the member permission model (TenantPermissionOverride) so existing member grants stay untouched, a guest grant can never be read as a member allow, and widening the storable kinds later needs no migration of existing overrides."
+  },
+  {
+    "kind": "model",
     "name": "@happyvertical/smrt-users:TenantIntegration",
     "grandfathered": true
   },

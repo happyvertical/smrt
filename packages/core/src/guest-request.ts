@@ -58,6 +58,14 @@ export function guestOperationKind(
     return null;
   }
   if (aliased) return null;
+  // A custom method that happens to be NAMED `list`, `get` or `create` is
+  // not the generated CRUD operation: only an operation no declared method
+  // claims maps to a guest kind.
+  try {
+    if (ObjectRegistry.getMethods(model)?.has(operation)) return null;
+  } catch {
+    return null;
+  }
   for (const kind of ['read', 'create'] as const) {
     if (GUEST_KIND_OPERATIONS[kind].includes(operation)) return kind;
   }

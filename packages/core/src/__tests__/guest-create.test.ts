@@ -35,6 +35,7 @@ class GcRelParent5196 extends SmrtObject {
 class GcRelItem5196 extends SmrtObject {
   @field() title = '';
   @foreignKey('GcRelParent5196') parentId = '';
+  @field({ unique: true }) code = '';
 }
 
 const TABLE = 'guest_contact_messages';
@@ -159,6 +160,16 @@ describe('guest create (#5196)', () => {
           { className: 'GcRelItem5196' },
         ).allowedFields,
       ).toEqual(['title']);
+    });
+
+    it('rejects a field carrying a unique index: a conflict would leak across tenants', () => {
+      expect(() =>
+        defineGuestCreate(
+          'gcrel5196_items',
+          { allowedFields: ['title', 'code'] },
+          { className: 'GcRelItem5196' },
+        ),
+      ).toThrow(/unique index/);
     });
 
     it('freezes the resolved config', () => {

@@ -272,6 +272,88 @@ describe('createGuestAdmitter caching', () => {
     expect(await admitter(async () => posture).admit('t1')).not.toBeNull();
   });
 
+  describe('a model that becomes reachable after the first guest request', () => {
+    const LATE = { schemaName: 'public', tableName: 'rt_late' };
+    const lateTable = (forced: boolean) => ({
+      table: 'public.rt_late',
+      rowSecurity: true,
+      forceRowSecurity: forced,
+      policyCount: 1,
+    });
+    function lateAdmitter(lateForced: boolean | 'throw') {
+      let tables = [...TABLES];
+      const probe = vi.fn(
+        async (_db: unknown, requested: readonly { tableName: string }[]) => {
+          if (lateForced === 'throw' && requested.length > 1) {
+            throw new Error('catalog down');
+          }
+          return {
+            ...posture,
+            ceilingTables: [
+              ...posture.ceilingTables,
+              ...(requested.some((t) => t.tableName === 'rt_late')
+                ? [lateTable(lateForced === true)]
+                : []),
+            ],
+            expectedCeilingTables: requested.map(
+              (t) => `public.${t.tableName}`,
+            ),
+          } as GuestCatalogPosture;
+        },
+      );
+      const guests = createGuestAdmitter({
+        rawConfig: () => ({ collections: ['products'] }),
+        postgresRls: () => true,
+        defaultSelector: true,
+        baseDomain: () => 'base.test',
+        baseClassOptions: () => ({}),
+        baseDatabase: async () => ({}) as DatabaseInterface,
+        ceilingTables: () => tables,
+        probeCatalog: probe as never,
+        resolver: async () => ({
+          resolveGuestPermissions: async () => new Set(['products.read']),
+        }),
+      });
+      return {
+        guests,
+        probe,
+        register: () => {
+          tables = [...TABLES, LATE];
+        },
+      };
+    }
+
+    it('re-verifies the whole list and admits when the new table is protected', async () => {
+      const { guests, probe, register } = lateAdmitter(true);
+      expect(await guests.admit('t1')).not.toBeNull();
+      expect(probe).toHaveBeenCalledTimes(1);
+      register();
+      expect(await guests.admit('t1')).not.toBeNull();
+      expect(probe).toHaveBeenCalledTimes(2);
+      expect(probe.mock.calls[1][1].map((t) => t.tableName)).toEqual([
+        'products',
+        'rt_late',
+      ]);
+      // Covered now: no further catalog work.
+      await guests.admit('t1');
+      expect(probe).toHaveBeenCalledTimes(2);
+    });
+
+    it('refuses, and drops the cached posture, when the new table lacks forced RLS', async () => {
+      const { guests, register } = lateAdmitter(false);
+      expect(await guests.admit('t1')).not.toBeNull();
+      register();
+      expect(await guests.admit('t1')).toBeNull();
+    });
+
+    it('refuses when verifying the new table errors', async () => {
+      const { guests, register } = lateAdmitter('throw');
+      expect(await guests.admit('t1')).not.toBeNull();
+      register();
+      expect(await guests.admit('t1')).toBeNull();
+    });
+  });
+
   it('remembers a failure briefly, then retries', async () => {
     vi.useFakeTimers();
     const probe = vi.fn(async (): Promise<GuestCatalogPosture | null> => {
