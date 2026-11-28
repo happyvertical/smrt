@@ -241,3 +241,17 @@ describe('planReplyBlock (#5395)', () => {
     ).toMatchObject({ applyNow: true, questionTexts: [] });
   });
 });
+
+describe('limit events (#5198)', () => {
+  it('parse, reload the shell data and are read aloud; junk is dropped', () => {
+    const e = parseShellEvent(
+      JSON.stringify({ type: 'limit', kind: 'cap', message: 'Over the cap' }),
+    );
+    expect(e).toEqual({ type: 'limit', kind: 'cap', message: 'Over the cap' });
+    expect(keysFor(e!)).toEqual([DEPENDS.shell]);
+    expect(announcement(e!)).toBe('Over the cap');
+    expect(
+      parseShellEvent(JSON.stringify({ type: 'limit', kind: 'nope' })),
+    ).toBeNull();
+  });
+});

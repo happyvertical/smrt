@@ -114,6 +114,32 @@ describe('app limits in the cloud shell', () => {
   });
 });
 
+describe('route limits from the environment', () => {
+  it('reads the client limit, the optional tenant limit and refuses a half set', () => {
+    expect(
+      appLimitsFromEnv({
+        SMRT_APP_SHELL_ROUTE_LIMIT_MAX: '60',
+        SMRT_APP_SHELL_ROUTE_LIMIT_WINDOW_MS: '60000',
+        SMRT_APP_SHELL_ROUTE_LIMIT_TENANT_MAX: '600',
+      }),
+    ).toEqual({
+      routeLimits: {
+        client: { maxEvents: 60, windowMs: 60_000 },
+        tenant: { maxEvents: 600, windowMs: 60_000 },
+      },
+    });
+    expect(() =>
+      appLimitsFromEnv({ SMRT_APP_SHELL_ROUTE_LIMIT_MAX: '60' }),
+    ).toThrow(/needs SMRT_APP_SHELL_ROUTE_LIMIT_WINDOW_MS/);
+    expect(() =>
+      appLimitsFromEnv({
+        SMRT_APP_SHELL_ROUTE_LIMIT_TENANT_MAX: '6',
+        SMRT_APP_SHELL_ROUTE_LIMIT_WINDOW_MS: '1000',
+      }),
+    ).toThrow(/needs SMRT_APP_SHELL_ROUTE_LIMIT_MAX/);
+  });
+});
+
 describe('appLimitsFromEnv', () => {
   it('is undefined when nothing is set, reads each cap, and refuses a bad one', () => {
     expect(appLimitsFromEnv({})).toBeUndefined();

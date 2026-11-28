@@ -41,6 +41,12 @@ export function parseShellEvent(data: string): ShellEvent | null {
       ...(target ? { target } : {}),
       model: typeof e.model === 'string' ? e.model : null,
     };
+  if (e.type === 'limit' && ['cap', 'route', 'period'].includes(String(e.kind)))
+    return {
+      type: 'limit',
+      kind: e.kind as 'cap',
+      message: String(e.message ?? '').slice(0, 500),
+    };
   if (
     e.type === 'draft' &&
     typeof e.id === 'string' &&
@@ -92,6 +98,9 @@ export function keysFor(event: ShellEvent): DependsKey[] {
       ];
     case 'records':
       return [DEPENDS.records];
+    case 'limit':
+      // The notice is in the layout's data.
+      return [DEPENDS.shell];
     case 'approval':
       // The menu badge lives in the shell data.
       return [DEPENDS.shell, DEPENDS.approvals];
@@ -128,6 +137,7 @@ export function announcement(event: ShellEvent): string | null {
     if (event.status === 'discarded') return 'Changes discarded.';
     return event.count > 0 ? `${plural(event.count, 'change')} waiting` : null;
   }
+  if (event.type === 'limit') return event.message;
   if (event.type === 'approval') {
     // The owner's own Apply says "Applied" already.
     if (isApplySummary(event.summary)) return null;

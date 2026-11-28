@@ -37,7 +37,43 @@ export function appLimitsFromEnv(
     throw new Error(
       'SMRT_APP_SHELL_MAX_METHOD_RUNS needs SMRT_APP_SHELL_METHOD_RUN_PERIOD_MS',
     );
+  const routeLimits = routeLimitsFromEnv(env);
+  if (routeLimits) (limits as AppLimits).routeLimits = routeLimits;
   return Object.keys(limits).length ? (limits as AppLimits) : undefined;
+}
+
+/**
+ * Route limits from `SMRT_APP_SHELL_ROUTE_LIMIT_MAX` requests per
+ * `SMRT_APP_SHELL_ROUTE_LIMIT_WINDOW_MS` per caller (a guest gets a quarter of
+ * it, core's default), and optionally `SMRT_APP_SHELL_ROUTE_LIMIT_TENANT_MAX`
+ * for all callers of one app together. Neither set: none. The max needs the
+ * window.
+ */
+function routeLimitsFromEnv(
+  env: Record<string, string | undefined>,
+): AppLimits['routeLimits'] | undefined {
+  const get = (name: string) => {
+    const raw = env[name];
+    return raw === undefined || raw === '' ? undefined : whole(name, raw, 1);
+  };
+  const max = get('SMRT_APP_SHELL_ROUTE_LIMIT_MAX');
+  const windowMs = get('SMRT_APP_SHELL_ROUTE_LIMIT_WINDOW_MS');
+  const tenantMax = get('SMRT_APP_SHELL_ROUTE_LIMIT_TENANT_MAX');
+  if (max === undefined && tenantMax === undefined) return undefined;
+  if (windowMs === undefined)
+    throw new Error(
+      'SMRT_APP_SHELL_ROUTE_LIMIT_MAX needs SMRT_APP_SHELL_ROUTE_LIMIT_WINDOW_MS',
+    );
+  if (max === undefined)
+    throw new Error(
+      'SMRT_APP_SHELL_ROUTE_LIMIT_TENANT_MAX needs SMRT_APP_SHELL_ROUTE_LIMIT_MAX',
+    );
+  return {
+    client: { maxEvents: max, windowMs },
+    ...(tenantMax !== undefined
+      ? { tenant: { maxEvents: tenantMax, windowMs } }
+      : {}),
+  };
 }
 
 /**

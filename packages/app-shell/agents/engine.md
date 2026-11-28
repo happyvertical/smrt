@@ -681,6 +681,40 @@ forms and the changes/import Apply show it as is, never the stale-digest line.
 | `maxRows`, `maxRowsPerModel` | create (engine, generated REST POST, `<model>_create` tool), `importRecords`, a method's creates, `loadRecords`/`extractModel`/`mergeRecords` that GROW the app past the cap | `COUNT(*)` per table, cached per worker |
 | `maxMethodRuns` + `methodRunPeriodMs` | a method run (engine, REST/tool method) after N runs in the period | in memory, window starts at the first run |
 
+**Route limits (#5198).** `AppLimits.routeLimits` (`{client, tenant?}`, plain
+`{maxEvents, windowMs}`) is applied in the worker with core's
+`configureRouteLimits` (process-wide; one app per worker), so a caller over its
+limit gets core's 429 before any model is reached. From the environment:
+`SMRT_APP_SHELL_ROUTE_LIMIT_MAX` per `_WINDOW_MS` per caller (guests get a
+quarter, core's default), optional `_TENANT_MAX` for the app's callers together.
+
+**Owner notice (#5198).** `AppHost` emits `'limit'` (`LimitNotice`: `kind`
+`cap | route | period`, `cap`, an owner-safe `message`) when a cap refuses a
+worker call or a REST create, a route limit answers 429, or the period cap
+refuses. The shell (`limit-notices.ts`, wired in `wireHostEvents`, live copy
+only) keeps the latest notice per kind per tenant in memory (count, last time,
+24 h life, never persisted or shared between replicas: a heads-up, the counts
+live in the usage metrics), publishes a `limit` event (reloads `smrt:shell`) and
+the layout load returns `limitNotices` for the owner, shown by
+`LimitNotices.svelte` with a Dismiss (`DELETE /api/shell/limit-notices`). It
+reaches the owner even when the refused caller was someone else.
+
+**Plan request cap per period (#5198, cloud only).** `request-cap.ts`:
+`installRequestCapGate` (from `init`, after the method-code gate) builds a gate
+over the plan's thresholds; `HostOptions.requestCap` (passed with `onRequest`,
+so only for a holder with a tenant) asks it before each generated REST request.
+The cap is a plan threshold on `api.requests` with `enforcement: 'block'`;
+its `window` (`day|week|month|year` calendar UTC, `rolling` = 30 days) is the
+period, the strictest threshold wins, `observe`/`warn` thresholds and other
+metrics are not caps. Counts SERVED requests only (rows with no refusal
+reason; a row belongs to the window its batch began in). One plan read and one
+usage sum per tenant per 30 s plus an in-memory count of requests SERVED since (the host reports each served request; asking never counts, so a request core refuses never burns the cap); persisted counts
+lag the meter's 60 s flush and are per process, so the cap is approximate (a
+tenant can pass it by about one replica's requests per read interval). A
+refusal is 429 `{code: 'app_limit', cap: 'maxRequests', limit, current,
+resetsAt}`, counted as `refused: 'period_cap'`. A failed lookup admits. The
+desktop builds no gate and passes no option.
+
 Refusals are `AppLimitError` (an `AppError`): `app limit reached (maxRows):
 this app holds 3 records of the 3 allowed; adding 1 would pass the limit`.
 A cap refusal crosses the worker boundary typed: `WorkerReply.limit` becomes

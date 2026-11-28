@@ -101,6 +101,14 @@ export class RequestMeter {
     }
   }
 
+  /** Served requests held for the tenant that are not written yet. */
+  pendingServed(tenantId: string): number {
+    let n = 0;
+    for (const b of this.batches.values())
+      if (b.tenantId === tenantId && !b.refused && !b.limited) n += b.count;
+    return n;
+  }
+
   /** Write the held counts now. Resolves when written; never rejects. */
   flush(): Promise<void> {
     // One flush at a time; counts noted meanwhile ride the next.

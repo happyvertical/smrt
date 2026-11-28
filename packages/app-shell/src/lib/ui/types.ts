@@ -317,6 +317,7 @@ export type ShellEvent =
       humanSummary?: string;
     }
   | { type: 'records'; target?: 'live' | 'draft'; model: string | null }
+  | { type: 'limit'; kind: 'cap' | 'route' | 'period'; message: string }
   | {
       type: 'draft';
       status: 'started' | 'published' | 'discarded' | 'unpublishable';

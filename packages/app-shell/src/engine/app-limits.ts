@@ -17,6 +17,18 @@ export interface AppLimits {
   /** Length of the method-run period in ms (a rolling window from its first run). */
   methodRunPeriodMs?: number;
   /**
+   * Route-level request limits of the app's generated REST routes (#5198): a
+   * caller over its limit gets a 429 and the request never reaches the
+   * database. Plain data (`RouteLimitsConfig` without functions), applied
+   * process-wide in the app's worker (one app per worker), so the counters
+   * survive across requests. Keyed by the decided principal's tenant and
+   * caller kind, never by anything the client sent.
+   */
+  routeLimits?: {
+    client: { maxEvents: number; windowMs: number };
+    tenant?: { maxEvents: number; windowMs: number };
+  };
+  /**
    * Set by the host, never by a caller: the method-run window ([start, runs])
    * in memory shared by every worker of one host, so a swap (a definition
    * change) starts a new worker without renewing the period. A host makes its
@@ -71,6 +83,22 @@ export function assertAppLimits(limits: AppLimits): AppLimits {
     if (v !== undefined && (!Number.isInteger(v) || v < 0))
       throw new AppError(`appLimits.${k} must be a whole number, 0 or more`);
   }
+  const rl = limits.routeLimits;
+  if (rl)
+    for (const [name, w] of [
+      ['routeLimits.client', rl.client],
+      ['routeLimits.tenant', rl.tenant],
+    ] as const)
+      if (
+        w !== undefined &&
+        (!Number.isSafeInteger(w?.maxEvents) ||
+          w.maxEvents < 1 ||
+          !Number.isSafeInteger(w?.windowMs) ||
+          w.windowMs < 1)
+      )
+        throw new AppError(
+          `appLimits.${name} needs maxEvents and windowMs, whole numbers 1 or more`,
+        );
   if (limits.maxMethodRuns !== undefined && !limits.methodRunPeriodMs)
     throw new AppError(
       'appLimits.maxMethodRuns needs appLimits.methodRunPeriodMs (1 or more)',

@@ -13,6 +13,7 @@ import {
   withCallerOwnedDatabaseTransaction,
   withEmbeddedWriteTransaction,
 } from '@happyvertical/smrt-core';
+import { configureRouteLimits } from '@happyvertical/smrt-core/generators';
 import { MCPGenerator } from '@happyvertical/smrt-core/generators/mcp';
 import { APIGenerator } from '@happyvertical/smrt-core/generators/rest';
 import { declareRuntimeManagedDatabase } from '@happyvertical/smrt-core/migrations';
@@ -157,6 +158,9 @@ export class AppRuntime {
     tenantId: string = DESKTOP_TENANT,
   ) {
     this.tenantId = tenantId;
+    // Route limits live in this worker's process-wide limiter, read by every
+    // `APIGenerator` it builds per request (core: `configureRouteLimits`).
+    if (limits?.routeLimits) configureRouteLimits(limits.routeLimits);
     if (limits)
       this.caps = new AppCaps(
         limits,
